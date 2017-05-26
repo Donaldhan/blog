@@ -1,0 +1,749 @@
+下载apache-activemq-5.12.1.tar.gz文件，解压如下
+[activemq@zabbix apache-activemq-5.12.1]$ ls -al
+total 14528
+drwxr-xr-x 11 root root      4096 Dec 26 15:40 .
+drwxr-xr-x  3 root root        35 Dec 26 15:32 ..
+-rwxr-xr-x  1 root users 14813760 Oct 13  2015 activemq-all-5.12.1.jar
+drwxr-xr-x  5 root root       139 Dec 26 15:32 bin
+drwxr-xr-x  2 root users     4096 Dec 27 15:12 conf
+drwxr-xr-x  3 root users       78 Dec 27 18:31 data
+drwxr-xr-x  2 root users       73 Dec 26 15:32 docs
+drwxr-xr-x  8 root users       78 Dec 26 15:32 examples
+drwxr-xr-x  6 root users     4096 Dec 26 15:32 lib
+-rw-r--r--  1 root users    40580 Oct 13  2015 LICENSE
+-rw-r--r--  1 root users     3334 Oct 13  2015 NOTICE
+-rw-r--r--  1 root users     2610 Oct 13  2015 README.txt
+drwxr-xr-x  2 root root         6 Dec 27 18:31 tmp
+drwxr-xr-x  7 root users      106 Dec 26 15:32 webapps
+drwxr-xr-x  3 root root        17 Dec 26 15:32 webapps-demo
+文件内容：
+activemq-all-5.12.1.jar：activemq所有jar
+bin：启动命令文件夹，环境变量
+conf：配置文件
+data：数据目录，包含activemq的进程文件，数据文件，及日志文件
+docs：用户使用帮助相关文件
+examples：配置文件，及java操作ActiveMQ相关实例
+lib：activemq jar包
+webapps：activemq控制台应用目录
+webapps-demo：activemq使用实例目录
+下面分别看几个关键目录下的文件：
+
+bin：启动命令文件夹，环境变量
+[activemq@zabbix bin]$ ls -al
+total 144
+drwxr-xr-x  5 root root    139 Dec 26 15:32 .
+drwxr-xr-x 11 root root   4096 Dec 26 15:40 ..
+-rwxr-xr-x  1 root users 21748 Oct 13  2015 activemq
+-rwxr-xr-x  1 root users  6189 Oct 13  2015 activemq-diag
+-rw-------  1 root users 15962 Oct 13  2015 activemq.jar
+-rw-r--r--  1 root users  4881 Oct 13  2015 env
+drwxr-xr-x  2 root root     74 Dec 26 15:32 linux-x86-32
+drwxr-xr-x  2 root root     74 Dec 26 15:32 linux-x86-64
+drwxr-xr-x  2 root root     78 Dec 26 15:32 macosx
+-rwx------  1 root users 83820 Oct 13  2015 wrapper.jar
+
+activemq为启动关闭命令，具体 ./activemq start |stop |restart
+env为activemq环境变量配置文件：
+[activemq@zabbix bin]$ more env 
+#!/bin/sh
+# ------------------------------------------------------------------------
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ------------------------------------------------------------------------
+#
+# Configuration file for running Apache Active MQ as standalone provider.
+#
+# This file overwrites the predefined settings of the sysv init-script.
+# You can also use alternate location for default settings -  
+# invoke the init-script without a argument an review help section "Configuration of this script"
+# /etc/default/activemq <activemq user home>/.activemqrc <activemq installation dir>/bin/env
+
+# Set jvm memory configuration (minimal/maximum amount of memory)
+#broker可以使用的最大与最小内存
+ACTIVEMQ_OPTS_MEMORY="-Xms64M -Xmx1G"
+#控制台登陆配置login.config，日志配置
+if [ -z "$ACTIVEMQ_OPTS" ] ; then
+    ACTIVEMQ_OPTS="$ACTIVEMQ_OPTS_MEMORY -Djava.util.logging.config.file=logging.properties 
+    -Djava.security.auth.login.config=$ACTIVEMQ_CONF/login.config"
+fi
+
+# Uncomment to enable audit logging
+#ACTIVEMQ_OPTS="$ACTIVEMQ_OPTS -Dorg.apache.activemq.audit=true"
+
+# Set jvm jmx configuration
+# This enables jmx access over a configured jmx-tcp-port.
+# You have to configure the first four settings if you run a ibm jvm, caused by the
+# fact that IBM's jvm does not support VirtualMachine.attach(PID).
+# JMX access is needed for quering a running activemq instance to gain data or to
+# trigger management operations.
+#
+# Example for ${ACTIVEMQ_CONF}/jmx.access:
+# ---在jmx.access配置角色访问JMX权限
+# # The "monitorRole" role has readonly access.
+# # The "controlRole" role has readwrite access.
+# monitorRole readonly
+# controlRole readwrite
+# ---
+#
+# Example for ${ACTIVEMQ_CONF}/jmx.password:
+# ---在jmx.password配置角色访问JMX密码
+# # The "monitorRole" role has password "abc123".
+# # # The "controlRole" role has password "abcd1234".
+# monitorRole abc123
+# controlRole abcd1234
+# ---
+#
+# ACTIVEMQ_SUNJMX_START="$ACTIVEMQ_SUNJMX_START -Dcom.sun.management.jmxremote.port=11099 "
+# ACTIVEMQ_SUNJMX_START="$ACTIVEMQ_SUNJMX_START -Dcom.sun.management.jmxremote.password.file=${ACTIVEMQ_CONF}/jmx.password"
+# ACTIVEMQ_SUNJMX_START="$ACTIVEMQ_SUNJMX_START -Dcom.sun.management.jmxremote.access.file=${ACTIVEMQ_CONF}/jmx.access"
+# ACTIVEMQ_SUNJMX_START="$ACTIVEMQ_SUNJMX_START -Dcom.sun.management.jmxremote.ssl=false"
+ACTIVEMQ_SUNJMX_START="$ACTIVEMQ_SUNJMX_START -Dcom.sun.management.jmxremote"
+
+# Set jvm jmx configuration for controlling the broker process
+# You only have to configure the first four settings if you run a ibm jvm, caused by the
+# fact that IBM's jvm does not support VirtualMachine.attach(PID)
+# (see also com.sun.management.jmxremote.port, .jmx.password.file and .jmx.access.file )
+#JMX管理broker进程
+#ACTIVEMQ_SUNJMX_CONTROL="--jmxurl service:jmx:rmi:///jndi/rmi://127.0.0.1:1099/jmxrmi --jmxuser controlRole --jmxpassword abcd1234"
+ACTIVEMQ_SUNJMX_CONTROL=""
+##队列消息管理URL
+# Specify the queue manager URL for using "browse" option of sysv initscript
+if [ -z "$ACTIVEMQ_QUEUEMANAGERURL" ]; then
+    ACTIVEMQ_QUEUEMANAGERURL="--amqurl tcp://localhost:61616"
+fi
+
+# Set additional JSE arguments
+#ACTIVEMQ_SSL_OPTS="-Dcom.sun.security.enableCRLDP=true -Docsp.enable=true -Docsp.responderURL=http://ocsp.example.net:80"
+ACTIVEMQ_SSL_OPTS=""
+##日志选项
+# Uncomment to enable remote debugging
+#ACTIVEMQ_DEBUG_OPTS="-Xdebug -Xnoagent -Djava.compiler=NONE -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=5005"
+
+# ActiveMQ tries to shutdown the broker by jmx,
+# after a specified number of seconds send SIGKILL
+## ActiveMQ通过jmx关闭broker等待时间
+if [ -z "$ACTIVEMQ_KILL_MAXSECONDS" ]; then
+    ACTIVEMQ_KILL_MAXSECONDS=30
+fi
+#AcitiveMQ安装目录，基目录，data目录，conf目录和临时目录
+# Active MQ installation dirs
+# ACTIVEMQ_HOME="<Installationdir>/"
+# ACTIVEMQ_BASE="$ACTIVEMQ_HOME"
+# ACTIVEMQ_CONF="$ACTIVEMQ_BASE/conf"
+# ACTIVEMQ_DATA="$ACTIVEMQ_BASE/data"
+# ACTIVEMQ_TMP="$ACTIVEMQ_BASE/tmp"
+
+# Configure a user with non root privileges, if no user is specified do not change user
+# (the entire activemq installation should be owned by this user)
+# 用户
+ACTIVEMQ_USER=""
+
+# location of the pidfile 
+##进程文件
+# ACTIVEMQ_PIDFILE="$ACTIVEMQ_DATA/activemq.pid"
+
+# Location of the java installation
+# Specify the location of your java installation using JAVA_HOME, or specify the
+# path to the "java" binary using JAVACMD
+# (set JAVACMD to "auto" for automatic detection)
+#java安装路径
+#JAVA_HOME="" 
+#如果没有设置java安装路径，则自动探测
+JAVACMD="auto"
+[activemq@zabbix bin]$ 
+
+conf：配置文件
+
+[activemq@zabbix conf]$ ls
+activemq.xml           broker.ts  credentials-enc.properties  jetty-realm.properties  jmx.password        login.config
+broker.ks              client.ks  credentials.properties      jetty.xml               log4j.properties    users.properties
+broker-localhost.cert  client.ts  groups.properties           jmx.access              logging.properties
+
+ActiveMQ配置文件：
+[activemq@zabbix conf]$ more activemq.xml 
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one or more
+    contributor license agreements.  See the NOTICE file distributed with
+    this work for additional information regarding copyright ownership.
+    The ASF licenses this file to You under the Apache License, Version 2.0
+    (the "License"); you may not use this file except in compliance with
+    the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+-->
+<!-- START SNIPPET: example -->
+<beans
+  xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+  http://activemq.apache.org/schema/core http://activemq.apache.org/schema/core/activemq-core.xsd">
+
+    <!-- Allows us to use system properties as variables in this configuration file -->
+    #加载属性文件
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <value>file:${activemq.conf}/credentials.properties</value>
+        </property>
+    </bean>
+
+   <!-- Allows accessing the server log -->
+   ##开启日志查询
+    <bean id="logQuery" class="io.fabric8.insight.log.log4j.Log4jLogQuery"
+          lazy-init="false" scope="singleton"
+          init-method="start" destroy-method="stop">
+    </bean>
+
+    <!--
+        The <broker> element is used to configure the ActiveMQ broker.
+    -->
+    #设置broker名字brokerName和数据目录dataDirectory
+    <broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}">
+
+        <destinationPolicy>
+            <policyMap>
+              <policyEntries>
+                <policyEntry topic=">" >
+                    <!-- The constantPendingMessageLimitStrategy is used to prevent
+                         slow topic consumers to block producers and affect other consumers
+                         by limiting the number of messages that are retained
+                         For more information, see:
+
+                         http://activemq.apache.org/slow-consumer-handling.html
+
+                    -->
+                  <pendingMessageLimitStrategy>
+		     #此选项用于慢消费者消费订阅主题消息时，阻塞订阅主题生产者和其他消费者
+                    <constantPendingMessageLimitStrategy limit="1000"/>
+                  </pendingMessageLimitStrategy>
+                </policyEntry>
+              </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+
+
+        <!--
+            The managementContext is used to configure how ActiveMQ is exposed in
+            JMX. By default, ActiveMQ uses the MBean server that is started by
+            the JVM. For more information, see:
+
+            http://activemq.apache.org/jmx.html
+        -->
+        <managementContext>
+	   ##是否将broker，暴露给JMX，以便可以通过JMX查看broker的状态，如果没有配置JMX，最好为false
+	   ##不然关闭broker，会报连接JXM的错误
+            <managementContext createConnector="true"/>
+        </managementContext>
+
+        <!--
+            Configure message persistence for the broker. The default persistence
+            mechanism is the KahaDB store (identified by the kahaDB tag).
+            For more information, see:
+             ##消息持久策略，有kahaDB，JDBC，LEVELDB，默认为kahaDB
+            http://activemq.apache.org/persistence.html
+        -->
+        <persistenceAdapter>
+	   ##配置kahaDB数据目录
+            <kahaDB directory="${activemq.data}/kahadb"/>
+        </persistenceAdapter>
+
+
+          <!--
+            The systemUsage controls the maximum amount of space the broker will
+            use before disabling caching and/or slowing down producers. For more information, see:
+            http://activemq.apache.org/producer-flow-control.html
+	    ##控制broker内存、磁盘、临时空间可以大小
+          -->
+          <systemUsage>
+            <systemUsage>
+                <memoryUsage>
+                    <memoryUsage percentOfJvmHeap="70" />
+                </memoryUsage>
+                <storeUsage>
+                    <storeUsage limit="100 gb"/>
+                </storeUsage>
+                <tempUsage>
+                    <tempUsage limit="50 gb"/>
+                </tempUsage>
+            </systemUsage>
+        </systemUsage>
+
+        <!--
+            The transport connectors expose ActiveMQ over a given protocol to
+            clients and other brokers. For more information, see:
+            #监听消费者连接的transportConnectors，有openwire，amqp，stomp，mqtt，ws集中协议
+	    #一般用openwire
+            http://activemq.apache.org/configuring-transports.html
+        -->
+        <transportConnectors>
+            <!-- DOS protection, limit concurrent connections to 1000 and frame size to 100MB -->
+            <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+        </transportConnectors>
+
+        <!-- destroy the spring context on shutdown to stop jetty -->
+	##关闭时，同时停止Jetty中的Spring上下文
+        <shutdownHooks>
+            <bean xmlns="http://www.springframework.org/schema/beans" class="org.apache.activemq.hooks.SpringContextHook" />
+        </shutdownHooks>
+
+    </broker>
+
+    <!--
+        Enable web consoles, REST and Ajax APIs and demos
+        The web consoles requires by default login, you can disable this in the jetty.xml file
+
+        Take a look at ${ACTIVEMQ_HOME}/conf/jetty.xml for more details
+    -->
+    #jetty配置文件主要用于控制台，REST and Ajax APIs 
+    <import resource="jetty.xml"/>
+
+</beans>
+<!-- END SNIPPET: example -->
+
+再来看一下ActiveMQ配置文件引用的文件：
+[activemq@zabbix conf]$ more credentials.properties 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+## 
+## http://www.apache.org/licenses/LICENSE-2.0
+## 
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+
+# Defines credentials that will be used by components (like web console) to access the broker
+#配置通过通知台访问broker的用户密码
+activemq.username=system
+activemq.password=manager
+guest.password=password
+[activemq@zabbix conf]$ 
+
+
+JMX 访问broker访问控制
+[activemq@zabbix conf]$ more jmx.access 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+##
+## http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+
+admin readwrite
+
+JMX访问broker用户密码
+[activemq@zabbix conf]$ more jmx.password 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+##
+## http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+
+admin activemq
+[activemq@zabbix conf]$ 
+
+
+[activemq@zabbix conf]$ more jetty.xml 
+....
+<beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+    #Client通openwrite：//tcp：61616访问broker的用户密码校验
+    <bean id="securityLoginService" class="org.eclipse.jetty.security.HashLoginService">
+        <property name="name" value="ActiveMQRealm" />
+        <property name="config" value="${activemq.conf}/jetty-realm.properties" />
+    </bean>
+    ##安全验证策略
+    <bean id="securityConstraint" class="org.eclipse.jetty.util.security.Constraint">
+        <property name="name" value="BASIC" />
+        <property name="roles" value="user,admin" />
+        <!-- set authenticate=false to disable login -->
+        <property name="authenticate" value="true" />
+    </bean>
+   #管理员安全验证策略
+    <bean id="adminSecurityConstraint" class="org.eclipse.jetty.util.security.Constraint">
+        <property name="name" value="BASIC" />
+        <property name="roles" value="admin" />
+         <!-- set authenticate=false to disable login -->
+        <property name="authenticate" value="true" />
+    </bean>
+    <bean id="securityConstraintMapping" class="org.eclipse.jetty.security.ConstraintMapping">
+        <property name="constraint" ref="securityConstraint" />
+        <property name="pathSpec" value="/api/*,/admin/*,*.jsp" />
+    </bean>
+    <bean id="adminSecurityConstraintMapping" class="org.eclipse.jetty.security.ConstraintMapping">
+        <property name="constraint" ref="adminSecurityConstraint" />
+        <property name="pathSpec" value="*.action" />
+    </bean>
+    <bean id="securityHandler" class="org.eclipse.jetty.security.ConstraintSecurityHandler">
+        <property name="loginService" ref="securityLoginService" />
+        <property name="authenticator">
+            <bean class="org.eclipse.jetty.security.authentication.BasicAuthenticator" />
+        </property>
+        <property name="constraintMappings">
+            <list>
+                <ref bean="adminSecurityConstraintMapping" />
+                <ref bean="securityConstraintMapping" />
+            </list>
+        </property>
+        <property name="handler">
+            <bean id="sec" class="org.eclipse.jetty.server.handler.HandlerCollection">
+                <property name="handlers">
+                    <list>
+                        <bean class="org.eclipse.jetty.webapp.WebAppContext">
+                            <property name="contextPath" value="/admin" />
+                            <property name="resourceBase" value="${activemq.home}/webapps/admin" />
+                            <property name="logUrlOnStart" value="true" />
+                        </bean>
+                        <!-- Enable embedded file server for Blob messages -->
+                        <!--
+                        <bean class="org.eclipse.jetty.webapp.WebAppContext">
+                            <property name="contextPath" value="/fileserver" />
+                            <property name="resourceBase" value="${activemq.home}/webapps/fileserver" />
+                            <property name="logUrlOnStart" value="true" />
+                            <property name="parentLoaderPriority" value="true" />
+                        </bean>
+                        -->
+                        <bean class="org.eclipse.jetty.webapp.WebAppContext">
+                            <property name="contextPath" value="/api" />
+                            <property name="resourceBase" value="${activemq.home}/webapps/api" />
+                            <property name="logUrlOnStart" value="true" />
+                        </bean>
+                        <bean class="org.eclipse.jetty.server.handler.ResourceHandler">
+                            <property name="directoriesListed" value="false" />
+                            <property name="welcomeFiles">
+                                <list>
+                                    <value>index.html</value>
+                                </list>
+                            </property>
+                            <property name="resourceBase" value="${activemq.home}/webapps/" />
+                        </bean>
+                        <bean id="defaultHandler" class="org.eclipse.jetty.server.handler.DefaultHandler">
+                            <property name="serveIcon" value="false" />
+                        </bean>
+                    </list>
+                </property>
+            </bean>
+        </property>
+    </bean>
+
+    <bean id="contexts" class="org.eclipse.jetty.server.handler.ContextHandlerCollection">
+    </bean>
+   #broker控制台ip:port配置
+    <bean id="jettyPort" class="org.apache.activemq.web.WebConsolePort" init-method="start">
+             <!-- the default port number for the web console -->
+        <property name="host" value="0.0.0.0"/>
+        <property name="port" value="8161"/>
+    </bean>
+
+    <bean id="Server" depends-on="jettyPort" class="org.eclipse.jetty.server.Server" init-method="start"
+        destroy-method="stop">
+
+        <property name="connectors">
+            <list>
+                <bean id="Connector" class="org.eclipse.jetty.server.nio.SelectChannelConnector">
+                     <!-- see the jettyPort bean -->
+                    <property name="host" value="#{systemProperties['jetty.host']}" />
+                    <property name="port" value="#{systemProperties['jetty.port']}" />
+                </bean>
+                <!--
+                    Enable this connector if you wish to use https with web console
+                -->
+                <!--
+		 ##SSL配置
+                <bean id="SecureConnector" class="org.eclipse.jetty.server.ssl.SslSelectChannelConnector">
+                    <property name="port" value="8162" />
+		    #秘钥文件
+                    <property name="keystore" value="file:${activemq.conf}/broker.ks" />
+                    <property name="password" value="password" />
+                </bean>
+                -->
+            </list>
+        </property>
+
+        <property name="handler">
+            <bean id="handlers" class="org.eclipse.jetty.server.handler.HandlerCollection">
+                <property name="handlers">
+                    <list>
+                        <ref bean="contexts" />
+                        <ref bean="securityHandler" />
+                    </list>
+                </property>
+            </bean>
+        </property>
+
+    </bean>
+Client通openwrite：//tcp：61616访问broker的用户密码角色配置
+[activemq@zabbix conf]$ more jetty-realm.properties 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+## 
+## http://www.apache.org/licenses/LICENSE-2.0
+## 
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+
+# Defines users that can access the web (console, demo, etc.)
+# username: password [,rolename ...]
+#用户，密码，角色
+admin: admin, admin
+user: 123456, user
+[activemq@zabbix conf]$ 
+
+broker，client秘钥文件
+broker.ks，broker.ts，client.ks ，broker-localhost.cert ，client.ts
+
+控制用户配置文件
+
+[activemq@zabbix conf]$ more login.config 
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+activemq {
+    org.apache.activemq.jaas.PropertiesLoginModule required
+        #用户，分组配置文件
+        org.apache.activemq.jaas.properties.user="users.properties"
+        org.apache.activemq.jaas.properties.group="groups.properties";
+};
+[activemq@zabbix conf]$ 
+用户配置文件
+
+[activemq@zabbix conf]$ more users.properties 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+##
+## http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+用户=用户密码
+admin=admin
+
+
+分组配置文件
+[activemq@zabbix conf]$ more groups.properties 
+## ---------------------------------------------------------------------------
+## Licensed to the Apache Software Foundation (ASF) under one or more
+## contributor license agreements.  See the NOTICE file distributed with
+## this work for additional information regarding copyright ownership.
+## The ASF licenses this file to You under the Apache License, Version 2.0
+## (the "License"); you may not use this file except in compliance with
+## the License.  You may obtain a copy of the License at
+##
+## http://www.apache.org/licenses/LICENSE-2.0
+##
+## Unless required by applicable law or agreed to in writing, software
+## distributed under the License is distributed on an "AS IS" BASIS,
+## WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+## See the License for the specific language governing permissions and
+## limitations under the License.
+## ---------------------------------------------------------------------------
+分组=用户，用户
+admins=admin
+
+
+日志文件
+
+[activemq@zabbix conf]$ more logging.properties 
+#
+# This file controls logging which is done over the java.logging API
+#
+#配置日志输出
+#handlers = java.util.logging.ConsoleHandler
+#java.util.logging.ConsoleHandler.level=INFO
+#java.util.logging.ConsoleHandler.formatter=java.util.logging.SimpleFormatter
+#.level=INFO#
+[activemq@zabbix conf]$ 
+
+[activemq@zabbix conf]$ more log4j.properties 
+#
+# This file controls most of the logging in ActiveMQ which is mainly based around 
+# the commons logging API.
+#
+log4j.rootLogger=INFO, console, logfile
+log4j.logger.org.apache.activemq.spring=WARN
+log4j.logger.org.apache.activemq.web.handler=WARN
+log4j.logger.org.springframework=WARN
+log4j.logger.org.apache.xbean=WARN
+log4j.logger.org.apache.camel=INFO
+log4j.logger.org.eclipse.jetty=WARN
+
+# When debugging or reporting problems to the ActiveMQ team,
+# comment out the above lines and uncomment the next.
+
+#log4j.rootLogger=DEBUG, logfile, console
+
+# Or for more fine grained debug logging uncomment one of these
+#log4j.logger.org.apache.activemq=DEBUG
+#log4j.logger.org.apache.camel=DEBUG
+
+# Console appender
+log4j.appender.console=org.apache.log4j.ConsoleAppender
+log4j.appender.console.layout=org.apache.log4j.PatternLayout
+log4j.appender.console.layout.ConversionPattern=%5p | %m%n
+log4j.appender.console.threshold=INFO
+##日志文件${activemq.base}/data/activemq.log
+# File appender
+log4j.appender.logfile=org.apache.log4j.RollingFileAppender
+log4j.appender.logfile.file=${activemq.base}/data/activemq.log
+log4j.appender.logfile.maxFileSize=1024KB
+log4j.appender.logfile.maxBackupIndex=5
+log4j.appender.logfile.append=true
+log4j.appender.logfile.layout=org.apache.log4j.PatternLayout
+log4j.appender.logfile.layout.ConversionPattern=%d | %-5p | %m | %c | %t%n
+# use some of the following patterns to see MDC logging data
+#
+# %X{activemq.broker}
+# %X{activemq.connector}
+# %X{activemq.destination}
+#
+# e.g.
+#
+# log4j.appender.logfile.layout.ConversionPattern=%d | %-20.20X{activemq.connector} | %-5p | %m | %c | %t%n
+
+log4j.throwableRenderer=org.apache.log4j.EnhancedThrowableRenderer
+
+###########
+# Audit log
+###########
+#验证日志文件
+log4j.additivity.org.apache.activemq.audit=false
+log4j.logger.org.apache.activemq.audit=INFO, audit
+
+log4j.appender.audit=org.apache.log4j.RollingFileAppender
+log4j.appender.audit.file=${activemq.base}/data/audit.log
+log4j.appender.audit.maxFileSize=1024KB
+log4j.appender.audit.maxBackupIndex=5
+log4j.appender.audit.append=true
+log4j.appender.audit.layout=org.apache.log4j.PatternLayout
+log4j.appender.audit.layout.ConversionPattern=%-5p | %m | %t%n
+[activemq@zabbix conf]$  
+
+data：数据目录，包含activemq的进程文件，数据文件，及日志文件
+
+[activemq@zabbix apache-activemq-5.12.1]$ cd data/
+[activemq@zabbix data]$ ls
+activemq.log  activemq.pid.stop  audit.log  kahadb
+[activemq@zabbix data]$ cd kahadb/
+[activemq@zabbix kahadb]$ ls
+db-1.log  db.data  db.redo  lock
+[activemq@zabbix kahadb]$ 
+
+docs：用户使用帮助相关文件
+
+[activemq@zabbix apache-activemq-5.12.1]$ cd docs/
+[activemq@zabbix docs]$ ls
+index.html  user-guide.html  WebConsole-README.txt
+
+
+examples：配置文件，及java操作ActiveMQ相关实例
+[activemq@zabbix apache-activemq-5.12.1]$ cd examples/
+[activemq@zabbix examples]$ ls
+amqp  conf  mqtt  openwire  other  stomp
+[activemq@zabbix examples]$ 
+配置文件实例
+[activemq@zabbix examples]$ cd conf/
+[activemq@zabbix conf]$ ls
+activemq-demo.xml                     activemq-jdbc.xml                 activemq-security.xml                activemq-stomp.xml       jetty-demo.xml
+activemq-dynamic-network-broker1.xml  activemq-leveldb-replicating.xml  activemq-specjms.xml                 activemq-throughput.xml  log4j.properties
+activemq-dynamic-network-broker2.xml  activemq-mqtt.xml                 activemq-static-network-broker1.xml  activemq.xml             resin-web.xml
+activemq-jdbc-performance.xml         activemq-scalability.xml          activemq-static-network-broker2.xml  camel.xml                web.xml
+
+java操作ActiveMQ相关实例
+[activemq@zabbix examples]$ cd openwire/
+[activemq@zabbix openwire]$ ls
+advanced-scenarios  cpp  csharp  ecommerce  exploring-jms  java  swissarmy
+#java实例
+java
+#c实例
+cpp
+#c实例
+csharp
+
+lib：activemq jar包
+[activemq@zabbix apache-activemq-5.12.1]$ cd lib/
+[activemq@zabbix lib]$ ls
+activemq-broker-5.12.1.jar        activemq-openwire-legacy-5.12.1.jar  camel                                        hawtbuf-1.11.jar
+activemq-client-5.12.1.jar        activemq-protobuf-1.1.jar            extra                                        jcl-over-slf4j-1.7.10.jar
+activemq-console-5.12.1.jar       activemq-rar.txt                     geronimo-j2ee-management_1.1_spec-1.0.1.jar  optional
+activemq-jaas-5.12.1.jar          activemq-spring-5.12.1.jar           geronimo-jms_1.1_spec-1.1.1.jar              slf4j-api-1.7.10.jar
+activemq-kahadb-store-5.12.1.jar  activemq-web-5.12.1.jar              geronimo-jta_1.0.1B_spec-1.0.1.jar           web

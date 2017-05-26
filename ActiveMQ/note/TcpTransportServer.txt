@@ -1,0 +1,44 @@
+public class TcpTransportServer extends TransportServerThreadSupport
+    implements ServiceListener
+{
+
+public abstract class ServiceSupport
+    implements Service
+{
+
+    public ServiceSupport()
+    {
+        started = new AtomicBoolean(false);
+        stopping = new AtomicBoolean(false);
+        stopped = new AtomicBoolean(false);
+        serviceListeners = new CopyOnWriteArrayList();
+    }
+    public void start()
+        throws Exception
+    {
+        boolean success;
+        if(!started.compareAndSet(false, true))
+            break MISSING_BLOCK_LABEL_93;
+        success = false;
+        stopped.set(false);
+        preStart();
+        doStart();
+        success = true;
+        started.set(success);
+        break MISSING_BLOCK_LABEL_54;
+        Exception exception;
+        exception;
+        started.set(success);
+        throw exception;
+        ServiceListener l;
+        for(Iterator i$ = serviceListeners.iterator(); i$.hasNext(); l.started(this))
+            l = (ServiceListener)i$.next();
+
+    }
+}
+public interface ServiceListener
+{
+    public abstract void started(Service service);
+
+    public abstract void stopped(Service service);
+}

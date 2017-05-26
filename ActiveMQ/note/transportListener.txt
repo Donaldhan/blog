@@ -1,0 +1,212 @@
+//ActiveMQConnectionFactory
+ public Connection createConnection()
+        throws JMSException
+    {
+        return createActiveMQConnection();
+    }
+ protected ActiveMQConnection createActiveMQConnection()
+        throws JMSException
+    {
+        return createActiveMQConnection(userName, password);
+    }
+    //最终ActiveMQ创建连接方法，返回的为ActiveMQConnection
+     protected ActiveMQConnection createActiveMQConnection(String userName, String password)
+        throws JMSException
+    {
+        ActiveMQConnection connection;
+        if(brokerURL == null)
+            throw new ConfigurationException("brokerURL not set.");
+        connection = null;
+	//创建transport
+        Transport transport = createTransport();
+	//创建连接
+        connection = createActiveMQConnection(transport, factoryStats);
+	//设置连接用户密码
+        connection.setUserName(userName);
+        connection.setPassword(password);
+	//配置连接
+        configureConnection(connection);
+	//启动transport
+        transport.start();
+        if(clientID != null)
+            connection.setDefaultClientID(clientID);
+        return connection;
+        catch(Throwable throwable1) { }
+        throw JMSExceptionSupport.create((new StringBuilder()).append("Could not connect to broker URL: ").append(brokerURL).append(". Reason: ").append(e).toString(), e);
+    }
+e.启动transport
+transport.start();
+//启动TcpTransport线程
+
+public class TcpTransport extends TransportThreadSupport
+    implements Transport, Service, Runnable{
+public void run()
+    {
+        LOG.trace((new StringBuilder()).append("TCP consumer thread for ").append(this).append(" starting").toString());
+        runnerThread = Thread.currentThread();
+        for(; !isStopped(); doRun());
+    }
+    protected void doRun()
+        throws IOException
+    {
+        try
+        {   
+	    //消费命令
+            Object command = readCommand();
+	    //开始消费
+            doConsume(command);
+        }
+    }
+//TransportSupport
+public abstract class TransportSupport extends ServiceSupport
+    implements Transport
+{
+    TransportListener transportListener;//消息监听器
+    public void doConsume(Object command)
+    {
+        if(command != null)
+            if(transportListener != null)
+	        //启动监听器，监听消息，如果消息监听器不为空，
+                transportListener.onCommand(command);
+            else
+                LOG.error((new StringBuilder()).append("No transportListener available to process inbound command: ").append(command).toString());
+    }
+}
+public class ActiveMQConnection
+    implements Connection, TopicConnection, QueueConnection, StatsCapable, Closeable, TransportListener, EnhancedConnection
+{
+  protected ActiveMQConnection(final Transport transport, IdGenerator clientIdGenerator, IdGenerator connectionIdGenerator, JMSStatsImpl factoryStats)
+        throws Exception
+    {
+        this.transport.setTransportListener(this);
+    }
+
+   public void onCommand(Object o)
+    {
+        final Command command = (Command)o;
+        if(!closed.get() && command != null)
+            try
+            {
+                command.visit(new CommandVisitorAdapter() {
+
+                    public Response processMessageDispatch(MessageDispatch md)
+                        throws Exception
+                    {
+                        waitForTransportInterruptionProcessingToComplete();
+                        ActiveMQDispatcher dispatcher = (ActiveMQDispatcher)dispatchers.get(md.getConsumerId());
+                        if(dispatcher != null)
+                        {
+                            Message msg = md.getMessage();
+                            if(msg != null)
+                            {
+                                msg = msg.copy();
+                                msg.setReadOnlyBody(true);
+                                msg.setReadOnlyProperties(true);
+                                msg.setRedeliveryCounter(md.getRedeliveryCounter());
+                                msg.setConnection(ActiveMQConnection.this);
+                                msg.setMemoryUsage(null);
+                                md.setMessage(msg);
+                            }
+                            dispatcher.dispatch(md);
+                        } else
+                        {
+                            ActiveMQConnection.LOG.debug("{} no dispatcher for {} in {}", new Object[] {
+                                this, md, dispatchers
+                            });
+                        }
+                        return null;
+                    }
+
+                    public Response processProducerAck(ProducerAck pa)
+                        throws Exception
+                    {
+                        if(pa != null && pa.getProducerId() != null)
+                        {
+                            ActiveMQMessageProducer producer = (ActiveMQMessageProducer)producers.get(pa.getProducerId());
+                            if(producer != null)
+                                producer.onProducerAck(pa);
+                        }
+                        return null;
+                    }
+
+                    public Response processBrokerInfo(BrokerInfo info)
+                        throws Exception
+                    {
+                        brokerInfo = info;
+                        brokerInfoReceived.countDown();
+                        optimizeAcknowledge = brokerInfo.isFaultTolerantConfiguration() ? 0 : 1;
+                        getBlobTransferPolicy().setBrokerUploadUrl(info.getBrokerUploadUrl());
+                        return null;
+                    }
+
+                    public Response processConnectionError(final ConnectionError error)
+                        throws Exception
+                    {
+                        executor.execute(new Runnable() {
+
+                            public void run()
+                            {
+                                onAsyncException(error.getException());
+                            }
+
+                            final ConnectionError val$error;
+                            final _cls3 this$1;
+
+                    
+                    {
+                        this$1 = _cls3.this;
+                        error = connectionerror;
+                        super();
+                    }
+                        });
+                        return null;
+                    }
+
+                    public Response processControlCommand(ControlCommand command)
+                        throws Exception
+                    {
+                        onControlCommand(command);
+                        return null;
+                    }
+
+                    public Response processConnectionControl(ConnectionControl control)
+                        throws Exception
+                    {
+                        onConnectionControl((ConnectionControl)command);
+                        return null;
+                    }
+
+                    public Response processConsumerControl(ConsumerControl control)
+                        throws Exception
+                    {
+                        onConsumerControl((ConsumerControl)command);
+                        return null;
+                    }
+
+                    public Response processWireFormat(WireFormatInfo info)
+                        throws Exception
+                    {
+                        onWireFormatInfo((WireFormatInfo)command);
+                        return null;
+                    }
+
+                    final Command val$command;
+                    final ActiveMQConnection this$0;
+
+            
+            {
+                this$0 = ActiveMQConnection.this;
+                command = command1;
+                super();
+            }
+                });
+            }
+            catch(Exception e)
+            {
+                onClientInternalException(e);
+            }
+        TransportListener listener;
+        for(Iterator iter = transportListeners.iterator(); iter.hasNext(); listener.onCommand(command))
+            listener = (TransportListener)iter.next();
+
+    }

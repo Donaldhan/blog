@@ -1,0 +1,2 @@
+./activemq start 
+查看脚本，activeMQ如何启动

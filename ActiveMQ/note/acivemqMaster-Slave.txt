@@ -1,0 +1,499 @@
+ActiveMQ实现负载均衡+高可用部署方案:http://www.open-open.com/lib/view/open1400126457817.html
+The Failover Transport(连接高可用集群):http://activemq.apache.org/failover-transport-reference.html
+ActiveMQ的几种集群配置：http://www.tuicool.com/articles/yMbUBfJ
+ActiveMQ高可用集群方案：http://www.tuicool.com/articles/BvYZfy7
+Xml Configuration：http://activemq.apache.org/xml-configuration.html
+Initial Configuration：http://activemq.apache.org/initial-configuration.html
+Persistence：http://activemq.apache.org/persistence.html
+MasterSlave：http://activemq.apache.org/masterslave.html
+Zookeeper:http://zookeeper.apache.org/doc/r3.4.6/zookeeperStarted.html#sc_RunningReplicatedZooKeeper
+
+上面的集群方案中，有介绍ActiveMQ的方案，有KahaDB，JDBC，LevelDB，这几种方式，
+很多上面的连接有介绍，我们就不重复造轮子了，本文讲的是基于LevelDB的Zookeeper高可用集群方案，
+只有一个Master，高可用解决了，负载是个问题，如果考虑负载性能问题，可以考虑族集群策略，具体
+访问Initial Configuration后的连接，下面开始讲集群搭建
+
+环境：centos7，zookeeper-3.4.6，apache-activemq-5.12.1
+主机名    ip              内存    硬盘
+zabbix    192.168.126.128   2G     30G
+agent133  192.168.126.133   2G     30G
+agent138  192.168.126.138   2G     30G
+
+配各主机名和地址映射，如下（以138为例）
+Last login: Wed Dec 21 19:52:01 CST 2016 on pts/3
+[root@agent138 ~]# cat /etc/hosts
+127.0.0.1   localhost
+192.168.126.128 zabbix
+192.168.126.133 agent133
+192.168.126.138 agent138
+
+[root@agent138 ~]# cat /etc/hostname 
+agent138
+[root@agent138 ~]# 
+
+
+
+先在128上安装zookeeper和activeMQ
+下载zookeeper-3.4.6.tar.gz解压，配置zookeeper
+[root@zabbix activemq]# ls
+apache-activemq-5.12.1  zookeeper-3.4.6
+[root@zabbix activemq]# cd zookeeper-3.4.6/
+[root@zabbix zookeeper-3.4.6]# ls
+bin        CHANGES.txt  contrib     docs             ivy.xml  LICENSE.txt  README_packaging.txt  recipes  zookeeper-3.4.6.jar      zookeeper-3.4.6.jar.md5
+build.xml  conf         dist-maven  ivysettings.xml  lib      NOTICE.txt   README.txt            src      zookeeper-3.4.6.jar.asc  zookeeper-3.4.6.jar.sha1
+[root@zabbix zookeeper-3.4.6]# cd conf/
+[root@zabbix conf]# ls
+configuration.xsl  log4j.properties  zoo_sample.cfg
+
+拷贝一个配置文件
+[root@zabbix conf]# cp zoo.cfg
+cp: missing destination file operand after ‘zoo.cfg’
+Try 'cp --help' for more information.
+[root@zabbix conf]# cp zoo_sample.cfg zoo.cfg
+[root@zabbix conf]# ls
+configuration.xsl  log4j.properties  zoo.cfg  zoo_sample.cfg
+
+修改配置文件
+[root@zabbix conf]# vim zoo.cfg 
+
+具体如下
+[root@zabbix conf]# more zoo.cfg 
+# The number of milliseconds of each tick
+tickTime=2000
+# The number of ticks that the initial 
+# synchronization phase can take
+initLimit=10
+# The number of ticks that can pass between 
+# sending a request and getting an acknowledgement
+syncLimit=5
+# the directory where the snapshot is stored.
+# do not use /tmp for storage, /tmp here is just 
+# example sakes.
+#数据目录
+dataDir=/activemq/zdata
+# the port at which the clients will connect
+客户端监听接口
+clientPort=2181
+# the maximum number of client connections.
+# increase this if you need to handle more clients
+#maxClientCnxns=60
+#
+# Be sure to read the maintenance section of the 
+# administrator guide before turning on autopurge.
+#
+# http://zookeeper.apache.org/doc/current/zookeeperAdmin.html#sc_maintenance
+#
+# The number of snapshots to retain in dataDir
+#autopurge.snapRetainCount=3
+# Purge task interval in hours
+# Set to "0" to disable auto purge feature
+#autopurge.purgeInterval=1
+#2888为peer通信端口，3888为选举端口
+server.1=192.168.126.128:2888:3888
+server.2=192.168.126.133:2888:3888
+server.3=192.168.126.138:2888:3888
+[root@zabbix conf]# 
+进入acivemq文件夹创建zookeeper数据文件夹zdata，并在zdata中创建myid文件内为1
+[root@zabbix activemq]# ls
+apache-activemq-5.12.1  zookeeper-3.4.6
+[root@zabbix activemq]# mkdir zdata
+[root@zabbix activemq]# ls
+apache-activemq-5.12.1  zdata  zookeeper-3.4.6
+[root@zabbix activemq]# cd z
+zdata/           zookeeper-3.4.6/ 
+[root@zabbix activemq]# cd zdata/
+[root@zabbix zdata]# ls
+[root@zabbix zdata]# vim myid
+[root@zabbix zdata]# more myid 
+1
+修改日志文件配置
+[root@zabbix zookeeper-3.4.6]# cd conf/
+[root@zabbix conf]# ls
+configuration.xsl  log4j.properties  zoo.cfg  zoo_sample.cfg
+[root@zabbix conf]# vim log4j.properties 
+[root@zabbix conf]# more log4j.properties 
+# Define some default values that can be overridden by system properties
+zookeeper.root.logger=INFO, CONSOLE
+zookeeper.console.threshold=INFO
+zookeeper.log.dir=/activemq/zlog
+zookeeper.log.file=zookeeper.log
+zookeeper.log.threshold=DEBUG
+zookeeper.tracelog.dir=/activemq/zlog
+zookeeper.tracelog.file=zookeeper_trace.log
+创建日志文件夹
+[root@zabbix conf]# cd ..
+[root@zabbix zookeeper-3.4.6]# cd ..
+[root@zabbix activemq]# mkdir zlog
+[root@zabbix activemq]# ls
+apache-activemq-5.12.1  zdata  zlog  zookeeper-3.4.6
+[root@zabbix activemq]# 
+
+将zookeeper拷贝到133与138两台机上，并修改myid文件的内容为2和3
+
+安装ActiveMQ，下apache-activemq-5.12.1.tar.gz解压
+配置ActiveMQ
+主要有3个部分
+监听client：transport connectors which consist of transport channels and wire formats
+集权连接：network connectors using network channels or discovery agents
+持久化：persistence providers & locations
+
+[root@zabbix activemq]# ls
+apache-activemq-5.12.1  zdata  zlog  zookeeper-3.4.6
+[root@zabbix activemq]# cd apache-activemq-5.12.1/
+[root@zabbix apache-activemq-5.12.1]# ls
+activemq-all-5.12.1.jar  bin  conf  data  docs  examples  lib  LICENSE  NOTICE  README.txt  tmp  webapps  webapps-demo
+[root@zabbix apache-activemq-5.12.1]# cd conf/
+[root@zabbix conf]# 
+[root@zabbix conf]# vim activemq.xml 
+[root@zabbix conf]# more activemq.xml 
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one or more
+    contributor license agreements.  See the NOTICE file distributed with
+    this work for additional information regarding copyright ownership.
+    The ASF licenses this file to You under the Apache License, Version 2.0
+    (the "License"); you may not use this file except in compliance with
+    the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+-->
+<!-- START SNIPPET: example -->
+<beans
+  xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+  http://activemq.apache.org/schema/core http://activemq.apache.org/schema/core/activemq-core.xsd">
+
+    <!-- Allows us to use system properties as variables in this configuration file -->
+    <bean class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+        <property name="locations">
+            <value>file:${activemq.conf}/credentials.properties</value>
+        </property>
+    </bean>
+
+   <!-- Allows accessing the server log -->
+    <bean id="logQuery" class="io.fabric8.insight.log.log4j.Log4jLogQuery"
+          lazy-init="false" scope="singleton"
+          init-method="start" destroy-method="stop">
+    </bean>
+
+    <!--
+        The <broker> element is used to configure the ActiveMQ broker.
+    -->
+    ##
+    <broker xmlns="http://activemq.apache.org/schema/core" brokerName="mqHa" dataDirectory="${activemq.data}">
+
+        <destinationPolicy>
+            <policyMap>
+              <policyEntries>
+                <policyEntry topic=">" >
+                    <!-- The constantPendingMessageLimitStrategy is used to prevent
+                         slow topic consumers to block producers and affect other consumers
+                         by limiting the number of messages that are retained
+                         For more information, see:
+
+                         http://activemq.apache.org/slow-consumer-handling.html
+
+                    -->
+                  <pendingMessageLimitStrategy>
+                    <constantPendingMessageLimitStrategy limit="1000"/>
+                  </pendingMessageLimitStrategy>
+                </policyEntry>
+              </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+
+
+        <!--
+            The managementContext is used to configure how ActiveMQ is exposed in
+            JMX. By default, ActiveMQ uses the MBean server that is started by
+            the JVM. For more information, see:
+
+            http://activemq.apache.org/jmx.html
+        -->
+        <managementContext>
+            <managementContext createConnector="true"/>
+        </managementContext>
+
+        <!--
+            Configure message persistence for the broker. The default persistence
+            mechanism is the KahaDB store (identified by the kahaDB tag).
+            For more information, see:
+
+            http://activemq.apache.org/persistence.html
+        -->
+        <!--
+        <persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"/>
+        </persistenceAdapter>
+        -->
+       <persistenceAdapter>
+          <replicatedLevelDB
+           directory="${activemq.data}/levelDB"
+           replicas="3"
+           bind="tcp://192.168.126.128:61619"
+           zkAddress="zabbix:2181,agent133:2181,agent138:2181"
+           zkPath="/activemq/zdata"
+           hostname="zabbix"
+             />
+       </persistenceAdapter>
+       ...
+        <transportConnectors>
+            <!-- DOS protection, limit concurrent connections to 1000 and frame size to 100MB -->
+            <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+        </transportConnectors>
+
+    ...
+    </broker>
+...
+</beans>
+[root@zabbix conf]#  
+关键在下面两个配置brokerName="mqHa"，集群中每个节点的brokerName要相同
+<broker xmlns="http://activemq.apache.org/schema/core" brokerName="mqHa" dataDirectory="${activemq.data}">
+
+<persistenceAdapter>
+    <replicatedLevelDB
+      directory="${activemq.data}/levelDB"
+      replicas="3"
+      bind="tcp://192.168.126.128:61619"
+      zkAddress="zabbix:2181,agent133:2181,agent138:2181"
+      zkPath="${activemq.data}/leveldb-stores"
+      hostname="zabbix"
+      />
+</persistenceAdapter>
+
+directory:LevelDB目录，存储LevelDB数据，不存在则会自动创建
+replicas：集群存活节点数,必须有(replicas/2)+1节点存活
+bind：当节点选为master时，绑定端口地址，用于集群间的复制
+zkAddress：zookeeper相互通信地址
+zkPath：存储zookeeper选举master，需要交换的数据目录/activemq/zdata（zookeeper数据目录）
+hostname：主机名
+注：bind地址和hostname不同节点不一样
+
+将apache-activemq-5.12.1拷贝到133和138两台机上，然后修改bind地址和hostname
+
+同时修改防火墙规则：
+[root@zabbix conf]#  vim /etc/sysconfig/iptables
+[root@zabbix conf]# more /etc/sysconfig/iptables
+# sample configuration for iptables service
+# you can edit this manually or use system-config-firewall
+# please do not ask us to add additional ports/services to this default configuration
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 25 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 3306 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 10051 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 6379 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 26379 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 8161 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 61616 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 61619 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 2181 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 2888 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 3888 -j ACCEPT
+-A INPUT -j REJECT --reject-with icmp-host-prohibited
+-A FORWARD -j REJECT --reject-with icmp-host-prohibited
+COMMIT
+[root@zabbix conf]# service iptables restart
+Redirecting to /bin/systemctl restart  iptables.service
+[root@zabbix conf]# 
+
+
+
+启动zookeeper集群
+128，follower
+[root@zabbix bin]# ./zkServer.sh start
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Starting zookeeper ... STARTED
+[root@zabbix bin]# ./zkServer.sh status
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Error contacting service. It is probably not running.
+[root@zabbix bin]# ./zkServer.sh status
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Mode: follower
+[root@zabbix bin]# 
+
+133，leader
+[root@agent133 bin]# ./zkServer.sh start
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Starting zookeeper ... STARTED
+[root@agent133 bin]# ./zkServer.sh status
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Mode: leader
+[root@agent133 bin]# 
+
+138，follower
+[root@agent138 bin]# ./zkServer.sh start
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Starting zookeeper ... STARTED
+[root@agent138 bin]# ./zkServer.sh status
+JMX enabled by default
+Using config: /activemq/zookeeper-3.4.6/bin/../conf/zoo.cfg
+Mode: follower
+[root@agent138 bin]# 
+
+启动ActiveMQ
+
+
+[root@zabbix bin]# ./activemq start
+INFO: Loading '/activemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/usr/bin/java'
+INFO: Starting - inspect logfiles specified in logging.properties and log4j.properties to get details
+INFO: pidfile created : '/activemq/apache-activemq-5.12.1//data/activemq.pid' (pid '18369')
+
+
+128 日志信息
+[root@zabbix data]#tail -f activemq.log
+2016-12-28 17:56:16,087 | INFO  | Master started: tcp://zabbix:61619 | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-2
+2016-12-28 17:56:17,144 | WARN  | Store update waiting on 1 replica(s) to catch up to log position 0.  | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:18,160 | WARN  | Store update waiting on 1 replica(s) to catch up to log position 0.  | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:19,168 | WARN  | Store update waiting on 1 replica(s) to catch up to log position 0.  | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:20,169 | WARN  | Store update waiting on 1 replica(s) to catch up to log position 0.  | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:20,574 | INFO  | Slave has connected: 8f5b102a-b046-4d5a-a957-830afcf630a0 | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | hawtdispatch-DEFAULT-2
+
+可以看出128为master
+
+
+查看133日志信息：
+
+Using the pure java LevelDB implementation. | org.apache.activemq.leveldb.LevelDBClient | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:16,633 | INFO  | Attaching to master: tcp://zabbix:61619 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:16,647 | INFO  | Slave started | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:21,508 | INFO  | Attaching... Downloaded 0.00/0.00 kb and 1/1 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 17:56:21,510 | INFO  | Attached | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+
+可以看出133为slave
+
+138日志信息
+ Using the pure java LevelDB implementation. | org.apache.activemq.leveldb.LevelDBClient | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:56,569 | INFO  | Attaching to master: tcp://zabbix:61619 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:56,588 | INFO  | Slave started | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 17:56:59,855 | INFO  | Attaching... Downloaded 0.00/0.00 kb and 1/1 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 17:56:59,856 | INFO  | Attached | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+
+可以看出138为slave
+
+访问http://192.168.126.128:8161/admin/index.jsp：
+创建队列testQueue，发送队列消息test Mater and slave;
+在128上查看进入队列数：
+[root@zabbix bin]# ./activemq query -QQueue=testQueue | grep EnqueueCount
+EnqueueCount = 1
+这是133，与138上还没有
+
+
+关闭128
+[root@zabbix bin]# ./activemq stop
+INFO: Loading '/activemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/usr/bin/java'
+INFO: Waiting at least 30 seconds for regular process termination of pid '20512' : 
+Java Runtime: Oracle Corporation 1.8.0_91 /usr/lib/jvm/java-1.8.0-openjdk-1.8.0.91-1.b14.el7_2.x86_64/jre
+  Heap sizes: current=62976k  free=62320k  max=932352k
+    JVM args: -Xms64M -Xmx1G -Djava.util.logging.config.file=logging.properties -Djava.security.auth.login.config=/activemq/apache-activemq-5.12.1//conf/login.config -Dactivemq.classpath=/activemq/apache-activemq-5.12.1//conf:/activemq/apache-activemq-5.12.1//../lib/ -Dactivemq.home=/activemq/apache-activemq-5.12.1/ -Dactivemq.base=/activemq/apache-activemq-5.12.1/ -Dactivemq.conf=/activemq/apache-activemq-5.12.1//conf -Dactivemq.data=/activemq/apache-activemq-5.12.1//data
+Extensions classpath:
+  [/activemq/apache-activemq-5.12.1/lib,/activemq/apache-activemq-5.12.1/lib/camel,/activemq/apache-activemq-5.12.1/lib/optional,/activemq/apache-activemq-5.12.1/lib/web,/activemq/apache-activemq-5.12.1/lib/extra]
+ACTIVEMQ_HOME: /activemq/apache-activemq-5.12.1
+ACTIVEMQ_BASE: /activemq/apache-activemq-5.12.1
+ACTIVEMQ_CONF: /activemq/apache-activemq-5.12.1/conf
+ACTIVEMQ_DATA: /activemq/apache-activemq-5.12.1/data
+Connecting to pid: 20512
+INFO: failed to resolve jmxUrl for pid:20512, using default JMX url
+Connecting to JMX URL: service:jmx:rmi:///jndi/rmi://localhost:1099/jmxrmi
+.Stopping broker: mqHa
+................ TERMINATED
+[root@zabbix bin]# 
+
+
+
+查看133日志：
+2016-12-28 18:10:40,229 | INFO  | Master started: tcp://agent133:61619 | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-3
+2016-12-28 18:10:41,232 | WARN  | Store update waiting on 1 replica(s) to catch up to log position 377.  | org.apache.activemq.leveldb.replicated.MasterLevelDBStore | ActiveMQ BrokerService[mqHa] Task-2
+133为master
+
+查看133队列消息，消息已经同步
+[root@agent133 bin]# ./activemq query -QQueue=testQueue | grep QueueSize
+QueueSize = 1
+[root@agent133 bin]# ./activemq query -QQueue=testQueue | grep EnqueueCount
+EnqueueCount = 0
+
+查看138日志：
+ Using the pure java LevelDB implementation. | org.apache.activemq.leveldb.LevelDBClient | ActiveMQ BrokerService[mqHa] Task-2
+2016-12-28 18:10:40,284 | INFO  | Attaching to master: tcp://agent133:61619 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | ActiveMQ BrokerService[mqHa] Task-2
+2016-12-28 18:10:40,285 | INFO  | Slave started | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-2
+2016-12-28 18:10:42,862 | INFO  | Slave requested: 0000000000000179.index/000003.log | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,865 | INFO  | Slave requested: 0000000000000179.index/MANIFEST-000002 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,866 | INFO  | Slave requested: 0000000000000179.index/CURRENT | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,896 | INFO  | Attaching... Downloaded 0.37/1.70 kb and 1/4 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,900 | INFO  | Attaching... Downloaded 1.64/1.70 kb and 2/4 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,902 | INFO  | Attaching... Downloaded 1.69/1.70 kb and 3/4 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,903 | INFO  | Attaching... Downloaded 1.70/1.70 kb and 4/4 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:10:42,903 | INFO  | Attached | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+
+可以看到138位slave，同时同步leveldb索引信息,
+
+
+
+重新启动128
+[root@zabbix bin]# ./activemq start
+INFO: Loading '/activemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/usr/bin/java'
+INFO: Starting - inspect logfiles specified in logging.properties and log4j.properties to get details
+INFO: pidfile created : '/activemq/apache-activemq-5.12.1//data/activemq.pid' (pid '21811')
+[root@zabbix bin]# ./activemq status
+INFO: Loading '/activemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/usr/bin/java'
+ActiveMQ is running (pid '21811')
+[root@zabbix bin]# 
+查看日志信息：
+2016-12-28 18:18:22,050 | INFO  | Using the pure java LevelDB implementation. | org.apache.activemq.leveldb.LevelDBClient | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 18:18:22,067 | INFO  | Attaching to master: tcp://agent133:61619 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 18:18:22,086 | INFO  | Slave started | org.apache.activemq.leveldb.replicated.MasterElector | ActiveMQ BrokerService[mqHa] Task-1
+2016-12-28 18:18:22,191 | INFO  | Slave skipping download of: log/0000000000000000.log | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,194 | INFO  | Slave requested: 0000000000000179.index/CURRENT | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,196 | INFO  | Slave requested: 0000000000000179.index/000003.log | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,197 | INFO  | Slave requested: 0000000000000179.index/MANIFEST-000002 | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,245 | INFO  | Attaching... Downloaded 0.02/1.33 kb and 1/3 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,247 | INFO  | Attaching... Downloaded 1.29/1.33 kb and 2/3 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,249 | INFO  | Attaching... Downloaded 1.33/1.33 kb and 3/3 files | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+2016-12-28 18:18:22,250 | INFO  | Attached | org.apache.activemq.leveldb.replicated.SlaveLevelDBStore | hawtdispatch-DEFAULT-1
+
+可以看出128为slave，同时同步leveldb索引信息,
+
+
+
+连接集群时只需要把url设为：
+failover:(tcp://192.168.126.128:61616,tcp://192.168.126.133:61616,tcp://192.168.126.138:61616)
+即可
+
+总结：
+使用ZooKeeper（集群）注册所有的ActiveMQ Broker。
+只有其中的一个Broker可以提供服务，被视为 Master，其他的 Broker 处于待机状态，
+被视为Slave。如果Master因故障而不能提供服务，Zookeeper会从Slave中选举出一个Broker充当Master。
+Slave连接Master并同步他们的存储状态，Slave不接受客户端连接。所有的存储操作都将被复制到 
+连接至 Master的Slaves。如果Master宕了，得到了最新更新的Slave会成为 Master。
+故障节点在恢复后会重新加入到集群中并连接Master进入Slave模式。
+是不是觉得和Redis Sentinel主从高可用的方式很像，
+这里的zookeeper起到的作用和reids里的sentinel作用差不多。
+当集群运行时，只有一个为Master可用，控制台可访问，有队列，订阅主题消息，而Slave上没有，
+只有在Master宕机时，重新选举的Master从源Master拷贝消息，Slave与新的Master连接，同步leveldb索引信息。

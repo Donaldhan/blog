@@ -1,0 +1,1999 @@
+JMS(ActiveMQ) PTP和PUB/SUB模式实例：[url]http://donald-draper.iteye.com/blog/2347445[/url]
+ActiveMQ连接工厂、连接详解:[url]http://donald-draper.iteye.com/admin/blogs/2348070[/url]
+ActiveMQ会话初始化:[url]http://donald-draper.iteye.com/admin/blogs/2348341[/url]
+ActiveMQ生产者：[url]http://donald-draper.iteye.com/blog/2348381[/url]
+ActiveMQ消费者：[url]http://donald-draper.iteye.com/admin/blogs/2348389[/url]
+
+
+[activemq@zabbix bin]$ more activemq
+...
+配置Active HOME，BASE，OPTS,CONF，JAVA_HOME&JAVA_CMD路径，
+...
+//执行jar包
+invokeJar(){
+   PIDFILE="$1"
+   TASK_TODO="$2"
+   RET="1"
+
+   if [ ! -f "${ACTIVEMQ_HOME}/bin/activemq.jar" ];then
+    echo "ERROR: '${ACTIVEMQ_HOME}/bin/activemq.jar' does not exist, define ACTIVEMQ_HOME in the config"
+    exit 1
+   fi
+   #执行active jar包
+   # Execute java binary
+   if [ -n "$TASK_TODO" ] && [ "$TASK_TODO" != "stop" ];then
+      $EXEC_OPTION $DOIT_PREFIX "\"$JAVACMD\" $ACTIVEMQ_OPTS $ACTIVEMQ_DEBUG_OPTS \
+              -Dactivemq.classpath=\"${ACTIVEMQ_CLASSPATH}\" \
+              -Dactivemq.home=\"${ACTIVEMQ_HOME}\" \
+              -Dactivemq.base=\"${ACTIVEMQ_BASE}\" \
+              -Dactivemq.conf=\"${ACTIVEMQ_CONF}\" \
+              -Dactivemq.data=\"${ACTIVEMQ_DATA}\" \
+              $ACTIVEMQ_CYGWIN \
+              -jar \"${ACTIVEMQ_HOME}/bin/activemq.jar\" $COMMANDLINE_ARGS >/dev/null 2>&1 &
+              RET=\"\$?\"; APID=\"\$!\";
+              echo \$APID > "${PIDFILE}";
+              echo \"INFO: pidfile created : '${PIDFILE}' (pid '\$APID')\";exit \$RET" $DOIT_POSTFIX
+      RET="$?"
+   
+#./activemq start 启动Broker
+invoke_start(){
+    if ( checkRunning );then
+      PID="`cat $ACTIVEMQ_PIDFILE`"
+      echo "INFO: Process with pid '$PID' is already running"
+      exit 0
+    fi
+
+    ACTIVEMQ_OPTS="$ACTIVEMQ_OPTS $ACTIVEMQ_SUNJMX_START $ACTIVEMQ_SSL_OPTS -Djava.awt.headless=true -Djava.io.tmpdir=\"${ACTIVEMQ_TMP}\""
+
+    echo "INFO: Starting - inspect logfiles specified in logging.properties and log4j.properties to get details"
+    invokeJar "$ACTIVEMQ_PIDFILE" start
+    exit "$?"
+}
+....
+[activemq@zabbix bin]$ ls
+activemq  activemq-diag  activemq.jar  env  linux-x86-32  linux-x86-64  macosx  wrapper.jar
+[activemq@zabbix bin]$ 
+执行以下命令，
+jar -xvf activemq.jar
+可以看到，activemq jar包中有一个类为Main，这就是active的启动入口
+package org.apache.activemq.console;
+public class Main
+{
+    //shell命令任务class
+    public static final String TASK_DEFAULT_CLASS = "org.apache.activemq.console.command.ShellCommand";
+    private static boolean useDefExt = true;
+    private File activeMQHome;//MQ家目录
+    private File activeMQBase;
+    private ClassLoader classLoader;//类加载器
+    //activeMQ 扩展目录
+    private final Set extensions = new LinkedHashSet();
+    //activeMQ 类加载路径
+    private final Set activeMQClassPath = new LinkedHashSet();
+
+}
+    public Main()
+    {
+    }
+    public static void main(String args[]){
+        //从洗通获取java io临时目录，没有则创建
+        File tmpdir = new File(System.getProperty("java.io.tmpdir"));
+        if(!tmpdir.exists())
+            tmpdir.mkdirs();
+        Main app = new Main();
+        List tokens = new LinkedList(Arrays.asList(args));
+	//解析扩展
+        app.parseExtensions(tokens);
+	//获取配置
+        File confDir = app.getActiveMQConfig();
+	//将配置文件添加到ClassPath
+        app.addClassPath(confDir);
+        if(useDefExt && app.canUseExtdir())
+        {
+            boolean baseIsHome = app.getActiveMQBase().equals(app.getActiveMQHome());
+            //创建lib目录
+	    File baseLibDir = new File(app.getActiveMQBase(), "lib");
+            File homeLibDir = new File(app.getActiveMQHome(), "lib");
+            if(!baseIsHome)
+                app.addExtensionDirectory(baseLibDir);
+            app.addExtensionDirectory(homeLibDir);
+	    //创建lib下的camel，optional，web，extra目录
+            if(!baseIsHome)
+            {
+                app.addExtensionDirectory(new File(baseLibDir, "camel"));
+                app.addExtensionDirectory(new File(baseLibDir, "optional"));
+                app.addExtensionDirectory(new File(baseLibDir, "web"));
+                app.addExtensionDirectory(new File(baseLibDir, "extra"));
+            }
+            app.addExtensionDirectory(new File(homeLibDir, "camel"));
+            app.addExtensionDirectory(new File(homeLibDir, "optional"));
+            app.addExtensionDirectory(new File(homeLibDir, "web"));
+            app.addExtensionDirectory(new File(homeLibDir, "extra"));
+        }
+	//从系统获取activemq.classpath，添加到
+        app.addClassPathList(System.getProperty("activemq.classpath"));
+        try
+        {
+	    //启动broker
+            int ret = app.runTaskClass(tokens);
+            System.exit(ret);
+        }
+        catch(ClassNotFoundException e)
+        {
+            System.out.println((new StringBuilder()).append("Could not load class: ").append(e.getMessage()).toString());
+            try
+            {
+                ClassLoader cl = app.getClassLoader();
+                if(cl != null)
+                {
+                    System.out.println("Class loader setup: ");
+                    printClassLoaderTree(cl);
+                }
+            }
+            catch(MalformedURLException malformedurlexception) { }
+            System.exit(1);
+        }
+        catch(Throwable e)
+        {
+            System.out.println((new StringBuilder()).append("Failed to execute main task. Reason: ").append(e).toString());
+            System.exit(1);
+        }
+    }
+1.解析扩展
+app.parseExtensions(tokens);
+
+public void parseExtensions(List tokens)
+    {
+        if(tokens.isEmpty())
+            return;
+        int count = tokens.size();
+        for(int i = 0; i < count;)
+        {
+            String token = (String)tokens.get(i);
+            if(token.equals("--extdir"))
+            {
+                count--;
+                tokens.remove(i);
+                    if(!extDir.isDirectory())
+                    {
+                        System.out.println((new StringBuilder()).append("Extension directory specified is not valid directory: ").append(extDir).toString());
+                        System.out.println("Ignoring extension directory option.");
+                    } else
+                    {
+		        //添加拓展目录
+                        addExtensionDirectory(extDir);
+                    }
+}
+
+//添加拓展目录
+    public void addExtensionDirectory(File directory)
+    {
+        extensions.add(directory);
+    }
+从上可以看出，解析拓展目录配置项，并将扩展目录添加到拓展集合中
+2.获取配置
+File confDir = app.getActiveMQConfig();
+ public File getActiveMQConfig()
+    {
+        File activeMQConfig = null;
+        if(System.getProperty("activemq.conf") != null)
+        {
+	    //从系统获取activemq.conf，如果不为空，则创建配置文件
+            activeMQConfig = new File(System.getProperty("activemq.conf"));
+        } else
+        {
+            activeMQConfig = new File((new StringBuilder()).append(getActiveMQBase()).append("/conf").toString());
+            System.setProperty("activemq.conf", activeMQConfig.getAbsolutePath());
+        }
+        return activeMQConfig;
+    }
+
+3.将配置文件添加到ClassPath
+app.addClassPath(confDir);
+  public void addClassPath(File classpath)
+    {
+        activeMQClassPath.add(classpath);
+    }
+将配置文件添加到ClassPath集合中
+4.
+boolean baseIsHome = app.getActiveMQBase().equals(app.getActiveMQHome());
+//创建lib目录
+ File baseLibDir = new File(app.getActiveMQBase(), "lib");
+ File homeLibDir = new File(app.getActiveMQHome(), "lib");
+ if(!baseIsHome)
+     app.addExtensionDirectory(baseLibDir);
+ app.addExtensionDirectory(homeLibDir);
+ //创建lib下的camel，optional，web，extra目录
+ app.addExtensionDirectory(new File(homeLibDir, "camel"));
+ app.addExtensionDirectory(new File(homeLibDir, "optional"));
+ app.addExtensionDirectory(new File(homeLibDir, "web"));
+ app.addExtensionDirectory(new File(homeLibDir, "extra"));
+
+将lib扩展目录添加到扩展目录集合中
+
+5.
+从系统获取activemq.classpath，添加到ClassPath集合中
+app.addClassPathList(System.getProperty("activemq.classpath"));
+
+6.
+启动broker
+ int ret = app.runTaskClass(tokens);
+
+
+ public int runTaskClass(List tokens)
+        throws Throwable
+    {
+        ClassLoader cl;
+	//获取java版本及home目录
+        StringBuilder buffer = new StringBuilder();
+        buffer.append(System.getProperty("java.vendor"));
+        buffer.append(" ");
+        buffer.append(System.getProperty("java.version"));
+        buffer.append(" ");
+        buffer.append(System.getProperty("java.home"));
+        System.out.println((new StringBuilder()).append("Java Runtime: ").append(buffer.toString()).toString());
+        buffer = new StringBuilder();
+	//获取java运行时环境的内存状况
+        buffer.append("current=");
+        buffer.append(Runtime.getRuntime().totalMemory() / 1024L);
+        buffer.append("k  free=");
+        buffer.append(Runtime.getRuntime().freeMemory() / 1024L);
+        buffer.append("k  max=");
+        buffer.append(Runtime.getRuntime().maxMemory() / 1024L);
+        buffer.append("k");
+        System.out.println((new StringBuilder()).append("  Heap sizes: ").append(buffer.toString()).toString());
+        List jvmArgs = ManagementFactory.getRuntimeMXBean().getInputArguments();
+        buffer = new StringBuilder();
+        Object arg;
+        for(Iterator i$ = jvmArgs.iterator(); i$.hasNext(); buffer.append(" ").append(arg))
+            arg = i$.next();
+        //配置MQ扩展目录，家目录，配置文件以及数据目录
+        System.out.println((new StringBuilder()).append("    JVM args:").append(buffer.toString()).toString());
+        System.out.println((new StringBuilder()).append("Extensions classpath:\n  ").append(getExtensionDirForLogging()).toString());
+        System.out.println((new StringBuilder()).append("ACTIVEMQ_HOME: ").append(getActiveMQHome()).toString());
+        System.out.println((new StringBuilder()).append("ACTIVEMQ_BASE: ").append(getActiveMQBase()).toString());
+        System.out.println((new StringBuilder()).append("ACTIVEMQ_CONF: ").append(getActiveMQConfig()).toString());
+        System.out.println((new StringBuilder()).append("ACTIVEMQ_DATA: ").append(getActiveMQDataDir()).toString());
+        //获取类加载器
+	cl = getClassLoader();
+        Thread.currentThread().setContextClassLoader(cl);
+        String args[];
+        Class task;
+        Method runTask;
+        args = (String[])tokens.toArray(new String[tokens.size()]);
+	//加载ShellCommand类
+        task = cl.loadClass("org.apache.activemq.console.command.ShellCommand");
+	//获取ShellCommand的main方法
+        runTask = task.getMethod("main", new Class[] {
+            [Ljava/lang/String;, java/io/InputStream, java/io/PrintStream
+        });
+	//调用ShellCommand的
+        return ((Integer)runTask.invoke(task.newInstance(), new Object[] {
+            args, System.in, System.out
+        })).intValue();
+        InvocationTargetException e;
+        e;
+        throw e.getCause();
+    }
+   //获取加载类
+    public ClassLoader getClassLoader()
+        throws MalformedURLException
+    {
+        if(classLoader == null)
+        {
+            classLoader = org/apache/activemq/console/Main.getClassLoader();
+            if(!extensions.isEmpty() || !activeMQClassPath.isEmpty())
+            {
+                ArrayList urls = new ArrayList();
+                Iterator iter;
+                File dir;
+                for(iter = activeMQClassPath.iterator(); iter.hasNext(); urls.add(dir.toURI().toURL()))
+                    dir = (File)iter.next();
+
+                iter = extensions.iterator();
+                do
+                {
+                    if(!iter.hasNext())
+                        break;
+                    File dir = (File)iter.next();
+                    if(dir.isDirectory())
+                    {
+                        File files[] = dir.listFiles();
+                        if(files != null)
+                        {
+                            Arrays.sort(files, new Comparator() {
+
+                                public int compare(File f1, File f2)
+                                {
+                                    return f1.getName().compareTo(f2.getName());
+                                }
+
+                                public volatile int compare(Object obj, Object obj1)
+                                {
+                                    return compare((File)obj, (File)obj1);
+                                }
+
+                                final Main this$0;
+
+            
+            {
+                this$0 = Main.this;
+                super();
+            }
+                            });
+                            int j = 0;
+                            while(j < files.length) 
+                            {
+                                if(files[j].getName().endsWith(".zip") || files[j].getName().endsWith(".jar"))
+                                    urls.add(files[j].toURI().toURL());
+                                j++;
+                            }
+                        }
+                    }
+                } while(true);
+                URL u[] = new URL[urls.size()];
+                urls.toArray(u);
+                classLoader = new URLClassLoader(u, classLoader);
+            }
+	    //设置当前线程类加载器
+            Thread.currentThread().setContextClassLoader(classLoader);
+        }
+        return classLoader;
+    }
+我们来看ShellCommand类，及其main方法
+
+public class ShellCommand extends AbstractCommand
+{
+    private boolean interactive;
+    private String helpFile[];
+    public ShellCommand()
+    {
+        this(false);
+    }
+     public ShellCommand(boolean interactive)
+    {
+        this.interactive = interactive;
+        ArrayList help = new ArrayList();
+        help.addAll(Arrays.asList(new String[] {
+            interactive ? "Usage: [task] [task-options] [task data]" : "Usage: Main [--extdir <dir>] [task] [task-options] [task data]", "", "Tasks:"
+        }));
+        ArrayList commands = getCommands();
+        Collections.sort(commands, new Comparator() {
+
+            public int compare(Command command, Command command1)
+            {
+                return command.getName().compareTo(command1.getName());
+            }
+
+            public volatile int compare(Object obj, Object obj1)
+            {
+                return compare((Command)obj, (Command)obj1);
+            }
+
+            final ShellCommand this$0;
+
+            
+            {
+                this$0 = ShellCommand.this;
+                super();
+            }
+        });
+        Command command;
+        for(Iterator i$ = commands.iterator(); i$.hasNext(); help.add(String.format("    %-24s - %s", new Object[] {
+    command.getName(), command.getOneLineDescription()
+})))
+            command = (Command)i$.next();
+
+        help.addAll(Arrays.asList(new String[] {
+            "", "Task Options (Options specific to each task):", "    --extdir <dir>  - Add the jar files in the directory to the classpath.", "    --version       - Display the version information.", (new StringBuilder()).append("    -h,-?,--help    - Display this help information. To display task specific help, use ").append(interactive ? "" : "Main ").append("[task] -h,-?,--help").toString(), "", "Task Data:", "    - Information needed by each specific task.", "", "JMX system property options:", 
+            "    -Dactivemq.jmx.url=<jmx service uri> (default is: 'service:jmx:rmi:///jndi/rmi://localhost:1099/jmxrmi')", "    -Dactivemq.jmx.user=<user name>", "    -Dactivemq.jmx.password=<password>", ""
+        }));
+	//将扩展目录，lib目录添加到辅助文件集合
+        helpFile = (String[])help.toArray(new String[help.size()]);
+    }
+}
+再看main方法：
+public static int main(String args[], InputStream in, PrintStream out)
+    {
+        CommandContext context;
+        List tokens;
+        ShellCommand main;
+	//创建命令上下文
+        context = new CommandContext();
+        context.setFormatter(new CommandShellOutputFormatter(out));
+        tokens = new ArrayList(Arrays.asList(args));
+        main = new ShellCommand();
+        main.setCommandContext(context);
+        //执行启动broker命令
+        main.execute(tokens);
+        return 0;
+        Exception e;
+        e;
+        context.printException(e);
+        return 1;
+    }
+
+来看执行启动broker命令
+main.execute(tokens);
+//AbstractCommand
+ public void execute(List tokens)
+        throws Exception
+    {
+        //解析activemq 命令参数
+        parseOptions(tokens);
+	//打印帮助命令
+        if(isPrintHelp)
+            printHelp();
+        else
+	//打印版本
+        if(isPrintVersion)
+            context.printVersion(ActiveMQConnectionMetaData.PROVIDER_VERSION);
+        else
+	    //启动broker
+            runTask(tokens);
+    }
+  //解析参数
+ protected void parseOptions(List tokens)
+        throws Exception
+    {
+        while(!tokens.isEmpty()) 
+        {
+            String token = (String)tokens.remove(0);
+            if(token.startsWith("-"))
+            {
+	        //以“-”开头，则为配置项，处理参数配置项
+                handleOption(token, tokens);
+            } else
+            {
+	        //否则为命令
+                tokens.add(0, token);
+                return;
+            }
+        }
+    }
+
+    protected void handleOption(String token, List tokens)
+        throws Exception
+    {
+        isPrintHelp = false;
+        isPrintVersion = false;
+        if(token.equals("-h") || token.equals("-?") || token.equals("--help"))
+        {
+	    //帮助信息，清除tokens
+            isPrintHelp = true;
+            tokens.clear();
+        } else
+        if(token.equals("--version"))
+        {
+	    //打印版本
+            isPrintVersion = true;
+            tokens.clear();
+        } else
+        if(token.startsWith("-D"))
+        {
+	    //系统参数
+            String key = token.substring(2);
+            String value = "";
+            int pos = key.indexOf("=");
+            if(pos >= 0)
+            {
+                value = key.substring(pos + 1);
+                key = key.substring(0, pos);
+            }
+            System.setProperty(key, value);
+        } else
+        {
+	   //扩展配置型
+            if(token.startsWith("--"))
+            {
+                String prop = token.substring(2);
+                if(tokens.isEmpty() || ((String)tokens.get(0)).startsWith("-"))
+                    context.print((new StringBuilder()).append("Property '").append(prop).append("' is not specified!").toString());
+                else
+                if(IntrospectionSupport.setProperty(this, prop, tokens.remove(0)))
+                    return;
+            }
+            context.printInfo((new StringBuilder()).append("Unrecognized option: ").append(token).toString());
+            isPrintHelp = true;
+        }
+    }
+回到启动broker中
+//打印帮助命令
+ if(isPrintHelp)
+     printHelp();
+//ShellCommand
+protected void printHelp()
+    {
+        context.printHelp(helpFile);
+    }
+
+CommandContext通过CommandShellOutputFormatter打印帮助文档
+//CommandShellOutputFormatter
+public class CommandShellOutputFormatter
+    implements OutputFormatter
+{
+   private OutputStream outputStream;
+   private PrintStream out;
+ public void printHelp(String helpMsgs[])
+    {
+        for(int i = 0; i < helpMsgs.length; i++)
+            out.println(helpMsgs[i]);
+
+        out.println();
+    }
+}
+
+
+从上面可以看当activemq的参数为帮助信息或版本信息，则打印相关信息，否则启动broker
+回到启动命令
+//启动broker
+runTask(tokens);
+
+
+//ShellCommand
+protected void runTask(List tokens)
+        throws Exception
+    {
+        if(tokens.size() > 0)
+        {
+            Command command = null;
+            String taskToken = (String)tokens.remove(0);
+            Iterator i$ = getCommands().iterator();
+            do
+            {
+                if(!i$.hasNext())
+                    break;
+                Command c = (Command)i$.next();
+                if(!taskToken.equals(c.getName()))
+                    continue;
+                command = c;
+                break;
+            } while(true);
+            if(command == null)
+                if(taskToken.equals("help"))
+                    printHelp();
+                else
+                    printHelp();
+            if(command != null)
+            {
+                command.setCommandContext(context);
+		//执行命令
+                command.execute(tokens);
+            }
+        } else
+        {
+            printHelp();
+        }
+    }
+我们来看start命令
+public class StartCommand extends AbstractCommand
+{
+    //配置文件
+    public static final String DEFAULT_CONFIG_URI = "xbean:activemq.xml";
+    //帮助文档
+    protected String helpFile[] = {
+        "Task Usage: Main start [start-options] [uri]", "Description: Creates and starts a broker using a configuration file, or a broker URI.", "", "Start Options:", "    -D<name>=<value>      Define a system property.", "    --version             Display the version information.", "    -h,-?,--help          Display the start broker help information.", "", "URI:", "", 
+        "    XBean based broker configuration:", "", "        Example: Main xbean:file:activemq.xml", "            Loads the xbean configuration file from the current working directory", "        Example: Main xbean:activemq.xml", "            Loads the xbean configuration file from the classpath", "", "    URI Parameter based broker configuration:", "", "        Example: Main broker:(tcp://localhost:61616, tcp://localhost:5000)?useJmx=true", 
+        "            Configures the broker with 2 transport connectors and jmx enabled", "        Example: Main broker:(tcp://localhost:61616, network:tcp://localhost:5000)?persistent=false", "            Configures the broker with 1 transport connector, and 1 network connector and persistence disabled", ""
+    };
+}
+
+//StartCommand
+
+ protected void runTask(List brokerURIs)
+        throws Exception
+    {
+        do
+        {
+            final BrokerService broker;
+            try
+            {
+                URI configURI;
+                if(brokerURIs.isEmpty())
+                    configURI = new URI("xbean:activemq.xml");
+                else
+                    configURI = new URI((String)brokerURIs.get(0));
+                System.out.println((new StringBuilder()).append("Loading message broker from: ").append(configURI).toString());
+                //BrokerFactory工厂根据配置文件创建Broker服务
+		broker = BrokerFactory.createBroker(configURI);
+		//启动Broker
+                broker.start();
+            }
+            catch(Exception e)
+            {
+                context.printException(new RuntimeException((new StringBuilder()).append("Failed to execute start task. Reason: ").append(e).toString(), e));
+                throw e;
+            }
+            if(!broker.waitUntilStarted())
+                throw new Exception(broker.getStartException());
+
+            final CountDownLatch shutdownLatch = new CountDownLatch(1);
+	    //添加停止broker的JVM回调挂钩
+            Thread jvmShutdownHook = new Thread() {
+
+                public void run()
+                {
+                    try
+                    {
+                        broker.stop();
+                    }
+                    catch(Exception exception) { }
+                }
+
+                final BrokerService val$broker;
+                final StartCommand this$0;
+
+            
+            {
+                this$0 = StartCommand.this;
+                broker = brokerservice;
+                super();
+            }
+            };
+	    //将停止broker的JVM回调挂钩添加到运行时环境
+            Runtime.getRuntime().addShutdownHook(jvmShutdownHook);
+            broker.addShutdownHook(new Runnable() {
+
+                public void run()
+                {
+                    shutdownLatch.countDown();
+                }
+
+                final CountDownLatch val$shutdownLatch;
+                final StartCommand this$0;
+
+            
+            {
+                this$0 = StartCommand.this;
+                shutdownLatch = countdownlatch;
+                super();
+            }
+            });
+	    //等待停止broker信号shutdownLatch
+            shutdownLatch.await();
+            try
+            {
+                Runtime.getRuntime().removeShutdownHook(jvmShutdownHook);
+            }
+            catch(Throwable throwable) { }
+            if(broker.isRestartRequested())
+                System.out.println("Restarting broker");
+            else
+                return;
+        } while(true);
+    }
+
+来看BrokerFactory工厂根据配置文件创建Broker服务
+broker = BrokerFactory.createBroker(configURI);
+
+ public static BrokerService createBroker(URI brokerURI)
+        throws Exception
+    {
+        return createBroker(brokerURI, false);
+    }
+    public static BrokerService createBroker(URI brokerURI, boolean startBroker)
+        throws Exception
+    {
+        if(brokerURI.getScheme() == null)
+            throw new IllegalArgumentException((new StringBuilder()).append("Invalid broker URI, no scheme specified: ").append(brokerURI).toString());
+        //a.创建broker工厂处理handler
+	BrokerFactoryHandler handler = createBrokerFactoryHandler(brokerURI.getScheme());
+	//b.由Handler创建BrokerService
+        BrokerService broker = handler.createBroker(brokerURI);
+        if(startBroker)
+            broker.start();
+        return broker;
+    }
+
+a.创建broker工厂处理handler
+BrokerFactoryHandler handler = createBrokerFactoryHandler(brokerURI.getScheme());
+有上面configURI = new URI("xbean:activemq.xml")，activeMQ将配置文件，放在JMX中管理，
+协议为Xbean
+public final class BrokerFactory
+{
+   //看到这个是不是很熟悉，根据协议机制，加载BROKER_FACTORY
+   private static final FactoryFinder BROKER_FACTORY_HANDLER_FINDER = new FactoryFinder("META-INF/services/org/apache/activemq/broker/");
+   private static final ThreadLocal START_DEFAULT = new ThreadLocal();
+   //创建broker工厂handler，
+   public static BrokerFactoryHandler createBrokerFactoryHandler(String type)
+        throws IOException
+    {
+        //这种模式，前面已经说过，加载META-INF/services/org/apache/activemq/broker/
+	//文件夹下xbean文件中class属性对应的broker工厂类
+        return (BrokerFactoryHandler)BROKER_FACTORY_HANDLER_FINDER.newInstance(type);
+    }
+}
+xbean文件
+class=org.apache.activemq.xbean.XBeanBrokerFactory
+
+b.由Handler创建BrokerService
+BrokerService broker = handler.createBroker(brokerURI);
+
+//XBeanBrokerFactory
+
+public class XBeanBrokerFactory
+    implements BrokerFactoryHandler
+{
+   private boolean validate;
+    static 
+    {
+        PropertyEditorManager.registerEditor(java/net/URI, org/apache/xbean/spring/context/impl/URIEditor);
+    }
+}
+//XBeanBrokerFactory
+public BrokerService createBroker(URI config)
+        throws Exception
+    {
+        String uri = config.getSchemeSpecificPart();
+        if(uri.lastIndexOf('?') != -1)
+        {
+            IntrospectionSupport.setProperties(this, URISupport.parseQuery(uri));
+            uri = uri.substring(0, uri.lastIndexOf('?'));
+        }
+	//创建上下文
+        ApplicationContext context = createApplicationContext(uri);
+        BrokerService broker = null;
+        try
+        {
+	    //从上下文中获取broker属性
+            broker = (BrokerService)context.getBean("broker");
+        }
+        catch(BeansException beansexception) { }
+        if(broker == null)
+        {
+            String names[] = context.getBeanNamesForType(org/apache/activemq/broker/BrokerService);
+            int i = 0;
+            do
+            {
+                if(i >= names.length)
+                    break;
+                String name = names[i];
+                broker = (BrokerService)context.getBean(name);
+                if(broker != null)
+                    break;
+                i++;
+            } while(true);
+        }
+        if(broker == null)
+        {
+            throw new IllegalArgumentException((new StringBuilder()).append("The configuration has no BrokerService instance for resource: ").append(config).toString());
+        } else
+        {
+            SpringBrokerContext springBrokerContext = new SpringBrokerContext();
+            springBrokerContext.setApplicationContext(context);
+            springBrokerContext.setConfigurationUrl(uri);
+            broker.setBrokerContext(springBrokerContext);
+            return broker;
+        }
+    }
+
+ //创建应用上下文，通Spring的机制
+ protected ApplicationContext createApplicationContext(String uri)
+        throws MalformedURLException
+    {
+        Resource resource;
+        resource = Utils.resourceFromString(uri);
+        LOG.debug((new StringBuilder()).append("Using ").append(resource).append(" from ").append(uri).toString());
+        return new ResourceXmlApplicationContext(resource) {
+
+            protected void initBeanDefinitionReader(XmlBeanDefinitionReader reader)
+            {
+                reader.setValidating(isValidate());
+            }
+             //XML Broker工厂
+            final XBeanBrokerFactory this$0;
+
+            
+            {
+                this$0 = XBeanBrokerFactory.this;
+                super(x0);
+            }
+        };
+        FatalBeanException errorToLog;
+        errorToLog;
+        LOG.error((new StringBuilder()).append("Failed to load: ").append(resource).append(", reason: ").append(errorToLog.getLocalizedMessage()).toString(), errorToLog);
+        throw errorToLog;
+    }
+贴上activemq.xml broker配置片段
+  <broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}">
+
+        <destinationPolicy>
+            <policyMap>
+              <policyEntries>
+                <policyEntry topic=">" >
+                    <!-- The constantPendingMessageLimitStrategy is used to prevent
+                         slow topic consumers to block producers and affect other consumers
+                         by limiting the number of messages that are retained
+                         For more information, see:
+
+                         http://activemq.apache.org/slow-consumer-handling.html
+
+                    -->
+                  <pendingMessageLimitStrategy>
+                    <constantPendingMessageLimitStrategy limit="1000"/>
+                  </pendingMessageLimitStrategy>
+                </policyEntry>
+              </policyEntries>
+            </policyMap>
+        </destinationPolicy>
+
+
+        <!--
+            The managementContext is used to configure how ActiveMQ is exposed in
+            JMX. By default, ActiveMQ uses the MBean server that is started by
+            the JVM. For more information, see:
+
+            http://activemq.apache.org/jmx.html
+        -->
+        <managementContext>
+            <managementContext createConnector="false"/>
+        </managementContext>
+
+        <!--
+            Configure message persistence for the broker. The default persistence
+            mechanism is the KahaDB store (identified by the kahaDB tag).
+            For more information, see:
+
+            http://activemq.apache.org/persistence.html
+        -->
+        <persistenceAdapter>
+            <kahaDB directory="${activemq.data}/kahadb"/>
+        </persistenceAdapter>
+
+
+          <!--
+            The systemUsage controls the maximum amount of space the broker will
+            use before disabling caching and/or slowing down producers. For more information, see:
+            http://activemq.apache.org/producer-flow-control.html
+          -->
+          <systemUsage>
+            <systemUsage>
+                <memoryUsage>
+                    <memoryUsage percentOfJvmHeap="70" />
+                </memoryUsage>
+                <storeUsage>
+                    <storeUsage limit="100 gb"/>
+                </storeUsage>
+                <tempUsage>
+                    <tempUsage limit="50 gb"/>
+                </tempUsage>
+            </systemUsage>
+        </systemUsage>
+
+        <!--
+            The transport connectors expose ActiveMQ over a given protocol to
+            clients and other brokers. For more information, see:
+
+            http://activemq.apache.org/configuring-transports.html
+        -->
+        <transportConnectors>
+            <!-- DOS protection, limit concurrent connections to 1000 and frame size to 100MB -->
+            <transportConnector name="openwire" uri="tcp://0.0.0.0:61616?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="amqp" uri="amqp://0.0.0.0:5672?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="stomp" uri="stomp://0.0.0.0:61613?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="mqtt" uri="mqtt://0.0.0.0:1883?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+            <transportConnector name="ws" uri="ws://0.0.0.0:61614?maximumConnections=1000&amp;wireFormat.maxFrameSize=104857600"/>
+        </transportConnectors>
+
+        <!-- destroy the spring context on shutdown to stop jetty -->
+        <shutdownHooks>
+            <bean xmlns="http://www.springframework.org/schema/beans" class="org.apache.activemq.hooks.SpringContextHook" />
+        </shutdownHooks>
+
+    </broker>
+
+
+
+
+//从上下文中获取broker属性
+broker = (BrokerService)context.getBean("broker");
+public class XBeanBrokerService extends BrokerService
+{ 
+  private boolean start;
+  public XBeanBrokerService()
+    {
+        start = BrokerFactory.getStartDefault();
+    }
+    //在构造完之后，调用afterPropertiesSet
+    private void postConstruct()
+    {
+        try
+        {
+            afterPropertiesSet();
+        }
+        catch(Exception ex)
+        {
+            throw new RuntimeException(ex);
+        }
+    }
+
+    public void afterPropertiesSet()
+        throws Exception
+    {   
+        //初始化内存使用情况
+        ensureSystemUsageHasStore();
+        if(shouldAutostart())
+            start();
+    }
+    //保证内存还有空间可用
+    private void ensureSystemUsageHasStore()
+        throws IOException
+    {
+        SystemUsage usage = getSystemUsage();
+        if(usage.getStoreUsage().getStore() == null)
+            usage.getStoreUsage().setStore(getPersistenceAdapter());
+        if(usage.getTempUsage().getStore() == null)
+            usage.getTempUsage().setStore(getTempDataStore());
+        if(usage.getJobSchedulerUsage().getStore() == null)
+            usage.getJobSchedulerUsage().setStore(getJobSchedulerStore());
+    }
+}
+从上可以看出XBeanBrokerFactory首先根据activemq.xml在JMX中xbean信息，通过Spring加载
+应用上下文的方式解析xbean信息，然后从应用上下文中获取broker服务XBeanBrokerService
+
+再看启动Broker
+broker.start();
+启动在BrokerService中
+public class BrokerService
+    implements Service
+{
+   public static final String DEFAULT_PORT = "61616";//默认端口
+    public static final String LOCAL_HOST_NAME;
+    public static final String BROKER_VERSION;
+    public static final String DEFAULT_BROKER_NAME = "localhost";
+    public static final int DEFAULT_MAX_FILE_LENGTH = 33554432;
+    public static final long DEFAULT_START_TIMEOUT = 600000L;
+    private static final Logger LOG;
+    private static final long serialVersionUID = 7353129142305630237L;
+    private boolean useJmx;//是否用JMX
+    private boolean enableStatistics;//是否开启统计
+    private boolean persistent;//是否持久化
+    private boolean populateJMSXUserID;
+    private boolean useAuthenticatedPrincipalForJMSXUserID;//JMX用户验证id
+    private boolean populateUserNameInMBeans;
+    private long mbeanInvocationTimeout;
+    private boolean useShutdownHook;//java运行时，关闭broker，是否有Hook
+    private boolean useLoggingForShutdownErrors;
+    private boolean shutdownOnMasterFailure;//是否在Master宕机时，关闭broker
+    private boolean shutdownOnSlaveFailure;
+    private boolean waitForSlave;
+    private long waitForSlaveTimeout;
+    private boolean passiveSlave;
+    private String brokerName;//broker名称
+    private File dataDirectoryFile;//数据目录
+    private File tmpDataDirectory;
+    private Broker broker;
+    private BrokerView adminView;
+    private ManagementContext managementContext;//管理器上下文
+    private ObjectName brokerObjectName;
+    private TaskRunnerFactory taskRunnerFactory;//任务工厂
+    private TaskRunnerFactory persistenceTaskRunnerFactory;
+    private SystemUsage systemUsage;//系统内存使用情况
+    private SystemUsage producerSystemUsage;//生产者内存使用情况
+    private SystemUsage consumerSystemUsaage;//消费者内存使用情况
+    private PersistenceAdapter persistenceAdapter;//持久化适配器
+    private PersistenceAdapterFactory persistenceFactory;//持久化工厂
+    protected DestinationFactory destinationFactory;//目的地工厂
+    private MessageAuthorizationPolicy messageAuthorizationPolicy;//消息验证策略
+    private final List transportConnectors = new CopyOnWriteArrayList();//transportConnectors
+    private final List networkConnectors = new CopyOnWriteArrayList();//networkConnectors
+    private final List proxyConnectors = new CopyOnWriteArrayList();
+    private final List jmsConnectors = new CopyOnWriteArrayList();//jmsConnectors
+    private final List services = new ArrayList();
+    private transient Thread shutdownHook;//关闭broke，运行hook线程
+    private String transportConnectorURIs[];//transportConnector urI
+    private String networkConnectorURIs[];
+    private JmsConnector jmsBridgeConnectors[];
+    private boolean deleteAllMessagesOnStartup;//是否在启时，删除所有消息
+    private boolean advisorySupport;
+    private URI vmConnectorURI;//虚拟机URI
+    private String defaultSocketURIString;
+    private PolicyMap destinationPolicy;
+    //Broker运行状态
+    private final AtomicBoolean started = new AtomicBoolean(false);
+    private final AtomicBoolean stopped = new AtomicBoolean(false);
+    private final AtomicBoolean stopping = new AtomicBoolean(false);
+    private BrokerPlugin plugins[];
+    private boolean keepDurableSubsActive;
+    private boolean useVirtualTopics;
+    private boolean useMirroredQueues;
+    private boolean useTempMirroredQueues;
+    //brokerid
+    private BrokerId brokerId;
+    private volatile DestinationInterceptor destinationInterceptors[];
+    private ActiveMQDestination destinations[];//消息目的地
+    private PListStore tempDataStore;
+    private int persistenceThreadPriority;//持久化线程优先级
+    private boolean useLocalHostBrokerName;
+    private final CountDownLatch stoppedLatch = new CountDownLatch(1);//关闭信号量
+    private final CountDownLatch startedLatch = new CountDownLatch(1);//启动信号量
+    private Broker regionBroker;
+    private int producerSystemUsagePortion;
+    private int consumerSystemUsagePortion;
+    private boolean splitSystemUsageForProducersConsumers;
+    private boolean monitorConnectionSplits;
+    private int taskRunnerPriority;//任务线程优先级
+    private boolean dedicatedTaskRunner;
+    private boolean cacheTempDestinations;
+    private int timeBeforePurgeTempDestinations;
+    private final List shutdownHooks = new ArrayList();
+    private boolean systemExitOnShutdown;
+    private int systemExitOnShutdownExitCode;
+    private SslContext sslContext;//SSL上下文
+    private boolean forceStart;
+    private IOExceptionHandler ioExceptionHandler;
+    private boolean schedulerSupport;
+    private File schedulerDirectoryFile;
+    private Scheduler scheduler;//调度器
+    private ThreadPoolExecutor executor;//线程执行器
+    private int schedulePeriodForDestinationPurge;
+    private int maxPurgedDestinationsPerSweep;
+    private int schedulePeriodForDiskUsageCheck;
+    private BrokerContext brokerContext;//broker上下文
+    private boolean networkConnectorStartAsync;
+    private boolean allowTempAutoCreationOnSend;
+    private JobSchedulerStore jobSchedulerStore;//job调度存储器
+    private final AtomicLong totalConnections = new AtomicLong();//连接数
+    private final AtomicInteger currentConnections = new AtomicInteger();
+    private long offlineDurableSubscriberTimeout;
+    private long offlineDurableSubscriberTaskSchedule;
+    private DestinationFilter virtualConsumerDestinationFilter;
+    private final AtomicBoolean persistenceAdapterStarted = new AtomicBoolean(false);
+    private Throwable startException;
+    private boolean startAsync;
+    private Date startDate;
+    private boolean slave;
+    private boolean restartAllowed;
+    private boolean restartRequested;
+    private boolean rejectDurableConsumers;
+    private int storeOpenWireVersion;
+
+    static 
+    {
+        //加载版本信息
+        String version;
+        LOG = LoggerFactory.getLogger(org/apache/activemq/broker/BrokerService);
+        try
+        {
+            ClassLoader loader = org/apache/activemq/broker/BrokerService.getClassLoader();
+            Class clazz = loader.loadClass("org.bouncycastle.jce.provider.BouncyCastleProvider");
+            Provider bouncycastle = (Provider)clazz.newInstance();
+            Security.insertProviderAt(bouncycastle, 2);
+            LOG.info("Loaded the Bouncy Castle security provider.");
+        }
+        String localHostName = "localhost";
+        try
+        {
+            localHostName = InetAddressUtil.getLocalHostName();
+        }
+        LOCAL_HOST_NAME = localHostName;
+        version = null;
+        InputStream in;
+        in = org/apache/activemq/broker/BrokerService.getResourceAsStream("/org/apache/activemq/version.txt");
+        InputStreamReader isr;
+        isr = new InputStreamReader(in);
+        BufferedReader reader;
+        reader = new BufferedReader(isr);
+        try
+        {
+            version = reader.readLine();
+        }
+        IOException ie;
+        ie;
+        LOG.warn("Error reading broker version ", ie);
+        BROKER_VERSION = version;
+    }
+
+
+
+    public BrokerService()
+    {
+        useJmx = true;
+        enableStatistics = true;
+        persistent = true;
+        mbeanInvocationTimeout = 0L;
+        useShutdownHook = true;
+        waitForSlaveTimeout = 600000L;
+        brokerName = "localhost";
+        advisorySupport = true;
+        keepDurableSubsActive = true;
+        useVirtualTopics = true;
+        useMirroredQueues = false;
+        useTempMirroredQueues = true;
+        persistenceThreadPriority = 10;
+        producerSystemUsagePortion = 60;
+        consumerSystemUsagePortion = 40;
+        monitorConnectionSplits = false;
+        taskRunnerPriority = 5;
+        cacheTempDestinations = false;
+        timeBeforePurgeTempDestinations = 5000;
+        forceStart = false;
+        schedulerSupport = false;
+        schedulePeriodForDestinationPurge = 0;
+        maxPurgedDestinationsPerSweep = 0;
+        schedulePeriodForDiskUsageCheck = 0;
+        networkConnectorStartAsync = false;
+        offlineDurableSubscriberTimeout = -1L;
+        offlineDurableSubscriberTaskSchedule = 300000L;
+        startException = null;
+        startAsync = false;
+        slave = true;
+        restartAllowed = true;
+        restartRequested = false;
+        rejectDurableConsumers = false;
+        storeOpenWireVersion = 11;
+    }
+}
+从上面可以看出BrokerService的构造，主要是初始化关闭broker是否有Hook，任务线程优先级，是否允许重启，
+是否支出调度器，消费者生产者允许使用的内存占比。
+
+来看启动
+public void start()
+        throws Exception
+    {
+        if(stopped.get() || !started.compareAndSet(false, true))
+            return;
+        stopping.set(false);
+        startDate = new Date();
+        MDC.put("activemq.broker", brokerName);
+        if(systemExitOnShutdown && useShutdownHook)
+            throw new ConfigurationException("'useShutdownHook' property cannot be be used with 'systemExitOnShutdown', please turn it off (useShutdownHook=false)");
+        processHelperProperties();
+        if(!isUseJmx())
+            break MISSING_BLOCK_LABEL_156;
+        MDC.remove("activemq.broker");
+	//启动管理器上下文
+        startManagementContext();
+        NetworkConnector connector;
+	//注册网络连接
+        for(Iterator i$ = getNetworkConnectors().iterator(); i$.hasNext(); registerNetworkConnectorMBean(connector))
+            connector = (NetworkConnector)i$.next();
+
+        MDC.put("activemq.broker", brokerName);
+        BrokerRegistry brokerRegistry = BrokerRegistry.getInstance();
+        if(brokerRegistry.lookup(getBrokerName()) == null)
+            brokerRegistry.bind(getBrokerName(), this);
+	//启动适配器
+        startPersistenceAdapter(startAsync);
+	//启动broker
+        startBroker(startAsync);
+        brokerRegistry.bind(getBrokerName(), this);   
+}
+我们最关心的是启动broker
+启动broker
+startBroker(startAsync);
+
+private void startBroker(boolean async)
+        throws Exception
+    {
+        if(async)
+            (new Thread("Broker Starting Thread") {
+
+                public void run()
+                {
+                    try
+                    {
+                        synchronized(persistenceAdapterStarted)
+                        {
+                            if(!persistenceAdapterStarted.get())
+                                persistenceAdapterStarted.wait();
+                        }
+                        doStartBroker();
+                    }
+                    catch(Throwable t)
+                    {
+                        startException = t;
+                    }
+                }
+
+                final BrokerService this$0;
+
+            
+            {
+                this$0 = BrokerService.this;
+                super(x0);
+            }
+            }).start();
+        else
+	    //关键点
+            doStartBroker();
+    }
+//启动broker
+ private void doStartBroker()
+        throws Exception
+    {
+        if(startException != null)
+            return;
+	//启动目的地
+        startDestinations();
+	//添加关闭hook
+        addShutdownHook();
+        broker = getBroker();
+        brokerId = broker.getBrokerId();
+        broker.start();
+        if(isUseJmx())
+        {
+            if(getManagementContext().isCreateConnector() && !getManagementContext().isConnectorStarted())
+            {
+                managementContext.stop();
+		//启动管理器上下文
+                startManagementContext();
+            }
+            ManagedRegionBroker managedBroker = (ManagedRegionBroker)regionBroker;
+            managedBroker.setContextBroker(broker);
+            adminView.setBroker(managedBroker);
+        }
+        if(ioExceptionHandler == null)
+            setIoExceptionHandler(new DefaultIOExceptionHandler());
+        if(isUseJmx() && Log4JConfigView.isLog4JAvailable())
+        {
+            ObjectName objectName = BrokerMBeanSupport.createLog4JConfigViewName(getBrokerObjectName().toString());
+            Log4JConfigView log4jConfigView = new Log4JConfigView();
+            AnnotatedMBean.registerMBean(getManagementContext(), log4jConfigView, objectName);
+        }
+	//开启所有连接
+        startAllConnectors();
+        getBroker().brokerServiceStarted();
+        checkSystemUsageLimits();
+	//启动信号
+        startedLatch.countDown();
+        getBroker().nowMasterBroker();
+    }
+
+//开启所有连接
+startAllConnectors();
+
+
+public void startAllConnectors()
+        throws Exception
+    {
+        Set durableDestinations = getBroker().getDurableDestinations();
+        List al = new ArrayList();
+        TransportConnector connector;
+	//启动连接监听startTransportConnector(connector)
+        for(Iterator iter = getTransportConnectors().iterator(); iter.hasNext(); al.add(startTransportConnector(connector)))
+            connector = (TransportConnector)iter.next();
+
+        if(al.size() > 0)
+        {
+            transportConnectors.clear();
+            setTransportConnectors(al);
+        }
+        slave = false;
+        URI uri = getVmConnectorURI();
+        Map map = new HashMap(URISupport.parseParameters(uri));
+        map.put("async", "false");
+        uri = URISupport.createURIWithQuery(uri, URISupport.createQueryString(map));
+        if(!stopped.get())
+        {
+	    //初始化线程执行器
+            ThreadPoolExecutor networkConnectorStartExecutor = null;
+            if(isNetworkConnectorStartAsync())
+                networkConnectorStartExecutor = new ThreadPoolExecutor(0, 2147483647, 10L, TimeUnit.SECONDS, new SynchronousQueue(), new ThreadFactory() {
+
+                    public Thread newThread(Runnable runnable)
+                    {
+                        Thread thread = new Thread(runnable, (new StringBuilder()).append("NetworkConnector Start Thread-").append(count++).toString());
+                        thread.setDaemon(true);
+                        return thread;
+                    }
+
+                    int count;
+                    final BrokerService this$0;
+
+            
+            {
+                this$0 = BrokerService.this;
+                super();
+                count = 0;
+            }
+                });
+	    //启动NetworkConnector 
+            for(Iterator iter = getNetworkConnectors().iterator(); iter.hasNext();)
+            {
+                final NetworkConnector connector = (NetworkConnector)iter.next();
+                connector.setLocalUri(uri);
+                connector.setBrokerName(getBrokerName());
+                connector.setDurableDestinations(durableDestinations);
+                if(getDefaultSocketURIString() != null)
+                    connector.setBrokerURL(getDefaultSocketURIString());
+                if(networkConnectorStartExecutor != null)
+                    networkConnectorStartExecutor.execute(new Runnable() {
+
+                        public void run()
+                        {
+                            try
+                            {
+                                BrokerService.LOG.info("Async start of {}", connector);
+                                connector.start();
+                            }
+                            catch(Exception e)
+                            {
+                                BrokerService.LOG.error("Async start of network connector: {} failed", connector, e);
+                            }
+                        }
+
+                        final NetworkConnector val$connector;
+                        final BrokerService this$0;
+
+            
+            {
+                this$0 = BrokerService.this;
+                connector = networkconnector;
+                super();
+            }
+                    });
+                else
+                    connector.start();
+            }
+
+            if(networkConnectorStartExecutor != null)
+                ThreadPoolUtils.shutdown(networkConnectorStartExecutor);
+            ProxyConnector connector;
+            for(Iterator iter = getProxyConnectors().iterator(); iter.hasNext(); connector.start())
+                connector = (ProxyConnector)iter.next();
+
+            JmsConnector connector;
+            for(Iterator iter = jmsConnectors.iterator(); iter.hasNext(); connector.start())
+                connector = (JmsConnector)iter.next();
+
+            Service service;
+            for(Iterator i$ = services.iterator(); i$.hasNext(); service.start())
+            {
+                service = (Service)i$.next();
+                configureService(service);
+            }
+
+        }
+    }
+来看启动连接监听
+启动连接监听
+startTransportConnector(connector)
+public TransportConnector startTransportConnector(TransportConnector connector)
+        throws Exception
+    {
+        //设置连接broker
+        connector.setBrokerService(this);
+	//设置任务工厂
+        connector.setTaskRunnerFactory(getTaskRunnerFactory());
+        MessageAuthorizationPolicy policy = getMessageAuthorizationPolicy();
+        if(policy != null)
+            connector.setMessageAuthorizationPolicy(policy);
+        if(isUseJmx())
+            connector = registerConnectorMBean(connector);
+        connector.getStatistics().setEnabled(enableStatistics);
+	//启动连接
+        connector.start();
+        return connector;
+    }
+
+
+public class TransportConnector
+    implements Connector, BrokerServiceAware
+{
+   protected final CopyOnWriteArrayList connections;//连接信息
+    protected TransportStatusDetector statusDector;
+    private BrokerService brokerService;//broker服务
+    private TransportServer server;//监听Server
+    private URI uri;
+    private BrokerInfo brokerInfo;
+    private TaskRunnerFactory taskRunnerFactory;//任务工厂
+    private MessageAuthorizationPolicy messageAuthorizationPolicy;
+    private DiscoveryAgent discoveryAgent;
+    private final ConnectorStatistics statistics;
+    private URI discoveryUri;
+    private String name;
+    private boolean disableAsyncDispatch;
+    private boolean enableStatusMonitor;
+    private Broker broker;
+    private boolean updateClusterClients;
+    private boolean rebalanceClusterClients;
+    private boolean updateClusterClientsOnRemove;
+    private String updateClusterFilter;
+    private boolean auditNetworkProducers;
+    //允许连接的最大消费者与生产者
+    private int maximumProducersAllowedPerConnection;
+    private int maximumConsumersAllowedPerConnection;
+    private PublishedAddressPolicy publishedAddressPolicy;
+    private boolean allowLinkStealing;
+    LinkedList peerBrokers;//peer
+    public TransportConnector()
+    {
+        LOG = LoggerFactory.getLogger(org/apache/activemq/broker/TransportConnector);
+        connections = new CopyOnWriteArrayList();
+        brokerInfo = new BrokerInfo();
+        statistics = new ConnectorStatistics();
+        enableStatusMonitor = false;
+        updateClusterClients = false;
+        updateClusterClientsOnRemove = false;
+        auditNetworkProducers = false;
+        maximumProducersAllowedPerConnection = 2147483647;
+        maximumConsumersAllowedPerConnection = 2147483647;
+        publishedAddressPolicy = new PublishedAddressPolicy();
+        peerBrokers = new LinkedList();
+    }
+}
+从上面看初始化TransportConnector，就是初始化broker服务，允许连接的最大消费者与生产者等信息。
+
+//启动连接
+connector.start();
+
+public void start()
+        throws Exception
+    {
+        broker = brokerService.getBroker();
+        brokerInfo.setBrokerName(broker.getBrokerName());
+        brokerInfo.setBrokerId(broker.getBrokerId());
+        brokerInfo.setPeerBrokerInfos(broker.getPeerBrokerInfos());
+        brokerInfo.setFaultTolerantConfiguration(broker.isFaultTolerantConfiguration());
+        brokerInfo.setBrokerURL(broker.getBrokerService().getDefaultSocketURIString());
+	//设置Server接受连接监听器
+        getServer().setAcceptListener(new TransportAcceptListener() {
+
+            public void onAccept(final Transport transport)
+            {
+                try
+                {
+                    brokerService.getTaskRunnerFactory().execute(new Runnable() {
+
+                        public void run()
+                        {
+                            try
+                            {
+                                if(!brokerService.isStopping())
+                                {
+				    //接受连接后，创建连接，启动连接，这个时候是不是
+				    //与前面联系上了，当启动连接时，启动会话，启动
+				    //会话执行器，通知消费者消费消息
+                                    Connection connection = createConnection(transport);
+                                    connection.start();
+                                } else
+                                {
+                                    throw new BrokerStoppedException((new StringBuilder()).append("Broker ").append(brokerService).append(" is being stopped").toString());
+                                }
+                            }
+                        }
+
+                        final Transport val$transport;
+                        final _cls1 this$1;
+
+                    
+                    {
+                        this$1 = _cls1.this;
+                        transport = transport1;
+                        super();
+                    }
+                    });
+                }
+            }
+            final TransportConnector this$0;
+
+
+            
+            {
+                this$0 = TransportConnector.this;
+                super();
+            }
+        });
+        getServer().setBrokerInfo(brokerInfo);
+	//启动server
+        getServer().start();
+	//slave发现代理
+        DiscoveryAgent da = getDiscoveryAgent();
+        if(da != null)
+        {
+            da.registerService(getPublishableConnectString());
+            da.start();
+        }
+        if(enableStatusMonitor)
+        {
+            statusDector = new TransportStatusDetector(this);
+            statusDector.start();
+        }
+    }
+
+ public TransportServer getServer()
+        throws IOException, URISyntaxException
+    {
+        if(server == null)
+	    //设置Server
+            setServer(createTransportServer());
+        return server;
+    }
+    创建TransportServer
+  protected TransportServer createTransportServer()
+        throws IOException, URISyntaxException
+    {
+        if(brokerService == null)
+            throw new IllegalArgumentException("You must specify the brokerService property. Maybe this connector should be added to a broker?");
+        else
+            return TransportFactorySupport.bind(brokerService, uri);
+    }
+    //TransportFactorySupport
+    //绑定broker服务于URI
+  public static TransportServer bind(BrokerService brokerService, URI location)
+        throws IOException
+    {
+        TransportFactory tf;
+	//根据以前的文章这个应该很熟悉，TransportFactory获取工厂，实际为TcpTransportFactory
+        tf = TransportFactory.findTransportFactory(location);
+        if(brokerService != null && (tf instanceof BrokerServiceAware))
+            ((BrokerServiceAware)tf).setBrokerService(brokerService);
+        TransportServer transportserver;
+        if(brokerService != null)
+            SslContext.setCurrentSslContext(brokerService.getSslContext());
+	//绑定地址
+        transportserver = tf.doBind(location);
+        SslContext.setCurrentSslContext(null);
+        return transportserver;
+        Exception exception;
+        exception;
+        SslContext.setCurrentSslContext(null);
+        throw exception;
+    }
+
+//TcpTransportFactory
+    public class TcpTransportFactory extends TransportFactory
+{
+ublic TransportServer doBind(URI location)
+        throws IOException
+    {
+        TcpTransportServer server;
+        Map options = new HashMap(URISupport.parseParameters(location));
+	//创建SOCKET工厂
+        ServerSocketFactory serverSocketFactory = createServerSocketFactory();
+        server = createTcpTransportServer(location, serverSocketFactory);
+	//设置Server协议
+        server.setWireFormatFactory(createWireFormatFactory(options));
+        IntrospectionSupport.setProperties(server, options);
+        Map transportOptions = IntrospectionSupport.extractProperties(options, "transport.");
+        server.setTransportOption(transportOptions);
+	//绑定Server
+        server.bind();
+        return server;
+        URISyntaxException e;
+        e;
+        throw IOExceptionSupport.create(e);
+    }
+再看TcpTransportServer
+public class TcpTransportServer extends TransportServerThreadSupport
+    implements ServiceListener
+{   
+   protected ServerSocket serverSocket;//ServerSocket
+    protected SelectorSelection selector;
+    protected int backlog;
+    protected WireFormatFactory wireFormatFactory;
+    protected final TcpTransportFactory transportFactory;//transportFactory
+    protected long maxInactivityDuration;
+    protected long maxInactivityDurationInitalDelay;
+    protected int minmumWireFormatVersion;
+    protected boolean useQueueForAccept;
+    protected boolean allowLinkStealing;
+    protected boolean trace;
+    protected int soTimeout;
+    protected int socketBufferSize;//缓存大小
+    protected int connectionTimeout;//连接超时时间
+    protected String logWriterName;
+    protected boolean dynamicManagement;
+    protected boolean startLogging;
+    protected final ServerSocketFactory serverSocketFactory;
+    protected BlockingQueue socketQueue;//socket的队列
+    protected Thread socketHandlerThread;
+    protected int maximumConnections;
+    protected AtomicInteger currentTransportCount;//连接数
+    public TcpTransportServer(TcpTransportFactory transportFactory, URI location, ServerSocketFactory serverSocketFactory)
+        throws IOException, URISyntaxException
+    {
+        super(location);
+        backlog = 5000;
+        wireFormatFactory = new OpenWireFormatFactory();
+        maxInactivityDuration = 30000L;
+        maxInactivityDurationInitalDelay = 10000L;
+        useQueueForAccept = true;
+        trace = false;
+        soTimeout = 0;
+        socketBufferSize = 65536;
+        connectionTimeout = 30000;
+        logWriterName = TransportLoggerSupport.defaultLogWriterName;
+        dynamicManagement = false;
+        startLogging = true;
+        socketQueue = new LinkedBlockingQueue();
+        maximumConnections = 2147483647;
+        currentTransportCount = new AtomicInteger();
+        this.transportFactory = transportFactory;
+        this.serverSocketFactory = serverSocketFactory;
+    }
+}
+
+初始化TcpTransportServer就是，连接缓存大小，连接延时，协议格式化工厂，socketServer工厂等；
+
+
+先看TcpTransportServer绑定
+ public void bind()
+        throws IOException
+    {
+        URI bind = getBindLocation();
+        String host = bind.getHost();
+        host = host != null && host.length() != 0 ? host : "localhost";
+        InetAddress addr = InetAddress.getByName(host);
+        try
+        {
+	   //根据ip和port创建serverSocket
+            serverSocket = serverSocketFactory.createServerSocket(bind.getPort(), backlog, addr);
+            configureServerSocket(serverSocket);
+        }
+  }
+
+再看启动server
+getServer().start();
+
+
+public class TcpTransportServer extends TransportServerThreadSupport
+    implements ServiceListener
+public abstract class TransportServerThreadSupport extends TransportServerSupport
+    implements Runnable
+
+public abstract class TransportServerSupport extends ServiceSupport
+    implements TransportServer
+看到ServiceSupport，实际调用的为doStart
+//TransportServerThreadSupport
+protected void doStart()
+        throws Exception
+    {
+        LOG.info((new StringBuilder()).append("Listening for connections at: ").append(getConnectURI()).toString());
+        runner = new Thread(null, this, (new StringBuilder()).append("ActiveMQ Transport Server: ").append(toString()).toString(), stackSize);
+        runner.setDaemon(daemon);
+        runner.setPriority(9);
+        runner.start();
+    }
+同时启动TcpTransportServer线程
+//TcpTransportServer
+ public void run()
+    {
+       //从serverSocket获取通道，java nio
+        final ServerSocketChannel chan = serverSocket.getChannel();
+        if(chan != null)
+            try
+            {
+                chan.configureBlocking(false);
+                selector = SelectorManager.getInstance().register(chan, new org.apache.activemq.transport.nio.SelectorManager.Listener() {
+                    //通道选择器
+                    public void onSelect(SelectorSelection sel)
+                    {
+                        try
+                        {
+                            SocketChannel sc = chan.accept();
+                            if(sc != null)
+                                if(isStopped() || getAcceptListener() == null)
+                                    sc.close();
+                                else
+                                if(useQueueForAccept)
+                                    socketQueue.put(sc.socket());
+                                else
+                                    handleSocket(sc.socket());
+                        }
+                        catch(Exception e)
+                        {
+                            onError(sel, e);
+                        }
+                    }
+
+                    public void onError(SelectorSelection sel, Throwable error)
+                    {
+                        Exception e = null;
+                        if(error instanceof Exception)
+                            e = (Exception)error;
+                        else
+                            e = new Exception(error);
+                        if(!isStopping())
+                            onAcceptError(e);
+                        else
+                        if(!isStopped())
+                        {
+                            TcpTransportServer.LOG.warn("run()", e);
+                            onAcceptError(e);
+                        }
+                    }
+
+                    final ServerSocketChannel val$chan;
+                    final TcpTransportServer this$0;
+
+            
+            {
+                this$0 = TcpTransportServer.this;
+                chan = serversocketchannel;
+                super();
+            }
+                });
+                selector.setInterestOps(16);
+                selector.enable();
+            }
+            catch(IOException ex)
+            {
+                selector = null;
+            }
+        else
+            do
+            {
+                if(isStopped())
+                    break;
+                Socket socket = null;
+                try
+                {
+		    //第一次，没有socket，则创建serverSocket
+                    socket = serverSocket.accept();
+                    if(socket != null)
+                        if(isStopped() || getAcceptListener() == null)
+                            socket.close();
+                        else
+                        if(useQueueForAccept)
+			    //将serverSocket添加socketQueue
+                            socketQueue.put(socket);
+                        else
+                            handleSocket(socket);
+                }
+            } while(true);
+    }
+
+
+
+ protected final void handleSocket(Socket socket)
+    {
+        boolean closeSocket = true;
+        try
+        {
+            if(currentTransportCount.get() >= maximumConnections)
+                throw new ExceededMaximumConnectionsException("Exceeded the maximum number of allowed client connections. See the 'maximumConnections' property on the TCP transport configuration URI in the ActiveMQ configuration file (e.g., activemq.xml)");
+            HashMap options = new HashMap();
+            options.put("maxInactivityDuration", Long.valueOf(maxInactivityDuration));
+            options.put("maxInactivityDurationInitalDelay", Long.valueOf(maxInactivityDurationInitalDelay));
+            options.put("minmumWireFormatVersion", Integer.valueOf(minmumWireFormatVersion));
+            options.put("trace", Boolean.valueOf(trace));
+            options.put("soTimeout", Integer.valueOf(soTimeout));
+            options.put("socketBufferSize", Integer.valueOf(socketBufferSize));
+            options.put("connectionTimeout", Integer.valueOf(connectionTimeout));
+            options.put("logWriterName", logWriterName);
+            options.put("dynamicManagement", Boolean.valueOf(dynamicManagement));
+            options.put("startLogging", Boolean.valueOf(startLogging));
+            options.putAll(transportOptions);
+            WireFormat format = wireFormatFactory.createWireFormat();
+            Transport transport = createTransport(socket, format);
+            closeSocket = false;
+            if(transport instanceof ServiceSupport)
+                ((ServiceSupport)transport).addServiceListener(this);
+            Transport configuredTransport = transportFactory.serverConfigure(transport, format, options);
+	    //连接监听器接受连接，创建连接，开启连接
+            getAcceptListener().onAccept(configuredTransport);
+            currentTransportCount.incrementAndGet();
+        }
+       
+    }
+在brokerService启动过程中有设置了连接监听器
+public void start()
+        throws Exception
+    {
+        broker = brokerService.getBroker();
+        brokerInfo.setBrokerName(broker.getBrokerName());
+        brokerInfo.setBrokerId(broker.getBrokerId());
+        brokerInfo.setPeerBrokerInfos(broker.getPeerBrokerInfos());
+        brokerInfo.setFaultTolerantConfiguration(broker.isFaultTolerantConfiguration());
+        brokerInfo.setBrokerURL(broker.getBrokerService().getDefaultSocketURIString());
+	//设置Server接受连接监听器
+        getServer().setAcceptListener(new TransportAcceptListener() {
+
+            public void onAccept(final Transport transport)
+            {
+                try
+                {
+                    brokerService.getTaskRunnerFactory().execute(new Runnable() {
+
+                        public void run()
+                        {
+                            try
+                            {
+                                if(!brokerService.isStopping())
+                                {
+				    //接受连接后，创建连接，启动连接，这个时候是不是
+				    //与前面联系上了，当启动连接时，启动会话，启动
+				    //会话执行器，通知消费者消费消息
+                                    Connection connection = createConnection(transport);
+                                    connection.start();
+                                } 
+                            }
+                        }
+}
+//TransportConnector
+ protected Connection createConnection(Transport transport)
+        throws IOException
+    {
+        TransportConnection answer = new TransportConnection(this, transport, broker, disableAsyncDispatch ? null : taskRunnerFactory, brokerService.getTaskRunnerFactory());
+        boolean statEnabled = getStatistics().isEnabled();
+        answer.getStatistics().setEnabled(statEnabled);
+        answer.setMessageAuthorizationPolicy(messageAuthorizationPolicy);
+        return answer;
+    }
+
+总结：
+从activemq脚本，可以看出启动ActiveMQ实际是启动，bin文件夹下的其实activemq.jar
+包中有一个类为Main，这就是active的启动入口,Main主要是加载lib目录和ClassPath，初始化
+类加载器，委托给ShellCommand，由ShellCommand根据命令描述去执行，如果是Version和HELP，
+则打印信息，若是启动命令，则通过XBeanBrokerFactory创建BrokerService，这个过程主要利用的
+Spring的bean容器机制，然后启动BrokerService，主要启动持久化适配器，JMX连接，上下文关系器，
+最后启动所有网络连接，及TcpTransport连接，默认使用的是openwire：tcp，所以我们就看一下
+TcpTransportServer，TcpTransportServer有TcpTransportFactory创建并配置OpenWire协议转换器，
+启动TcpTransportServer，就是从ServerSocketFactory获取ServerSocket，并绑定ip和port，监听连接
+，并设置ServerSocket的监听器org.apache.activemq.transport.nio.SelectorManager.Listener，这个用的
+是java nio。
+
+
+
+
+public final class CommandContext
+{
+ //activemq 命令输出格式工具
+ private OutputFormatter formatter;
+ }
+public interface OutputFormatter
+{
+    public abstract OutputStream getOutputStream();
+    public abstract void printMBean(ObjectInstance objectinstance);
+    public abstract void printMBean(ObjectName objectname);
+    public abstract void printMBean(AttributeList attributelist);
+    public abstract void printMBean(Map map);
+    public abstract void printMBean(Collection collection);
+    public abstract void printMessage(Map map);
+    //打印消息
+    public abstract void printMessage(Message message);
+    public abstract void printMessage(Collection collection);
+    //打印帮助信息
+    public abstract void printHelp(String as[]);
+    public abstract void printInfo(String s);
+    public abstract void printException(Exception exception);
+    public abstract void printVersion(String s);
+    public abstract void print(Map map);
+    public abstract void print(String as[]);
+    public abstract void print(Collection collection);
+    public abstract void print(String s);
+}
+
+//SelectorManager
+public final class SelectorManager
+{
+    public static final SelectorManager SINGLETON = new SelectorManager();
+    private Executor selectorExecutor;
+    private Executor channelExecutor;
+    private final LinkedList freeWorkers = new LinkedList();
+    private int maxChannelsPerWorker;
+    public static interface Listener
+    {
+
+        public abstract void onSelect(SelectorSelection selectorselection);
+
+        public abstract void onError(SelectorSelection selectorselection, Throwable throwable);
+    }
+
+
+    public SelectorManager()
+    {
+        selectorExecutor = createDefaultExecutor();
+        channelExecutor = selectorExecutor;
+        maxChannelsPerWorker = 1024;
+    }
+
+    protected ExecutorService createDefaultExecutor()
+    {
+        ThreadPoolExecutor rc = new ThreadPoolExecutor(getDefaultCorePoolSize(), getDefaultMaximumPoolSize(), getDefaultKeepAliveTime(), TimeUnit.SECONDS, new SynchronousQueue(), new ThreadFactory() {
+
+            public Thread newThread(Runnable runnable)
+            {
+                i++;
+                Thread t = new Thread(runnable, (new StringBuilder()).append("ActiveMQ NIO Worker ").append(i).toString());
+                return t;
+            }
+
+            private long i;
+            final SelectorManager this$0;
+
+            
+            {
+                this$0 = SelectorManager.this;
+                super();
+                i = 0L;
+            }
+        });
+        return rc;
+    }
+
+    private static int getDefaultCorePoolSize()
+    {
+        return Integer.getInteger("org.apache.activemq.transport.nio.SelectorManager.corePoolSize", 0).intValue();
+    }
+
+    private static int getDefaultMaximumPoolSize()
+    {
+        return Integer.getInteger("org.apache.activemq.transport.nio.SelectorManager.maximumPoolSize", 2147483647).intValue();
+    }
+
+    private static int getDefaultKeepAliveTime()
+    {
+        return Integer.getInteger("org.apache.activemq.transport.nio.SelectorManager.keepAliveTime", 30).intValue();
+    }
+
+    public static SelectorManager getInstance()
+    {
+        return SINGLETON;
+    }
+
+    public synchronized SelectorSelection register(AbstractSelectableChannel selectableChannel, Listener listener)
+        throws IOException
+    {
+        SelectorSelection selection;
+        for(selection = null; selection == null;)
+            if(freeWorkers.size() > 0)
+            {
+                SelectorWorker worker = (SelectorWorker)freeWorkers.getFirst();
+                if(worker.isReleased())
+                {
+                    freeWorkers.remove(worker);
+                } else
+                {
+                    worker.retain();
+                    selection = new SelectorSelection(worker, selectableChannel, listener);
+                }
+            } else
+            {
+                SelectorWorker worker = new SelectorWorker(this);
+                freeWorkers.addFirst(worker);
+                selection = new SelectorSelection(worker, selectableChannel, listener);
+            }
+
+        return selection;
+    }
+
+    synchronized void onWorkerFullEvent(SelectorWorker worker)
+    {
+        freeWorkers.remove(worker);
+    }
+
+    public synchronized void onWorkerEmptyEvent(SelectorWorker worker)
+    {
+        freeWorkers.remove(worker);
+    }
+
+    public synchronized void onWorkerNotFullEvent(SelectorWorker worker)
+    {
+        freeWorkers.addFirst(worker);
+    }
+
+    public Executor getChannelExecutor()
+    {
+        return channelExecutor;
+    }
+
+    public void setChannelExecutor(Executor channelExecutor)
+    {
+        this.channelExecutor = channelExecutor;
+    }
+
+    public int getMaxChannelsPerWorker()
+    {
+        return maxChannelsPerWorker;
+    }
+
+    public void setMaxChannelsPerWorker(int maxChannelsPerWorker)
+    {
+        this.maxChannelsPerWorker = maxChannelsPerWorker;
+    }
+
+    public Executor getSelectorExecutor()
+    {
+        return selectorExecutor;
+    }
+
+    public void setSelectorExecutor(Executor selectorExecutor)
+    {
+        this.selectorExecutor = selectorExecutor;
+    }
+
+   
+
+}

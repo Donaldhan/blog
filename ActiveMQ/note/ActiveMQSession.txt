@@ -1,0 +1,799 @@
+JMS(ActiveMQ) PTP和PUB/SUB模式实例：http://donald-draper.iteye.com/blog/2347445
+ActiveMQ连接工厂、连接详解:http://donald-draper.iteye.com/admin/blogs/2348070
+在上面一篇我们说过，ActiveMQ的ActiveMQConnectionFactory，ActiveMQConnection，TcpTransport，
+ActiveMQConnectionFactory的创建过程，主要为初始化为broker url，用户密码，是否压缩、异步发送消息、
+支持消息优先级、非阻塞传输，最大线程数，生产窗口大小等属性；从ActiveMQConnectionFactory创建连接，
+首先通过TcpTransportFacotory创建TcpTransport，然后保证成待锁机制的MutexTransport，最后包装成
+ResponseCorrelator；根据TcpTransport和ActiveMQConnection状态管理器JMSStatsImpl创建ActiveMQConnection,
+创建ActiveMQConnection过程中，主要是是否异步分发消息，线程执行器，连接状态管理器，调度器等；然后
+设置连接用户密码通过ConnectionInfo，配置是否支持消息优先级、非阻塞传输，最大线程数，生产窗口大小，
+Transport监听器transportListener；最后启动TcpTransport和Connection，启动TcpTransport主要是初始化socket，
+ip，端口，输入输出缓存区，输入输出流DataI/OnputStream,启动连接主要启动会话ActiveMQSession。
+
+实例主要生产者代码片段：
+ConnectionFactory ：连接工厂，JMS 用它创建连接  
+ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(user,password,url);  
+Connection ：JMS 客户端到JMS Provider 的连接  
+Connection connection = connectionFactory.createConnection();  
+Connection 启动  
+connection.start();  
+System.out.println("Connection is start...");  
+//创建一个session
+//第一个参数:是否支持事务，如果为true，则会忽略第二个参数，被jms服务器设置为SESSION_TRANSACTED
+//第二个参数为false时，paramB的值可为Session.AUTO_ACKNOWLEDGE，Session.CLIENT_ACKNOWLEDGE，DUPS_OK_ACKNOWLEDGE其中一个。
+//Session.AUTO_ACKNOWLEDGE为自动确认，客户端发送和接收消息不需要做额外的工作。哪怕是接收端发生异常，也会被当作正常发送成功。
+//Session.CLIENT_ACKNOWLEDGE为客户端确认。客户端接收到消息后，必须调用javax.jms.Message的acknowledge方法。jms服务器才会当作发送成功，并删除消息。
+//DUPS_OK_ACKNOWLEDGE允许副本的确认模式。一旦接收方应用程序的方法调用从处理消息处返回，会话对象就会确认消息的接收；而且允许重复确认。
+Session session = connection.createSession(Boolean.TRUE,Session.AUTO_ACKNOWLEDGE);  
+Queue ：消息的目的地;消息发送给谁.  
+Queue  destination = session.createQueue(qname);  
+MessageProducer：消息发送者  
+MessageProducer producer = session.createProducer(destination);  
+//设置生产者的模式，有两种可选
+//DeliveryMode.PERSISTENT 当activemq关闭的时候，队列数据将会被保存
+//DeliveryMode.NON_PERSISTENT 当activemq关闭的时候，队列里面的数据将会被清空 
+producer.setDeliveryMode(DeliveryMode.PERSISTENT);  
+构造消息，此处写死，项目就是参数，或者方法获取  
+sendMessage(session, producer);  
+session.commit();  
+connection.close();  
+今天来看一下，ActiveMQSession会话，消息队列和订阅主题，生产者及发送消息
+从下面这句开始：
+Session session = connection.createSession(Boolean.TRUE,Session.AUTO_ACKNOWLEDGE);  
+//ActiveMQConnection
+ public Session createSession(boolean transacted, int acknowledgeMode)
+        throws JMSException
+    {
+        //检查连接有没关闭
+        checkClosedOrFailed();
+        ensureConnectionInfoSent();
+        if(!transacted)
+        {   
+	    //如果transacted为非事务，而acknowledgeMode为事务SESSION_TRANSACTED，抛出异常
+            if(acknowledgeMode == 0)
+                throw new JMSException("acknowledgeMode SESSION_TRANSACTED cannot be used for an non-transacted Session");
+            //acknowledgeMode不在0-3范围之内，这
+	    if(acknowledgeMode < 0 || acknowledgeMode > 4)
+                throw new JMSException((new StringBuilder()).append("invalid acknowledgeMode: ").append(acknowledgeMode).append(". Valid values are Session.AUTO_ACKNOWLEDGE (1), ").append("Session.CLIENT_ACKNOWLEDGE (2), Session.DUPS_OK_ACKNOWLEDGE (3), ActiveMQSession.INDIVIDUAL_ACKNOWLEDGE (4) or for transacted sessions Session.SESSION_TRANSACTED (0)").toString());
+        }
+        return new ActiveMQSession(this, getNextSessionId(), transacted ? 0 : acknowledgeMode != 0 ? acknowledgeMode : 1, isDispatchAsync(), isAlwaysSessionAsync());
+    }
+//来看ActiveMQSession的构造
+public class ActiveMQSession
+    implements Session, QueueSession, TopicSession, StatsCapable, ActiveMQDispatcher
+{
+    public static final int INDIVIDUAL_ACKNOWLEDGE = 4;
+    public static final int MAX_ACK_CONSTANT = 4;
+    private static final Logger LOG = LoggerFactory.getLogger(org/apache/activemq/ActiveMQSession);
+    private final ThreadPoolExecutor connectionExecutor;//连接线程执行器
+    protected int acknowledgementMode; //通知模式
+    protected final ActiveMQConnection connection;//MQ连接
+    protected final SessionInfo info;//会话信息
+    protected final LongSequenceGenerator consumerIdGenerator;//消费者id产生器
+    protected final LongSequenceGenerator producerIdGenerator;//生产者id产生器
+    protected final LongSequenceGenerator deliveryIdGenerator;
+    protected final ActiveMQSessionExecutor executor;
+    protected final AtomicBoolean started;  //是否启动
+    protected final CopyOnWriteArrayList consumers;//消费者
+    protected final CopyOnWriteArrayList producers;//生产者
+    protected boolean closed;
+    private volatile boolean synchronizationRegistered;
+    protected boolean asyncDispatch;
+    protected boolean sessionAsyncDispatch;
+    protected final boolean debug;
+    protected final Object sendMutex;//发送互斥锁
+    protected final Object redeliveryGuard;
+    private final AtomicBoolean clearInProgress;
+    private MessageListener messageListener;//消息监听器
+    private final JMSSessionStatsImpl stats;
+    private TransactionContext transactionContext;
+    private DeliveryListener deliveryListener;
+    private MessageTransformer transformer;
+    private BlobTransferPolicy blobTransferPolicy;
+    private long lastDeliveredSequenceId;
+    final AtomicInteger clearRequestsCounter;
+    protected ActiveMQSession(ActiveMQConnection connection, SessionId sessionId, int acknowledgeMode, boolean asyncDispatch, boolean sessionAsyncDispatch)
+        throws JMSException
+    {
+        consumerIdGenerator = new LongSequenceGenerator();
+        producerIdGenerator = new LongSequenceGenerator();
+        deliveryIdGenerator = new LongSequenceGenerator();
+        started = new AtomicBoolean(false);//启动状态
+        consumers = new CopyOnWriteArrayList();//消费者
+        producers = new CopyOnWriteArrayList();//生产者
+        sendMutex = new Object();//发送互斥锁
+        redeliveryGuard = new Object();
+        clearInProgress = new AtomicBoolean();
+        lastDeliveredSequenceId = -2L;
+        clearRequestsCounter = new AtomicInteger(0);
+        debug = LOG.isDebugEnabled();
+        this.connection = connection;
+        acknowledgementMode = acknowledgeMode;//消息确认模式
+        this.asyncDispatch = asyncDispatch;
+        this.sessionAsyncDispatch = sessionAsyncDispatch;
+        info = new SessionInfo(connection.getConnectionInfo(), sessionId.getValue());
+        setTransactionContext(new TransactionContext(connection));//设置连接事务上下文
+        stats = new JMSSessionStatsImpl(producers, consumers);
+        this.connection.asyncSendPacket(info);//异步发送会话信息
+        setTransformer(connection.getTransformer());
+        setBlobTransferPolicy(connection.getBlobTransferPolicy());
+        connectionExecutor = connection.getExecutor();//获取连接执行器
+        executor = new ActiveMQSessionExecutor(this);//新建消息会话执行器
+        connection.addSession(this);//将会话添加到ActiveMQ连接的的会话队列CopyOnWriteArrayList
+        if(connection.isStarted())
+	     //启动
+            start();
+    }
+}
+从上面可以看出会话的创建主要最的工作是，初始化消费者，生产者id产生器，会话消费者，生产者队列，
+消息确认模式，是否异步分发，设置连接事务上下文，异步发送会话信息，新建消息会话执行器，会话添加到
+ActiveMQConnection的会话队列CopyOnWriteArrayList。
+结合上一篇和这一篇说以一下ActiveMQConnection与ActiveMQSession，ActiveMQMessageConsumer，
+ActiveMQMessageProducer的关系，连接管理会话（1-n），会话管理消息者与生产者（1-n）。
+
+下面再看一下会话的启动
+ 启动
+ protected void start()
+        throws JMSException
+    {
+        started.set(true);
+        ActiveMQMessageConsumer c;
+	//启动消费者
+        for(Iterator iter = consumers.iterator(); iter.hasNext(); c.start())
+            c = (ActiveMQMessageConsumer)iter.next();
+        //启动消息会话执行器
+        executor.start();
+    }
+会话启动分两部分，启动消费者，让消费者消费消息，启动会话执行器
+先来看启动消费者
+来看ActiveMQMessageConsumer的启动
+public class ActiveMQMessageConsumer
+    implements MessageAvailableConsumer, StatsCapable, ActiveMQDispatcher
+{
+   protected final ActiveMQSession session;
+    protected final ConsumerInfo info;//消费者信息
+    protected final MessageDispatchChannel unconsumedMessages;//消息分发通道（未消费消费的消息）
+    protected final LinkedList deliveredMessages = new LinkedList();//需要传输消息
+    private PreviouslyDeliveredMap previouslyDeliveredMessages;
+    private int deliveredCounter;//传输消息计数器
+    private int additionalWindowSize;
+    private long redeliveryDelay;//消息传输延时
+    private int ackCounter;//消息回复计时器
+    private int dispatchedCount;//消息分发计时器
+    private final AtomicReference messageListener = new AtomicReference();//消息监听器引用
+    private final JMSConsumerStatsImpl stats;//消费者状态信息管理器
+    private final String selector;选择器
+    private boolean synchronizationRegistered;
+    private final AtomicBoolean started = new AtomicBoolean(false);//启动状态
+    private MessageAvailableListener availableListener;
+    private RedeliveryPolicy redeliveryPolicy;//传输策略
+    private boolean optimizeAcknowledge;
+    private final AtomicBoolean deliveryingAcknowledgements = new AtomicBoolean();
+    private ExecutorService executorService;//执行器
+    private MessageTransformer transformer;
+    private boolean clearDeliveredList;
+    AtomicInteger inProgressClearRequiredFlag;
+    private MessageAck pendingAck;//消息回复
+    private long lastDeliveredSequenceId;
+    private IOException failureError;
+    private long optimizeAckTimestamp;
+    private long optimizeAcknowledgeTimeOut;
+    private long optimizedAckScheduledAckInterval;
+    private Runnable optimizedAckTask;//消息回复优化任务
+    private long failoverRedeliveryWaitPeriod;//当Master宕机时，消息传输等待时间
+    private boolean transactedIndividualAck;
+    private boolean nonBlockingRedelivery;//是否非阻塞传输
+    private boolean consumerExpiryCheckEnabled;
+   public void start()
+        throws JMSException
+    {
+        if(unconsumedMessages.isClosed())
+        {
+            return;
+        } else
+        {
+            started.set(true);
+	    //启动消息分发通道
+            unconsumedMessages.start();
+	    //唤醒会话执行器
+            session.executor.wakeup();
+            return;
+        }
+    }
+
+在ActiveMQMessageConsumer的构造中有对消息通道unconsumedMessages的初始化
+如果支持消息优先级，则为SimplePriorityMessageDispatchChannel，否则则为
+FifoMessageDispatchChannel
+ if(session.connection.isMessagePrioritySupported())
+            unconsumedMessages = new SimplePriorityMessageDispatchChannel();
+ else
+            unconsumedMessages = new FifoMessageDispatchChannel();
+
+我们来看一下FifoMessageDispatchChannel
+public class FifoMessageDispatchChannel
+    implements MessageDispatchChannel
+{
+    private final Object mutex = new Object();//消息分发通道互斥量
+    private final LinkedList list = new LinkedList();
+    private boolean closed;
+    private boolean running;//运行状态
+    public void start()
+    {
+        synchronized(mutex)
+        {
+            running = true;
+	    //唤醒所有等待消息分发锁的线程
+            mutex.notifyAll();
+        }
+    }
+}
+再看SimplePriorityMessageDispatchChannel
+
+public class SimplePriorityMessageDispatchChannel
+    implements MessageDispatchChannel
+{
+    private static final Integer MAX_PRIORITY = Integer.valueOf(10);
+    private final Object mutex = new Object();
+    private final LinkedList lists[];
+    private boolean closed;
+    private boolean running;
+    private int size;
+
+   public void start()
+    {
+        synchronized(mutex)
+        {
+            running = true;
+            mutex.notifyAll();
+        }
+    }
+}
+SimplePriorityMessageDispatchChannel的启动与FifoMessageDispatchChannel相同；
+
+回到会话启动中的执行器启动
+//ActiveMQSession
+protected void start()
+        throws JMSException
+    {
+        started.set(true);
+        ActiveMQMessageConsumer c;
+	//启动消费者
+        for(Iterator iter = consumers.iterator(); iter.hasNext(); c.start())
+            c = (ActiveMQMessageConsumer)iter.next();
+        //启动消息会话执行器
+        executor.start();
+    }
+
+//ActiveMQSessionExecutor
+public class ActiveMQSessionExecutor
+    implements Task
+{
+   private final ActiveMQSession session;//MQ会话
+    private final MessageDispatchChannel messageQueue;//消息分发通道
+    private boolean dispatchedBySessionPool;//是否依靠会话池分发消息
+    private volatile TaskRunner taskRunner;//任务执行器
+    private boolean startedOrWarnedThatNotStarted;
+   
+    ActiveMQSessionExecutor(ActiveMQSession session)
+    {
+        this.session = session;
+        if(this.session.connection != null && this.session.connection.isMessagePrioritySupported())
+            messageQueue = new SimplePriorityMessageDispatchChannel();
+        else
+            messageQueue = new FifoMessageDispatchChannel();
+    }
+   
+}
+//ActiveMQSessionExecutor
+ synchronized void start()
+    {
+        //如果消息分发通道处于未启动状态，则启动消息分化通道
+        if(!messageQueue.isRunning())
+        {
+	   //这个在上面已经看到
+            messageQueue.start();
+	    //如果有为消费的消息，则唤醒
+            if(hasUncomsumedMessages())
+                wakeup();
+        }
+    }
+//判断是否有未消费的消息
+public boolean hasUncomsumedMessages()
+    {
+        return !messageQueue.isClosed() && messageQueue.isRunning() && !messageQueue.isEmpty();
+    }
+ //唤醒
+ public void wakeup()
+    {
+label0:
+        {
+            if(dispatchedBySessionPool)
+                break MISSING_BLOCK_LABEL_134;
+            if(!session.isSessionAsyncDispatch())
+                break label0;
+            TaskRunner taskRunner;
+            try
+            {
+label1:
+                {
+                    taskRunner = this.taskRunner;
+                    if(taskRunner != null)
+                        break MISSING_BLOCK_LABEL_105;
+                    synchronized(this)
+                    {
+                        if(this.taskRunner != null)
+                            break MISSING_BLOCK_LABEL_90;
+                        if(isRunning())
+                            break label1;
+                    }
+                    return;
+                }
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+                break MISSING_BLOCK_LABEL_134;
+            }
+        }
+	//创建会话任务执运行器
+        this.taskRunner = session.connection.getSessionTaskRunner().createTaskRunner(this, (new StringBuilder()).append("ActiveMQ Session: ").append(session.getSessionId()).toString());
+        taskRunner = this.taskRunner;
+        activemqsessionexecutor;
+        JVM INSTR monitorexit ;
+        break MISSING_BLOCK_LABEL_105;
+        exception;
+        throw exception;
+        taskRunner.wakeup();
+        break MISSING_BLOCK_LABEL_134;
+    }
+从这一句可以看出通过ActiveMQConnection来创建的，为TaskRunnerFactory
+session.connection.getSessionTaskRunner().createTaskRunner
+ public TaskRunnerFactory getSessionTaskRunner()
+    {
+        synchronized(this)
+        {
+            if(sessionTaskRunner == null)
+            {
+                sessionTaskRunner = new TaskRunnerFactory("ActiveMQ Session Task", 7, false, 1000, isUseDedicatedTaskRunner(), maxThreadPoolSize);
+                sessionTaskRunner.setRejectedTaskHandler(rejectedTaskHandler);
+            }
+        }
+        return sessionTaskRunner;
+    }
+再来看为TaskRunnerFactory如何创建任务运行器
+public class TaskRunnerFactory
+    implements Executor
+{ 
+    private ExecutorService executor;//执行器
+    private int maxIterationsPerRun;
+    private String name;
+    private int priority;//优先级
+    private boolean daemon;
+    private final AtomicLong id;
+    private boolean dedicatedTaskRunner;
+    private long shutdownAwaitTermination;
+    private final AtomicBoolean initDone;//是否初始化
+    private int maxThreadPoolSize;//最大线程池大小
+    private RejectedExecutionHandler rejectedTaskHandler;//当线程达到，线程池大小的拒绝策略
+    private ClassLoader threadClassLoader;
+ public TaskRunnerFactory(String name, int priority, boolean daemon, int maxIterationsPerRun, boolean dedicatedTaskRunner, int maxThreadPoolSize)
+    {
+        id = new AtomicLong(0L);
+        shutdownAwaitTermination = 30000L;
+        initDone = new AtomicBoolean(false);
+        this.maxThreadPoolSize = 2147483647;
+        rejectedTaskHandler = null;
+        this.name = name;
+        this.priority = priority;
+        this.daemon = daemon;
+        this.maxIterationsPerRun = maxIterationsPerRun;
+        this.dedicatedTaskRunner = dedicatedTaskRunner;
+        this.maxThreadPoolSize = maxThreadPoolSize;
+    }
+}
+TaskRunnerFactory
+
+public TaskRunner createTaskRunner(Task task, String name)
+    {
+       //初始化
+        init();
+	//如果线程池为空，则创建线程执行器
+        if(executor != null)
+            return new PooledTaskRunner(executor, task, maxIterationsPerRun);
+        else
+            return new DedicatedTaskRunner(task, name, priority, daemon);
+    }
+
+  public void init()
+    {
+       //如果未初始化，则设置状态为已初始化
+        if(initDone.compareAndSet(false, true))
+        {
+	   //判断是否用专业执行器，是则创建DedicatedTaskRunner
+            if(dedicatedTaskRunner || "true".equalsIgnoreCase(System.getProperty("org.apache.activemq.UseDedicatedTaskRunner")))
+                executor = null;
+            else
+            if(executor == null)
+	       //创建默认执行器
+                executor = createDefaultExecutor();
+            LOG.debug("Initialized TaskRunnerFactory[{}] using ExecutorService: {}", name, executor);
+        }
+    }
+    //创建默认执行器
+protected ExecutorService createDefaultExecutor()
+    {
+        ThreadPoolExecutor rc = new ThreadPoolExecutor(0, getMaxThreadPoolSize(), getDefaultKeepAliveTime(), TimeUnit.SECONDS, new SynchronousQueue(), new ThreadFactory() {
+
+            public Thread newThread(Runnable runnable)
+            {
+                String threadName = (new StringBuilder()).append(name).append("-").append(id.incrementAndGet()).toString();
+                Thread thread = new Thread(runnable, threadName);
+                thread.setDaemon(daemon);
+                thread.setPriority(priority);
+                if(threadClassLoader != null)
+                    thread.setContextClassLoader(threadClassLoader);
+                thread.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+
+                    public void uncaughtException(Thread t, Throwable e)
+                    {
+                        TaskRunnerFactory.LOG.error("Error in thread '{}'", t.getName(), e);
+                    }
+
+                    final _cls1 this$1;
+
+                    
+                    {
+                        this$1 = _cls1.this;
+                        super();
+                    }
+                });
+                TaskRunnerFactory.LOG.trace("Created thread[{}]: {}", threadName, thread);
+                return thread;
+            }
+
+            final TaskRunnerFactory this$0;
+
+            
+            {
+                this$0 = TaskRunnerFactory.this;
+                super();
+            }
+        });
+        if(rejectedTaskHandler != null)
+            rc.setRejectedExecutionHandler(rejectedTaskHandler);
+        return rc;
+    }
+
+回到createTaskRunner
+public TaskRunner createTaskRunner(Task task, String name)
+    {
+       //初始化
+        init();
+	//如果线程池为空，则创建线程执行器
+        if(executor != null)
+            return new PooledTaskRunner(executor, task, maxIterationsPerRun);
+        else
+            return new DedicatedTaskRunner(task, name, priority, daemon);
+    }
+
+我们来看PooledTaskRunner
+class PooledTaskRunner
+    implements TaskRunner
+{
+    private final int maxIterationsPerRun;//每次执行允许最大线程数
+    private final Executor executor;//执行器
+    private final Task task;
+    private final Runnable runable;
+    private boolean queued;//是否为队列
+    private boolean shutdown;
+    private boolean iterating;
+    private volatile Thread runningThread;
+
+    public PooledTaskRunner(Executor executor, final Task task, int maxIterationsPerRun)
+    {
+        this.executor = executor;
+        this.maxIterationsPerRun = maxIterationsPerRun;
+        this.task = task;
+        runable = new Runnable() {
+
+            public void run()
+            {
+                runningThread = Thread.currentThread();
+                runTask();
+                PooledTaskRunner.LOG.trace("Run task done: {}", task);
+                runningThread = null;
+                break MISSING_BLOCK_LABEL_70;
+                Exception exception;
+                exception;
+                PooledTaskRunner.LOG.trace("Run task done: {}", task);
+                runningThread = null;
+                throw exception;
+            }
+
+            final Task val$task;
+            final PooledTaskRunner this$0;
+
+            
+            {
+                this$0 = PooledTaskRunner.this;
+                task = task1;
+                super();
+            }
+        };
+    }
+}
+//PooledTaskRunner
+    public void wakeup()
+        throws InterruptedException
+    {
+label0:
+        {
+            synchronized(runable)
+            {
+                if(!queued && !shutdown)
+                    break label0;
+            }
+            return;
+        }
+        queued = true;
+        if(!iterating)
+	    //执行runable
+            executor.execute(runable);
+        runnable;
+        JVM INSTR monitorexit ;
+          goto _L1
+        exception;
+        throw exception;
+_L1:
+    }
+在PooledTaskRunner的构造中可以看到
+runable = new Runnable() {
+
+            public void run()
+            {
+                runningThread = Thread.currentThread();
+                //运行任务
+                runTask();
+                PooledTaskRunner.LOG.trace("Run task done: {}", task);
+                runningThread = null;
+            }
+
+            final Task val$task;
+            final PooledTaskRunner this$0;
+
+            
+            {
+                this$0 = PooledTaskRunner.this;
+                task = task1;
+                super();
+            }
+        };
+//运行任务
+ final void runTask()
+    {
+        boolean done = false;
+        int i = 0;
+        do
+        {
+            if(i >= maxIterationsPerRun)
+                break;
+            LOG.trace("Running task iteration {} - {}", Integer.valueOf(i), task);
+	    //运行任务的iterate，而任务实际为ActiveMQSessionExecutor
+            if(!task.iterate())
+            {
+                done = true;
+                break;
+            }
+            i++;
+        } while(true);
+
+
+//ActiveMQSessionExecutor implements Task
+public boolean iterate()
+    {
+        for(Iterator i$ = session.consumers.iterator(); i$.hasNext();)
+        {
+            ActiveMQMessageConsumer consumer = (ActiveMQMessageConsumer)i$.next();
+            if(consumer.iterate())
+                return true;
+        }
+        //从消息队列中获取消息，消息出消息队列
+        MessageDispatch message = messageQueue.dequeueNoWait();
+        if(message == null)
+        {
+            return false;
+        } else
+        {
+	    //分发消息
+            dispatch(message);
+            return !messageQueue.isEmpty();
+        }
+    }
+//ActiveMQSessionExecutor
+ void dispatch(MessageDispatch message)
+    {
+        Iterator i$ = session.consumers.iterator();
+        do
+        {
+            if(!i$.hasNext())
+                break;
+            ActiveMQMessageConsumer consumer = (ActiveMQMessageConsumer)i$.next();
+            ConsumerId consumerId = message.getConsumerId();
+            if(!consumerId.equals(consumer.getConsumerId()))
+                continue;
+	    //遍历会话的消费者，分发消息，实际调用的是ActiveMQMessageConsumer的dispatch(message)
+            consumer.dispatch(message);
+            break;
+        } while(true);
+    }
+
+//ActiveMQMessageConsumer
+ public boolean iterate()
+    { 
+       //private final AtomicReference messageListener = new AtomicReference();
+        MessageListener listener = (MessageListener)messageListener.get();
+        if(listener != null)
+        {
+	   //如果消息消费者注册的消息监听器，则未消费消息通道则从消息队列取出消息，分发消息
+            MessageDispatch md = unconsumedMessages.dequeueNoWait();
+            if(md != null)
+            {
+	        //分发消息
+                dispatch(md);
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+再看ActiveMQMessageConsumer的dispatch(message)
+
+public void dispatch(MessageDispatch md)
+    {
+        //包装分发消息
+        ActiveMQMessage message = createActiveMQMessage(md);
+        beforeMessageIsConsumed(md);
+        try
+        {
+            boolean expired = isConsumerExpiryCheckEnabled() && message.isExpired();
+            if(!expired)
+	        //如果消息没有过期，则消息消费者通过消息监听器MessageListener消费消息
+                listener.onMessage(message);
+            afterMessageIsConsumed(md, expired);
+        }
+	if(!unconsumedMessages.isRunning())
+            session.connection.rollbackDuplicate(this, md.getMessage());
+	//将消息添加到未分发消息通道
+        unconsumedMessages.enqueue(md);
+	if(redeliveryExpectedInCurrentTransaction(md, true))
+        {
+            LOG.debug("{} tracking transacted redelivery {}", getConsumerId(), md.getMessage());
+            if(transactedIndividualAck)
+                immediateIndividualTransactedAck(md);
+            else
+	        //发送回复消息
+                session.sendAck(new MessageAck(md, (byte)0, 1));
+        } 
+  }
+ 总结：
+会话的创建主要最的工作是，初始化消费者，生产者id产生器，会话消费者，生产者队列，
+消息确认模式，是否异步分发，设置连接事务上下文，异步发送会话信息，新建消息会话执行器，会话添加到
+ActiveMQConnection的会话队列CopyOnWriteArrayList；然后启动消费则，主要是启动消息分发通道，
+唤醒会话执行器ActiveMQSessionExecutor；最后启动会话执行器ActiveMQSessionExecutor，在启动会话执行器时，
+如果消息分发通道处于未启动状态，则启动消息分发通道，如果有未消费的消息，唤醒消息执行器，唤醒主要做的做工作是
+ActiveMQConnection创建任务执行TaskRunnerFactory，有任务执行工厂TaskRunnerFactory，有任务执行工厂创建执行任务
+PooledTaskRunner，PooledTaskRunner是ActiveMQSessionExecutor的包装，
+PooledTaskRunner执行就是执行ActiveMQSessionExecutor
+iterate的函数，这个过程主要是ActiveMQSessionExecutor从ActiveMQSession获取会话消费者consumer，然后遍历
+消费者，消费者通过MessageListener消费消息。
+ActiveMQConnection与ActiveMQSession，ActiveMQMessageConsumer，
+ActiveMQMessageProducer的关系，连接管理会话（1-n），会话管理消息者与生产者（1-n）。ActiveMQSession关联一个
+ActiveMQSessionExecutor，由会话执行器，消费者消费消息。
+
+//MessageListener
+public interface MessageListener
+{
+    public abstract void onMessage(Message message);
+}
+
+//MessageDispatch
+public class MessageDispatch extends BaseCommand
+{
+    protected ConsumerId consumerId;//消费id
+    protected ActiveMQDestination destination;//目的地
+    protected Message message;//消息
+    protected int redeliveryCounter;//消息传输计数器
+    protected transient long deliverySequenceId;
+    protected transient Object consumer;//消费者
+    protected transient TransmitCallback transmitCallback;
+    protected transient Throwable rollbackCause;
+}
+//Session
+public interface Session
+    extends Runnable
+{   
+    public static final int AUTO_ACKNOWLEDGE = 1;
+    public static final int CLIENT_ACKNOWLEDGE = 2;
+    public static final int DUPS_OK_ACKNOWLEDGE = 3;
+    public static final int SESSION_TRANSACTED = 0;
+     public abstract ObjectMessage createObjectMessage()
+        throws JMSException;
+
+    public abstract ObjectMessage createObjectMessage(Serializable serializable)
+        throws JMSException;
+
+    public abstract StreamMessage createStreamMessage()
+        throws JMSException;
+
+    public abstract TextMessage createTextMessage()
+        throws JMSException;
+
+    public abstract TextMessage createTextMessage(String s)
+        throws JMSException;
+
+    public abstract boolean getTransacted()
+        throws JMSException;
+
+    public abstract int getAcknowledgeMode()
+        throws JMSException;
+
+    public abstract void commit()
+        throws JMSException;
+
+    public abstract void rollback()
+        throws JMSException;
+
+    public abstract void close()
+        throws JMSException;
+
+    public abstract void recover()
+        throws JMSException;
+
+    public abstract MessageListener getMessageListener()
+        throws JMSException;
+
+    public abstract void setMessageListener(MessageListener messagelistener)
+        throws JMSException;
+
+    public abstract void run();
+
+    public abstract MessageProducer createProducer(Destination destination)
+        throws JMSException;
+
+    public abstract MessageConsumer createConsumer(Destination destination)
+        throws JMSException;
+
+    public abstract MessageConsumer createConsumer(Destination destination, String s)
+        throws JMSException;
+
+    public abstract MessageConsumer createConsumer(Destination destination, String s, boolean flag)
+        throws JMSException;
+
+    public abstract Queue createQueue(String s)
+        throws JMSException;
+
+    public abstract Topic createTopic(String s)
+        throws JMSException;
+
+    public abstract TopicSubscriber createDurableSubscriber(Topic topic, String s)
+        throws JMSException;
+
+    public abstract TopicSubscriber createDurableSubscriber(Topic topic, String s, String s1, boolean flag)
+        throws JMSException;
+
+    public abstract QueueBrowser createBrowser(Queue queue)
+        throws JMSException;
+
+    public abstract QueueBrowser createBrowser(Queue queue, String s)
+        throws JMSException;
+
+    public abstract TemporaryQueue createTemporaryQueue()
+        throws JMSException;
+
+    public abstract TemporaryTopic createTemporaryTopic()
+        throws JMSException;
+
+    public abstract void unsubscribe(String s)
+        throws JMSException;
+}

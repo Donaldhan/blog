@@ -1,0 +1,470 @@
+/*
+ * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
+ * Written by Doug Lea with assistance from members of JCP JSR-166
+ * Expert Group and released to the public domain, as explained at
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+
+package java.util.concurrent;
+import java.util.concurrent.locks.*;
+import java.util.concurrent.atomic.*;
+
+/**
+ * A synchronization aid that allows one or more threads to wait until
+ * a set of operations being performed in other threads completes.
+ * 同步化的一个辅助工具，允许一个或多个线程等待，直到所有线程中执行完成
+ *比如主线程计算一个复杂的计算表达式，将表达式分为多个子表达式在线程中去计算，
+ *主线程要计算表达式的最后值，必须等所有的线程计算完子表达式计算，方可计算表达式的值；
+ *再比如一个团队赛跑游戏，最后要计算团队赛跑的成绩，主线程计算最后成绩，要等到所有
+ *团队成员跑完，方可计算总成绩。
+ * <p>A {@code CountDownLatch} is initialized with a given <em>count</em>.
+ * The {@link #await await} methods block until the current count reaches
+ * zero due to invocations of the {@link #countDown} method, after which
+ * all waiting threads are released and any subsequent invocations of
+ * {@link #await await} return immediately.  This is a one-shot phenomenon
+ * -- the count cannot be reset.  If you need a version that resets the
+ * count, consider using a {@link CyclicBarrier}.
+ *CountDownLatch有一个初始值，调用await的线程，要等待CountDownLatch值为0时，方可
+ *往下执行
+ * <p>A {@code CountDownLatch} is a versatile synchronization tool
+ * and can be used for a number of purposes.  A
+ * {@code CountDownLatch} initialized with a count of one serves as a
+ * simple on/off latch, or gate: all threads invoking {@link #await await}
+ * wait at the gate until it is opened by a thread invoking {@link
+ * #countDown}.  A {@code CountDownLatch} initialized to <em>N</em>
+ * can be used to make one thread wait until <em>N</em> threads have
+ * completed some action, or some action has been completed N times.
+ *
+ * <p>A useful property of a {@code CountDownLatch} is that it
+ * doesn't require that threads calling {@code countDown} wait for
+ * the count to reach zero before proceeding, it simply prevents any
+ * thread from proceeding past an {@link #await await} until all
+ * threads could pass.
+ *
+ * <p><b>Sample usage:</b> Here is a pair of classes in which a group
+ * of worker threads use two countdown latches:
+ * <ul>
+ * <li>The first is a start signal that prevents any worker from proceeding
+ * until the driver is ready for them to proceed;
+ * <li>The second is a completion signal that allows the driver to wait
+ * until all workers have completed.
+ * </ul>
+ *第一种，所有线程等待一个开始信息号，当开始信息号启动时，所有线程执行，等待所有线程执行完
+ *方可执行主线程任务
+ * <pre>
+ * class Driver { // ...
+ *   void main() throws InterruptedException {
+ *     CountDownLatch startSignal = new CountDownLatch(1);
+ *     CountDownLatch doneSignal = new CountDownLatch(N);
+ *
+ *     for (int i = 0; i < N; ++i) // create and start threads
+ *       new Thread(new Worker(startSignal, doneSignal)).start();
+ *
+ *     doSomethingElse();  // don't let run yet
+       //给所有线程一个开始信号，比如上面的团队赛发令枪
+ *     startSignal.countDown();      // let all threads proceed
+ *     doSomethingElse();
+       //等待所有团队赛跑选手，释放跑完信号
+ *     doneSignal.await();           // wait for all to finish
+ *   }
+ * }
+ *
+ * class Worker implements Runnable {
+ *   private final CountDownLatch startSignal;
+ *   private final CountDownLatch doneSignal;
+ *   Worker(CountDownLatch startSignal, CountDownLatch doneSignal) {
+ *      this.startSignal = startSignal;
+ *      this.doneSignal = doneSignal;
+ *   }
+ *   public void run() {
+ *      try {
+         //等待开始信息号
+ *        startSignal.await();
+         //赛跑
+ *        doWork();
+          //跑完，计时员收到跑完信号通知
+ *        doneSignal.countDown();
+ *      } catch (InterruptedException ex) {} // return;
+ *   }
+ *
+ *   void doWork() { ... }
+ * }
+ *
+ * </pre>
+ *
+ * <p>Another typical usage would be to divide a problem into N parts,
+ * describe each part with a Runnable that executes that portion and
+ * counts down on the latch, and queue all the Runnables to an
+ * Executor.  When all sub-parts are complete, the coordinating thread
+ * will be able to pass through await. (When threads must repeatedly
+ * count down in this way, instead use a {@link CyclicBarrier}.)
+ *所有线程放在线程池中，执行，等待所有线程执行完，方可执行主线程任务
+ * <pre>
+ * class Driver2 { // ...
+ *   void main() throws InterruptedException {
+ *     CountDownLatch doneSignal = new CountDownLatch(N);
+ *     Executor e = ...
+ *
+ *     for (int i = 0; i < N; ++i) // create and start threads
+ *       e.execute(new WorkerRunnable(doneSignal, i));
+ *
+ *     doneSignal.await();           // wait for all to finish
+ *   }
+ * }
+ *
+ * class WorkerRunnable implements Runnable {
+ *   private final CountDownLatch doneSignal;
+ *   private final int i;
+ *   WorkerRunnable(CountDownLatch doneSignal, int i) {
+ *      this.doneSignal = doneSignal;
+ *      this.i = i;
+ *   }
+ *   public void run() {
+ *      try {
+ *        doWork(i);
+ *        doneSignal.countDown();
+ *      } catch (InterruptedException ex) {} // return;
+ *   }
+ *
+ *   void doWork() { ... }
+ * }
+ *
+ * </pre>
+ *
+ * <p>Memory consistency effects: Until the count reaches
+ * zero, actions in a thread prior to calling
+ * {@code countDown()}
+ * <a href="package-summary.html#MemoryVisibility"><i>happen-before</i></a>
+ * actions following a successful return from a corresponding
+ * {@code await()} in another thread.
+ *
+ * @since 1.5
+ * @author Doug Lea
+ */
+public class CountDownLatch {
+    /**
+     * Synchronization control For CountDownLatch.
+     * Uses AQS state to represent count.
+     *用一个 AQS状态代表信号量数
+     */
+    private static final class Sync extends AbstractQueuedSynchronizer {
+        private static final long serialVersionUID = 4982264981922014374L;
+
+        Sync(int count) {
+            setState(count);
+        }
+
+        int getCount() {
+            return getState();
+        }
+        //获取信号量
+        protected int tryAcquireShared(int acquires) {
+            return (getState() == 0) ? 1 : -1;
+        }
+       //释放信号量
+        protected boolean tryReleaseShared(int releases) {
+            // Decrement count; signal when transition to zero
+            for (;;) {
+                int c = getState();
+                if (c == 0)
+                    return false;
+                int nextc = c-1;
+                if (compareAndSetState(c, nextc))
+                    return nextc == 0;
+            }
+        }
+    }
+
+    private final Sync sync;
+
+    /**
+     * Constructs a {@code CountDownLatch} initialized with the given count.
+     *
+     * @param count the number of times {@link #countDown} must be invoked
+     *        before threads can pass through {@link #await}
+     * @throws IllegalArgumentException if {@code count} is negative
+     */
+    public CountDownLatch(int count) {
+        if (count < 0) throw new IllegalArgumentException("count < 0");
+        this.sync = new Sync(count);
+    }
+
+    /**
+     * Causes the current thread to wait until the latch has counted down to
+     * zero, unless the thread is {@linkplain Thread#interrupt interrupted}.
+     *
+     * <p>If the current count is zero then this method returns immediately.
+     *
+     * <p>If the current count is greater than zero then the current
+     * thread becomes disabled for thread scheduling purposes and lies
+     * dormant until one of two things happen:
+     * <ul>
+     * <li>The count reaches zero due to invocations of the
+     * {@link #countDown} method; or
+     * <li>Some other thread {@linkplain Thread#interrupt interrupts}
+     * the current thread.
+     * </ul>
+     *
+     * <p>If the current thread:
+     * <ul>
+     * <li>has its interrupted status set on entry to this method; or
+     * <li>is {@linkplain Thread#interrupt interrupted} while waiting,
+     * </ul>
+     * then {@link InterruptedException} is thrown and the current thread's
+     * interrupted status is cleared.
+     *
+     * @throws InterruptedException if the current thread is interrupted
+     *         while waiting
+     */
+    public void await() throws InterruptedException {
+        sync.acquireSharedInterruptibly(1);
+    }
+
+    /**
+     * Causes the current thread to wait until the latch has counted down to
+     * zero, unless the thread is {@linkplain Thread#interrupt interrupted},
+     * or the specified waiting time elapses.
+     *
+     * <p>If the current count is zero then this method returns immediately
+     * with the value {@code true}.
+     *
+     * <p>If the current count is greater than zero then the current
+     * thread becomes disabled for thread scheduling purposes and lies
+     * dormant until one of three things happen:
+     * <ul>
+     * <li>The count reaches zero due to invocations of the
+     * {@link #countDown} method; or
+     * <li>Some other thread {@linkplain Thread#interrupt interrupts}
+     * the current thread; or
+     * <li>The specified waiting time elapses.
+     * </ul>
+     *
+     * <p>If the count reaches zero then the method returns with the
+     * value {@code true}.
+     *
+     * <p>If the current thread:
+     * <ul>
+     * <li>has its interrupted status set on entry to this method; or
+     * <li>is {@linkplain Thread#interrupt interrupted} while waiting,
+     * </ul>
+     * then {@link InterruptedException} is thrown and the current thread's
+     * interrupted status is cleared.
+     *
+     * <p>If the specified waiting time elapses then the value {@code false}
+     * is returned.  If the time is less than or equal to zero, the method
+     * will not wait at all.
+     *
+     * @param timeout the maximum time to wait
+     * @param unit the time unit of the {@code timeout} argument
+     * @return {@code true} if the count reached zero and {@code false}
+     *         if the waiting time elapsed before the count reached zero
+     * @throws InterruptedException if the current thread is interrupted
+     *         while waiting
+     */
+    public boolean await(long timeout, TimeUnit unit)
+        throws InterruptedException {
+        return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
+    }
+
+    /**
+     * Decrements the count of the latch, releasing all waiting threads if
+     * the count reaches zero.
+     *
+     * <p>If the current count is greater than zero then it is decremented.
+     * If the new count is zero then all waiting threads are re-enabled for
+     * thread scheduling purposes.
+     *
+     * <p>If the current count equals zero then nothing happens.
+     */
+    public void countDown() {
+        sync.releaseShared(1);
+    }
+
+    /**
+     * Returns the current count.
+     *
+     * <p>This method is typically used for debugging and testing purposes.
+     *
+     * @return the current count
+     */
+    public long getCount() {
+        return sync.getCount();
+    }
+
+    /**
+     * Returns a string identifying this latch, as well as its state.
+     * The state, in brackets, includes the String {@code "Count ="}
+     * followed by the current count.
+     *
+     * @return a string identifying this latch, as well as its state
+     */
+    public String toString() {
+        return super.toString() + "[Count = " + sync.getCount() + "]";
+    }
+}
+测试有统一开始信号的情况：
+package juc;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+
+public class RunnerGames {
+	public static void main(String[] args) {
+		   CountDownLatch startSignal = new CountDownLatch(1);
+		   CountDownLatch doneSignal = new CountDownLatch(3);
+		   ExecutorService  exec = Executors.newCachedThreadPool();
+		   RunnableMan rm1 = new RunnableMan(startSignal,doneSignal, 1000);
+		   RunnableMan rm2 = new RunnableMan(startSignal,doneSignal, 2000);
+		   RunnableMan rm3 = new RunnableMan(startSignal,doneSignal, 3000);
+		   Future<Integer> score1 = exec.submit(rm1);
+		   Future<Integer> score2 = exec.submit(rm2);
+		   Future<Integer> score3 = exec.submit(rm3);
+		   System.out.println("开始赛跑......");
+		   startSignal.countDown();
+		   try {
+			   doneSignal.await();
+			} catch (InterruptedException e1) {
+				e1.printStackTrace();
+			}  
+		   int sumScores =0;
+		   try {
+			   try {
+				sumScores  = score1.get()+score2.get()+score3.get();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			} catch (ExecutionException e) {
+				e.printStackTrace();
+			}
+		   System.out.println("团队赛跑结束,最后成绩为："+sumScores);
+		   exec.shutdown();
+		 }
+}
+
+
+package juc;
+
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+
+class RunnableMan implements Callable<Integer> {  
+	  private final CountDownLatch startSignal;
+	  private final CountDownLatch doneSignal;             
+	  private final int i;                                 
+	  RunnableMan(CountDownLatch startSignal,CountDownLatch doneSignal, int i) {   
+		 this.startSignal = startSignal;
+	     this.doneSignal = doneSignal;                     
+	     this.i = i;                                       
+	  }                                                    
+	  public Integer call() {        
+	     try {
+	    	startSignal.await();
+			doRun(i);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}                                      
+	     doneSignal.countDown();
+	     return new Integer(i);
+	  }                                                    
+	  void doRun(int i) throws InterruptedException { 
+		  System.out.println("选手"+i/1000+"正在赛跑中........");
+		  Thread.sleep(i*2);
+	  }                             
+}                                                      
+
+测试结果：
+开始赛跑......
+选手3正在赛跑中........
+选手2正在赛跑中........
+选手1正在赛跑中........
+团队赛跑结束,最后成绩为：6000
+
+
+测试第二种情况，没有开始信号
+
+package juc;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+/**AtomicInteger，一个提供原子操作的Integer的类。
+在Java语言中，++i和i++操作并不是线程安全的，在使用的时候，
+不可避免的会用到synchronized关键字。而AtomicInteger则通过一种线程安全的加减操作接口。*/
+public class ShopTickets {
+	private static volatile AtomicInteger tickets = new AtomicInteger(10);
+	public static void main(String[] args) throws InterruptedException {
+		  CountDownLatch doneSignal = new CountDownLatch(3);
+		   Executor exec = Executors.newCachedThreadPool();
+		   exec.execute(new TicketSales(doneSignal,"售票员1",tickets));
+		   exec.execute(new TicketSales(doneSignal,"售票员2",tickets));
+		   exec.execute(new TicketSales(doneSignal,"售票员3",tickets));
+		   doneSignal.await();  
+		   System.out.println("票已售完,所有售票员，停止售票");
+		 }
+}
+
+package juc;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
+
+class TicketSales implements Runnable {  
+	  private final CountDownLatch doneSignal;   
+	  private final AtomicInteger tickets;
+	  private String saleName;
+	  
+	  TicketSales(CountDownLatch doneSignal, String saleName,AtomicInteger tickets) { 
+	     this.doneSignal = doneSignal;                   
+	     this.saleName = saleName; 
+	     this.tickets = tickets;
+	  }         
+	  public  void run() {                                
+		  doSales(tickets);                                    
+	  }                                                  
+	  public  void  doSales(AtomicInteger tickets) { 
+		   try {
+				   while(tickets.get()>0){
+					System.out.println(saleName+"卖完一张票，还有："+tickets.decrementAndGet()+"张");
+					Thread.sleep(1000);
+			   }
+				doneSignal.countDown();
+		  }catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	  }                              
+}                                                    
+测试结果:	                                                                                                                                      
+售票员1卖完一张票，还有：8张
+售票员3卖完一张票，还有：7张
+售票员2卖完一张票，还有：9张
+售票员3卖完一张票，还有：5张
+售票员1卖完一张票，还有：6张
+售票员3卖完一张票，还有：3张
+售票员2卖完一张票，还有：4张
+售票员3卖完一张票，还有：1张
+售票员1卖完一张票，还有：2张
+售票员2卖完一张票，还有：0张
+票已售完,所有售票员，停止售票
+有时测试结果为：
+
+售票员1卖完一张票，还有：9张
+售票员2卖完一张票，还有：8张
+售票员3卖完一张票，还有：7张
+售票员2卖完一张票，还有：6张
+售票员1卖完一张票，还有：5张
+售票员3卖完一张票，还有：4张
+售票员3卖完一张票，还有：2张
+售票员2卖完一张票，还有：1张
+售票员1卖完一张票，还有：3张
+售票员1卖完一张票，还有：0张
+售票员2卖完一张票，还有：-1张
+票已售完,所有售票员，停止售票
+
+把Thread.sleep(1000)这句去掉，票数为负数的概率较小，但还是会出现，
+我测试了3分钟，出现2次。
+
+
