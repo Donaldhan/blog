@@ -1,0 +1,31 @@
+Solaris 环境下ActiveMQ关闭时出现异常 :http://blog.csdn.net/a9529lty/article/details/9142785
+ActiveMQ exception when stopping:http://stackoverflow.com/questions/11019313/activemq-exception-when-stopping
+[root@zabbix ~]# cd /acivemq/
+[root@zabbix acivemq]# ls
+apache-activemq-5.12.1
+[root@zabbix acivemq]# cd apache-activemq-5.12.1/
+[root@zabbix apache-activemq-5.12.1]# ls
+activemq-all-5.12.1.jar  bin  conf  data  docs  examples  lib  LICENSE  NOTICE  README.txt  tmp  webapps  webapps-demo
+[root@zabbix apache-activemq-5.12.1]# cd bin
+[root@zabbix bin]# ./activemq start
+INFO: Loading '/acivemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/bin/java'
+INFO: Starting - inspect logfiles specified in logging.properties and log4j.properties to get details
+INFO: pidfile created : '/acivemq/apache-activemq-5.12.1//data/activemq.pid' (pid ' 4047')
+[root@zabbix bin]# ./activemq status
+INFO: Loading '/acivemq/apache-activemq-5.12.1//bin/env'
+INFO: Using java '/bin/java'
+ActiveMQ is running (pid '7239')
+[root@zabbix bin]# 
+[root@zabbix bin]# netstat -ntlp | grep 4047
+tcp6       0      0 :::5672                 :::*                    LISTEN      4047/java           
+tcp6       0      0 :::61613                :::*                    LISTEN      4047/java           
+tcp6       0      0 :::61614                :::*                    LISTEN      4047/java           
+tcp6       0      0 :::61616                :::*                    LISTEN      4047/java           
+tcp6       0      0 :::42614                :::*                    LISTEN      4047/java           
+tcp6       0      0 :::1883                 :::*                    LISTEN      4047/java           
+tcp6       0      0 :::8161                 :::*                    LISTEN      4047/java   
+[root@zabbix bin]# ./activemq stop
+[root@zabbix apache-activemq-5.12.1]# ls
+activemq-all-5.12.1.jar  bin  conf  data  docs  examples  lib  LICENSE  NOTICE  README.txt  tmp  webapps  webapps-demo
+
