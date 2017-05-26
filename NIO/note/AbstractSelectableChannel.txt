@@ -1,0 +1,327 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+
+package java.nio.channels.spi;
+
+import java.io.IOException;
+import java.nio.channels.*;
+
+
+/**
+ * Base implementation class for selectable channels.
+ *AbstractSelectableChannel可选择通道的基础实现类。
+ * <p> This class defines methods that handle the mechanics of channel
+ * registration, deregistration, and closing.  It maintains the current
+ * blocking mode of this channel as well as its current set of selection keys.
+ * It performs all of the synchronization required to implement the {@link
+ * java.nio.channels.SelectableChannel} specification.  Implementations of the
+ * abstract protected methods defined in this class need not synchronize
+ * against other threads that might be engaged in the same operations.  </p>
+ *AbstractSelectableChannel提供通道的注册，反注册和关闭机制的实现。维护者与选择器key集合
+ 中通道对应的选择key相同的阻塞模式。实现了可选择通道需要实现所有同步操作。 AbstractSelectableChannel
+ 中所有的protect抽象方法，不需要同步，因为这些方法与其他线程相同的操作没有冲突。
+ *
+ * @author Mark Reinhold
+ * @author Mike McCloskey
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class AbstractSelectableChannel
+    extends SelectableChannel
+{
+
+    // The provider that created this channel,通道提供者
+    private final SelectorProvider provider;
+
+    // Keys that have been created by registering this channel with selectors.
+    // They are saved because if this channel is closed the keys must be
+    // deregistered.  Protected by keyLock.
+    //通道注册到选择器器的所有选择key。之所以保存的原因，是为了在通道关闭时，反注册通道的选择key。
+    //通过keyLock保证选择key集合的线程安全访问
+    private SelectionKey[] keys = null;
+    private int keyCount = 0;//与通道相关选择key的数量
+
+    // Lock for key set and count 选择key数组保护锁
+    private final Object keyLock = new Object();
+
+    // Lock for registration and configureBlocking operations
+    //注册和阻塞配置同步锁
+    private final Object regLock = new Object();
+
+    // Blocking mode, protected by regLock，默认为阻塞模式
+    //只有非阻塞模式的通道，才可以注册到选择器
+    boolean blocking = true;
+
+    /**
+     * Initializes a new instance of this class.
+     根据选择器服务提供者，构建AbstractSelectableChannel
+     */
+    protected AbstractSelectableChannel(SelectorProvider provider) {
+        this.provider = provider;
+    }
+
+    /**
+     * Returns the provider that created this channel.
+     *返回创建通道的选择器提供者。
+     * @return  The provider that created this channel
+     */
+    public final SelectorProvider provider() {
+        return provider;
+    }
+
+
+    // -- Utility methods for the key set --
+    //添加选择key
+    private void addKey(SelectionKey k) {
+        synchronized (keyLock) {
+            int i = 0;
+            if ((keys != null) && (keyCount < keys.length)) {
+	        //如果选择key数组已经创建，且数组未满，遍历数组中第一个为null的选择key，
+		//存在，记录位置
+                // Find empty element of key array
+                for (i = 0; i < keys.length; i++)
+                    if (keys[i] == null)
+                        break;
+            } else if (keys == null) {
+	        //如果选择key数组为创建，则创建选择key数组，默认容量为3，（读写连接事件/接受连接事件）
+                keys =  new SelectionKey[3];
+            } else {
+	        //如果选择key数组已满，则扩容为原来容量的2倍
+                // Grow key array
+                int n = keys.length * 2;
+                SelectionKey[] ks =  new SelectionKey[n];
+                for (i = 0; i < keys.length; i++)
+                    ks[i] = keys[i];
+                keys = ks;
+                i = keyCount;
+            }
+            keys[i] = k;
+            keyCount++;
+        }
+    }
+    //判断通道是否与指定的选择器是否有关联，
+    //换一种说法为，通道是否注册到选择器
+    private SelectionKey findKey(Selector sel) {
+        synchronized (keyLock) {
+            if (keys == null)
+                return null;
+	   //遍历通道选择key数组，匹配选择key的选择器
+            for (int i = 0; i < keys.length; i++)
+                if ((keys[i] != null) && (keys[i].selector() == sel))
+                    return keys[i];
+            return null;
+        }
+    }
+    //移除通道的指定选择key
+    void removeKey(SelectionKey k) {                    // package-private
+        synchronized (keyLock) {
+	    //遍历通道选择key数组，匹配选择key，相等则置null
+            for (int i = 0; i < keys.length; i++)
+                if (keys[i] == k) {
+                    keys[i] = null;
+                    keyCount--;
+                }
+	    //设置选择key状态为无效
+            ((AbstractSelectionKey)k).invalidate();
+        }
+    }
+   //判断通道选择key是否存在有效的，即是否注册到通道
+    private boolean haveValidKeys() {
+        synchronized (keyLock) {
+            if (keyCount == 0)
+                return false;
+	   //遍历通道选择key数组，判断选择key是否有效，存在一个有效，则返回true
+            for (int i = 0; i < keys.length; i++) {
+                if ((keys[i] != null) && keys[i].isValid())
+                    return true;
+            }
+            return false;
+        }
+    }
+
+
+    // -- Registration --
+    //是否注册到通道，选择key数组实际数量不为0，则已注册
+    public final boolean isRegistered() {
+        synchronized (keyLock) {
+            return keyCount != 0;
+        }
+    }
+    //通道注册到指定选择器的选择key
+    public final SelectionKey keyFor(Selector sel) {
+        return findKey(sel);
+    }
+
+    /**
+     * Registers this channel with the given selector, returning a selection key.
+     *注册通道到选择器，返回通道与选择器的映射选择key
+     * <p>  This method first verifies that this channel is open and that the
+     * given initial interest set is valid.
+     *方法首先验证通道是否打开，关注的操作事件是否有效
+     * <p> If this channel is already registered with the given selector then
+     * the selection key representing that registration is returned after
+     * setting its interest set to the given value.
+     *如果通道已经注册到选择器，则更新兴趣操作事件集，和附件对象
+     * <p> Otherwise this channel has not yet been registered with the given
+     * selector, so the {@link AbstractSelector#register register} method of
+     * the selector is invoked while holding the appropriate locks.  The
+     * resulting key is added to this channel's key set before being returned.
+     如果还没有注册到选择器，则注册通道到选择器，并将返回的选择key添加到通道
+     的选择key数组中。
+     * </p>
+     *
+     * @throws  ClosedSelectorException {@inheritDoc}
+     *
+     * @throws  IllegalBlockingModeException {@inheritDoc}
+     *
+     * @throws  IllegalSelectorException {@inheritDoc}
+     *
+     * @throws  CancelledKeyException {@inheritDoc}
+     *
+     * @throws  IllegalArgumentException {@inheritDoc}
+     */
+    public final SelectionKey register(Selector sel, int ops,
+                                       Object att)
+        throws ClosedChannelException
+    {
+        if (!isOpen())
+	    //通道已经关闭，则抛出ClosedChannelException
+            throw new ClosedChannelException();
+        if ((ops & ~validOps()) != 0)
+	    //如果注册的操作事件非通道所支持的操作事件，则抛出IllegalArgumentException
+            throw new IllegalArgumentException();
+        synchronized (regLock) {
+            if (blocking)
+	        //如果通道是阻塞模式，则抛出IllegalBlockingModeException
+                throw new IllegalBlockingModeException();
+            SelectionKey k = findKey(sel);
+            if (k != null) {
+	        //通道已经注册到选择器，更新兴趣操作事件集和附加对象
+                k.interestOps(ops);
+                k.attach(att);
+            }
+            if (k == null) {
+                // New registration
+		//否则，注册通道到选择器，具体注册流程，我们在以后具体详说
+                k = ((AbstractSelector)sel).register(this, ops, att);
+		//将注册返回的选择key，添加到通道的选择key集合中
+                addKey(k);
+            }
+            return k;
+        }
+    }
+
+
+    // -- Closing --
+
+    /**
+     * Closes this channel.
+     *
+     * <p> This method, which is specified in the {@link
+     * AbstractInterruptibleChannel} class and is invoked by the {@link
+     * java.nio.channels.Channel#close close} method, in turn invokes the
+     * {@link #implCloseSelectableChannel implCloseSelectableChannel} method in
+     * order to perform the actual work of closing this channel.  It then
+     * cancels all of this channel's keys.  </p>
+     */
+    protected final void implCloseChannel() throws IOException {
+        //关闭可选择通达
+        implCloseSelectableChannel();
+        synchronized (keyLock) {
+            int count = (keys == null) ? 0 : keys.length;
+	    //遍历通道的选择key数组，取消选择key
+            for (int i = 0; i < count; i++) {
+                SelectionKey k = keys[i];
+                if (k != null)
+                    k.cancel();
+            }
+        }
+    }
+
+    /**
+     * Closes this selectable channel.
+     *关闭可选择通道
+     * <p> This method is invoked by the {@link java.nio.channels.Channel#close
+     * close} method in order to perform the actual work of closing the
+     * channel.  This method is only invoked if the channel has not yet been
+     * closed, and it is never invoked more than once.
+     *这个方法在通道关闭方法中执行实际的通道关闭工作，在通道还没有完全关闭时，调用，
+     最多调用一次。
+     * <p> An implementation of this method must arrange for any other thread
+     * that is blocked in an I/O operation upon this channel to return
+     * immediately, either by throwing an exception or by returning normally.
+     此方法的实现必须安排其他阻塞在通道IO操作的线程立刻返回，或抛出一个异常，或正常返回。
+     * </p>
+     */
+    protected abstract void implCloseSelectableChannel() throws IOException;
+
+
+    // -- Blocking --
+    //判断阻塞模式
+    public final boolean isBlocking() {
+        synchronized (regLock) {
+            return blocking;
+        }
+    }
+    //获取阻塞锁，即注册锁regLock
+    public final Object blockingLock() {
+        return regLock;
+    }
+
+    /**
+     * Adjusts this channel's blocking mode.
+     *
+     * <p> If the given blocking mode is different from the current blocking
+     * mode then this method invokes the {@link #implConfigureBlocking
+     * implConfigureBlocking} method, while holding the appropriate locks, in
+     * order to change the mode.  </p>
+     */
+    public final SelectableChannel configureBlocking(boolean block)
+        throws IOException
+    {
+        if (!isOpen())
+	    //如果通道关闭，则抛出ClosedChannelException
+            throw new ClosedChannelException();
+        synchronized (regLock) {
+            if (blocking == block)
+	        //通道阻塞模式相同，则直接返回
+                return this;
+            if (block && haveValidKeys())
+	       //已注册到通道，只能是非阻塞模式，配置阻塞模式，抛出IllegalBlockingModeException
+                throw new IllegalBlockingModeException();
+            implConfigureBlocking(block);
+            blocking = block;
+        }
+        return this;
+    }
+
+    /**
+     * Adjusts this channel's blocking mode.
+     *调整通道阻塞模式
+     * <p> This method is invoked by the {@link #configureBlocking
+     * configureBlocking} method in order to perform the actual work of
+     * changing the blocking mode.  This method is only invoked if the new mode
+     * is different from the current mode.  </p>
+     *此方方法在#configureBlocking方法中调用，主要执行实际的阻塞模式切换工作。
+     此方只有在配置的阻塞模式与当前阻塞模式不同时，才会被调用。
+     * @throws IOException
+     *         If an I/O error occurs
+     */
+    protected abstract void implConfigureBlocking(boolean block)
+        throws IOException;
+
+}
+总结：
+AbstractSelectableChannel有一个SelectorProvider类型的变量provider，主要是为创建通道而
+服务。一个选择key数组keys，保存与通道相关的选择key，一个key计数器keyCount，记录当前通道注册到选择器
+，生成的选择key。一个布尔blocking记录当前通道的阻塞模式。一个keyLock拥有控制选择key数据的
+线程安全访问。同时还有一个regLock控制通道注册选择器和配置通道阻塞模式的线程安全访问。
+提供了选择key集合keys的添加和移除，判断通道是否注册到选择器，及获取注册到选择器的选择key。
+注册通道到选择器过程为：首先验证通道是否打开，关注的操作事件是否有效，如果通道打开且事件有效，
+判断通道是注册到选择器，如果通道已经注册到选择器，则更新兴趣操作事件集，和附件对象，否则调用
+选择器的注册方法，并将返回的选择key添加到通道选择key集合。关闭通道所做的工作主要是，遍历通道的选择key数组，
+取消选择key。

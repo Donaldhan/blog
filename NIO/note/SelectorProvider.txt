@@ -1,0 +1,454 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+在上面的几篇文章中，经常看到一个类SelectorProvider，一直不知道什么意思，再往下分析之前，我们
+先看一下SelectorProvider的定义，以便后面更好的理解通道和选择器。
+
+package java.nio.channels.spi;
+
+import java.io.IOException;
+import java.net.ProtocolFamily;
+import java.nio.channels.*;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.Iterator;
+import java.util.ServiceLoader;
+import java.util.ServiceConfigurationError;
+import sun.security.action.GetPropertyAction;
+
+
+/**
+ * Service-provider class for selectors and selectable channels.
+ *SelectorProvider主要是为创建选择器和可选择通道而服务的。
+ * <p> A selector provider is a concrete subclass of this class that has a
+ * zero-argument constructor and implements the abstract methods specified
+ * below.  A given invocation of the Java virtual machine maintains a single
+ * system-wide default provider instance, which is returned by the {@link
+ * #provider() provider} method.  The first invocation of that method will locate
+ * the default provider as specified below.
+ *SelectorProvider的子类有一个无参的构造器，并实现了一些特殊的抽象方法，如下：
+ 通过#provider调用java虚拟机维护一个系统默认的SelectorProvider实例。
+ * <p> The system-wide default provider is used by the static <tt>open</tt>
+ * methods of the {@link java.nio.channels.DatagramChannel#open
+ * DatagramChannel}, {@link java.nio.channels.Pipe#open Pipe}, {@link
+ * java.nio.channels.Selector#open Selector}, {@link
+ * java.nio.channels.ServerSocketChannel#open ServerSocketChannel}, and {@link
+ * java.nio.channels.SocketChannel#open SocketChannel} classes.  It is also
+ * used by the {@link java.lang.System#inheritedChannel System.inheritedChannel()}
+ * method. A program may make use of a provider other than the default provider
+ * by instantiating that provider and then directly invoking the <tt>open</tt>
+ * methods defined in this class.
+ *
+ 系统默认的SelectorProvider被用于DatagramChannel，Pipe，Selector，ServerSocketChannel，
+ SocketChannel，System.inheritedChannel()的open方法中，用于创建相应的通道和选择器。
+ * <p> All of the methods in this class are safe for use by multiple concurrent
+ * threads.  </p>
+ *所有的方法可以并发安全访问。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class SelectorProvider {
+
+    private static final Object lock = new Object();
+    private static SelectorProvider provider = null;
+
+    /**
+     * Initializes a new instance of this class.  </p>
+     *初始化SelectorProvider实例，如果不为null，检查运行时权限
+     * @throws  SecurityException
+     *          If a security manager has been installed and it denies
+     *          {@link RuntimePermission}<tt>("selectorProvider")</tt>
+     */
+    protected SelectorProvider() {
+        SecurityManager sm = System.getSecurityManager();
+        if (sm != null)
+            sm.checkPermission(new RuntimePermission("selectorProvider"));
+    }
+    //根据系统属性java.nio.channels.spi.SelectorProvider配置
+    //加载SelectorProvider实例
+    private static boolean loadProviderFromProperty() {
+       //获取系统属性java.nio.channels.spi.SelectorProvider配置
+        String cn = System.getProperty("java.nio.channels.spi.SelectorProvider");
+        if (cn == null)
+            return false;
+        try {
+            Class<?> c = Class.forName(cn, true,
+                                       ClassLoader.getSystemClassLoader());
+	   //加载SelectorProvider实例
+            provider = (SelectorProvider)c.newInstance();
+            return true;
+        } catch (ClassNotFoundException x) {
+            throw new ServiceConfigurationError(null, x);
+        } catch (IllegalAccessException x) {
+            throw new ServiceConfigurationError(null, x);
+        } catch (InstantiationException x) {
+            throw new ServiceConfigurationError(null, x);
+        } catch (SecurityException x) {
+            throw new ServiceConfigurationError(null, x);
+        }
+    }
+    //获取系统加载路径下的所有SelectorProvider实现类的实现，以最后一个作为SelectorProvider
+    private static boolean loadProviderAsService() {
+
+        ServiceLoader<SelectorProvider> sl =
+            ServiceLoader.load(SelectorProvider.class,
+                               ClassLoader.getSystemClassLoader());
+        Iterator<SelectorProvider> i = sl.iterator();
+        for (;;) {
+            try {
+                if (!i.hasNext())
+                    return false;
+                provider = i.next();
+                return true;
+            } catch (ServiceConfigurationError sce) {
+                if (sce.getCause() instanceof SecurityException) {
+                    // Ignore the security exception, try the next provider
+                    continue;
+                }
+                throw sce;
+            }
+        }
+    }
+
+    /**
+     * Returns the system-wide default selector provider for this invocation of
+     * the Java virtual machine.
+     *返回JVM默认的SelectorProvider
+     * <p> The first invocation of this method locates the default provider
+     * object as follows: </p>
+     *首先调用本地默认的SelectorProvider,过程如下：
+     * <ol>
+     *
+     *   <li><p> If the system property
+     *   <tt>java.nio.channels.spi.SelectorProvider</tt> is defined then it is
+     *   taken to be the fully-qualified name of a concrete provider class.
+     *   The class is loaded and instantiated; if this process fails then an
+     *   unspecified error is thrown.  </p></li>
+     *  如果java.nio.channels.spi.SelectorProvider系统属性被定义为一个具体的SelectorProvider
+     实现类的唯一类名，则此类将会被加载，实例化，如果加载实例化失败，返回一个错误。
+     *   <li><p> If a provider class has been installed in a jar file that is
+     *   visible to the system class loader, and that jar file contains a
+     *   provider-configuration file named
+     *   <tt>java.nio.channels.spi.SelectorProvider</tt> in the resource
+     *   directory <tt>META-INF/services</tt>, then the first class name
+     *   specified in that file is taken.  The class is loaded and
+     *   instantiated; if this process fails then an unspecified error is
+     *   thrown.  </p></li>
+     *如果SelectorProvider的实现在Jar包中，且对系统类加载器可见，且Jar在资源文件META-INF/services
+     的目录下，提供了provider-configuration文件java.nio.channels.spi.SelectorProvider，则文件的
+     第一个class类将会被加载和实例化，如果加载实例化失败，返回一个错误。
+
+     *   <li><p> Finally, if no provider has been specified by any of the above
+     *   means then the system-default provider class is instantiated and the
+     *   result is returned.  </p></li>
+     * 如果上面两步没有发现或实例化SelectorProvider成功，则系统默认的SelectorProvider类，将会实例化。
+     * </ol>
+     *
+     * <p> Subsequent invocations of this method return the provider that was
+     * returned by the first invocation.  </p>
+     *
+     * @return  The system-wide default selector provider
+     */
+    public static SelectorProvider provider() {
+        synchronized (lock) {
+            if (provider != null)
+                return provider;
+	   //在与当前线程相同访问控制权限的环境中，加载SelectorProvider实例
+            return AccessController.doPrivileged(
+                new PrivilegedAction<SelectorProvider>() {
+                    public SelectorProvider run() {
+                            if (loadProviderFromProperty())
+			        //获取系统配置的SelectorProvider
+                                return provider;
+                            if (loadProviderAsService())
+			         //获取类加载路径下的SelectorProvider
+                                return provider;
+		            //加载默认的SelectorProvider
+                            provider = sun.nio.ch.DefaultSelectorProvider.create();
+                            return provider;
+                        }
+                    });
+        }
+    }
+
+    /**
+     * Opens a datagram channel.  </p>
+     *打开一个DatagramChannel
+     * @return  The new channel
+     */
+    public abstract DatagramChannel openDatagramChannel()
+        throws IOException;
+
+    /**
+     * Opens a datagram channel.
+     *根据协议，打开一个DatagramChannel
+     * @param   family
+     *          The protocol family
+     *
+     * @return  A new datagram channel
+     *
+     * @throws  UnsupportedOperationException
+     *          If the specified protocol family is not supported
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @since 1.7
+     */
+    public abstract DatagramChannel openDatagramChannel(ProtocolFamily family)
+        throws IOException;
+
+    /**
+     * Opens a pipe. </p>
+     * 打开一个Pipe
+     * @return  The new pipe
+     */
+    public abstract Pipe openPipe()
+        throws IOException;
+
+    /**
+     * Opens a selector.  </p>
+     *打开一个Selector
+     * @return  The new selector
+     */
+    public abstract AbstractSelector openSelector()
+        throws IOException;
+
+    /**
+     * Opens a server-socket channel.  </p>
+     *打开一个ServerSocketChannel
+     * @return  The new channel
+     */
+    public abstract ServerSocketChannel openServerSocketChannel()
+        throws IOException;
+
+    /**
+     * Opens a socket channel. </p>
+     *打开一个SocketChannel
+     * @return  The new channel
+     */
+    public abstract SocketChannel openSocketChannel()
+        throws IOException;
+
+    /**
+     * Returns the channel inherited from the entity that created this
+     * Java virtual machine.
+     *返回继承虚拟机创建实例的通道
+     * <p> On many operating systems a process, such as a Java virtual
+     * machine, can be started in a manner that allows the process to
+     * inherit a channel from the entity that created the process. The
+     * manner in which this is done is system dependent, as are the
+     * possible entities to which the channel may be connected. For example,
+     * on UNIX systems, the Internet services daemon (<i>inetd</i>) is used to
+     * start programs to service requests when a request arrives on an
+     * associated network port. In this example, the process that is started,
+     * inherits a channel representing a network socket.
+     *在许多操作系统中，一个进程允许从创建此进程的实体继承一个通道。这种方式依赖
+     系统实现，也许实体到已连接的通道。在UNIX系统中，当在网络端口中，如果一个请求到达，
+     后台网络服务将会启动程序处理请求。在这个例子中，进程被启动，继承的通道表示一个网络socket。
+     * <p> In cases where the inherited channel represents a network socket
+     * then the {@link java.nio.channels.Channel Channel} type returned
+     * by this method is determined as follows:
+     *此方法返回的具体通道的过程如下：
+     * <ul>
+     *
+     *  <li><p> If the inherited channel represents a stream-oriented connected
+     *  socket then a {@link java.nio.channels.SocketChannel SocketChannel} is
+     *  returned. The socket channel is, at least initially, in blocking
+     *  mode, bound to a socket address, and connected to a peer.
+     *  </p></li>
+     *如果继承通道表示一个面向流的连接Socket，则SocketChannel将会被返回。SocketChannel
+     初始化为阻塞模式，绑定一个socket地址，连接一个peer
+     *  <li><p> If the inherited channel represents a stream-oriented listening
+     *  socket then a {@link java.nio.channels.ServerSocketChannel
+     *  ServerSocketChannel} is returned. The server-socket channel is, at
+     *  least initially, in blocking mode, and bound to a socket address.
+     *  </p></li>
+     *如果继承通道表示一个面向流的监听socket，则ServerSocketChannel将会被返回。
+     ServerSocketChannel初始化为阻塞模式，绑定一个socket地址。
+     *  <li><p> If the inherited channel is a datagram-oriented socket
+     *  then a {@link java.nio.channels.DatagramChannel DatagramChannel} is
+     *  returned. The datagram channel is, at least initially, in blocking
+     *  mode, and bound to a socket address.
+     *  </p></li>
+     *如果继承的通道是一个面向报文的Socket，则DatagramChannel将会被返回，
+     初始化为阻塞模式，绑定一个socket地址。
+     * </ul>
+     *
+     * <p> In addition to the network-oriented channels described, this method
+     * may return other kinds of channels in the future.
+     *目前就这三种继承通道，将会可能种类更多。
+     * <p> The first invocation of this method creates the channel that is
+     * returned. Subsequent invocations of this method return the same
+     * channel. </p>
+     *第一次调用，则创建一个通道，后续的调用将会返回同一个通道
+     * @return  The inherited channel, if any, otherwise <tt>null</tt>.
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed and it denies
+     *          {@link RuntimePermission}<tt>("inheritedChannel")</tt>
+     *
+     * @since 1.5
+     */
+   public Channel inheritedChannel() throws IOException {
+        return null;
+   }
+
+}
+总结：
+SelectorProvider就是为了创建DatagramChannel，Pipe，Selector，ServerSocketChannel，
+SocketChannel，System.inheritedChannel()而服务的，在相应的通道和选择器的open方法中
+调用系统默认的SelectorProvider相关的open*方法，创建相应的通道和选择器。
+SelectorProvider的provider方法主要是实例化SelectorProvider，过程为：
+判断java.nio.channels.spi.SelectorProvider系统属性是否被定义为一个具体的SelectorProvider
+实现类的唯一类名，是则加载此类，实例化，如果加载实例化失败，返回一个错误。
+如果无没有选择器提供者属性配置，则在SelectorProvider的实现且对系统类加载器可见Jar包中，的资源文件META-INF/services
+的目录下，提供了provider-configuration文件java.nio.channels.spi.SelectorProvider，则文件的
+第一个class类将会被加载和实例化，如果加载实例化失败，返回一个错误。
+上两步失败，则加载系统默认的选择器提供者。
+inheritedChannel方法主要是更具系统网络服务，更具具体的网络请求，创建不同的可继承实例，
+如果继承通道表示一个面向流的连接Socket，则SocketChannel将会被返回。SocketChannel
+初始化为阻塞模式，绑定一个socket地址，连接一个peer。
+如果继承通道表示一个面向流的监听socket，则ServerSocketChannel将会被返回。
+ServerSocketChannel初始化为阻塞模式，绑定一个socket地址。
+如果继承的通道是一个面向报文的Socket，则DatagramChannel将会被返回，
+初始化为阻塞模式，绑定一个socket地址。
+下面我们再来看一下SelectorProvider的provider方法系统默认的SelectorProvider：
+//SelectorProvider
+ public static SelectorProvider provider() {
+        synchronized (lock) {
+            if (provider != null)
+                return provider;
+	   //在与当前线程相同访问控制权限的环境中，加载SelectorProvider实例
+            return AccessController.doPrivileged(
+                new PrivilegedAction<SelectorProvider>() {
+                    public SelectorProvider run() {
+                            if (loadProviderFromProperty())
+			        //获取系统配置的SelectorProvider
+                                return provider;
+                            if (loadProviderAsService())
+			         //获取类加载路径下的SelectorProvider
+                                return provider;
+		            //加载默认的SelectorProvider
+                            provider = sun.nio.ch.DefaultSelectorProvider.create();
+                            return provider;
+                        }
+                    });
+        }
+}
+来看默认的DefaultSelectorProvider
+//DefaultSelectorProvider
+package sun.nio.ch;
+
+import java.nio.channels.spi.SelectorProvider;
+
+// Referenced classes of package sun.nio.ch:
+//            WindowsSelectorProvider
+
+public class DefaultSelectorProvider
+{
+    private DefaultSelectorProvider()
+    {
+    }
+    public static SelectorProvider create()
+    {
+        //默认的WindowsSelectorProvider
+        return new WindowsSelectorProvider();
+    }
+}
+再来看WindowsSelectorProvider
+//WindowsSelectorProvider
+package sun.nio.ch;
+
+import java.io.IOException;
+import java.nio.channels.spi.AbstractSelector;
+
+// Referenced classes of package sun.nio.ch:
+//            SelectorProviderImpl, WindowsSelectorImpl
+
+public class WindowsSelectorProvider extends SelectorProviderImpl
+{
+
+    public WindowsSelectorProvider()
+    {
+    }
+    public AbstractSelector openSelector()
+        throws IOException
+    {
+       //默认的选择器实现类
+        return new WindowsSelectorImpl(this);
+    }
+}
+再来看SelectorProviderImpl
+//SelectorProviderImpl
+package sun.nio.ch;
+
+import java.io.IOException;
+import java.net.ProtocolFamily;
+import java.nio.channels.*;
+import java.nio.channels.spi.AbstractSelector;
+import java.nio.channels.spi.SelectorProvider;
+
+// Referenced classes of package sun.nio.ch:
+//            DatagramChannelImpl, PipeImpl, ServerSocketChannelImpl, SocketChannelImpl
+
+public abstract class SelectorProviderImpl extends SelectorProvider
+{
+
+    public SelectorProviderImpl()
+    {
+    }
+    //打开一个报文通道
+    public DatagramChannel openDatagramChannel()
+        throws IOException
+    {
+        return new DatagramChannelImpl(this);
+    }
+    //根据协议，打开一个报文通道
+    public DatagramChannel openDatagramChannel(ProtocolFamily protocolfamily)
+        throws IOException
+    {
+        return new DatagramChannelImpl(this, protocolfamily);
+    }
+     //打开一个管道
+    public Pipe openPipe()
+        throws IOException
+    {
+        return new PipeImpl(this);
+    }
+   //打开一个选择器，待子类扩展
+    public abstract AbstractSelector openSelector()
+        throws IOException;
+   //打开一个监听socket通道
+    public ServerSocketChannel openServerSocketChannel()
+        throws IOException
+    {
+        return new ServerSocketChannelImpl(this);
+    }
+    //打开一个socket通道（连接）
+    public SocketChannel openSocketChannel()
+        throws IOException
+    {
+        return new SocketChannelImpl(this);
+    }
+}
+WindowsSelectorProvider为系统默认选择器提供者，默认选择器为WindowsSelectorImpl，SelectorProviderImpl为
+默认的通道提供者，各类通道和管道的默认实现为：DatagramChannelImpl，ServerSocketChannelImpl，SocketChannelImpl，
+PipeImpl。具体的通道，管道和选择器的实现，我们在相关文章会再次讲解。
+我们来简单SocketChannel的open方法：
+//SocketChannel
+public abstract class ServerSocketChannel
+    extends AbstractSelectableChannel
+    implements NetworkChannel
+{
+	 public static ServerSocketChannel open() throws IOException {
+		return SelectorProvider.provider().openServerSocketChannel();
+	}
+}
+有了上面的分析，这个open应该很好理解。其他通道，选择器打开操作的思路是相同的。

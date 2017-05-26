@@ -1,0 +1,494 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+ServerSocketChannelImpl解析：[url]http://donald-draper.iteye.com/blog/2370912[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+在前面的文章中我们看了选择器（选择操作，更新通道就绪操作事件）和
+ServerSocketChannle（绑定地址，接受连接）,接下来的文章我们SocketChannel，
+SocketChannel主要完成连接，读写通道，今天看一下SocketChannel的字节通道，
+分散读和聚集写通道接口的定义。
+//SocketChannel
+public abstract class SocketChannel
+    extends AbstractSelectableChannel
+    implements ByteChannel, ScatteringByteChannel, GatheringByteChannel, NetworkChannel
+{}
+//ByteChannel
+package java.nio.channels;
+import java.io.IOException;
+/**
+ * A channel that can read and write bytes.  This interface simply unifies
+ * {@link ReadableByteChannel} and {@link WritableByteChannel}; it does not
+ * specify any new operations.
+ *ByteChannel可以读写字节流，这个接口统一了ReadableByteChannel和WritableByteChannel
+ ;没有新的操作
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+public interface ByteChannel
+    extends ReadableByteChannel, WritableByteChannel
+{
+}
+//ReadableByteChannel
+package java.nio.channels;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+
+/**
+ * A channel that can read bytes.
+ *ReadableByteChannel可以从通道中读取字节
+ * <p> Only one read operation upon a readable channel may be in progress at
+ * any given time.  If one thread initiates a read operation upon a channel
+ * then any other thread that attempts to initiate another read operation will
+ * block until the first operation is complete.  Whether or not other kinds of
+ * I/O operations may proceed concurrently with a read operation depends upon
+ * the type of the channel. </p>
+ *在可读的通道中，一个进程只能有一个读操作。如果当前线程正在读通道，其他尝试
+ 读通道的线程，必须等待正在读痛的线程完成。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public interface ReadableByteChannel extends Channel {
+
+    /**
+     * Reads a sequence of bytes from this channel into the given buffer.
+     *从通道中读取字节序列，写到缓存中。
+     * <p> An attempt is made to read up to <i>r</i> bytes from the channel,
+     * where <i>r</i> is the number of bytes remaining in the buffer, that is,
+     * <tt>dst.remaining()</tt>, at the moment this method is invoked.
+     *只能读取缓冲剩余空间容量的字节序列到缓存。
+     * <p> Suppose that a byte sequence of length <i>n</i> is read, where
+     * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
+     * This byte sequence will be transferred into the buffer so that the first
+     * byte in the sequence is at index <i>p</i> and the last byte is at index
+     * <i>p</i>&nbsp;<tt>+</tt>&nbsp;<i>n</i>&nbsp;<tt>-</tt>&nbsp;<tt>1</tt>,
+     * where <i>p</i> is the buffer's position at the moment this method is
+     * invoked.  Upon return the buffer's position will be equal to
+     * <i>p</i>&nbsp;<tt>+</tt>&nbsp;<i>n</i>; its limit will not have changed.
+     *
+     * <p> A read operation might not fill the buffer, and in fact it might not
+     * read any bytes at all.  Whether or not it does so depends upon the
+     * nature and state of the channel.  A socket channel in non-blocking mode,
+     * for example, cannot read any more bytes than are immediately available
+     * from the socket's input buffer; similarly, a file channel cannot read
+     * any more bytes than remain in the file.  It is guaranteed, however, that
+     * if a channel is in blocking mode and there is at least one byte
+     * remaining in the buffer then this method will block until at least one
+     * byte is read.
+     *一个读操作也许不能填充缓存，实际也许没有读取任何字节。是否能够填充和读取字节，
+     依赖于通道的状态。一个非阻塞的通道不能读取大于socket输入缓冲区容量的字节数；相似地，
+     一个文件通道不能读取大于文件字节大小的字节。如果通道为阻塞模式，则至少有一个字节在通道的socket
+     输入缓存区中可用，如果没有read方法阻塞到至少有一个字节可用。
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a read operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. </p>
+     *此方法可以在任何时候调用。如果其他线程已经执行一个读操作，则当前读操作阻塞到其他
+     线程执行完读操作。
+     * @param  dst
+     *         The buffer into which bytes are to be transferred
+     *
+     * @return  The number of bytes read, possibly zero, or <tt>-1</tt> if the
+     *          channel has reached end-of-stream
+     *
+     * @throws  NonReadableChannelException
+     *          If this channel was not opened for reading
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the read operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the read operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public int read(ByteBuffer dst) throws IOException;
+}
+//WritableByteChannel
+package java.nio.channels;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+
+/**
+ * A channel that can write bytes.
+ *WritableByteChannel可以写字节流的通道
+ * <p> Only one write operation upon a writable channel may be in progress at
+ * any given time.  If one thread initiates a write operation upon a channel
+ * then any other thread that attempts to initiate another write operation will
+ * block until the first operation is complete.  Whether or not other kinds of
+ * I/O operations may proceed concurrently with a write operation depends upon
+ * the type of the channel. </p>
+ *一个可写的通道在一个进程中同时只能有一个写操作。当一个线程在写通道，其他尝试写
+ 通道的线程将会阻塞，直至正在写的线程完成。
+ 通道。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public interface WritableByteChannel
+    extends Channel
+{
+
+    /**
+     * Writes a sequence of bytes to this channel from the given buffer.
+     *从通道读取字节流，写到缓冲区。
+     * <p> An attempt is made to write up to <i>r</i> bytes to the channel,
+     * where <i>r</i> is the number of bytes remaining in the buffer, that is,
+     * <tt>src.remaining()</tt>, at the moment this method is invoked.
+     *具体能写多少字节流，依赖于缓冲区的当前可用大小
+     * <p> Suppose that a byte sequence of length <i>n</i> is written, where
+     * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
+     * This byte sequence will be transferred from the buffer starting at index
+     * <i>p</i>, where <i>p</i> is the buffer's position at the moment this
+     * method is invoked; the index of the last byte written will be
+     * <i>p</i>&nbsp;<tt>+</tt>&nbsp;<i>n</i>&nbsp;<tt>-</tt>&nbsp;<tt>1</tt>.
+     * Upon return the buffer's position will be equal to
+     * <i>p</i>&nbsp;<tt>+</tt>&nbsp;<i>n</i>; its limit will not have changed.
+     *
+     * <p> Unless otherwise specified, a write operation will return only after
+     * writing all of the <i>r</i> requested bytes.  Some types of channels,
+     * depending upon their state, may write only some of the bytes or possibly
+     * none at all.  A socket channel in non-blocking mode, for example, cannot
+     * write any more bytes than are free in the socket's output buffer.
+     *一个写操作在写r个请求字节后返回。其他一些类型通道，要依赖于他们的状态，也许
+     只写一些字节，也可能没有。一个非阻塞模式的，不能写比socket输出缓冲区实际容量多的字节。
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a write operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. </p>
+     *当一个线程在写通道，其他尝试写通道的线程将会阻塞，直至正在写的线程完成。
+     * @param  src
+     *         The buffer from which bytes are to be retrieved
+     *
+     * @return The number of bytes written, possibly zero
+     *
+     * @throws  NonWritableChannelException
+     *          If this channel was not opened for writing
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the write operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the write operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public int write(ByteBuffer src) throws IOException;
+}
+//ScatteringByteChannel
+package java.nio.channels;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+/**
+ * A channel that can read bytes into a sequence of buffers.
+ *ScatteringByteChannel可以从通道读取字节流，写到一组缓冲区中。
+ * <p> A <i>scattering</i> read operation reads, in a single invocation, a
+ * sequence of bytes into one or more of a given sequence of buffers.
+ * Scattering reads are often useful when implementing network protocols or
+ * file formats that, for example, group data into segments consisting of one
+ * or more fixed-length headers followed by a variable-length body.  Similar
+ * <i>gathering</i> write operations are defined in the {@link
+ * GatheringByteChannel} interface.  </p>
+ *scattering读操作，从通道读取字节序列，写到一组缓冲区中。分散读操作用于网络协议和文件格式化
+ 场景中国，比如，一个网络协议可能包括一个或多个固定长度的头部，跟着一个可变长度的body。
+ 相似的聚集写操作在GatheringByteChannel接口中定义。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public interface ScatteringByteChannel
+    extends ReadableByteChannel
+{
+
+    /**
+     * Reads a sequence of bytes from this channel into a subsequence of the
+     * given buffers.
+     *从通道读写字节流，写到一组缓冲区中
+     * <p> An invocation of this method attempts to read up to <i>r</i> bytes
+     * from this channel, where <i>r</i> is the total number of bytes remaining
+     * the specified subsequence of the given buffer array, that is,
+     *此方法调用时，将会从通道读取所有缓冲区可用空间之和大小的字节
+     * <blockquote><pre>
+     * dsts[offset].remaining()
+     *     + dsts[offset+1].remaining()
+     *     + ... + dsts[offset+length-1].remaining()</pre></blockquote>
+     *
+     * at the moment that this method is invoked.
+     *
+     * <p> Suppose that a byte sequence of length <i>n</i> is read, where
+     * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
+     * Up to the first <tt>dsts[offset].remaining()</tt> bytes of this sequence
+     * are transferred into buffer <tt>dsts[offset]</tt>, up to the next
+     * <tt>dsts[offset+1].remaining()</tt> bytes are transferred into buffer
+     * <tt>dsts[offset+1]</tt>, and so forth, until the entire byte sequence
+     * is transferred into the given buffers.  As many bytes as possible are
+     * transferred into each buffer, hence the final position of each updated
+     * buffer, except the last updated buffer, is guaranteed to be equal to
+     * that buffer's limit.
+     *
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a read operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. </p>
+     *如果在当前线程读操作之前已经有线程在读通道，则必须等待当前读通道的线程完成，
+     方可进程读操作。
+     * @param  dsts
+     *         The buffers into which bytes are to be transferred
+     *
+     * @param  offset
+     *         The offset within the buffer array of the first buffer into
+     *         which bytes are to be transferred; must be non-negative and no
+     *         larger than <tt>dsts.length</tt>
+     *
+     * @param  length
+     *         The maximum number of buffers to be accessed; must be
+     *         non-negative and no larger than
+     *         <tt>dsts.length</tt>&nbsp;-&nbsp;<tt>offset</tt>
+     *
+     * @return The number of bytes read, possibly zero,
+     *         or <tt>-1</tt> if the channel has reached end-of-stream
+     *
+     * @throws  IndexOutOfBoundsException
+     *          If the preconditions on the <tt>offset</tt> and <tt>length</tt>
+     *          parameters do not hold
+     *
+     * @throws  NonReadableChannelException
+     *          If this channel was not opened for reading
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the read operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the read operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public long read(ByteBuffer[] dsts, int offset, int length)
+        throws IOException;
+
+    /**
+     * Reads a sequence of bytes from this channel into the given buffers.
+     *此方法相当于read(dsts, 0, dsts.length)方法
+     * <p> An invocation of this method of the form <tt>c.read(dsts)</tt>
+     * behaves in exactly the same manner as the invocation
+     *
+     * <blockquote><pre>
+     * c.read(dsts, 0, dsts.length);</pre></blockquote>
+     *
+     * @param  dsts
+     *         The buffers into which bytes are to be transferred
+     *
+     * @return The number of bytes read, possibly zero,
+     *         or <tt>-1</tt> if the channel has reached end-of-stream
+     *
+     * @throws  NonReadableChannelException
+     *          If this channel was not opened for reading
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the read operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the read operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public long read(ByteBuffer[] dsts) throws IOException;
+}
+//
+package java.nio.channels;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+
+/**
+ * A channel that can write bytes from a sequence of buffers.
+ *GatheringByteChannel可从一组缓冲区读取字节，写到通道中。
+ * <p> A <i>gathering</i> write operation writes, in a single invocation, a
+ * sequence of bytes from one or more of a given sequence of buffers.
+ * Gathering writes are often useful when implementing network protocols or
+ * file formats that, for example, group data into segments consisting of one
+ * or more fixed-length headers followed by a variable-length body.  Similar
+ * <i>scattering</i> read operations are defined in the {@link
+ * ScatteringByteChannel} interface.  </p>
+ *
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public interface GatheringByteChannel
+    extends WritableByteChannel
+{
+
+    /**
+     * Writes a sequence of bytes to this channel from a subsequence of the
+     * given buffers.
+     *从一组缓冲区读取字节，写到通道中。
+     * <p> An attempt is made to write up to <i>r</i> bytes to this channel,
+     * where <i>r</i> is the total number of bytes remaining in the specified
+     * subsequence of the given buffer array, that is,
+     *
+     * <blockquote><pre>
+     * srcs[offset].remaining()
+     *     + srcs[offset+1].remaining()
+     *     + ... + srcs[offset+length-1].remaining()</pre></blockquote>
+     *
+     * at the moment that this method is invoked.
+     *
+     * <p> Suppose that a byte sequence of length <i>n</i> is written, where
+     * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
+     * Up to the first <tt>srcs[offset].remaining()</tt> bytes of this sequence
+     * are written from buffer <tt>srcs[offset]</tt>, up to the next
+     * <tt>srcs[offset+1].remaining()</tt> bytes are written from buffer
+     * <tt>srcs[offset+1]</tt>, and so forth, until the entire byte sequence is
+     * written.  As many bytes as possible are written from each buffer, hence
+     * the final position of each updated buffer, except the last updated
+     * buffer, is guaranteed to be equal to that buffer's limit.
+     *
+     * <p> Unless otherwise specified, a write operation will return only after
+     * writing all of the <i>r</i> requested bytes.  Some types of channels,
+     * depending upon their state, may write only some of the bytes or possibly
+     * none at all.  A socket channel in non-blocking mode, for example, cannot
+     * write any more bytes than are free in the socket's output buffer.
+     *一些具体的通道，也许写一些字节，也许不写，依赖于具体的状态。非阻塞通道不能
+     写比socket输出缓冲区多的字节数。
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a write operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. </p>
+     *方法在一个进程中不能并发，一个读线程必须等另一个读线程完成，方可读取
+     * @param  srcs
+     *         The buffers from which bytes are to be retrieved
+     *
+     * @param  offset
+     *         The offset within the buffer array of the first buffer from
+     *         which bytes are to be retrieved; must be non-negative and no
+     *         larger than <tt>srcs.length</tt>
+     *
+     * @param  length
+     *         The maximum number of buffers to be accessed; must be
+     *         non-negative and no larger than
+     *         <tt>srcs.length</tt>&nbsp;-&nbsp;<tt>offset</tt>
+     *
+     * @return  The number of bytes written, possibly zero
+     *
+     * @throws  IndexOutOfBoundsException
+     *          If the preconditions on the <tt>offset</tt> and <tt>length</tt>
+     *          parameters do not hold
+     *
+     * @throws  NonWritableChannelException
+     *          If this channel was not opened for writing
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the write operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the write operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public long write(ByteBuffer[] srcs, int offset, int length)
+        throws IOException;
+
+
+    /**
+     * Writes a sequence of bytes to this channel from the given buffers.
+     *与write(srcs, 0, srcs.length)等价
+     * <p> An invocation of this method of the form <tt>c.write(srcs)</tt>
+     * behaves in exactly the same manner as the invocation
+     *
+     * <blockquote><pre>
+     * c.write(srcs, 0, srcs.length);</pre></blockquote>
+     *
+     * @param  srcs
+     *         The buffers from which bytes are to be retrieved
+     *
+     * @return  The number of bytes written, possibly zero
+     *
+     * @throws  NonWritableChannelException
+     *          If this channel was not opened for writing
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the write operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the write operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public long write(ByteBuffer[] srcs) throws IOException;
+
+}
+

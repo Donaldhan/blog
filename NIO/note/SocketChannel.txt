@@ -1,0 +1,533 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+ServerSocketChannelImpl解析：[url]http://donald-draper.iteye.com/blog/2370912[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+ ByteChannel，分散聚集通道接口的定义（SocketChannel）:
+ [url]http://donald-draper.iteye.com/blog/2371065[/url]
+前面一篇文章我们看了一个socket通道继承的接口 ByteChannel， ByteChannel主要是继承了
+可读（ReadableByteChannel）可写（WritableByteChannel）通道接口和分散（ScatteringByteChannel）
+聚集（ScatteringByteChannel）通道接口；可读通道接口，可以从通道读取字节序列写到缓存区；
+可写通道接口，可以从缓存区读取字节序列写到通道；分散通道可以从通道读取字节序列，写到一组
+缓存区中，聚集通道可以从一组缓存区读取字节序列，写到通道。今天我们就来看下SocketChannel
+接口的定义。
+package java.nio.channels;
+import java.io.IOException;
+import java.net.Socket;
+import java.net.SocketOption;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.spi.AbstractSelectableChannel;
+import java.nio.channels.spi.SelectorProvider;
+
+/**
+ * A selectable channel for stream-oriented connecting sockets.
+ *SocketChannel是一个面向流的连接socket可选通道。
+ * <p> A socket channel is created by invoking one of the {@link #open open}
+ * methods of this class.  It is not possible to create a channel for an arbitrary,
+ * pre-existing socket. A newly-created socket channel is open but not yet
+ * connected.  An attempt to invoke an I/O operation upon an unconnected
+ * channel will cause a {@link NotYetConnectedException} to be thrown.  A
+ * socket channel can be connected by invoking its {@link #connect connect}
+ * method; once connected, a socket channel remains connected until it is
+ * closed.  Whether or not a socket channel is connected may be determined by
+ * invoking its {@link #isConnected isConnected} method.
+ *socket通道调用#open方法创建一个socket通道。如果socket已经存在，则不可能强制创建一个通道。
+ 一个新创建的socket通道处于打开状态，但还没有连接。在一个没有连接的通道，调用IO操作，将会引起
+ 一个NotYetConnectedException抛出。socket通道可以调用#connect方法连接一个socket地址；
+ 一旦建立连接，在连接关闭之前，通道都是可连接的。我们可以通道#isConnected方法，判断一个socket通道
+ 是否建立连接。
+ * <p> Socket channels support <i>non-blocking connection:</i>&nbsp;A socket
+ * channel may be created and the process of establishing the link to the
+ * remote socket may be initiated via the {@link #connect connect} method for
+ * later completion by the {@link #finishConnect finishConnect} method.
+ * Whether or not a connection operation is in progress may be determined by
+ * invoking the {@link #isConnectionPending isConnectionPending} method.
+ *socket通道支持非阻塞模式连接；一个socket通道已经建立的情况下，调用#connect方法
+ 初始化建立远端socket过程，之后通过#finishConnect完成连接。一个连接操作是否正在进行，
+ 可以通过#isConnectionPending方法判断。
+ * <p> Socket channels support <i>asynchronous shutdown,</i> which is similar
+ * to the asynchronous close operation specified in the {@link Channel} class.
+ * If the input side of a socket is shut down by one thread while another
+ * thread is blocked in a read operation on the socket's channel, then the read
+ * operation in the blocked thread will complete without reading any bytes and
+ * will return <tt>-1</tt>.  If the output side of a socket is shut down by one
+ * thread while another thread is blocked in a write operation on the socket's
+ * channel, then the blocked thread will receive an {@link
+ * AsynchronousCloseException}.
+ *socket通道支持异步关闭，这个与Channel的关闭操作相似。如果其他线程阻塞在通道的读操作上，
+ 一个线程关闭了socket的输入流，阻塞的读操作线程将会返回-1，即没有读取任何字节。
+ 如果其他线程阻塞在通道的写操作上， 一个线程关闭了socket的输出流，
+ 阻塞的写操作线程将会将会接受到一个AsynchronousCloseException。
+ * <p> Socket options are configured using the {@link #setOption(SocketOption,Object)
+ * setOption} method. Socket channels support the following options:
+ * <blockquote>
+ * <table border>
+ *   <tr>Socket的选项配置通过setOption(SocketOption,Object)方法，Socket channels
+ 支持一下选项配置。
+ *     <th>Option Name</th>
+ *     <th>Description</th>
+ *   </tr>
+ *   <tr>发送缓存区大小
+ *     <td> {@link java.net.StandardSocketOptions#SO_SNDBUF SO_SNDBUF} </td>
+ *     <td> The size of the socket send buffer </td>
+ *   </tr>
+ *   <tr>接受缓存区大小
+ *     <td> {@link java.net.StandardSocketOptions#SO_RCVBUF SO_RCVBUF} </td>
+ *     <td> The size of the socket receive buffer </td>
+ *   </tr>
+ *   <tr>是否保活，心跳
+ *     <td> {@link java.net.StandardSocketOptions#SO_KEEPALIVE SO_KEEPALIVE} </td>
+ *     <td> Keep connection alive </td>
+ *   </tr>
+ *   <tr>地址是否可以重用
+ *     <td> {@link java.net.StandardSocketOptions#SO_REUSEADDR SO_REUSEADDR} </td>
+ *     <td> Re-use address </td>
+ *   </tr>
+ *   <tr>在通道阻塞模式下，再通道关闭时，如果socket输出流还有数据没发送，则延时等待
+ 数据发送。
+ *     <td> {@link java.net.StandardSocketOptions#SO_LINGER SO_LINGER} </td>
+ *     <td> Linger on close if data is present (when configured in blocking mode
+ *          only) </td>
+ *   </tr>
+ *   <tr>TCP延时，Disable the Nagle algorithm.具体可以在StandardSocketOptions中查看
+ *     <td> {@link java.net.StandardSocketOptions#TCP_NODELAY TCP_NODELAY} </td>
+ *     <td> Disable the Nagle algorithm </td>
+ *   </tr>
+ * </table>
+ * </blockquote>
+ * Additional (implementation specific) options may also be supported.
+ *
+ * <p> Socket channels are safe for use by multiple concurrent threads.  They
+ * support concurrent reading and writing, though at most one thread may be
+ * reading and at most one thread may be writing at any given time.  The {@link
+ * #connect connect} and {@link #finishConnect finishConnect} methods are
+ * mutually synchronized against each other, and an attempt to initiate a read
+ * or write operation while an invocation of one of these methods is in
+ * progress will block until that invocation is complete.  </p>
+ *多线程可以安全地并发访问时socket通道。尽管至多只有一个线程进行读写操作，socket通道
+ 支持并发的读写。#connect和#finishConnect是手动synchronized，在#connect和#finishConnect方法
+ 调用的过程中，尝试读写操作，将会阻塞至#connect和#finishConnect方法结束。
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class SocketChannel
+    extends AbstractSelectableChannel
+    implements ByteChannel, ScatteringByteChannel, GatheringByteChannel, NetworkChannel
+{
+/**
+     * Initializes a new instance of this class.
+     */
+    protected SocketChannel(SelectorProvider provider) {
+        super(provider);
+    }
+
+    /**
+     * Opens a socket channel.
+     *打开一个通道
+     * <p> The new channel is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openSocketChannel
+     * openSocketChannel} method of the system-wide default {@link
+     * java.nio.channels.spi.SelectorProvider} object.  </p>
+     *一个通道通过默认的SelectorProvider的openSocketChannel创建
+     * @return  A new socket channel
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public static SocketChannel open() throws IOException {
+        return SelectorProvider.provider().openSocketChannel();
+    }
+
+    /**
+     * Opens a socket channel and connects it to a remote address.
+     *打开一个通道，并连接一个远程地址
+     * <p> This convenience method works as if by invoking the {@link #open()}
+     * method, invoking the {@link #connect(SocketAddress) connect} method upon
+     * the resulting socket channel, passing it <tt>remote</tt>, and then
+     * returning that channel.  </p>
+     *此方法与open方法基本相同，只是在创建SocketChannel后，调用connect(SocketAddress)
+     连接远程地址
+     * @param  remote
+     *         The remote address to which the new channel is to be connected
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the connect operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the connect operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  UnresolvedAddressException
+     *          If the given remote address is not fully resolved
+     *
+     * @throws  UnsupportedAddressTypeException
+     *          If the type of the given remote address is not supported
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed
+     *          and it does not permit access to the given remote endpoint
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public static SocketChannel open(SocketAddress remote)
+        throws IOException
+    {
+        SocketChannel sc = open();
+        try {
+	    //连接远程地址
+            sc.connect(remote);
+        } catch (Throwable x) {
+            try {
+                sc.close();
+            } catch (Throwable suppressed) {
+	        //当一个异常被抛出的时候，可能有其他异常因为该异常而被抑制住，
+		//从而无法正常抛出。这时可以通过Java 7中为Throwable类增加的addSuppressed方法把这些被抑制的方法记录下来。
+		//被抑制的异常会出现在抛出的异常的堆栈信息中，
+		//也可以通过getSuppressed方法来获取这些异常。这样做的好处是不会丢失任何异常，方便开发人员进行调试。
+                x.addSuppressed(suppressed);
+            }
+            throw x;
+        }
+	//断言是否连接
+        assert sc.isConnected();
+        return sc;
+    }
+
+    /**
+     * Returns an operation set identifying this channel's supported
+     * operations.
+     *返回通道支持的操作事件集，通道支持读写连接操作事件
+     * <p> Socket channels support connecting, reading, and writing, so this
+     * method returns <tt>(</tt>{@link SelectionKey#OP_CONNECT}
+     * <tt>|</tt>&nbsp;{@link SelectionKey#OP_READ} <tt>|</tt>&nbsp;{@link
+     * SelectionKey#OP_WRITE}<tt>)</tt>.  </p>
+     *
+     * @return  The valid-operation set
+     */
+    public final int validOps() {
+        return (SelectionKey.OP_READ
+                | SelectionKey.OP_WRITE
+                | SelectionKey.OP_CONNECT);
+    }
+
+
+    // -- Socket-specific operations --
+
+    /**
+     * @throws  ConnectionPendingException
+     *          If a non-blocking connect operation is already in progress on
+     *          this channel
+     * @throws  AlreadyBoundException               {@inheritDoc}
+     * @throws  UnsupportedAddressTypeException     {@inheritDoc}
+     * @throws  ClosedChannelException              {@inheritDoc}
+     * @throws  IOException                         {@inheritDoc}
+     *地址绑定
+     * @since 1.7
+     */
+    @Override
+    public abstract SocketChannel bind(SocketAddress local)
+        throws IOException;
+
+    /**
+     * @throws  UnsupportedOperationException           {@inheritDoc}
+     * @throws  IllegalArgumentException                {@inheritDoc}
+     * @throws  ClosedChannelException                  {@inheritDoc}
+     * @throws  IOException                             {@inheritDoc}
+     *数字socket通道选项配置
+     * @since 1.7
+     */
+    @Override
+    public abstract <T> SocketChannel setOption(SocketOption<T> name, T value)
+        throws IOException;
+
+    /**
+     * Shutdown the connection for reading without closing the channel.
+     *在没有关闭通道的情况下，关闭读操作连接，即不能从通道读取数据，写到缓冲区。
+     * <p> Once shutdown for reading then further reads on the channel will
+     * return {@code -1}, the end-of-stream indication. If the input side of the
+     * connection is already shutdown then invoking this method has no effect.
+     *读连接关闭，进一步的读操作将会返回-1，表示读到流的末端。如果连接的输入流已经
+     关闭，调用此方法无效。
+     * @return  The channel
+     *
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If some other I/O error occurs
+     *
+     * @since 1.7
+     */
+    public abstract SocketChannel shutdownInput() throws IOException;
+
+    /**
+     * Shutdown the connection for writing without closing the channel.
+     *在没有关闭通道的情况下，关闭到通道的写操作连接
+     * <p> Once shutdown for writing then further attempts to write to the
+     * channel will throw {@link ClosedChannelException}. If the output side of
+     * the connection is already shutdown then invoking this method has no
+     * effect.
+     *在写连接关闭时，进一步尝试从缓冲区读数据，写到通道，将会抛出ClosedChannelException。
+     如果连接的输出流关闭，则调用此方法无效。
+     * @return  The channel
+     *
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If some other I/O error occurs
+     *
+     * @since 1.7
+     */
+    public abstract SocketChannel shutdownOutput() throws IOException;
+
+    /**
+     * Retrieves a socket associated with this channel.
+     *获取与通道关联的socket
+     * <p> The returned object will not declare any public methods that are not
+     * declared in the {@link java.net.Socket} class.  </p>
+     *返回的socket不会声明任何在socket中没有声明的public方法
+     * @return  A socket associated with this channel
+     */
+    public abstract Socket socket();
+
+    /**
+     * Tells whether or not this channel's network socket is connected.
+     *判断通道的网络socket是否连接
+     * @return  <tt>true</tt> if, and only if, this channel's network socket
+     *          is {@link #isOpen open} and connected
+     当且仅当通道的网络socket打开，或者连接，则返回true
+     */
+    public abstract boolean isConnected();
+
+    /**
+     * Tells whether or not a connection operation is in progress on this
+     * channel.  </p>
+     *判断一个通道是不是正在进行连接操作。
+     * @return  <tt>true</tt> if, and only if, a connection operation has been
+     *          initiated on this channel but not yet completed by invoking the
+     *          {@link #finishConnect finishConnect} method
+     当且仅当一个连接操作正在进行，还没有完成，调用#finishConnect方法，完成连接。
+     */
+    public abstract boolean isConnectionPending();
+
+    /**
+     * Connects this channel's socket.
+     *连接通道的socket
+     * <p> If this channel is in non-blocking mode then an invocation of this
+     * method initiates a non-blocking connection operation.  If the connection
+     * is established immediately, as can happen with a local connection, then
+     * this method returns <tt>true</tt>.  Otherwise this method returns
+     * <tt>false</tt> and the connection operation must later be completed by
+     * invoking the {@link #finishConnect finishConnect} method.
+     *如果通道是非阻塞模式，调用此方法将会初始化一个非阻塞的连接操作。如果连接立即
+     建立，则伴随着一个本地的连接，方法将会返回true。如果连接操作通过调用#finishConnect
+     方法完成，则方法返回false。
+     * <p> If this channel is in blocking mode then an invocation of this
+     * method will block until the connection is established or an I/O error
+     * occurs.
+     *如果通道是阻塞模式的，方法将会阻塞到连接建立或者一个IO操作异常。
+     * <p> This method performs exactly the same security checks as the {@link
+     * java.net.Socket} class.  That is, if a security manager has been
+     * installed then this method verifies that its {@link
+     * java.lang.SecurityManager#checkConnect checkConnect} method permits
+     * connecting to the address and port number of the given remote endpoint.
+     *此方法将进行与java.net.Socket相同的安全检查。如果如果安全管理器配置，这个方法将会
+     通过java.lang.SecurityManager#checkConnect检查是否允许连接到远程终端的地址和port。
+     * <p> This method may be invoked at any time.  If a read or write
+     * operation upon this channel is invoked while an invocation of this
+     * method is in progress then that operation will first block until this
+     * invocation is complete.  If a connection attempt is initiated but fails,
+     * that is, if an invocation of this method throws a checked exception,
+     * then the channel will be closed.  </p>
+     *此方法可以在任何时候调用。如果当前线程调用读写操作时，有其他线程正在进程
+     读写操作，则当前线程阻塞到其他线程完成读写操作后，方可读写通道。如果连接已经初始化，
+     单连接失败调用此方法将会抛出一个检查异常，然后关闭通道。
+     * @param  remote
+     *         The remote address to which this channel is to be connected
+     *
+     * @return  <tt>true</tt> if a connection was established,
+     *          <tt>false</tt> if this channel is in non-blocking mode
+     *          and the connection operation is in progress
+     *
+     * @throws  AlreadyConnectedException
+     *          If this channel is already connected
+     *
+     * @throws  ConnectionPendingException
+     *          If a non-blocking connection operation is already in progress
+     *          on this channel
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the connect operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the connect operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  UnresolvedAddressException
+     *          If the given remote address is not fully resolved
+     *
+     * @throws  UnsupportedAddressTypeException
+     *          If the type of the given remote address is not supported
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed
+     *          and it does not permit access to the given remote endpoint
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract boolean connect(SocketAddress remote) throws IOException;
+
+    /**
+     * Finishes the process of connecting a socket channel.
+     *完成到socket通道的连接任务。
+     * <p> A non-blocking connection operation is initiated by placing a socket
+     * channel in non-blocking mode and then invoking its {@link #connect
+     * connect} method.  Once the connection is established, or the attempt has
+     * failed, the socket channel will become connectable and this method may
+     * be invoked to complete the connection sequence.  If the connection
+     * operation failed then invoking this method will cause an appropriate
+     * {@link java.io.IOException} to be thrown.
+     *在设置socket通道非阻塞模式时，一个非阻塞的连接操作初始化，然后调用#connect方法建立
+     到通道连接。如果连接已经建立或尝试连接失败，在finishConnect方法调用完成连接工作后，
+     socket通道将会变得connectable。如果一个连接操作失败，调用此方将会抛出IO异常。
+     * <p> If this channel is already connected then this method will not block
+     * and will immediately return <tt>true</tt>.  If this channel is in
+     * non-blocking mode then this method will return <tt>false</tt> if the
+     * connection process is not yet complete.  If this channel is in blocking
+     * mode then this method will block until the connection either completes
+     * or fails, and will always either return <tt>true</tt> or throw a checked
+     * exception describing the failure.
+     *如果通道已经连接，则此方法不会阻塞，将会立即返回true。如果通道是非阻塞模式，在连接还没有
+     建立时，此方法将会返回false。如果通道是阻塞模式，调用finishConnect将会阻塞到连接操作完成
+     或者失败，返回true或者抛出一个不检查的异常描述失败。
+     * <p> This method may be invoked at any time.  If a read or write
+     * operation upon this channel is invoked while an invocation of this
+     * method is in progress then that operation will first block until this
+     * invocation is complete.  If a connection attempt fails, that is, if an
+     * invocation of this method throws a checked exception, then the channel
+     * will be closed.  </p>
+     *此方法可以在任何时候调用。如果当前线程调用读写操作时，有其他线程正在进程
+     读写操作，则当前线程阻塞到其他线程完成读写操作后，方可读写通道。如果连接已经初始化，
+     单连接失败调用此方法将会抛出一个检查异常，然后关闭通道。
+     * @return  <tt>true</tt> if, and only if, this channel's socket is now
+     *          connected
+     *
+     * @throws  NoConnectionPendingException
+     *          If this channel is not connected and a connection operation
+     *          has not been initiated
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the connect operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the connect operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract boolean finishConnect() throws IOException;
+
+    /**
+     * Returns the remote address to which this channel's socket is connected.
+     *返回通道socket连接的远端地址。
+     * <p> Where the channel is bound and connected to an Internet Protocol
+     * socket address then the return value from this method is of type {@link
+     * java.net.InetSocketAddress}.
+     *在通道绑定地址并连接到一个网络协议的socket地址，此方法返回的值为类型为java.net.InetSocketAddress
+     * @return  The remote address; {@code null} if the channel's socket is not
+     *          connected
+     *
+     * @throws  ClosedChannelException
+     *          If the channel is closed
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @since 1.7
+     */
+    public abstract SocketAddress getRemoteAddress() throws IOException;
+
+    // -- ByteChannel operations --
+
+    /**
+    从通道读取字节序列，写到缓存区
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public abstract int read(ByteBuffer dst) throws IOException;
+
+    /**
+     从通道读取字节序列，写到一组缓存区
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public abstract long read(ByteBuffer[] dsts, int offset, int length)
+        throws IOException;
+
+    /**
+     与read(ByteBuffer[] dsts, int offset, int length)含义相同
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public final long read(ByteBuffer[] dsts) throws IOException {
+        return read(dsts, 0, dsts.length);
+    }
+
+    /**
+    从缓冲区读取字节序列，写到通道
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public abstract int write(ByteBuffer src) throws IOException;
+
+    /**
+    从一组缓冲区读取字节序列，写到通道
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public abstract long write(ByteBuffer[] srcs, int offset, int length)
+        throws IOException;
+
+    /**
+     与方法write(ByteBuffer[] srcs, int offset, int length)无异
+     * @throws  NotYetConnectedException
+     *          If this channel is not yet connected
+     */
+    public final long write(ByteBuffer[] srcs) throws IOException {
+        return write(srcs, 0, srcs.length);
+    }
+}

@@ -1,0 +1,334 @@
+尽管synchronized在语法上已经足够简单了，在JDK 5之前只能借助此实现，但是由于是独占锁，
+性能却不高，因此JDK 5以后就开始借助于JNI来完成更高级的锁实现。
+JDK 5中的锁是接口java.util.concurrent.locks.Lock。
+另外java.util.concurrent.locks.ReadWriteLock提供了一对可供读写并发的锁
+今天我们来比较一下，Lock和synchronized的性能；
+//Lock 实现的AtomicInteger
+package juc.automic;
+
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+/**
+ * Lock 实现的AtomicInteger
+ * @author donald
+ * 2017年2月28日
+ * 下午7:52:34
+ */
+public class AtomicIntegerWithLock {
+	private int value;
+	private Lock lock = new ReentrantLock();
+
+	public AtomicIntegerWithLock() {
+		super();
+	}
+
+	public AtomicIntegerWithLock(int value) {
+		this.value = value;
+	}
+
+	public final int get() {
+		lock.lock();
+		try {
+			return value;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final void set(int newValue) {
+		lock.lock();
+		try {
+			value = newValue;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final int getAndSet(int newValue) {
+		lock.lock();
+		try {
+			int ret = value;
+			value = newValue;
+			return ret;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final boolean compareAndSet(int expect, int update) {
+		lock.lock();
+		try {
+			if (value == expect) {
+				value = update;
+				return true;
+			}
+			return false;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final int getAndIncrement() {
+		lock.lock();
+		try {
+			return value++;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final int getAndDecrement() {
+		lock.lock();
+		try {
+			return value--;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final int incrementAndGet() {
+		lock.lock();
+		try {
+			return ++value;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public final int decrementAndGet() {
+		lock.lock();
+		try {
+			return --value;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	public String toString() {
+		return Integer.toString(get());
+	}
+
+}
+
+//测试主类
+package juc.automic;
+
+
+/**
+ * Lock和synchronized的性能比较测试
+ * @author donald
+ * 2017年2月28日
+ * 下午7:53:04
+ */
+public class LockCompareSynchronize {
+	static int staticValue = 0;
+
+	public static void main(String[] args) throws Exception {
+		final int max = 10;
+		final int loopCount = 100000;
+		long costTime = 0;
+		for (int m = 0; m < max; m++) {
+			long start0 = System.nanoTime();
+			final AtomicIntegerWithLock value1 = new AtomicIntegerWithLock(0);
+			Thread[] ts = new Thread[max];
+			for (int i = 0; i < max; i++) {
+				ts[i] = new Thread() {
+					public void run() {
+						for (int i = 0; i < loopCount; i++) {
+							value1.incrementAndGet();
+						}
+					}
+				};
+			}
+			for (Thread t : ts) {
+				t.start();
+			}
+			for (Thread t : ts) {
+				t.join();
+			}
+			long end0 = System.nanoTime();
+			costTime += (end0 - start0);
+		}
+		System.out.println("Lock所耗时间: " + (costTime));
+		System.out.println();
+		costTime = 0;
+
+		final Object lock = new Object();
+		for (int m = 0; m < max; m++) {
+			staticValue = 0;
+			long start1 = System.nanoTime();
+			Thread[] ts = new Thread[max];
+			for (int i = 0; i < max; i++) {
+				ts[i] = new Thread() {
+					public void run() {
+						for (int i = 0; i < loopCount; i++) {
+							synchronized (lock) {
+								++staticValue;
+							}
+						}
+					}
+				};
+			}
+			for (Thread t : ts) {
+				t.start();
+			}
+			for (Thread t : ts) {
+				t.join();
+			}
+			long end1 = System.nanoTime();
+			costTime += (end1 - start1);
+		}
+		System.out.println("synchronized所耗时间: " + (costTime));
+	}
+
+}
+
+控制台输出：
+Lock所耗时间: 343165627
+synchronized所耗时间: 436721381
+尽管上面的例子不是非常正式的测试案例，但上面的例子在于说明，Lock的性能比synchronized的要好得多。
+如果可以的话总是使用Lock替代synchronized是一个明智的选择。
+再来看一下ReentrantLock
+// ReentrantLock
+public class ReentrantLock implements Lock, java.io.Serializable {
+    private static final long serialVersionUID = 7373984872572414699L;
+    //锁机制
+    /** Synchronizer providing all implementation mechanics */
+    private final Sync sync;
+    abstract static class Sync extends AbstractQueuedSynchronizer {
+     }
+}
+//创建锁
+    public ReentrantLock() {
+        sync = new NonfairSync();
+    }
+//非公平锁，ReentrantLock的内部类NonfairSync
+ /**
+     * Sync object for non-fair locks
+     */
+    static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = 7316153563782823691L;
+
+        /**
+         * Performs lock.  Try immediate barge, backing up to normal
+         * acquire on failure.
+         */
+        final void lock() {
+	    //获取锁
+            if (compareAndSetState(0, 1))
+	        //设置锁持有者线程
+                setExclusiveOwnerThread(Thread.currentThread());
+            else
+	        //获取失败，添加等待队列
+                acquire(1);
+        }
+	//尝试获取锁
+        protected final boolean tryAcquire(int acquires) {
+            return nonfairTryAcquire(acquires);
+        }
+    }
+来看lock中的方法compareAndSetState
+//AbstractQueuedSynchronizer
+public abstract class AbstractQueuedSynchronizer
+    extends AbstractOwnableSynchronizer
+    implements java.io.Serializable {
+  protected final boolean compareAndSetState(int expect, int update) {
+        // See below for intrinsics setup to support this
+	//通过unsafe实现
+        return unsafe.compareAndSwapInt(this, stateOffset, expect, update);
+    }
+}
+
+//创建公平锁：
+    /**
+     * Creates an instance of {@code ReentrantLock} with the
+     * given fairness policy.
+     *
+     * @param fair {@code true} if this lock should use a fair ordering policy
+     */
+    public ReentrantLock(boolean fair) {
+        sync = fair ? new FairSync() : new NonfairSync();
+    } 
+//公平锁
+  static final class FairSync extends Sync {
+        private static final long serialVersionUID = -3000897897090466540L;
+
+        final void lock() {
+            acquire(1);
+        }
+
+        /**
+         * Fair version of tryAcquire.  Don't grant access unless
+         * recursive call or no waiters or is first.
+         */
+        protected final boolean tryAcquire(int acquires) {
+            final Thread current = Thread.currentThread();
+            int c = getState();
+            if (c == 0) {
+                if (!hasQueuedPredecessors() &&
+                    compareAndSetState(0, acquires)) {
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if (nextc < 0)
+                    throw new Error("Maximum lock count exceeded");
+                setState(nextc);
+                return true;
+            }
+            return false;
+        }
+    }
+
+
+//AbstractOwnableSynchronizer
+public abstract class AbstractOwnableSynchronizer
+    implements java.io.Serializable {
+
+    /** Use serial ID even though all fields transient. */
+    private static final long serialVersionUID = 3737899427754241961L;
+
+    /**
+     * Empty constructor for use by subclasses.
+     */
+    protected AbstractOwnableSynchronizer() { }
+
+    /**
+     * The current owner of exclusive mode synchronization.
+     */
+    private transient Thread exclusiveOwnerThread;
+
+    /**
+     * Sets the thread that currently owns exclusive access. A
+     * <tt>null</tt> argument indicates that no thread owns access.
+     * This method does not otherwise impose any synchronization or
+     * <tt>volatile</tt> field accesses.
+     */
+    protected final void setExclusiveOwnerThread(Thread t) {
+        exclusiveOwnerThread = t;
+    }
+
+    /**
+     * Returns the thread last set by
+     * <tt>setExclusiveOwnerThread</tt>, or <tt>null</tt> if never
+     * set.  This method does not otherwise impose any synchronization
+     * or <tt>volatile</tt> field accesses.
+     * @return the owner thread
+     */
+    protected final Thread getExclusiveOwnerThread() {
+        return exclusiveOwnerThread;
+    }
+}
+在公平的锁上，线程按照他们发出请求的顺序获取锁，但在非公平锁上，则允许‘插队’：
+当一个线程请求非公平锁时，如果在发出请求的同时该锁变成可用状态，那么这个线程会跳过队列中所有的等待线程而获得锁。     非公平的ReentrantLock 并不提倡 插队行为，但是无法防止某个线程在合适的时候进行插队。
+在公平的锁中，如果有另一个线程持有锁或者有其他线程在等待队列中等待这个所，
+那么新发出的请求的线程将被放入到队列中。而非公平锁上，只有当锁被某个线程持有时，新发出请求的线程才会被放入队列中。
+非公平锁性能高于公平锁性能的原因：
+在恢复一个被挂起的线程与该线程真正运行之间存在着严重的延迟。
+假设线程A持有一个锁，并且线程B请求这个锁。由于锁被A持有，因此B将被挂起。当A释放锁时，B将被唤醒，
+因此B会再次尝试获取这个锁。与此同时，如果线程C也请求这个锁，那么C很可能会在B被完全唤醒之前获得、
+使用以及释放这个锁。这样就是一种双赢的局面：B获得锁的时刻并没有推迟，C更早的获得了锁，并且吞吐量也提高了。
+当持有锁的时间相对较长或者请求锁的平均时间间隔较长，应该使用公平锁。在这些情况下，
+插队带来的吞吐量提升（当锁处于可用状态时，线程却还处于被唤醒的过程中）可能不会出现。

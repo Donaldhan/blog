@@ -1,0 +1,1313 @@
+HashMap父类Map ：http://donald-draper.iteye.com/blog/2361603
+Map的简单实现AbstractMap ：http://donald-draper.iteye.com/blog/2361627
+要将对象存放在一起，如何设计这个容器。目前只有两条路可以走，一种是采用分格技术，
+每一个对象存放于一个格子中，这样通过对格子的编号就能取到或者遍历对象；
+另一种技术就是采用串联的方式，将各个对象串联起来，这需要各个对象至少带有下一个对象的索引（或者指针）。
+显然第一种就是数组的概念，第二种就是链表的概念。所有的容器的实现其实都是基于这两种方式的，
+不管是数组还是链表，或者二者俱有。HashMap采用的就是数组的方式。
+有了存取对象的容器后还需要以下两个条件才能完成Map所需要的条件。
+•能够快速定位元素：Map的需求就是能够根据一个查询条件快速得到需要的结果，
+所以这个过程需要的就是尽可能的快。
+•能够自动扩充容量：显然对于容器而然，不需要人工的去控制容器的容量是最好的，
+这样对于外部使用者来说越少知道底部细节越好，不仅使用方便，也越安全。
+首先条件1，快速定位元素。快速定位元素属于算法和数据结构的范畴，
+通常情况下哈希（Hash）算法是一种简单可行的算法。
+所谓哈希算法，是将任意长度的二进制值映射为固定长度的较小二进制值。
+常见的MD2,MD4,MD5，SHA-1等都属于Hash算法的范畴。
+具体的算法原理和介绍可以参考相应的算法和数据结构的书籍，
+但是这里特别提醒一句，由于将一个较大的集合映射到一个较小的集合上，
+所以必然就存在多个元素映射到同一个元素上的结果，这个叫“碰撞”，后面会用到此知识，
+暂且不表。条件2，如果满足了条件1，一个元素映射到了某个位置，
+现在一旦扩充了容量，也就意味着元素映射的位置需要变化。
+因为对于Hash算法来说，调整了映射的小集合，那么原来映射的路径肯定就不复存在，
+那么就需要对现有重新计算映射路径，也就是所谓的rehash过程。
+好了有了上面的理论知识后来看HashMap是如何实现的。
+
+下面我们来看一下HashMap的具体实现：
+package java.util;
+import java.io.*;
+
+/**
+ * Hash table based implementation of the <tt>Map</tt> interface.  This
+ * implementation provides all of the optional map operations, and permits
+ * <tt>null</tt> values and the <tt>null</tt> key.  (The <tt>HashMap</tt>
+ * class is roughly equivalent to <tt>Hashtable</tt>, except that it is
+ * unsynchronized and permits nulls.)  This class makes no guarantees as to
+ * the order of the map; in particular, it does not guarantee that the order
+ * will remain constant over time.
+ *
+ Hashtable提供了Map接口所有可选的实现，并且允许k和v为null。HashMap基本功能和Hashtable
+ 相同，允许k和v为null，但有一点，HashMap是非线程安全的。同时不能保证Entry的顺序。
+
+ * <p>This implementation provides constant-time performance for the basic
+ * operations (<tt>get</tt> and <tt>put</tt>), assuming the hash function
+ * disperses the elements properly among the buckets.  Iteration over
+ * collection views requires time proportional to the "capacity" of the
+ * <tt>HashMap</tt> instance (the number of buckets) plus its size (the number
+ * of key-value mappings).  Thus, it's very important not to set the initial
+ * capacity too high (or the load factor too low) if iteration performance is
+ * important.
+ *
+HashMap假设能够将Entry分配到合适的桶中，put和get的时间复杂度为常量。
+遍历key或value和Entry的时间复杂度为HashMap的capacity+Entry的数量有关。
+如果对遍历Entry有一定的性能要求，那么不能将capacity设置的太高或者load factor
+因子太低。
+
+
+ * <p>An instance of <tt>HashMap</tt> has two parameters that affect its
+ * performance: <i>initial capacity</i> and <i>load factor</i>.  The
+ * <i>capacity</i> is the number of buckets in the hash table, and the initial
+ * capacity is simply the capacity at the time the hash table is created.  The
+ * <i>load factor</i> is a measure of how full the hash table is allowed to
+ * get before its capacity is automatically increased.  When the number of
+ * entries in the hash table exceeds the product of the load factor and the
+ * current capacity, the hash table is <i>rehashed</i> (that is, internal data
+ * structures are rebuilt) so that the hash table has approximately twice the
+ * number of buckets.
+ *
+ HashMap有两个参数初始化的capacity和load factor可能会影响到它的性能。capacity决定
+ 者hash table中的桶数量，load factor是一个，衡量是否需要增加capacity的标准。
+ 当Entry的数量超过容量capacity或load factor，则将会rehashed，内部的数据结构将会重建，
+ 以保证hash table拥有接近2倍的buckets。
+ * <p>As a general rule, the default load factor (.75) offers a good tradeoff
+ * between time and space costs.  Higher values decrease the space overhead
+ * but increase the lookup cost (reflected in most of the operations of the
+ * <tt>HashMap</tt> class, including <tt>get</tt> and <tt>put</tt>).  The
+ * expected number of entries in the map and its load factor should be taken
+ * into account when setting its initial capacity, so as to minimize the
+ * number of rehash operations.  If the initial capacity is greater
+ * than the maximum number of entries divided by the load factor, no
+ * rehash operations will ever occur.
+ *
+ 作为一个默认条件，load factor为0.75能够在时间和空间性能方面，提供一个折中。
+ 当空间负载越多，那么将会消耗更多的时间，在get和put操作上。当我们设置初始化容量
+capacity，应该考虑肯能会有多少Entry，及负载因子load factor，以减少rehash的可能。
+如果实际的Entry数量，达不到capacity*load factor，那么rehash操作将不会发生。
+ * <p>If many mappings are to be stored in a <tt>HashMap</tt> instance,
+ * creating it with a sufficiently large capacity will allow the mappings to
+ * be stored more efficiently than letting it perform automatic rehashing as
+ * needed to grow the table.
+ *
+ 如果有许多Entry将会放入到HashMap中，我们应该创建HashMap时，初始化capacity充分
+ 足够的大，使存储Entry更有效，而不是自动的重hash，增加hash table空间。
+ * <p><strong>Note that this implementation is not synchronized.</strong>
+ * If multiple threads access a hash map concurrently, and at least one of
+ * the threads modifies the map structurally, it <i>must</i> be
+ * synchronized externally.  (A structural modification is any operation
+ * that adds or deletes one or more mappings; merely changing the value
+ * associated with a key that an instance already contains is not a
+ * structural modification.)  This is typically accomplished by
+ * synchronizing on some object that naturally encapsulates the map.
+ *
+ HashMap是非线程安全的，如果有多个线程同时访问HashMap，至少有一个可以线程
+ 安全的修改Map结构。我们可以通过一些object的synchronizing来实现。
+ * If no such object exists, the map should be "wrapped" using the
+ * {@link Collections#synchronizedMap Collections.synchronizedMap}
+ * method.  This is best done at creation time, to prevent accidental
+ * unsynchronized access to the map:<pre>
+ *   Map m = Collections.synchronizedMap(new HashMap(...));</pre>
+ *
+ 如果没有这样的Object存在，我们应该通过Collections#synchronizedMap将HashMap包装成
+ ，线程安全的。这一操作最好在创建的时候做，以防止非安全地访问Map。
+ * <p>The iterators returned by all of this class's "collection view methods"
+ * are <i>fail-fast</i>: if the map is structurally modified at any time after
+ * the iterator is created, in any way except through the iterator's own
+ * <tt>remove</tt> method, the iterator will throw a
+ * {@link ConcurrentModificationException}.  Thus, in the face of concurrent
+ * modification, the iterator fails quickly and cleanly, rather than risking
+ * arbitrary, non-deterministic behavior at an undetermined time in the
+ * future.
+ *
+ HashMap的k，v和Entry视图集，都是fail-fast：意思为在iterator创建之后，
+ 如果Map的结构，通过iterator自己的方法remove将抛出ConcurrentModificationException。
+ 因为在并发修改方面，iterator将会quickly and cleanly, rather than risking
+ arbitrary, non-deterministic behavior at an undetermined time in the
+ future.
+
+ * <p>Note that the fail-fast behavior of an iterator cannot be guaranteed
+ * as it is, generally speaking, impossible to make any hard guarantees in the
+ * presence of unsynchronized concurrent modification.  Fail-fast iterators
+ * throw <tt>ConcurrentModificationException</tt> on a best-effort basis.
+ * Therefore, it would be wrong to write a program that depended on this
+ * exception for its correctness: <i>the fail-fast behavior of iterators
+ * should be used only to detect bugs.</i>
+ *
+iterator的fail-fast是不能保证它自己，换一种说法，在并发访问下，其不能保证
+线程安全。 Fail-fast iterators throw ConcurrentModificationException
+on a best-effort basis.因此等我们开发程序依赖这个异常时，将会错误，这种行为
+只是被用来检测bug。
+ * <p>This class is a member of the
+ * <a href="{@docRoot}/../technotes/guides/collections/index.html">
+ * Java Collections Framework</a>.
+ *
+ * @param <K> the type of keys maintained by this map
+ * @param <V> the type of mapped values
+ *
+ * @author  Doug Lea
+ * @author  Josh Bloch
+ * @author  Arthur van Hoff
+ * @author  Neal Gafter
+ * @see     Object#hashCode()
+ * @see     Collection
+ * @see     Map
+ * @see     TreeMap
+ * @see     Hashtable
+ * @since   1.2
+ */
+
+public class HashMap<K,V>
+    extends AbstractMap<K,V>
+    implements Map<K,V>, Cloneable, Serializable
+{
+     /**
+     * The default initial capacity - MUST be a power of two.
+     */
+     //默认Entry table的初始化容量
+    static final int DEFAULT_INITIAL_CAPACITY = 16;
+
+    /**
+     * The maximum capacity, used if a higher value is implicitly specified
+     * by either of the constructors with arguments.
+     * MUST be a power of two <= 1<<30.
+     */
+     //最大容量
+    static final int MAXIMUM_CAPACITY = 1 << 30;
+
+    /**
+     * The load factor used when none specified in constructor.
+     */
+     //默认负载因子
+    static final float DEFAULT_LOAD_FACTOR = 0.75f;
+
+    /**
+     * The table, resized as necessary. Length MUST Always be a power of two.
+     */
+    //存放Entry数组
+    transient Entry<K,V>[] table;
+
+    /**
+     * The number of key-value mappings contained in this map.
+     */
+     //Table中Entry数量
+    transient int size;
+
+    /**
+     * The next size value at which to resize (capacity * load factor).
+     * @serial
+     */
+     //threshold=capacity * load factor,当table中的实际容量为threshold，则重新rehash
+     //扩大容量为初始化容量的两倍
+    int threshold;
+
+    /**
+     * The load factor for the hash table.
+     *
+     * @serial
+     */
+    //负债因子
+    final float loadFactor;
+
+    /**
+     * The number of times this HashMap has been structurally modified
+     * Structural modifications are those that change the number of mappings in
+     * the HashMap or otherwise modify its internal structure (e.g.,
+     * rehash).  This field is used to make iterators on Collection-views of
+     * the HashMap fail-fast.  (See ConcurrentModificationException).
+     */
+     //HashMap结构修改的次数，结构性的修改是指，改变Entry的数量
+    transient int modCount;
+
+    /**
+     * The default threshold of map capacity above which alternative hashing is
+     * used for String keys. Alternative hashing reduces the incidence of
+     * collisions due to weak hash code calculation for String keys.
+     * <p/>
+     默认的HashMap，扩容界限
+     * This value may be overridden by defining the system property
+     * {@code jdk.map.althashing.threshold}. A property value of {@code 1}
+     * forces alternative hashing to be used at all times whereas
+     * {@code -1} value ensures that alternative hashing is never used.
+     */
+    static final int ALTERNATIVE_HASHING_THRESHOLD_DEFAULT = Integer.MAX_VALUE;
+
+    /**
+     * holds values which can't be initialized until after VM is booted.
+     */
+    private static class Holder {
+
+            // Unsafe mechanics
+        /**
+         * Unsafe utilities
+         */
+        static final sun.misc.Unsafe UNSAFE;
+
+        /**
+         * Offset of "final" hashSeed field we must set in readObject() method.
+         */
+        static final long HASHSEED_OFFSET;
+
+        /**
+         * Table capacity above which to switch to use alternative hashing.
+         */
+        static final int ALTERNATIVE_HASHING_THRESHOLD;
+
+        static {
+            String altThreshold = java.security.AccessController.doPrivileged(
+                new sun.security.action.GetPropertyAction(
+                    "jdk.map.althashing.threshold"));
+
+            int threshold;
+            try {
+                threshold = (null != altThreshold)
+                        ? Integer.parseInt(altThreshold)
+                        : ALTERNATIVE_HASHING_THRESHOLD_DEFAULT;
+
+                // disable alternative hashing if -1
+                if (threshold == -1) {
+                    threshold = Integer.MAX_VALUE;
+                }
+
+                if (threshold < 0) {
+                    throw new IllegalArgumentException("value must be positive integer.");
+                }
+            } catch(IllegalArgumentException failed) {
+                throw new Error("Illegal value for 'jdk.map.althashing.threshold'", failed);
+            }
+            ALTERNATIVE_HASHING_THRESHOLD = threshold;
+
+            try {
+                UNSAFE = sun.misc.Unsafe.getUnsafe();
+                HASHSEED_OFFSET = UNSAFE.objectFieldOffset(
+                    HashMap.class.getDeclaredField("hashSeed"));
+            } catch (NoSuchFieldException | SecurityException e) {
+                throw new Error("Failed to record hashSeed offset", e);
+            }
+        }
+    }
+    **
+     * If {@code true} then perform alternative hashing of String keys to reduce
+     * the incidence of collisions due to weak hash code calculation.
+     */
+    transient boolean useAltHashing;
+
+    /**
+     * A randomizing value associated with this instance that is applied to
+     * hash code of keys to make hash collisions harder to find.
+     */
+     //hash种子
+    transient final int hashSeed = sun.misc.Hashing.randomHashSeed(this);
+}
+来看构造
+
+    /**
+     * Constructs an empty <tt>HashMap</tt> with the default initial capacity
+     * (16) and the default load factor (0.75).
+     */
+     默认容量及负载因子
+    public HashMap() {
+        this(DEFAULT_INITIAL_CAPACITY, DEFAULT_LOAD_FACTOR);
+    }
+ //初始化容量，默认负载因子
+ public HashMap(int initialCapacity) {
+        this(initialCapacity, DEFAULT_LOAD_FACTOR);
+    }
+/**
+     * Constructs an empty <tt>HashMap</tt> with the specified initial
+     * capacity and load factor.
+     *
+     构造一个空HashMap，初始化容量为capacity，负载因子为load factor
+     * @param  initialCapacity the initial capacity
+     * @param  loadFactor      the load factor
+     * @throws IllegalArgumentException if the initial capacity is negative
+     *         or the load factor is nonpositive
+     */
+    public HashMap(int initialCapacity, float loadFactor) {
+        if (initialCapacity < 0)
+            throw new IllegalArgumentException("Illegal initial capacity: " +
+                                               initialCapacity);
+        if (initialCapacity > MAXIMUM_CAPACITY)
+            initialCapacity = MAXIMUM_CAPACITY;
+        if (loadFactor <= 0 || Float.isNaN(loadFactor))
+            throw new IllegalArgumentException("Illegal load factor: " +
+                                               loadFactor);
+
+        // Find a power of 2 >= initialCapacity
+        int capacity = 1;
+	//我们给的初始化容量为initialCapacity，而实际初始容量为第一个2^N>initialCapacity
+	的容量值，不然我们的initialCapacity为大于16，小于31的数，那么capacity为32
+        while (capacity < initialCapacity)
+            capacity <<= 1;
+        this.loadFactor = loadFactor;
+	//计算扩容临界点
+        threshold = (int)Math.min(capacity * loadFactor, MAXIMUM_CAPACITY + 1);
+        //创建Entry table
+	table = new Entry[capacity];
+        useAltHashing = sun.misc.VM.isBooted() &&
+                (capacity >= Holder.ALTERNATIVE_HASHING_THRESHOLD);
+        init();
+    }
+// internal utilities
+
+    /**
+     * Initialization hook for subclasses. This method is called
+     * in all constructors and pseudo-constructors (clone, readObject)
+     * after HashMap has been initialized but before any entries have
+     * been inserted.  (In the absence of this method, readObject would
+     * require explicit knowledge of subclasses.)
+     */
+    void init() {
+    //待子类扩展，做一些在初始化之后，Entry被插入之前；
+    }
+
+/**
+     * Returns the number of key-value mappings in this map.
+     *当前容量
+     * @return the number of key-value mappings in this map
+     */
+    public int size() {
+        return size;
+    }
+
+    /**
+     * Returns <tt>true</tt> if this map contains no key-value mappings.
+     *是否为空
+     * @return <tt>true</tt> if this map contains no key-value mappings
+     */
+    public boolean isEmpty() {
+        return size == 0;
+    }
+
+在往下看之前，我们先看一下Entry的实现
+
+ static class Entry<K,V> implements Map.Entry<K,V> {
+        final K key;
+        V value;
+        Entry<K,V> next;//当有hash值相同时，放在同一个桶，链接
+        int hash;//hash值
+
+        /**
+         * Creates new entry.构造一个新的Entry
+         */
+        Entry(int h, K k, V v, Entry<K,V> n) {
+            value = v;
+            next = n;//next为n
+            key = k;
+            hash = h;
+        }
+
+        public final K getKey() {
+            return key;
+        }
+
+        public final V getValue() {
+            return value;
+        }
+
+        public final V setValue(V newValue) {
+            V oldValue = value;
+            value = newValue;
+            return oldValue;
+        }
+
+        public final boolean equals(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry e = (Map.Entry)o;
+            Object k1 = getKey();
+            Object k2 = e.getKey();
+            if (k1 == k2 || (k1 != null && k1.equals(k2))) {
+                Object v1 = getValue();
+                Object v2 = e.getValue();
+                if (v1 == v2 || (v1 != null && v1.equals(v2)))
+                    return true;
+            }
+            return false;
+        }
+
+        public final int hashCode() {
+            return (key==null   ? 0 : key.hashCode()) ^
+                   (value==null ? 0 : value.hashCode());
+        }
+
+        public final String toString() {
+            return getKey() + "=" + getValue();
+        }
+
+        /**
+         * This method is invoked whenever the value in an entry is
+         * overwritten by an invocation of put(k,v) for a key k that's already
+         * in the HashMap.
+         */
+        void recordAccess(HashMap<K,V> m) {
+        }
+
+        /**
+         * This method is invoked whenever the entry is
+         * removed from the table.
+         */
+        void recordRemoval(HashMap<K,V> m) {
+        }
+    }
+Entry与AbstractMap中Entry没有太大的区别，增加了一个hash值，一个桶链接
+来看put操作
+
+public V put(K key, V value) {
+        if (key == null)
+	    //如果key为null，执行放一个null Key的操作
+            return putForNullKey(value);
+	 //获取hash值
+        int hash = hash(key);
+	//根据hash值和table长度获取，table索引
+        int i = indexFor(hash, table.length);
+	//遍历table索引i对应的Entry链，如果存在对应的Key，则替换旧值
+        for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+            Object k;
+	    //如果hash值相同，并且key相等，替换key对应的旧值。
+            if (e.hash == hash && ((k = e.key) == key || key.equals(k))) {
+                V oldValue = e.value;
+                e.value = value;
+                e.recordAccess(this);
+                return oldValue;
+            }
+        }
+        modCount++;
+	//如果对应的Key的hash不存在，则添加新Entry
+        addEntry(hash, key, value, i);
+        return null;
+    }
+这个操作，我们一步一步的看
+分如下几步
+1.
+if (key == null)
+//如果key为null，执行放一个null Key的操作
+    return putForNullKey(value);
+2.//获取hash值
+int hash = hash(key);
+3.
+//根据hash值和table长度获取，table索引
+int i = indexFor(hash, table.length);
+4.
+//遍历table索引i对应的Entry链，如果存在对应的Key，则替换旧值
+//遍历table索引i对应的Entry链，如果存在对应的Key，则替换旧值
+        for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+            Object k;
+	    //如果hash值相同，并且key相等，替换key对应的旧值。
+            if (e.hash == hash && ((k = e.key) == key || key.equals(k))) {
+                V oldValue = e.value;
+                e.value = value;
+                e.recordAccess(this);
+                return oldValue;
+            }
+        }
+5.
+//如果对应的Key的hash不存在，则添加新Entry
+ addEntry(hash, key, value, i);
+以上5步第四步就不看了很好理解下面我们分别来看上面几步
+
+1.
+if (key == null)
+//如果key为null，执行放一个null Key的操作
+    return putForNullKey(value);
+从下面的代码可以看出，空key对应Entry是放在table的索引0上面
+ * Offloaded version of put for null keys
+     */
+    private V putForNullKey(V value) {
+    //遍历table索引0对应的Entry链，如果存在对应的null key，则替换旧值
+        for (Entry<K,V> e = table[0]; e != null; e = e.next) {
+            if (e.key == null) {
+                V oldValue = e.value;
+                e.value = value;
+                e.recordAccess(this);
+                return oldValue;
+            }
+        }
+        modCount++;
+	//否则，添加新Entry，这个与第五步一样，我们第五步统一看
+        addEntry(0, null, value, 0);
+        return null;
+    }
+
+
+2.//获取hash值
+int hash = hash(key);
+
+final int hash(Object k) {
+        int h = 0;
+        if (useAltHashing) {
+            if (k instanceof String) {
+                return sun.misc.Hashing.stringHash32((String) k);
+            }
+            h = hashSeed;
+        }
+
+        h ^= k.hashCode();
+
+        // This function ensures that hashCodes that differ only by
+        // constant multiples at each bit position have a bounded
+        // number of collisions (approximately 8 at default load factor).
+        h ^= (h >>> 20) ^ (h >>> 12);
+        return h ^ (h >>> 7) ^ (h >>> 4);
+    }
+
+3.
+//根据hash值和table长度获取，table索引
+int i = indexFor(hash, table.length);
+
+ /**
+     * Returns index for hash code h.
+     */
+    static int indexFor(int h, int length) {
+        return h & (length-1);
+    }
+
+4.
+
+//遍历table索引i对应的Entry链，如果存在对应的Key，则替换旧值
+        for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+            Object k;
+	    //如果hash值相同，并且key相等，替换key对应的旧值。
+            if (e.hash == hash && ((k = e.key) == key || key.equals(k))) {
+                V oldValue = e.value;
+                e.value = value;
+                e.recordAccess(this);
+                return oldValue;
+            }
+        }
+
+这步没什么多看的
+
+5.
+//如果对应的Key的hash不存在，则添加新Entry
+
+
+void addEntry(int hash, K key, V value, int bucketIndex) {
+        if ((size >= threshold) && (null != table[bucketIndex])) {
+	   //若果size大于扩容的临界条件，则扩容
+            resize(2 * table.length);
+            hash = (null != key) ? hash(key) : 0;
+	    //从新获取索引
+            bucketIndex = indexFor(hash, table.length);
+        }
+        //如果size没有达到临界点，则创建createEntry
+        createEntry(hash, key, value, bucketIndex);
+    }
+这个分两步走
+A：
+if ((size >= threshold) && (null != table[bucketIndex])) {
+	   //若果size大于扩容的临界条件，则扩容
+            resize(2 * table.length);
+            hash = (null != key) ? hash(key) : 0;
+	    //重新获取索引
+            bucketIndex = indexFor(hash, table.length);
+        }
+B:
+//如果size没有达到临界点，则创建createEntry
+        createEntry(hash, key, value, bucketIndex);
+
+我们先看B：
+B:
+//如果size没有达到临界点，则创建createEntry
+        createEntry(hash, key, value, bucketIndex);
+
+ void createEntry(int hash, K key, V value, int bucketIndex) {
+        //获取索引对应的Entry
+        Entry<K,V> e = table[bucketIndex];
+        table[bucketIndex] = new Entry<>(hash, key, value, e);
+        size++;
+    }
+从上面来看，首先获取table指定索引bucketIndex，链头的Entry，
+添加新的Entry到table指定索引bucketIndex作为链头，next指向之前的链头的Entry
+
+
+A：
+if ((size >= threshold) && (null != table[bucketIndex])) {
+	   //若果size大于扩容的临界条件，则扩容
+            resize(2 * table.length);
+            hash = (null != key) ? hash(key) : 0;
+	    //重新获取索引
+            bucketIndex = indexFor(hash, table.length);
+        }
+
+
+
+先看扩容
+
+ void resize(int newCapacity) {
+        //获取旧的Entry table
+        Entry[] oldTable = table;
+        int oldCapacity = oldTable.length;
+        if (oldCapacity == MAXIMUM_CAPACITY) {
+	    //扩容失败，已经达到最大容量
+            threshold = Integer.MAX_VALUE;
+            return;
+        }
+        //创建新Entry table
+        Entry[] newTable = new Entry[newCapacity];
+        boolean oldAltHashing = useAltHashing;
+        useAltHashing |= sun.misc.VM.isBooted() &&
+                (newCapacity >= Holder.ALTERNATIVE_HASHING_THRESHOLD);
+        boolean rehash = oldAltHashing ^ useAltHashing;
+	//重新hash，转移旧的table，到扩容后的table
+        transfer(newTable, rehash);
+        table = newTable;
+	//重新设定扩容临界点
+        threshold = (int)Math.min(newCapacity * loadFactor, MAXIMUM_CAPACITY + 1);
+    }
+
+ /**
+     * Transfers all entries from current table to newTable.
+     */
+    void transfer(Entry[] newTable, boolean rehash) {
+        int newCapacity = newTable.length;
+	//遍历旧的table，获取table中Entry
+        for (Entry<K,V> e : table) {
+            while(null != e) {
+                Entry<K,V> next = e.next;
+                if (rehash) {
+                    e.hash = null == e.key ? 0 : hash(e.key);
+                }
+		//获取Entry的新table索引index
+                int i = indexFor(e.hash, newCapacity);
+                e.next = newTable[i];
+                newTable[i] = e;
+                e = next;
+            }
+        }
+    }
+
+小节一下put操作，
+
+如果key为null则放在Entry table的index为0的上面，如果存在null key则替换旧值；
+如果key不为null，则获取key的hash值，然后再获取Entry在table中的index，如果对应
+的index上有Key对应的Entry，则替换旧值返回，否则添加新的Entry到table的index对应
+的链表中。当添加Entry时的size达到临界条件，则扩容table为原来的两倍，重新hash旧table中
+Entry对应的key，并定位Entry应该存放的桶索引index，放到新table中。如果在扩容是旧容量已经
+达到最大容量，则扩容失败；添加新的Entry到table的index对应的桶链表时，将Entry放在链表头，
+next指向原始的链表头。
+
+再看get操作
+//获取key对应的值
+ public V get(Object key) {
+        if (key == null)
+	   //返回当key为null的值
+            return getForNullKey();
+	 //获取Key对应的Entry
+        Entry<K,V> entry = getEntry(key);
+	//返回Entry的值
+        return null == entry ? null : entry.getValue();
+    }
+先看为key为null，再看不为null
+1.
+ if (key == null)
+	   //返回当key为null的值
+            return getForNullKey();
+
+2
+ //获取Key对应的Entry
+        Entry<K,V> entry = getEntry(key);
+	//返回Entry的值
+        return null == entry ? null : entry.getValue();
+
+
+
+1.
+ if (key == null)
+	   //返回当key为null的值
+            return getForNullKey();
+//获取table索引为0的链表中key为null的值
+    private V getForNullKey() {
+        for (Entry<K,V> e = table[0]; e != null; e = e.next) {
+            if (e.key == null)
+                return e.value;
+        }
+        return null;
+    }
+
+2
+ //获取Key对应的Entry
+        Entry<K,V> entry = getEntry(key);
+	//返回Entry的值
+        return null == entry ? null : entry.getValue();
+
+final Entry<K,V> getEntry(Object key) {
+        int hash = (key == null) ? 0 : hash(key);
+        for (Entry<K,V> e = table[indexFor(hash, table.length)];
+             e != null;
+             e = e.next) {
+            Object k;
+            if (e.hash == hash &&
+                ((k = e.key) == key || (key != null && key.equals(k))))
+                return e;
+        }
+        return null;
+    }
+从代码可以看出，先获取key的hash值，在获取key对应的table index，遍历table的
+index对应的Entry链表，找出与key相同的Entry，返回。
+
+从上面可以看出:
+get操作首先判断key是否为null，如果为null，则获取table索引为0的链表中key为null的值
+否则先获取key的hash值，在获取key对应的table index，遍历table的
+index对应的Entry链表，找出与key相同的Entry，返回Entry对应的值。
+
+再看是否包含key
+public boolean containsKey(Object key) {
+        return getEntry(key) != null;
+    }
+是否包含value
+//遍历table中的所有Entry链表，找value相等的，则返回ture，
+从时间复杂度上，来讲，最好不要调用者这个方法
+ public boolean containsValue(Object value) {
+        if (value == null)
+            return containsNullValue();
+
+        Entry[] tab = table;
+        for (int i = 0; i < tab.length ; i++)
+            for (Entry e = tab[i] ; e != null ; e = e.next)
+                if (value.equals(e.value))
+                    return true;
+        return false;
+    }
+
+是否包含null值
+ /**
+     * Special-case code for containsValue with null argument
+     */
+    private boolean containsNullValue() {
+        Entry[] tab = table;
+        for (int i = 0; i < tab.length ; i++)
+            for (Entry e = tab[i] ; e != null ; e = e.next)
+                if (e.value == null)
+                    return true;
+        return false;
+    }
+    //克隆
+ public Object clone() {
+        HashMap<K,V> result = null;
+        try {
+            result = (HashMap<K,V>)super.clone();
+        } catch (CloneNotSupportedException e) {
+            // assert false;
+        }
+        result.table = new Entry[table.length];
+        result.entrySet = null;
+        result.modCount = 0;
+        result.size = 0;
+        result.init();
+        result.putAllForCreate(this);
+
+        return result;
+    }
+移除key
+ /**
+     * Removes the mapping for the specified key from this map if present.
+     *
+     * @param  key key whose mapping is to be removed from the map
+     * @return the previous value associated with <tt>key</tt>, or
+     *         <tt>null</tt> if there was no mapping for <tt>key</tt>.
+     *         (A <tt>null</tt> return can also indicate that the map
+     *         previously associated <tt>null</tt> with <tt>key</tt>.)
+     */
+    public V remove(Object key) {
+        Entry<K,V> e = removeEntryForKey(key);
+        return (e == null ? null : e.value);
+    }
+
+    /**
+     * Removes and returns the entry associated with the specified key
+     * in the HashMap.  Returns null if the HashMap contains no mapping
+     * for this key.
+     */
+    final Entry<K,V> removeEntryForKey(Object key) {
+        int hash = (key == null) ? 0 : hash(key);
+        int i = indexFor(hash, table.length);
+        Entry<K,V> prev = table[i];
+        Entry<K,V> e = prev;
+
+        while (e != null) {
+            Entry<K,V> next = e.next;
+            Object k;
+            if (e.hash == hash &&
+                ((k = e.key) == key || (key != null && key.equals(k)))) {
+                modCount++;
+                size--;
+                if (prev == e)
+                    table[i] = next;
+                else
+                    prev.next = next;
+                e.recordRemoval(this);
+                return e;
+            }
+            prev = e;
+            e = next;
+        }
+从代码可以看出，移除操作首先获取key对应的hash值，在定位table的index，遍历index对应
+的Entry链表，找到key和hash值相等的，移除。
+
+
+//遍历所有Entry，放到Map中
+public void putAll(Map<? extends K, ? extends V> m) {
+        int numKeysToBeAdded = m.size();
+        if (numKeysToBeAdded == 0)
+            return;
+
+        /*
+         * Expand the map if the map if the number of mappings to be added
+         * is greater than or equal to threshold.  This is conservative; the
+         * obvious condition is (m.size() + size) >= threshold, but this
+         * condition could result in a map with twice the appropriate capacity,
+         * if the keys to be added overlap with the keys already in this map.
+         * By using the conservative calculation, we subject ourself
+         * to at most one extra resize.
+         */
+        if (numKeysToBeAdded > threshold) {
+            int targetCapacity = (int)(numKeysToBeAdded / loadFactor + 1);
+            if (targetCapacity > MAXIMUM_CAPACITY)
+                targetCapacity = MAXIMUM_CAPACITY;
+            int newCapacity = table.length;
+            while (newCapacity < targetCapacity)
+                newCapacity <<= 1;
+            if (newCapacity > table.length)
+                resize(newCapacity);
+        }
+
+        for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+            put(e.getKey(), e.getValue());
+    }
+
+下面来看一下Map的k，v和Entry视图
+
+ // Views
+
+    private transient Set<Map.Entry<K,V>> entrySet = null;
+
+public Set<Map.Entry<K,V>> entrySet() {
+        //委托给entrySet0
+        return entrySet0();
+    }
+
+    private Set<Map.Entry<K,V>> entrySet0() {
+        Set<Map.Entry<K,V>> es = entrySet;
+        return es != null ? es : (entrySet = new EntrySet());
+    }
+EntrySet的所有操作以HashMap相关联
+ private final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
+        public Iterator<Map.Entry<K,V>> iterator() {
+            return newEntryIterator();
+        }
+        public boolean contains(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<K,V> e = (Map.Entry<K,V>) o;
+            Entry<K,V> candidate = getEntry(e.getKey());
+            return candidate != null && candidate.equals(e);
+        }
+        public boolean remove(Object o) {
+            return removeMapping(o) != null;
+        }
+        public int size() {
+            return size;
+        }
+        public void clear() {
+            HashMap.this.clear();
+        }
+    }
+
+创建EntryIterator
+ Iterator<Map.Entry<K,V>> newEntryIterator()   {
+        return new EntryIterator();
+    }
+
+ private final class EntryIterator extends HashIterator<Map.Entry<K,V>> {
+        public Map.Entry<K,V> next() {
+            return nextEntry();
+        }
+    }
+
+   private abstract class HashIterator<E> implements Iterator<E> {
+        Entry<K,V> next;        // next entry to return
+        int expectedModCount;   // For fast-fail
+        int index;              // current slot
+        Entry<K,V> current;     // current entry
+
+        HashIterator() {
+	//构造
+            expectedModCount = modCount;
+            if (size > 0) { // advance to first entry
+                Entry[] t = table;
+                while (index < t.length && (next = t[index++]) == null)
+                    ;
+            }
+        }
+
+        public final boolean hasNext() {
+            return next != null;
+        }
+
+        final Entry<K,V> nextEntry() {
+            if (modCount != expectedModCount)
+                throw new ConcurrentModificationException();
+            Entry<K,V> e = next;
+            if (e == null)
+                throw new NoSuchElementException();
+
+            if ((next = e.next) == null) {
+                Entry[] t = table;
+		//遍历table
+                while (index < t.length && (next = t[index++]) == null)
+                    ;
+            }
+            current = e;
+            return e;
+        }
+
+        public void remove() {
+            if (current == null)
+                throw new IllegalStateException();
+            if (modCount != expectedModCount)
+                throw new ConcurrentModificationException();
+            Object k = current.key;
+            current = null;
+            HashMap.this.removeEntryForKey(k);
+            expectedModCount = modCount;
+        }
+    }
+
+
+  private final class ValueIterator extends HashIterator<V> {
+        public V next() {
+            return nextEntry().value;
+        }
+    }
+
+    private final class KeyIterator extends HashIterator<K> {
+        public K next() {
+            return nextEntry().getKey();
+        }
+    }
+
+Value视图
+ public Collection<V> values() {
+        Collection<V> vs = values;
+        return (vs != null ? vs : (values = new Values()));
+    }
+
+    private final class Values extends AbstractCollection<V> {
+        public Iterator<V> iterator() {
+            return newValueIterator();
+        }
+        public int size() {
+            return size;
+        }
+        public boolean contains(Object o) {
+            return containsValue(o);
+        }
+        public void clear() {
+            HashMap.this.clear();
+        }
+    }
+Key视图
+  public Set<K> keySet() {
+        Set<K> ks = keySet;
+        return (ks != null ? ks : (keySet = new KeySet()));
+    }
+
+    private final class KeySet extends AbstractSet<K> {
+        public Iterator<K> iterator() {
+            return newKeyIterator();
+        }
+        public int size() {
+            return size;
+        }
+        public boolean contains(Object o) {
+            return containsKey(o);
+        }
+        public boolean remove(Object o) {
+            return HashMap.this.removeEntryForKey(o) != null;
+        }
+        public void clear() {
+            HashMap.this.clear();
+        }
+    }
+从上面可以看出Key视图和Value视图的实现是在Entry的基础上，所以我们遍历HashMap的时候
+最好用EntrySet。
+
+
+ // These methods are used when serializing HashSets
+    int   capacity()     { return table.length; }
+    float loadFactor()   { return loadFactor;   }
+清空Map
+  /**
+     * Removes all of the mappings from this map.
+     * The map will be empty after this call returns.
+     */
+    public void clear() {
+        modCount++;
+        Entry[] tab = table;
+        for (int i = 0; i < tab.length; i++)
+            tab[i] = null;
+        size = 0;
+    }
+序列化
+
+ private void writeObject(java.io.ObjectOutputStream s)
+        throws IOException
+    {
+        Iterator<Map.Entry<K,V>> i =
+            (size > 0) ? entrySet0().iterator() : null;
+
+        // Write out the threshold, loadfactor, and any hidden stuff
+        s.defaultWriteObject();
+
+        // Write out number of buckets
+        s.writeInt(table.length);
+
+        // Write out size (number of Mappings)
+        s.writeInt(size);
+
+        // Write out keys and values (alternating)
+        if (size > 0) {
+            for(Map.Entry<K,V> e : entrySet0()) {
+                s.writeObject(e.getKey());
+                s.writeObject(e.getValue());
+            }
+        }
+    }
+ private static final long serialVersionUID = 362498820763181265L;
+
+ 从上面可以看出序列化时，先调用默认的序列化，在写table长度，size，
+ 遍历Entry，写key和value。
+
+ 反序列:
+   private void readObject(java.io.ObjectInputStream s)
+         throws IOException, ClassNotFoundException
+    {
+        // Read in the threshold (ignored), loadfactor, and any hidden stuff
+        s.defaultReadObject();
+        if (loadFactor <= 0 || Float.isNaN(loadFactor))
+            throw new InvalidObjectException("Illegal load factor: " +
+                                               loadFactor);
+
+        // set hashSeed (can only happen after VM boot)
+        Holder.UNSAFE.putIntVolatile(this, Holder.HASHSEED_OFFSET,
+                sun.misc.Hashing.randomHashSeed(this));
+
+        // Read in number of buckets and allocate the bucket array;
+        s.readInt(); // ignored
+
+        // Read number of mappings
+        int mappings = s.readInt();
+        if (mappings < 0)
+            throw new InvalidObjectException("Illegal mappings count: " +
+                                               mappings);
+
+        int initialCapacity = (int) Math.min(
+                // capacity chosen by number of mappings
+                // and desired load (if >= 0.25)
+                mappings * Math.min(1 / loadFactor, 4.0f),
+                // we have limits...
+                HashMap.MAXIMUM_CAPACITY);
+        int capacity = 1;
+        // find smallest power of two which holds all mappings
+        while (capacity < initialCapacity) {
+            capacity <<= 1;
+        }
+
+        table = new Entry[capacity];
+        threshold = (int) Math.min(capacity * loadFactor, MAXIMUM_CAPACITY + 1);
+        useAltHashing = sun.misc.VM.isBooted() &&
+                (capacity >= Holder.ALTERNATIVE_HASHING_THRESHOLD);
+
+        init();  // Give subclass a chance to do its thing.
+
+        // Read the keys and values, and put the mappings in the HashMap
+        for (int i=0; i<mappings; i++) {
+            K key = (K) s.readObject();
+            V value = (V) s.readObject();
+            putForCreate(key, value);
+        }
+    }
+
+     private void putForCreate(K key, V value) {
+        int hash = null == key ? 0 : hash(key);
+        int i = indexFor(hash, table.length);
+
+        /**
+         * Look for preexisting entry for key.  This will never happen for
+         * clone or deserialize.  It will only happen for construction if the
+         * input Map is a sorted map whose ordering is inconsistent w/ equals.
+         */
+        for (Entry<K,V> e = table[i]; e != null; e = e.next) {
+            Object k;
+            if (e.hash == hash &&
+                ((k = e.key) == key || (key != null && key.equals(k)))) {
+                e.value = value;
+                return;
+            }
+        }
+
+        createEntry(hash, key, value, i);
+    }
+总结：
+HashMap中有一个Entry数组table用于存储Entry，
+size描述的是Map中元素的大小，threshold描述的是扩容的临界条件，
+loadFactor是扩容因子(loadFactor>0)，计算临界条件threshold（capacity*loadFactor）的。
+那么容量就是table.length（capacity），也就是数组的大小。换句话说，
+如果存取的Entry的达到了整个容量threshold，那么就需要扩充容量了。
+在HashMap中每次扩容就是将扩大数组的一倍，使数组大小为原来的两倍。
+在初始化Map时，给的容量最好是2的N次方，在构造中我们，看到了怎么回事。
+扩充过程会导致元素数据的所有元素进行重新hash计算，这个过程也叫rehash。
+显然这是一个非常耗时的过程，否则扩容都会导致所有元素重新计算hash。
+因此尽可能的选择合适的初始化大小是有效提高HashMap效率的关键。
+太大了会导致过多的浪费空间，太小了就可能会导致繁重的rehash过程。
+在这个过程中loadFactor也可以考虑。举个例子来说，如果要存储1000个元素，
+采用默认扩容因子0.75，那么1024显然是不够的，因为1000>0.75*1024了，
+所以选择2048是必须的，显然浪费了1048个空间。如果确定最多只有1000个元素，
+那么扩容因子为1，那么1024是不错的选择。
+另外需要强调的一点是扩容因此越大，从统计学角度讲意味着链表的长度就也大，
+也就是在查找元素的时候就需要更多次的循环。
+所以凡事必然是一个平衡的过程。这里可能有人要问题，
+一旦我将Map的容量扩大后（也就是数组的大小），这个容量还能减小么？
+比如说刚开始Map中可能有10000个元素，运行一旦时间以后Map的大小永远不会超过10个，
+那么Map的容量能减小到10个或者16个么？答案就是不能，
+这个capacity一旦扩大后就不能减小了，只能通过构造一个新的Map来控制capacity了。
+
+put操作:
+如果key为null则放在Entry table的index为0的上面，如果存在null key则替换旧值；
+如果key不为null，则获取key的hash值，然后再获取Entry在table中的index，如果对应
+的index上有Key对应的Entry，则替换旧值返回，否则添加新的Entry到table的index对应
+的链表中。当添加Entry时的size达到临界条件，则扩容table为原来的两倍，重新hash旧table中
+Entry对应的key，并定位Entry应该存放的桶索引index，放到新table中。如果在扩容是旧容量已经
+达到最大容量，则扩容失败；添加新的Entry到table的index对应的桶链表时，将Entry放在链表头，
+next指向原始的链表头。
+get操作：
+get操作首先判断key是否为null，如果为null，则获取table索引为0的链表中key为null的值
+否则先获取key的hash值，在获取key对应的table index，遍历table的
+index对应的Entry链表，找出与key相同的Entry，返回Entry对应的值。
+遍历：
+Key视图和Value视图的实现是在Entry的基础上，所以我们遍历HashMap的时候
+最好用EntrySet。
+附Hashtable源码以便比较：
+*
+ * Java Collections Framework</a>.  Unlike the new collection
+ * implementations, {@code Hashtable} is synchronized.  If a
+ * thread-safe implementation is not needed, it is recommended to use
+ * {@link HashMap} in place of {@code Hashtable}.  If a thread-safe
+ * highly-concurrent implementation is desired, then it is recommended
+ * to use {@link java.util.concurrent.ConcurrentHashMap} in place of
+ * {@code Hashtable}.
+ *
+ * @author  Arthur van Hoff
+ * @author  Josh Bloch
+ * @author  Neal Gafter
+ * @see     Object#equals(java.lang.Object)
+ * @see     Object#hashCode()
+ * @see     Hashtable#rehash()
+ * @see     Collection
+ * @see     Map
+ * @see     HashMap
+ * @see     TreeMap
+ * @since JDK1.0
+ */
+Hashtable是线程安全的，只是在方法上加了synchronized，保证多线程访问的安全。
+如果需要多线程访问我们可以用ConcurrentHashMap
+public class Hashtable<K,V>
+    extends Dictionary<K,V>
+    implements Map<K,V>, Cloneable, java.io.Serializable {
+
+    /**
+     * The hash table data.
+     */
+    private transient Entry<K,V>[] table;
+
+    /**
+     * The total number of entries in the hash table.
+     */
+    private transient int count;
+
+    /**
+     * The table is rehashed when its size exceeds this threshold.  (The
+     * value of this field is (int)(capacity * loadFactor).)
+     *
+     * @serial
+     */
+    private int threshold;
+
+    /**
+     * The load factor for the hashtable.
+     *
+     * @serial
+     */
+    private float loadFactor;
+
+    /**
+     * The number of times this Hashtable has been structurally modified
+     * Structural modifications are those that change the number of entries in
+     * the Hashtable or otherwise modify its internal structure (e.g.,
+     * rehash).  This field is used to make iterators on Collection-views of
+     * the Hashtable fail-fast.  (See ConcurrentModificationException).
+     */
+    private transient int modCount = 0;
+
+    /** use serialVersionUID from JDK 1.0.2 for interoperability */
+    private static final long serialVersionUID = 1421746759512286392L；
+    public synchronized int size() {
+        return count;
+    }
+
+    /**
+     * Tests if this hashtable maps no keys to values.
+     *
+     * @return  <code>true</code> if this hashtable maps no keys to values;
+     *          <code>false</code> otherwise.
+     */
+    public synchronized boolean isEmpty() {
+        return count == 0;
+    }
+    public synchronized V get(Object key) {
+        Entry tab[] = table;
+        int hash = hash(key);
+        int index = (hash & 0x7FFFFFFF) % tab.length;
+        for (Entry<K,V> e = tab[index] ; e != null ; e = e.next) {
+            if ((e.hash == hash) && e.key.equals(key)) {
+                return e.value;
+            }
+        }
+        return null;
+    }
+    public synchronized V put(K key, V value) {
+        // Make sure the value is not null
+        if (value == null) {
+            throw new NullPointerException();
+        }
+
+        // Makes sure the key is not already in the hashtable.
+        Entry tab[] = table;
+        int hash = hash(key);
+        int index = (hash & 0x7FFFFFFF) % tab.length;
+        for (Entry<K,V> e = tab[index] ; e != null ; e = e.next) {
+            if ((e.hash == hash) && e.key.equals(key)) {
+                V old = e.value;
+                e.value = value;
+                return old;
+            }
+        }
+
+        modCount++;
+        if (count >= threshold) {
+            // Rehash the table if the threshold is exceeded
+            rehash();
+
+            tab = table;
+            hash = hash(key);
+            index = (hash & 0x7FFFFFFF) % tab.length;
+        }
+
+        // Creates the new entry.
+        Entry<K,V> e = tab[index];
+        tab[index] = new Entry<>(hash, key, value, e);
+        count++;
+        return null;
+    }
+    ...
+    线程安全，只是在方法上加了synchronized，保证多线程访问的安全。
+}

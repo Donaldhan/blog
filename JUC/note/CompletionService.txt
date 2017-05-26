@@ -1,0 +1,108 @@
+Executor接口的定义：[url]http://donald-draper.iteye.com/blog/2365625[/url]
+ExecutorService接口定义：[url]http://donald-draper.iteye.com/blog/2365738[/url]
+Future接口定义：[url]http://donald-draper.iteye.com/admin/blogs/2365798[/url]
+FutureTask解析：[url]http://donald-draper.iteye.com/admin/blogs/2365980[/url]
+package java.util.concurrent;
+
+/**
+ * A service that decouples the production of new asynchronous tasks
+ * from the consumption of the results of completed tasks.  Producers
+ * <tt>submit</tt> tasks for execution. Consumers <tt>take</tt>
+ * completed tasks and process their results in the order they
+ * complete.  A <tt>CompletionService</tt> can for example be used to
+ * manage asynchronous IO, in which tasks that perform reads are
+ * submitted in one part of a program or system, and then acted upon
+ * in a different part of the program when the reads complete,
+ * possibly in a different order than they were requested.
+ *
+CompletionService提供了生产异步任务和消费任务结果的解耦服务。生产者提交任务执行。
+消费者以任务完成的顺序，消费完成的任务结果。CompletionService可以用于管理异步的IO
+操作，比如应用或系统提交一些reads子任务操作，然后reads子任务可能以非他们请求的顺序完成
+任务，执行操作。
+ * <p>Typically, a <tt>CompletionService</tt> relies on a separate
+ * {@link Executor} to actually execute the tasks, in which case the
+ * <tt>CompletionService</tt> only manages an internal completion
+ * queue. The {@link ExecutorCompletionService} class provides an
+ * implementation of this approach.
+ *
+CompletionService实际上依赖于一个独立的Executor用于执行任务，CompletionService仅
+用于管理内部的任务完成队列。ExecutorCompletionService提供了进一步的实现。
+ * <p>Memory consistency effects: Actions in a thread prior to
+ * submitting a task to a {@code CompletionService}
+ * <a href="package-summary.html#MemoryVisibility"><i>happen-before</i></a>
+ * actions taken by that task, which in turn <i>happen-before</i>
+ * actions following a successful return from the corresponding {@code take()}.
+ *
+ */
+public interface CompletionService<V> {
+    /**
+     * Submits a value-returning task for execution and returns a Future
+     * representing the pending results of the task.  Upon completion,
+     * this task may be taken or polled.
+     *
+     提交一个有返回结果的Callable任务到执行器， Future<V>代表任务的结果，在任务完成时，
+     任务将会被take或poll
+     * @param task the task to submit
+     * @return a Future representing pending completion of the task
+     * @throws RejectedExecutionException if the task cannot be
+     *         scheduled for execution
+     * @throws NullPointerException if the task is null
+     */
+    Future<V> submit(Callable<V> task);
+
+    /**
+     * Submits a Runnable task for execution and returns a Future
+     * representing that task.  Upon completion, this task may be
+     * taken or polled.
+     *
+     提交一个有返回结果的Runnable任务到执行器， Future<V>代表任务的结果，在任务完成时，
+     任务将会被take或poll
+     * @param task the task to submit
+     * @param result the result to return upon successful completion
+     * @return a Future representing pending completion of the task,
+     *         and whose <tt>get()</tt> method will return the given
+     *         result value upon completion
+     * @throws RejectedExecutionException if the task cannot be
+     *         scheduled for execution
+     * @throws NullPointerException if the task is null
+     */
+    Future<V> submit(Runnable task, V result);
+
+    /**
+     * Retrieves and removes the Future representing the next
+     * completed task, waiting if none are yet present.
+     *
+     从完成任务队列头取出任务结果，如果任务未完成，则等待
+     * @return the Future representing the next completed task
+     * @throws InterruptedException if interrupted while waiting
+     */
+    Future<V> take() throws InterruptedException;
+
+
+    /**
+     * Retrieves and removes the Future representing the next
+     * completed task or <tt>null</tt> if none are present.
+     *
+     与take不同的是，如果没有完成的任务，返回为null
+     * @return the Future representing the next completed task, or
+     *         <tt>null</tt> if none are present
+     */
+    Future<V> poll();
+
+    /**
+     * Retrieves and removes the Future representing the next
+     * completed task, waiting if necessary up to the specified wait
+     * time if none are yet present.
+     *
+     与非超时poll的区别是，如果没有完成的任务，则等待直至超时，如果超时期间还没有完成任务，返回为null
+     * @param timeout how long to wait before giving up, in units of
+     *        <tt>unit</tt>
+     * @param unit a <tt>TimeUnit</tt> determining how to interpret the
+     *        <tt>timeout</tt> parameter
+     * @return the Future representing the next completed task or
+     *         <tt>null</tt> if the specified waiting time elapses
+     *         before one is present
+     * @throws InterruptedException if interrupted while waiting
+     */
+    Future<V> poll(long timeout, TimeUnit unit) throws InterruptedException;
+}

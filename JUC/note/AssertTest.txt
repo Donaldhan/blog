@@ -1,0 +1,74 @@
+Java陷阱之assert关键字 ：http://lavasoft.blog.51cto.com/62575/43735/
+assert的基本用法：http://www.cnblogs.com/wardensky/p/4307848.html
+在Java中，assert关键字是从JAVA SE 1.4 引入的，为了避免和老版本的Java代码中使用了assert关键字导致错误，
+Java在执行的时候默认是不启动断言检查的（这个时候，所有的断言语句都将忽略！），如果要开启断言检查，
+则需要用开关-enableassertions或-ea来开启。
+assert关键字语法很简单，有两种用法：
+ 
+1、assert <boolean表达式>
+如果<boolean表达式>为true，则程序继续执行。
+如果为false，则程序抛出AssertionError，并终止执行。
+ 
+2、assert <boolean表达式> : <错误信息表达式>
+如果<boolean表达式>为true，则程序继续执行。
+如果为false，则程序抛出java.lang.AssertionError，并输入<错误信息表达式>。
+
+测试主类1：
+package juc.asserts;
+/**
+ * 测试断言
+ * @author donald
+ * 2017年3月3日
+ * 上午8:57:56
+ */
+public class TestAssert {
+	public static void main(String[] args) {
+	int a = 1;
+	assert a < 0;//正确往下执行，否则中断程序
+        System.out.println("assert int a value:"+a);
+        //断言失败，输出断言表达式的错误信息
+        assert a > 0:"assert int a value smaller then 0 is fail.";
+        System.out.println("assert int a value smaller then 0 is ok");
+        
+        
+	}
+}
+Exception in thread "main" java.lang.AssertionError
+	at juc.asserts.TestAssert.main(TestAssert.java:11)
+
+从控制台来看，断言失败，中断程序
+
+
+
+
+
+测试主类2：
+package juc.asserts;
+/**
+ * 测试断言
+ * @author donald
+ * 2017年3月3日
+ * 上午8:57:56
+ */
+public class TestAssert {
+	public static void main(String[] args) {
+	int a = 1;
+	assert a > 0;//正确往下执行，否则中断程序
+        System.out.println("assert int a value:"+a);
+        //断言失败，输出断言表达式的错误信息
+        assert a < 0:"assert int a value smaller then 0 is fail.";
+        System.out.println("assert int a value smaller then 0 is ok");
+        
+        
+	}
+}
+
+assert int a value:1
+Exception in thread "main" java.lang.AssertionError: assert int a value smaller then 0 is fail.
+	at juc.asserts.TestAssert.main(TestAssert.java:14)
+
+从控制太输出来看，断言失败，输出断言表达式的错误信息。
+
+开启断言检查，用RUN AS 或DEBUG AS 配置VM参数，我用的是Debug如下：
+
+

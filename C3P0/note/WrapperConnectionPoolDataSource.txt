@@ -1,0 +1,362 @@
+在初始化AbstractComboPooledDataSource的构造函数中，有这么几句，上一篇讲了DriverManagerDataSource
+，这一篇我们来看一下WrapperConnectionPoolDataSource
+public AbstractComboPooledDataSource(boolean autoregister)
+    {
+        //
+        super(autoregister);
+	//新建驱动数据源管理器
+        dmds = new DriverManagerDataSource();
+	//新建数据库连接池
+        wcpds = new WrapperConnectionPoolDataSource();
+	//设置数据连接池的数据源驱动管理器
+        wcpds.setNestedDataSource(dmds);
+        try
+        {
+            setConnectionPoolDataSource(wcpds);
+        }
+        catch(PropertyVetoException e)
+        {
+            logger.log(MLevel.WARNING, "Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet!", e);
+            throw new RuntimeException((new StringBuilder()).append("Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet! ").append(e).toString());
+        }
+        setUpPropertyEvents();
+    }
+ //新建数据库连接池
+wcpds = new WrapperConnectionPoolDataSource();
+//
+public final class WrapperConnectionPoolDataSource extends WrapperConnectionPoolDataSourceBase
+    implements ConnectionPoolDataSource
+{
+    ConnectionTester connectionTester;
+    Map userOverrides;
+    public WrapperConnectionPoolDataSource()
+    {
+        this(true);
+    }
+    public WrapperConnectionPoolDataSource(boolean autoregister)
+    {
+        //初始化WrapperConnectionPoolDataSourceBase
+        super(autoregister);
+	//获取数据库连接测试类，com.mchange.v2.c3p0.impl.DefaultConnectionTester
+        connectionTester = C3P0Registry.getDefaultConnectionTester();
+        setUpPropertyListeners();
+        try
+        {
+            userOverrides = C3P0ImplUtils.parseUserOverridesAsString(getUserOverridesAsString());
+        }
+    }
+    //设置属性值改变监听器
+      private void setUpPropertyListeners()
+    {
+        VetoableChangeListener setConnectionTesterListener = new VetoableChangeListener() {
+            public void vetoableChange(PropertyChangeEvent evt)
+                throws PropertyVetoException
+            {
+                String propName = evt.getPropertyName();
+                Object val = evt.getNewValue();
+                if("connectionTesterClassName".equals(propName))
+                    try
+                    {
+		        //重新创建连接测试类
+                        recreateConnectionTester((String)val);
+                    }
+                else
+                if("userOverridesAsString".equals(propName))
+                    try
+                    {
+                        userOverrides = C3P0ImplUtils.parseUserOverridesAsString((String)val);
+                    }
+                  
+            }
+            final WrapperConnectionPoolDataSource this$0;            
+            {
+                this.this$0 = WrapperConnectionPoolDataSource.this;
+                super();
+            }
+        };
+        addVetoableChangeListener(setConnectionTesterListener);
+    }
+下面来看
+//WrapperConnectionPoolDataSourceBase
+public abstract class WrapperConnectionPoolDataSourceBase extends IdentityTokenResolvable
+    implements Referenceable, Serializable
+{  
+
+    protected PropertyChangeSupport pcs;//属性值改变辅助工具
+    protected VetoableChangeSupport vcs;//bean属性改变辅助工具
+    private int acquireIncrement;//
+    private int acquireRetryAttempts;//获取连接尝试次数
+    private int acquireRetryDelay;
+    private boolean autoCommitOnClose;//是否自动提交
+    private String automaticTestTable;
+    private boolean breakAfterAcquireFailure;//在获取连接失败时，是否断开
+    private int checkoutTimeout;
+    private String connectionCustomizerClassName;
+    private String connectionTesterClassName;
+    private String contextClassLoaderSource;
+    private boolean debugUnreturnedConnectionStackTraces;
+    private String factoryClassLocation;
+    private boolean forceIgnoreUnresolvedTransactions;
+    private boolean forceSynchronousCheckins;
+    private volatile String identityToken;//class唯一token
+    private int idleConnectionTestPeriod;
+    private int initialPoolSize;//初始化连接池大小
+    private int maxAdministrativeTaskTime;
+    private int maxConnectionAge;
+    private int maxIdleTime;//最大空闲时间
+    private int maxIdleTimeExcessConnections;
+    private int maxPoolSize;//连接池最大连接数
+    private int maxStatements;
+    private int maxStatementsPerConnection;
+    private int minPoolSize;//连接池最小连接数
+    private DataSource nestedDataSource;//数据源
+    private String overrideDefaultPassword;
+    private String overrideDefaultUser;
+    private String preferredTestQuery;
+    private boolean privilegeSpawnedThreads;
+    private int propertyCycle;
+    private int statementCacheNumDeferredCloseThreads;
+    private boolean testConnectionOnCheckin;
+    private boolean testConnectionOnCheckout;
+    private int unreturnedConnectionTimeout;
+    private String userOverridesAsString;
+    private boolean usesTraditionalReflectiveProxies;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+    static final JavaBeanReferenceMaker referenceMaker;
+
+    static 
+    {
+        referenceMaker = new JavaBeanReferenceMaker();
+        referenceMaker.setFactoryClassName("com.mchange.v2.c3p0.impl.C3P0JavaBeanObjectFactory");
+        referenceMaker.addReferenceProperty("acquireIncrement");
+        referenceMaker.addReferenceProperty("acquireRetryAttempts");
+        referenceMaker.addReferenceProperty("acquireRetryDelay");
+        referenceMaker.addReferenceProperty("autoCommitOnClose");
+        referenceMaker.addReferenceProperty("automaticTestTable");
+        referenceMaker.addReferenceProperty("breakAfterAcquireFailure");
+        referenceMaker.addReferenceProperty("checkoutTimeout");
+        referenceMaker.addReferenceProperty("connectionCustomizerClassName");
+        referenceMaker.addReferenceProperty("connectionTesterClassName");
+        referenceMaker.addReferenceProperty("contextClassLoaderSource");
+        referenceMaker.addReferenceProperty("debugUnreturnedConnectionStackTraces");
+        referenceMaker.addReferenceProperty("factoryClassLocation");
+        referenceMaker.addReferenceProperty("forceIgnoreUnresolvedTransactions");
+        referenceMaker.addReferenceProperty("forceSynchronousCheckins");
+        referenceMaker.addReferenceProperty("identityToken");
+        referenceMaker.addReferenceProperty("idleConnectionTestPeriod");
+        referenceMaker.addReferenceProperty("initialPoolSize");
+        referenceMaker.addReferenceProperty("maxAdministrativeTaskTime");
+        referenceMaker.addReferenceProperty("maxConnectionAge");
+        referenceMaker.addReferenceProperty("maxIdleTime");
+        referenceMaker.addReferenceProperty("maxIdleTimeExcessConnections");
+        referenceMaker.addReferenceProperty("maxPoolSize");
+        referenceMaker.addReferenceProperty("maxStatements");
+        referenceMaker.addReferenceProperty("maxStatementsPerConnection");
+        referenceMaker.addReferenceProperty("minPoolSize");
+        referenceMaker.addReferenceProperty("nestedDataSource");
+        referenceMaker.addReferenceProperty("overrideDefaultPassword");
+        referenceMaker.addReferenceProperty("overrideDefaultUser");
+        referenceMaker.addReferenceProperty("preferredTestQuery");
+        referenceMaker.addReferenceProperty("privilegeSpawnedThreads");
+        referenceMaker.addReferenceProperty("propertyCycle");
+        referenceMaker.addReferenceProperty("statementCacheNumDeferredCloseThreads");
+        referenceMaker.addReferenceProperty("testConnectionOnCheckin");
+        referenceMaker.addReferenceProperty("testConnectionOnCheckout");
+        referenceMaker.addReferenceProperty("unreturnedConnectionTimeout");
+        referenceMaker.addReferenceProperty("userOverridesAsString");
+        referenceMaker.addReferenceProperty("usesTraditionalReflectiveProxies");
+    }
+    
+    protected abstract PooledConnection getPooledConnection(ConnectionCustomizer connectioncustomizer, String s)
+        throws SQLException;
+    //获取数据库连接池，待AbstractComboPooledDataSource父类扩展
+    protected abstract PooledConnection getPooledConnection(String s, String s1, ConnectionCustomizer connectioncustomizer, String s2)
+        throws SQLException;
+    //初始化数据库连接池，连接数，statment数，失败尝试连接数等属性
+     public WrapperConnectionPoolDataSourceBase(boolean autoregister)
+    {
+        pcs = new PropertyChangeSupport(this);
+        vcs = new VetoableChangeSupport(this);
+        acquireIncrement = C3P0Config.initializeIntPropertyVar("acquireIncrement", C3P0Defaults.acquireIncrement());
+        acquireRetryAttempts = C3P0Config.initializeIntPropertyVar("acquireRetryAttempts", C3P0Defaults.acquireRetryAttempts());
+        acquireRetryDelay = C3P0Config.initializeIntPropertyVar("acquireRetryDelay", C3P0Defaults.acquireRetryDelay());
+        autoCommitOnClose = C3P0Config.initializeBooleanPropertyVar("autoCommitOnClose", C3P0Defaults.autoCommitOnClose());
+        automaticTestTable = C3P0Config.initializeStringPropertyVar("automaticTestTable", C3P0Defaults.automaticTestTable());
+        breakAfterAcquireFailure = C3P0Config.initializeBooleanPropertyVar("breakAfterAcquireFailure", C3P0Defaults.breakAfterAcquireFailure());
+        checkoutTimeout = C3P0Config.initializeIntPropertyVar("checkoutTimeout", C3P0Defaults.checkoutTimeout());
+        connectionCustomizerClassName = C3P0Config.initializeStringPropertyVar("connectionCustomizerClassName", C3P0Defaults.connectionCustomizerClassName());
+        connectionTesterClassName = C3P0Config.initializeStringPropertyVar("connectionTesterClassName", C3P0Defaults.connectionTesterClassName());
+        contextClassLoaderSource = C3P0Config.initializeStringPropertyVar("contextClassLoaderSource", C3P0Defaults.contextClassLoaderSource());
+        debugUnreturnedConnectionStackTraces = C3P0Config.initializeBooleanPropertyVar("debugUnreturnedConnectionStackTraces", C3P0Defaults.debugUnreturnedConnectionStackTraces());
+        factoryClassLocation = C3P0Config.initializeStringPropertyVar("factoryClassLocation", C3P0Defaults.factoryClassLocation());
+        forceIgnoreUnresolvedTransactions = C3P0Config.initializeBooleanPropertyVar("forceIgnoreUnresolvedTransactions", C3P0Defaults.forceIgnoreUnresolvedTransactions());
+        forceSynchronousCheckins = C3P0Config.initializeBooleanPropertyVar("forceSynchronousCheckins", C3P0Defaults.forceSynchronousCheckins());
+        idleConnectionTestPeriod = C3P0Config.initializeIntPropertyVar("idleConnectionTestPeriod", C3P0Defaults.idleConnectionTestPeriod());
+        initialPoolSize = C3P0Config.initializeIntPropertyVar("initialPoolSize", C3P0Defaults.initialPoolSize());
+        maxAdministrativeTaskTime = C3P0Config.initializeIntPropertyVar("maxAdministrativeTaskTime", C3P0Defaults.maxAdministrativeTaskTime());
+        maxConnectionAge = C3P0Config.initializeIntPropertyVar("maxConnectionAge", C3P0Defaults.maxConnectionAge());
+        //初始化最大空闲时间
+	maxIdleTime = C3P0Config.initializeIntPropertyVar("maxIdleTime", C3P0Defaults.maxIdleTime());
+        maxIdleTimeExcessConnections = C3P0Config.initializeIntPropertyVar("maxIdleTimeExcessConnections", C3P0Defaults.maxIdleTimeExcessConnections());
+        //初始化最大连接池数
+	maxPoolSize = C3P0Config.initializeIntPropertyVar("maxPoolSize", C3P0Defaults.maxPoolSize());
+        //最大statements
+	maxStatements = C3P0Config.initializeIntPropertyVar("maxStatements", C3P0Defaults.maxStatements());
+        maxStatementsPerConnection = C3P0Config.initializeIntPropertyVar("maxStatementsPerConnection", C3P0Defaults.maxStatementsPerConnection());
+        minPoolSize = C3P0Config.initializeIntPropertyVar("minPoolSize", C3P0Defaults.minPoolSize());
+        overrideDefaultPassword = C3P0Config.initializeStringPropertyVar("overrideDefaultPassword", C3P0Defaults.overrideDefaultPassword());
+        overrideDefaultUser = C3P0Config.initializeStringPropertyVar("overrideDefaultUser", C3P0Defaults.overrideDefaultUser());
+        preferredTestQuery = C3P0Config.initializeStringPropertyVar("preferredTestQuery", C3P0Defaults.preferredTestQuery());
+        privilegeSpawnedThreads = C3P0Config.initializeBooleanPropertyVar("privilegeSpawnedThreads", C3P0Defaults.privilegeSpawnedThreads());
+        propertyCycle = C3P0Config.initializeIntPropertyVar("propertyCycle", C3P0Defaults.propertyCycle());
+        statementCacheNumDeferredCloseThreads = C3P0Config.initializeIntPropertyVar("statementCacheNumDeferredCloseThreads", C3P0Defaults.statementCacheNumDeferredCloseThreads());
+        testConnectionOnCheckin = C3P0Config.initializeBooleanPropertyVar("testConnectionOnCheckin", C3P0Defaults.testConnectionOnCheckin());
+        testConnectionOnCheckout = C3P0Config.initializeBooleanPropertyVar("testConnectionOnCheckout", C3P0Defaults.testConnectionOnCheckout());
+        unreturnedConnectionTimeout = C3P0Config.initializeIntPropertyVar("unreturnedConnectionTimeout", C3P0Defaults.unreturnedConnectionTimeout());
+        userOverridesAsString = C3P0Config.initializeUserOverridesAsString();
+        usesTraditionalReflectiveProxies = C3P0Config.initializeBooleanPropertyVar("usesTraditionalReflectiveProxies", C3P0Defaults.usesTraditionalReflectiveProxies());
+        if(autoregister)
+        {
+	    //获取唯一token
+            identityToken = C3P0ImplUtils.allocateIdentityToken(this);
+	    //注册到C3P0Registry的token Map中。
+            C3P0Registry.reregister(this);
+        }
+    }
+    //添加bean属性改变监听器
+    public void addVetoableChangeListener(VetoableChangeListener vcl)
+    {
+        vcs.addVetoableChangeListener(vcl);
+    }
+        public synchronized DataSource getNestedDataSource()
+    {
+        return nestedDataSource;
+    }
+    //设置数据源，这个在AbstractComboPooledDataSource构造函数中
+    //新建驱动数据源管理器
+    //dmds = new DriverManagerDataSource();
+    //新建数据库连接池
+    //wcpds = new WrapperConnectionPoolDataSource();
+    //设置数据连接池的数据源驱动管理器
+    //wcpds.setNestedDataSource(dmds);
+    public synchronized void setNestedDataSource(DataSource nestedDataSource)
+    {
+        DataSource oldVal = this.nestedDataSource;
+        this.nestedDataSource = nestedDataSource;
+        if(!eqOrBothNull(oldVal, nestedDataSource))
+            pcs.firePropertyChange("nestedDataSource", oldVal, nestedDataSource);
+    }
+}
+从上面可以看出AbstractComboPooledDataSource初始化，主要是初始化数据库连接池
+相关的属性，如最大，最小数据库连接数，空闲时间，连接失败尝试次数，事务是否自动提交，
+statement相关属性。
+
+//VetoableChangeListener
+package java.beans;
+
+/**
+ * A VetoableChange event gets fired whenever a bean changes a "constrained"
+ * property.  You can register a VetoableChangeListener with a source bean
+ * so as to be notified of any constrained property updates.
+ */
+public interface VetoableChangeListener extends java.util.EventListener {
+    /**
+     * This method gets called when a constrained property is changed.
+     *
+     * @param     evt a <code>PropertyChangeEvent</code> object describing the
+     *                event source and the property that has changed.
+     * @exception PropertyVetoException if the recipient wishes the property
+     *              change to be rolled back.
+     */
+    void vetoableChange(PropertyChangeEvent evt)
+                                throws PropertyVetoException;
+}
+
+//VetoableChangeSupport
+/**
+ * This is a utility class that can be used by beans that support constrained
+ * properties.  It manages a list of listeners and dispatches
+ * {@link PropertyChangeEvent}s to them.  You can use an instance of this class
+ * as a member field of your bean and delegate these types of work to it.
+ * The {@link VetoableChangeListener} can be registered for all properties
+ * or for a property specified by name.
+ * <p>
+ * Here is an example of {@code VetoableChangeSupport} usage that follows
+ * the rules and recommendations laid out in the JavaBeans&trade; specification:
+ * <pre>
+ * public class MyBean {
+ *     private final VetoableChangeSupport vcs = new VetoableChangeSupport(this);
+ *
+ *     public void addVetoableChangeListener(VetoableChangeListener listener) {
+ *         this.vcs.addVetoableChangeListener(listener);
+ *     }
+ *
+ *     public void removeVetoableChangeListener(VetoableChangeListener listener) {
+ *         this.vcs.removeVetoableChangeListener(listener);
+ *     }
+ *
+ *     private String value;
+ *
+ *     public String getValue() {
+ *         return this.value;
+ *     }
+ *
+ *     public void setValue(String newValue) throws PropertyVetoException {
+ *         String oldValue = this.value;
+ *         this.vcs.fireVetoableChange("value", oldValue, newValue);
+ *         this.value = newValue;
+ *     }
+ *
+ *     [...]
+ * }
+ * </pre>
+ * <p>
+ * A {@code VetoableChangeSupport} instance is thread-safe.
+ * <p>
+ * This class is serializable.  When it is serialized it will save
+ * (and restore) any listeners that are themselves serializable.  Any
+ * non-serializable listeners will be skipped during serialization.
+ *
+ * @see PropertyChangeSupport
+ */
+public class VetoableChangeSupport implements Serializable {
+    private VetoableChangeListenerMap map = new VetoableChangeListenerMap();
+
+    /**
+     * Constructs a <code>VetoableChangeSupport</code> object.
+     *
+     * @param sourceBean  The bean to be given as the source for any events.
+     */
+    public VetoableChangeSupport(Object sourceBean) {
+        if (sourceBean == null) {
+            throw new NullPointerException();
+        }
+        source = sourceBean;
+    }
+
+    /**
+     * Add a VetoableChangeListener to the listener list.
+     * The listener is registered for all properties.
+     * The same listener object may be added more than once, and will be called
+     * as many times as it is added.
+     * If <code>listener</code> is null, no exception is thrown and no action
+     * is taken.
+     *
+     * @param listener  The VetoableChangeListener to be added
+     */
+    public void addVetoableChangeListener(VetoableChangeListener listener) {
+        if (listener == null) {
+            return;
+        }
+        if (listener instanceof VetoableChangeListenerProxy) {
+            VetoableChangeListenerProxy proxy =
+                    (VetoableChangeListenerProxy)listener;
+            // Call two argument add method.
+            addVetoableChangeListener(proxy.getPropertyName(),
+                                      proxy.getListener());
+        } else {
+            this.map.add(null, listener);
+        }
+    }
+}

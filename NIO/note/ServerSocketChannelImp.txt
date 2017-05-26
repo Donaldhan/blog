@@ -1,0 +1,969 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+在ServerSocketChannel定义这篇文章中，我们看了一下ServerSocketChannel的定义，ServerSocketChannel主要是绑定socket
+地址和监听通道连接请求。
+今天先来看一下如何打开一个ServerSocketChannel，从ServerSocketChannel的
+open方法开始：
+public static ServerSocketChannel open() throws IOException {
+       return SelectorProvider.provider().openServerSocketChannel();
+}
+看到这个方法是不是很熟悉，我们在SelectorProvider定义这篇文章中，有讲过SelectorProvider.provider()
+的加载SelectorProvider的实例过程：
+我们直接贴过来：
+//SelectorProvider
+    public static SelectorProvider provider() {  
+            synchronized (lock) {  
+                if (provider != null)  
+                    return provider;  
+           //在与当前线程相同访问控制权限的环境中，加载SelectorProvider实例  
+                return AccessController.doPrivileged(  
+                    new PrivilegedAction<SelectorProvider>() {  
+                        public SelectorProvider run() {  
+                                if (loadProviderFromProperty())  
+                        //获取系统配置的SelectorProvider  
+                                    return provider;  
+                                if (loadProviderAsService())  
+                         //获取类加载路径下的SelectorProvider  
+                                    return provider;  
+                        //加载默认的SelectorProvider  
+                                provider = sun.nio.ch.DefaultSelectorProvider.create();  
+                                return provider;  
+                            }  
+                        });  
+            }  
+    }  
+
+来看默认的DefaultSelectorProvider
+//DefaultSelectorProvider
+    package sun.nio.ch;  
+      
+    import java.nio.channels.spi.SelectorProvider;  
+      
+    // Referenced classes of package sun.nio.ch:  
+    //            WindowsSelectorProvider  
+      
+    public class DefaultSelectorProvider  
+    {  
+        private DefaultSelectorProvider()  
+        {  
+        }  
+        public static SelectorProvider create()  
+        {  
+            //默认的WindowsSelectorProvider  
+            return new WindowsSelectorProvider();  
+        }  
+    }  
+再来看WindowsSelectorProvider
+//WindowsSelectorProvider
+    package sun.nio.ch;  
+      
+    import java.io.IOException;  
+    import java.nio.channels.spi.AbstractSelector;  
+      
+    // Referenced classes of package sun.nio.ch:  
+    //            SelectorProviderImpl, WindowsSelectorImpl  
+      
+    public class WindowsSelectorProvider extends SelectorProviderImpl  
+    {  
+      
+        public WindowsSelectorProvider()  
+        {  
+        }  
+        public AbstractSelector openSelector()  
+            throws IOException  
+        {  
+           //默认的选择器实现类  
+            return new WindowsSelectorImpl(this);  
+        }  
+    }  
+
+
+再来看SelectorProviderImpl
+//SelectorProviderImpl
+    package sun.nio.ch;  
+      
+    import java.io.IOException;  
+    import java.net.ProtocolFamily;  
+    import java.nio.channels.*;  
+    import java.nio.channels.spi.AbstractSelector;  
+    import java.nio.channels.spi.SelectorProvider;  
+      
+    // Referenced classes of package sun.nio.ch:  
+    //            DatagramChannelImpl, PipeImpl, ServerSocketChannelImpl, SocketChannelImpl  
+      
+    public abstract class SelectorProviderImpl extends SelectorProvider  
+    {  
+      
+        public SelectorProviderImpl()  
+        {  
+        }  
+        //打开一个报文通道  
+        public DatagramChannel openDatagramChannel()  
+            throws IOException  
+        {  
+            return new DatagramChannelImpl(this);  
+        }  
+        //根据协议，打开一个报文通道  
+        public DatagramChannel openDatagramChannel(ProtocolFamily protocolfamily)  
+            throws IOException  
+        {  
+            return new DatagramChannelImpl(this, protocolfamily);  
+        }  
+         //打开一个管道  
+        public Pipe openPipe()  
+            throws IOException  
+        {  
+            return new PipeImpl(this);  
+        }  
+       //打开一个选择器，待子类扩展  
+        public abstract AbstractSelector openSelector()  
+            throws IOException;  
+       //打开一个监听socket通道  
+        public ServerSocketChannel openServerSocketChannel()  
+            throws IOException  
+        {  
+            return new ServerSocketChannelImpl(this);  
+        }  
+        //打开一个socket通道（连接）  
+        public SocketChannel openSocketChannel()  
+            throws IOException  
+        {  
+            return new SocketChannelImpl(this);  
+        }  
+}  
+从上面可以看出open一个ServerSocketChannel实际上返回的是ServerSocketChannelImpl。
+下面我们来看ServerSocketChannelImpl的socket地址绑定和连接监听和可选择通道的相关方法实现。
+class ServerSocketChannelImpl extends ServerSocketChannel
+    implements SelChImpl
+{
+    private static NativeDispatcher nd = new SocketDispatcher();//Socket分发器
+    private final FileDescriptor fd;//文件描述
+    private int fdVal;//文件描述的值
+    private volatile long thread;//ServerSocket线程本地编号
+    private final Object lock;//地址绑定，接受连接同步锁
+    private final Object stateLock;//状态锁
+    private static final int ST_UNINITIALIZED = -1;//未初始化
+    private static final int ST_INUSE = 0;//正在使用中
+    private static final int ST_KILLED = 1;//关闭状态
+    private int state;//ServerSocket状态
+    private SocketAddress localAddress;//绑定地址
+    ServerSocket socket;//ServerSocket
+    static final boolean $assertionsDisabled = !sun/nio/ch/ServerSocketChannelImpl.desiredAssertionStatus();
+    static 
+    {
+        //加载nio和net资源库，我们在WindowsSelectorImpl相关文章中有讲
+        Util.load();
+        initIDs();
+    }
+    private static native void initIDs();
+    
+    ServerSocketChannelImpl(SelectorProvider selectorprovider)
+        throws IOException
+    {
+        super(selectorprovider);
+        thread = 0L;
+        lock = new Object();
+        stateLock = new Object();
+        state = -1;//默认创建是的状态为未初始化
+	//获取ServerSocket的文件描述符
+        fd = Net.serverSocket(true);
+	//获取文件描述的id
+        fdVal = IOUtil.fdVal(fd);
+        state = 0;
+    }
+    ServerSocketChannelImpl(SelectorProvider selectorprovider, FileDescriptor filedescriptor, boolean flag)
+        throws IOException
+    {
+        super(selectorprovider);
+        thread = 0L;
+        lock = new Object();
+        stateLock = new Object();
+        state = -1;
+        fd = filedescriptor;
+        fdVal = IOUtil.fdVal(filedescriptor);
+        state = 0;
+        if(flag)
+	    如果使用本地地址，则获取本地地址
+            localAddress = Net.localAddress(filedescriptor);
+    }
+}
+初始化需要关注的是这几点,
+1.
+//获取ServerSocket的文件描述符
+fd = Net.serverSocket(true);
+2.
+//获取文件描述的id       
+fdVal = IOUtil.fdVal(fd);
+3.
+if(flag)
+    如果使用本地地址，则获取本地地址
+    localAddress = Net.localAddress(filedescriptor);
+分别来看
+1.
+//获取ServerSocket的文件描述符
+fd = Net.serverSocket(true);
+class Net
+{
+   private static volatile boolean checkedIPv6 = false;
+    private static volatile boolean isIPv6Available;
+    public static final int SHUT_RD = 0;//关闭读操作
+    public static final int SHUT_WR = 1;//关闭写操作
+    public static final int SHUT_RDWR = 2;//关闭读写操作
+    static 
+    {
+        //加载nio和net资源库
+        Util.load();
+        initIDs();
+    }
+    private static native void initIDs();
+    //默认协议
+    static final ProtocolFamily UNSPEC = new ProtocolFamily() {
+    public String name()
+    {
+        return "UNSPEC";
+    }
+
+    };
+    //获取ServerSocket文件描述
+    static FileDescriptor serverSocket(boolean flag)
+    {
+        return IOUtil.newFD(socket0(isIPv6Available(), flag, true));
+    }
+    private static native int socket0(boolean flag, boolean flag1, boolean flag2);
+}
+//IOUtil
+class IOUtil
+{
+    static final int IOV_MAX = iovMax();
+    static final boolean $assertionsDisabled = !sun/nio/ch/IOUtil.desiredAssertionStatus();
+    static 
+    {
+        Util.load();
+    }
+    创建文件描述符
+    static FileDescriptor newFD(int i)
+    {
+        FileDescriptor filedescriptor = new FileDescriptor();
+        setfdVal(filedescriptor, i);
+        return filedescriptor;
+    }
+}
+
+2.
+//获取文件描述的id       
+fdVal = IOUtil.fdVal(fd);
+//IOUtil
+static native int fdVal(FileDescriptor filedescriptor);
+
+3.
+if(flag)
+    如果使用本地地址，则获取本地地址
+    localAddress = Net.localAddress(filedescriptor);
+//Net
+static InetSocketAddress localAddress(FileDescriptor filedescriptor)
+        throws IOException
+{
+    //根据local地址和port构造InetSocketAddress
+    return new InetSocketAddress(localInetAddress(filedescriptor), localPort(filedescriptor));
+}
+ private static native int localPort(FileDescriptor filedescriptor)
+     throws IOException;
+
+ private static native InetAddress localInetAddress(FileDescriptor filedescriptor)
+     throws IOException;
+从上面来看，ServerSocketChannelImpl的初始化主要是初始化ServerSocket通道线程thread，
+地址绑定，接受连接同步锁，默认创建ServerSocketChannelImpl的状态为未初始化，文件描述和
+文件描述id，如果使用本地地址，则获取本地地址。
+来看地址绑定方法
+public ServerSocketChannel bind(SocketAddress socketaddress, int i)
+        throws IOException
+    {
+        synchronized(lock)
+        {
+            if(!isOpen())
+	       //如果socket关闭，则抛出ClosedChannelException
+                throw new ClosedChannelException();
+            if(isBound())
+	        //如果已绑定，则抛出AlreadyBoundException
+                throw new AlreadyBoundException();
+	    //确定inetsocketaddress
+            InetSocketAddress inetsocketaddress = socketaddress != null ? Net.checkAddress(socketaddress) : new InetSocketAddress(0);
+            SecurityManager securitymanager = System.getSecurityManager();
+            if(securitymanager != null)
+	        //检查地址端口监听权限
+                securitymanager.checkListen(inetsocketaddress.getPort());
+	    //绑定前工作
+            NetHooks.beforeTcpBind(fd, inetsocketaddress.getAddress(), inetsocketaddress.getPort());
+	    //实际地址绑定
+            Net.bind(fd, inetsocketaddress.getAddress(), inetsocketaddress.getPort());
+	    //开启监听，如果参数i小于1，默认接受50个连接
+            Net.listen(fd, i >= 1 ? i : 50);
+            synchronized(stateLock)
+            {
+	        //更新ocalAddress
+                localAddress = Net.localAddress(fd);
+            }
+        }
+        return this;
+    }
+绑定方法中与几点要关注，
+1.
+ if(isBound())
+    //如果已绑定，则抛出AlreadyBoundException
+    throw new AlreadyBoundException();
+ public boolean isBound()
+ {
+     Object obj = stateLock;//同步stateLock
+     JVM INSTR monitorenter ;//进入同步，try
+     //地址不为空，则为已绑定
+     return localAddress != null;
+     Exception exception;//有异常，则抛出
+     exception;
+     throw exception;
+ }
+2.
+//确定inetsocketaddress
+InetSocketAddress inetsocketaddress = socketaddress != null ? Net.checkAddress(socketaddress) : new InetSocketAddress(0);
+//Net
+static InetSocketAddress checkAddress(SocketAddress socketaddress)
+{
+    if(socketaddress == null)//地址为空
+        throw new NullPointerException();
+    if(!(socketaddress instanceof InetSocketAddress))//非InetSocketAddress类型地址
+        throw new UnsupportedAddressTypeException();
+    InetSocketAddress inetsocketaddress = (InetSocketAddress)socketaddress;
+    if(inetsocketaddress.isUnresolved())//地址不可识别
+        throw new UnresolvedAddressException();
+    InetAddress inetaddress = inetsocketaddress.getAddress();
+    //非ip4和ip6地址
+    if(!(inetaddress instanceof Inet4Address) && !(inetaddress instanceof Inet6Address))
+        throw new IllegalArgumentException("Invalid address type");
+    else
+        return inetsocketaddress;
+}
+3.
+//绑定前工作
+NetHooks.beforeTcpBind(fd, inetsocketaddress.getAddress(), inetsocketaddress.getPort());
+package sun.net;
+
+import java.io.FileDescriptor;
+import java.io.IOException;
+import java.net.InetAddress;
+public final class NetHooks
+{
+    public NetHooks()
+    {
+    }
+    //待扩展
+    public static void beforeTcpBind(FileDescriptor filedescriptor, InetAddress inetaddress, int i)
+        throws IOException
+    {
+    }
+    public static void beforeTcpConnect(FileDescriptor filedescriptor, InetAddress inetaddress, int i)
+        throws IOException
+    {
+    }
+}
+4.
+//实际地址绑定
+Net.bind(fd, inetsocketaddress.getAddress(), inetsocketaddress.getPort());
+//Net
+static void bind(FileDescriptor filedescriptor, InetAddress inetaddress, int i)
+    throws IOException
+{
+    bind(UNSPEC, filedescriptor, inetaddress, i);
+}
+static void bind(ProtocolFamily protocolfamily, FileDescriptor filedescriptor, InetAddress inetaddress, int i)
+    throws IOException
+{
+    boolean flag = isIPv6Available() && protocolfamily != StandardProtocolFamily.INET;
+    bind0(flag, filedescriptor, inetaddress, i);
+}
+private static native void bind0(boolean flag, FileDescriptor filedescriptor, InetAddress inetaddress, int i)
+        throws IOException;
+5.
+//开启监听，s如果参数i小于1，默认接受50个连接
+Net.listen(fd, i >= 1 ? i : 50);
+//Net
+static native void listen(FileDescriptor filedescriptor, int i)
+      throws IOException;
+从上面可以看出，bind首先检查ServerSocket是否关闭，是否绑定地址，
+如果既没有绑定也没关闭，则检查绑定的socketaddress是否正确或合法；
+然后通过Net工具类的bind（native）和listen（native），完成实际的
+ServerSocket地址绑定和开启监听，如果绑定是开启的参数小于1，则默认接受50个连接。
+再来看接受连接方法：
+ public SocketChannel accept()
+        throws IOException
+    {
+        Object obj = lock;//同步lock锁
+        JVM INSTR monitorenter ;//try
+        int i;
+        FileDescriptor filedescriptor;
+        InetSocketAddress ainetsocketaddress[];
+        if(!isOpen())
+	    //通道关闭
+            throw new ClosedChannelException();
+        if(!isBound())
+	    //为绑定地址
+            throw new NotYetBoundException();
+        Object obj1 = null;
+        i = 0;
+	//接受连接后创建SocketChannelImpl的文件描述
+        filedescriptor = new FileDescriptor();
+        ainetsocketaddress = new InetSocketAddress[1];
+        SocketChannel socketchannel;
+        begin();
+        if(isOpen())
+            break MISSING_BLOCK_LABEL_114;
+        socketchannel = null;
+        thread = 0L;
+        end(i > 0);
+        if(!$assertionsDisabled && !IOStatus.check(i))
+            throw new AssertionError();
+        return socketchannel;
+	//获取本地线程数
+        thread = NativeThread.current();
+        do
+	    //接受连接
+            i = accept0(fd, filedescriptor, ainetsocketaddress);
+        while(i == -3 && isOpen());
+        thread = 0L;
+        end(i > 0);
+        if(!$assertionsDisabled && !IOStatus.check(i))
+            throw new AssertionError();
+        break MISSING_BLOCK_LABEL_233;
+        Exception exception;
+        exception;
+        thread = 0L;
+        end(i > 0);
+        if(!$assertionsDisabled && !IOStatus.check(i))
+            throw new AssertionError();
+        else
+            throw exception;
+        if(i >= 1) goto _L2; else goto _L1
+_L1:
+        null;
+        obj;
+        JVM INSTR monitorexit ;
+        return;
+_L2:
+        SocketChannelImpl socketchannelimpl;
+	//接受连接的处理通道socketchannelimpl，默认为阻塞模式
+        IOUtil.configureBlocking(filedescriptor, true);
+        InetSocketAddress inetsocketaddress = ainetsocketaddress[0];
+	//构建SocketChannelImpl，这个具体在SocketChannelImpl再说
+        socketchannelimpl = new SocketChannelImpl(provider(), filedescriptor, inetsocketaddress);
+        SecurityManager securitymanager = System.getSecurityManager();
+        if(securitymanager != null)
+            try
+            {
+	        //检查地址和port权限
+                securitymanager.checkAccept(inetsocketaddress.getAddress().getHostAddress(), inetsocketaddress.getPort());
+            }
+            catch(SecurityException securityexception)
+            {
+                socketchannelimpl.close();
+                throw securityexception;
+            }
+	//返回socketchannelimpl
+        socketchannelimpl;
+        obj;
+        JVM INSTR monitorexit ;//退出try
+        return;
+        Exception exception1;//有异常，抛出
+        exception1;
+        throw exception1;
+    }
+连接方法中有几点要关注，
+1.
+//获取本地线程数
+ thread = NativeThread.current();
+package sun.nio.ch;
+class NativeThread
+{
+    NativeThread()
+    {
+    }
+    static long current()
+    {
+        return 0L;
+    }
+    static void signal(long l)
+    {
+    }
+}
+2.
+ do
+    //接受连接
+     i = accept0(fd, filedescriptor, ainetsocketaddress);
+ while(i == -3 && isOpen());
+ //ServerSocketChannelImpl
+ private native int accept0(FileDescriptor filedescriptor, FileDescriptor filedescriptor1, InetSocketAddress ainetsocketaddress[])
+        throws IOException;
+ 3.
+SocketChannelImpl socketchannelimpl;
+//接受连接的处理通道socketchannelimpl，默认为阻塞模式
+IOUtil.configureBlocking(filedescriptor, true);
+InetSocketAddress inetsocketaddress = ainetsocketaddress[0];
+//构建SocketChannelImpl，这个具体在SocketChannelImpl再说
+socketchannelimpl = new SocketChannelImpl(provider(), filedescriptor, inetsocketaddress);
+//IOUtil
+static native void configureBlocking(FileDescriptor filedescriptor, boolean flag)
+    throws IOException;
+从上面来看，accept方法主要是调用accept0（native）方法接受连接，并根据接受来接
+文件描述的地址构造SocketChannelImpl，并返回。
+再看ServerSocketChannelImpl的其他方法
+//配置阻塞模式
+protected void implConfigureBlocking(boolean flag)
+     throws IOException
+ {
+     IOUtil.configureBlocking(fd, flag);
+ }
+ 支持的默认配置选项
+ public final Set supportedOptions()
+    {
+        return DefaultOptionsHolder.defaultOptions;
+    }
+//DefaultOptionsHolder
+private static class DefaultOptionsHolder
+    {
+         static final Set defaultOptions = defaultOptions();
+        private static Set defaultOptions()
+        {
+            HashSet hashset = new HashSet(2);
+            hashset.add(StandardSocketOptions.SO_RCVBUF);
+            hashset.add(StandardSocketOptions.SO_REUSEADDR);
+	    //返回不可修改的HashSet
+            return Collections.unmodifiableSet(hashset);
+        }
+        private DefaultOptionsHolder()
+        {
+        }
+    }
+//StandardSocketOptions
+//socket接受缓存大小
+public static final SocketOption<Integer> SO_RCVBUF =
+        new StdSocketOption<Integer>("SO_RCVBUF", Integer.class);
+//是否可重用地址
+public static final SocketOption<Boolean> SO_REUSEADDR =
+        new StdSocketOption<Boolean>("SO_REUSEADDR", Boolean.class);
+//StdSocketOption
+ private static class StdSocketOption<T> implements SocketOption<T> {
+     private final String name;
+     private final Class<T> type;
+     StdSocketOption(String name, Class<T> type) {
+         this.name = name;
+         this.type = type;
+     }
+     @Override public String name() { return name; }
+     @Override public Class<T> type() { return type; }
+     @Override public String toString() { return name; }
+ }
+//设置选项的置为obj
+public volatile NetworkChannel setOption(SocketOption socketoption, Object obj)
+        throws IOException
+    {
+        return setOption(socketoption, obj);
+    }
+public ServerSocketChannel setOption(SocketOption socketoption, Object obj)
+        throws IOException
+    {
+        if(socketoption == null)
+            throw new NullPointerException();
+	//非通道支持选项，则抛出UnsupportedOperationException
+        if(!supportedOptions().contains(socketoption))
+            throw new UnsupportedOperationException((new StringBuilder()).append("'").append(socketoption).append("' not supported").toString());
+        Object obj1 = stateLock;//同步状态lock
+        JVM INSTR monitorenter ;//try
+        if(!isOpen())
+            throw new ClosedChannelException();
+        Net.setSocketOption(fd, Net.UNSPEC, socketoption, obj);
+        return this;
+        Exception exception;//异常，则抛出
+        exception;
+        throw exception;
+    }
+//Net
+ static void setSocketOption(FileDescriptor filedescriptor, ProtocolFamily protocolfamily, SocketOption socketoption, Object obj)
+        throws IOException
+    {
+        if(obj == null)
+            throw new IllegalArgumentException("Invalid option value");
+        Class class1 = socketoption.type();
+	//非整形和布尔型，则抛出断言错误
+        if(class1 != java/lang/Integer && class1 != java/lang/Boolean)
+            throw new AssertionError("Should not reach here");
+        if(socketoption == StandardSocketOptions.SO_RCVBUF || socketoption == StandardSocketOptions.SO_SNDBUF)
+        {    //判断接受和发送缓冲区大小
+            int i = ((Integer)obj).intValue();
+            if(i < 0)
+                throw new IllegalArgumentException("Invalid send/receive buffer size");
+        }
+	//缓冲区有数据，延迟关闭socket的的时间
+        if(socketoption == StandardSocketOptions.SO_LINGER)
+        {
+            int j = ((Integer)obj).intValue();
+            if(j < 0)
+                obj = Integer.valueOf(-1);
+            if(j > 65535)
+                obj = Integer.valueOf(65535);
+        }
+	//UDP单播
+        if(socketoption == StandardSocketOptions.IP_TOS)
+        {
+            int k = ((Integer)obj).intValue();
+            if(k < 0 || k > 255)
+                throw new IllegalArgumentException("Invalid IP_TOS value");
+        }
+	//UDP多播
+        if(socketoption == StandardSocketOptions.IP_MULTICAST_TTL)
+        {
+            int l = ((Integer)obj).intValue();
+            if(l < 0 || l > 255)
+                throw new IllegalArgumentException("Invalid TTL/hop value");
+        }
+        OptionKey optionkey = SocketOptionRegistry.findOption(socketoption, protocolfamily);
+        if(optionkey == null)
+            throw new AssertionError("Option not found");
+        int i1;
+	//转换配置参数值
+        if(class1 == java/lang/Integer)
+        {
+            i1 = ((Integer)obj).intValue();
+        } else
+        {
+            boolean flag = ((Boolean)obj).booleanValue();
+            i1 = flag ? 1 : 0;
+        }
+        boolean flag1 = protocolfamily == UNSPEC;
+	//设置文件描述符的值
+        setIntOption0(filedescriptor, flag1, optionkey.level(), optionkey.name(), i1);
+    }
+
+    private static native void setIntOption0(FileDescriptor filedescriptor, boolean flag, int i, int j, int k)
+        throws IOException;
+
+//获取配置选项
+    public Object getOption(SocketOption socketoption)
+        throws IOException
+    {
+        if(socketoption == null)
+            throw new NullPointerException();
+	//非通道支持选项，则抛出UnsupportedOperationException
+        if(!supportedOptions().contains(socketoption))
+            throw new UnsupportedOperationException((new StringBuilder()).append("'").append(socketoption).append("' not supported").toString());
+        Object obj = stateLock;//同步状态lock
+        JVM INSTR monitorenter ;//try
+        if(!isOpen())
+            throw new ClosedChannelException();
+	//委托给Net
+        return Net.getSocketOption(fd, Net.UNSPEC, socketoption);
+        Exception exception;//异常，则抛出
+        exception;
+        throw exception;
+    }
+//Net
+ static Object getSocketOption(FileDescriptor filedescriptor, ProtocolFamily protocolfamily, SocketOption socketoption)
+        throws IOException
+    {
+        Class class1 = socketoption.type();
+	//非整形和布尔型，则抛出断言错误
+        if(class1 != java/lang/Integer && class1 != java/lang/Boolean)
+            throw new AssertionError("Should not reach here");
+        OptionKey optionkey = SocketOptionRegistry.findOption(socketoption, protocolfamily);
+        if(optionkey == null)
+            throw new AssertionError("Option not found");
+        boolean flag = protocolfamily == UNSPEC;
+	//获取文件描述的选项配置
+        int i = getIntOption0(filedescriptor, flag, optionkey.level(), optionkey.name());
+        if(class1 == java/lang/Integer)
+            return Integer.valueOf(i);
+        else
+            return i != 0 ? Boolean.TRUE : Boolean.FALSE;
+    }
+    private static native int getIntOption0(FileDescriptor filedescriptor, boolean flag, int i, int j)
+        throws IOException;
+再来看ServerSocketChannelImpl的其他方法
+//获取绑定地址
+public SocketAddress localAddress()
+    {
+        Object obj = stateLock;//同步状态锁
+        JVM INSTR monitorenter ;//try
+        return localAddress;
+        Exception exception;//有异常，则抛出
+        exception;
+        throw exception;
+    }
+ //获取Socket
+ public ServerSocket socket()
+    {
+        Object obj = stateLock;//同步状态锁
+        JVM INSTR monitorenter ;//try
+        if(socket == null)
+	    //创建ServerSocket适配器
+            socket = ServerSocketAdaptor.create(this);
+        return socket;
+        Exception exception;//有异常，则抛出
+        exception;
+        throw exception;
+    }
+//ServerSocketAdaptor，可简单理解为ServerSocketChannelImpl的代理
+public class ServerSocketAdaptor extends ServerSocket
+{
+    private final ServerSocketChannelImpl ssc;
+    private volatile int timeout;
+    static final boolean $assertionsDisabled = !sun/nio/ch/ServerSocketAdaptor.desiredAssertionStatus();
+    private ServerSocketAdaptor(ServerSocketChannelImpl serversocketchannelimpl)
+        throws IOException
+    {
+        timeout = 0;
+        ssc = serversocketchannelimpl;
+    }
+    //根据ServerSocketChannelImpl创建ServerSocketAdaptor
+    public static ServerSocket create(ServerSocketChannelImpl serversocketchannelimpl)
+    {
+        return new ServerSocketAdaptor(serversocketchannelimpl);
+        IOException ioexception;
+        ioexception;
+        throw new Error(ioexception);
+    }
+    //绑定地址
+     public void bind(SocketAddress socketaddress, int i)
+        throws IOException
+    {
+        if(socketaddress == null)
+            socketaddress = new InetSocketAddress(0);
+        try
+        {
+            ssc.bind(socketaddress, i);
+        }
+        catch(Exception exception)
+        {
+            Net.translateException(exception);
+        }
+    }
+}
+在往下看之前，先看一下ServerSocketChannelImpl的socket的分发器
+private static NativeDispatcher nd = new SocketDispatcher();//Socket分发器
+class SocketDispatcher extends NativeDispatcher
+{
+
+    SocketDispatcher()
+    {
+    }
+      static 
+    {
+        //加载nio，net资源库
+        Util.load();
+    }
+    //读操作
+    int read(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return read0(filedescriptor, l, i);
+    }
+     static native int read0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+    long readv(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return readv0(filedescriptor, l, i);
+    }
+     static native long readv0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+   //写操作
+    int write(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return write0(filedescriptor, l, i);
+    }
+    static native int write0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+    long writev(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return writev0(filedescriptor, l, i);
+    }
+      static native long writev0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+    //预关闭文件描述符
+    void preClose(FileDescriptor filedescriptor)
+        throws IOException
+    {
+        preClose0(filedescriptor);
+    }
+    static native void preClose0(FileDescriptor filedescriptor)
+        throws IOException;
+    //关闭文件描述
+    void close(FileDescriptor filedescriptor)
+        throws IOException
+    {
+        close0(filedescriptor);
+    }
+    static native void close0(FileDescriptor filedescriptor)
+        throws IOException;
+}
+再来看ServerSocketChannelImpl的其他方法
+//实际关闭选择通道方法
+protected void implCloseSelectableChannel()
+        throws IOException
+    {
+        synchronized(stateLock)//通不状态锁
+        {
+            if(state != 1)
+	        //如果状态没关闭，则本地Socket预先关闭
+                nd.preClose(fd);
+            long l = thread;
+            if(l != 0L)
+	        //本地线程不为null，则通知关闭
+                NativeThread.signal(l);
+            if(!isRegistered())
+	        //如果通道反注册，则kill
+                kill();
+        }
+    }
+//关闭文件描述
+    public void kill()
+        throws IOException
+    {
+label0:
+        {
+            synchronized(stateLock)
+            {
+                if(state != 1)
+                    break label0;
+            }
+            return;
+        }
+        if(state != -1)
+            break MISSING_BLOCK_LABEL_34;
+        state = 1;//置通道状态为关闭
+        obj;
+        JVM INSTR monitorexit ;
+        return;
+	//如果断言开启，如果通道打开或已注册，抛出断言错误
+        if(!$assertionsDisabled && (isOpen() || isRegistered()))
+            throw new AssertionError();
+	//本地分发器关闭文件描述
+        nd.close(fd);
+        state = 1;
+        obj;
+        JVM INSTR monitorexit ;//退出同步
+          goto _L1
+        exception;
+        throw exception;
+_L1:
+    }
+ //获取文件描述
+     public FileDescriptor getFD()
+    {
+        return fd;
+    }
+ //获取文件描述值
+    public int getFDVal()
+    {
+        return fdVal;
+    }
+ //设置兴趣操作事件
+ public void translateAndSetInterestOps(int i, SelectionKeyImpl selectionkeyimpl)
+    {
+        int j = 0;
+        if((i & 16) != 0)
+            j |= 1;
+        selectionkeyimpl.selector.putEventOps(selectionkeyimpl, j);
+    }
+
+
+//设置就绪操作事件集
+ public boolean translateAndSetReadyOps(int i, SelectionKeyImpl selectionkeyimpl)
+ {
+     return translateReadyOps(i, 0, selectionkeyimpl);
+ }
+//更新就绪操作事件集
+  public boolean translateAndUpdateReadyOps(int i, SelectionKeyImpl selectionkeyimpl)
+ {
+     return translateReadyOps(i, selectionkeyimpl.nioReadyOps(), selectionkeyimpl);
+ }
+ //根据就绪事件集当前状态j，设置就绪事件为i
+  public boolean translateReadyOps(int i, int j, SelectionKeyImpl selectionkeyimpl)
+    {
+        int k = selectionkeyimpl.nioInterestOps();//兴趣事件集
+        int l = selectionkeyimpl.nioReadyOps();//就绪事件集
+        int i1 = j;
+	//就绪事件为读1写4连接8，接受连接事件16，不是这四种事件，则返回false
+        if((i & 32) != 0)
+            return false;
+	//下面的这段24,16不是很明白，理解的网友可以给我留言，一起探讨
+        if((i & 24) != 0)
+        {
+            i1 = k;
+            selectionkeyimpl.nioReadyOps(i1);
+            return (i1 & ~l) != 0;
+        }
+        if((i & 1) != 0 && (k & 16) != 0)
+            i1 |= 16;
+        selectionkeyimpl.nioReadyOps(i1);
+        return (i1 & ~l) != 0;
+    }
+
+
+总结：
+ServerSocketChannelImpl的初始化主要是初始化ServerSocket通道线程thread，
+地址绑定，接受连接同步锁，默认创建ServerSocketChannelImpl的状态为未初始化，文件描述和
+文件描述id，如果使用本地地址，则获取本地地址。
+bind首先检查ServerSocket是否关闭，是否绑定地址，
+如果既没有绑定也没关闭，则检查绑定的socketaddress是否正确或合法；
+然后通过Net工具类的bind（native）和listen（native），完成实际的
+ServerSocket地址绑定和开启监听，如果绑定是开启的参数小于1，则默认接受50个连接。
+accept方法主要是调用accept0（native）方法接受连接，并根据接受来接
+文件描述的地址构造SocketChannelImpl，并返回。
+
+//NativeDispatcher
+package sun.nio.ch;
+import java.io.FileDescriptor;
+import java.io.IOException;
+
+abstract class NativeDispatcher
+{
+
+    NativeDispatcher()
+    {
+    }
+    abstract void close(FileDescriptor filedescriptor)
+        throws IOException;
+
+    void preClose(FileDescriptor filedescriptor)
+        throws IOException
+    {
+    }
+    abstract int read(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+
+    int pread(FileDescriptor filedescriptor, long l, int i, long l1, Object obj)
+        throws IOException
+    {
+        throw new IOException("Operation Unsupported");
+    }
+    abstract long readv(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+
+    abstract int write(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+    int pwrite(FileDescriptor filedescriptor, long l, int i, long l1, Object obj)
+        throws IOException
+    {
+        throw new IOException("Operation Unsupported");
+    }
+    abstract long writev(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+}

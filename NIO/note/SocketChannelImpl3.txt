@@ -1,0 +1,376 @@
+SocketChannelImpl 解析一（通道连接，发送数据）：[url]http://donald-draper.iteye.com/blog/2372364[/url]
+SocketChannelImpl 解析二（发送数据后续）：[url]http://donald-draper.iteye.com/blog/2372548[/url]
+引言：
+前一篇文章我们看了一下SocketChannelImpl发送多个字节序列的过程，先来回顾一下：
+SocketChannelImpl写ByteBuffer数组方法，首先同步写锁，确保通道，输出流打开，连接建立委托给IOUtil，将ByteBuffer数组写到输出流中，这一过程为获取存放i个字节缓冲区的IOVecWrapper，遍历ByteBuffer数组m，将字节缓冲区添加到iovecwrapper的字节缓冲区数组中，如果ByteBuffer非Direct类型，委托Util从当前线程的缓冲区获取容量为j2临时DirectByteBuffer，并将ByteBuffer写到DirectByteBuffer，并将DirectByteBuffer添加到iovecwrapper的字节缓冲区（Shadow-Direct）数组中，将字节缓冲区的起始地址写到iovecwrapper，字节缓冲区的实际容量写到iovecwrapper；遍历iovecwrapper的字节缓冲区（Shadow-Direct）数组，将Shadow数组中的DirectByteBuffer通过Util添加到本地线程的缓存区中，并清除DirectByteBuffer在iovecwrapper的相应数组中的信息；最后通过
+SocketDispatcher，将iovecwrapper的缓冲区数据，写到filedescriptor对应的输出流中。
+今天我们来看一下接受数据
+再来看SocketChannelImpl的读操作
+ public int read(ByteBuffer bytebuffer)
+        throws IOException
+    {
+        if(bytebuffer == null)
+            throw new NullPointerException();
+        Object obj = readLock;//获取读锁
+        JVM INSTR monitorenter ;//进入同步，try
+        if(!ensureReadOpen())//确保通道，输入流打开，通道连接建立
+            return -1;
+        int i = 0;
+        begin();
+        int k;
+        Object obj3;
+        Exception exception;
+        synchronized(stateLock)
+        {
+            if(isOpen())
+                break MISSING_BLOCK_LABEL_146;
+            k = 0;
+        }
+	//清除读线程
+        readerCleanup();
+        end(i > 0 || i == -2);
+        obj3 = stateLock;
+        JVM INSTR monitorenter ;
+        if(i > 0 || isInputOpen) goto _L2; else goto _L1
+_L1:
+        -1;
+        obj;
+        JVM INSTR monitorexit ;
+        return;
+_L2:
+        obj3;
+        JVM INSTR monitorexit ;
+          goto _L3
+        exception;
+        obj3;
+        JVM INSTR monitorexit ;
+        throw exception;
+_L3:
+        if(!$assertionsDisabled && !IOStatus.check(i))
+            throw new AssertionError();
+        obj;
+        JVM INSTR monitorexit ;
+        return k;
+	//初始化本地读线程
+        readerThread = NativeThread.current();
+        obj1;
+        JVM INSTR monitorexit ;
+        int j;
+        do
+	   //委托IOUtil从输入流读取字节序列，写到bytebuffer
+            i = IOUtil.read(fd, bytebuffer, -1L, nd, readLock);
+        while(i == -3 && isOpen());
+        ...
+    }
+从输入流读取字节序列，写到buffer，有几点要关注
+1.
+ if(!ensureReadOpen())//确保通道，输入流打开，通道连接建立
+            return -1;
+2.
+//清除读线程
+readerCleanup();
+3.
+do
+   //委托IOUtil从输入流读取字节序列，写到bytebuffer
+    i = IOUtil.read(fd, bytebuffer, -1L, nd, readLock);
+while(i == -3 && isOpen());
+下面我们分别来看这几点：
+1.
+ if(!ensureReadOpen())//确保通道，输入流打开，通道连接建立
+            return -1;
+//确保通道，输入流打开，通道连接建立
+  private boolean ensureReadOpen()
+        throws ClosedChannelException
+    {
+        Object obj = stateLock;
+        JVM INSTR monitorenter ;
+        if(!isOpen())//通道打开
+            throw new ClosedChannelException();
+        if(!isConnected())//连接建立
+            throw new NotYetConnectedException();
+        if(!isInputOpen)//输入流打开
+            return false;
+        true;
+        obj;
+        JVM INSTR monitorexit ;
+        return;
+        Exception exception;
+        exception;
+        throw exception;
+    }
+2.
+//清除读线程
+readerCleanup();
+private void readerCleanup()
+      throws IOException
+  {
+      //同步通道状态锁，清除读线程，如果通道关闭则，执行清除工作
+      synchronized(stateLock)
+      {
+          readerThread = 0L;
+          if(state == 3)
+              kill();//这个后面再讲
+      }
+  }
+3.
+do
+   //委托IOUtil从输入流读取字节序列，写到bytebuffer
+    i = IOUtil.read(fd, bytebuffer, -1L, nd, readLock);
+while(i == -3 && isOpen());
+这里循环的原因，线程读输入流，有可能因为某种原因被中断，中断位消除，继续读取输入流，写到buffer
+//IOUtil
+static int read(FileDescriptor filedescriptor, ByteBuffer bytebuffer, long l, NativeDispatcher nativedispatcher, Object obj)
+       throws IOException
+   {
+       ByteBuffer bytebuffer1;
+       //如果buffer为只读，则抛出IllegalArgumentException
+       if(bytebuffer.isReadOnly())
+           throw new IllegalArgumentException("Read-only buffer");
+       //如果buffer为DirectBuffer，则委托给readIntoNativeBuffer
+       if(bytebuffer instanceof DirectBuffer)
+           return readIntoNativeBuffer(filedescriptor, bytebuffer, l, nativedispatcher, obj);
+       //从当前线程缓存区获取临时的DirectByteBuffer
+       bytebuffer1 = Util.getTemporaryDirectBuffer(bytebuffer.remaining());
+       int j;
+       //委托readIntoNativeBuffer方法，读取输入流数据，到临时DirectByteBuffer
+       int i = readIntoNativeBuffer(filedescriptor, bytebuffer1, l, nativedispatcher, obj);
+       //读写模式切换
+       bytebuffer1.flip();
+       if(i > 0)
+           //如果有数据被读取，则放到byteBuffer中
+           bytebuffer.put(bytebuffer1);
+       j = i;//记录读取的字节数
+       //添加临时DirectByteBuffer到当前线程的缓冲区，以便重用，
+       //因为重新DirectByteBuffer为直接操作物理内存，频繁分配物理内存，将耗费过多的资源。
+       Util.offerFirstTemporaryDirectBuffer(bytebuffer1);
+       return j;
+       Exception exception;
+       exception;
+       Util.offerFirstTemporaryDirectBuffer(bytebuffer1);
+       throw exception;
+   }
+来看readIntoNativeBuffer方法
+ private static int readIntoNativeBuffer(FileDescriptor filedescriptor, ByteBuffer bytebuffer, long l, NativeDispatcher nativedispatcher, Object obj)
+        throws IOException
+    {
+        int i = bytebuffer.position();
+        int j = bytebuffer.limit();
+	//如果断言开启，buffer的position大于limit，则抛出断言错误
+        if(!$assertionsDisabled && i > j)
+            throw new AssertionError();
+	//获取需要读的字节数
+        int k = i > j ? 0 : j - i;
+        if(k == 0)
+            return 0;
+        int i1 = 0;
+	//从输入流读取k个字节到buffer
+        if(l != -1L)
+            i1 = nativedispatcher.pread(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k, l, obj);
+        else
+            i1 = nativedispatcher.read(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k);
+	//重新定位buffer的position
+        if(i1 > 0)
+            bytebuffer.position(i + i1);
+        return i1;
+    }
+readIntoNativeBuffer方法中一点我们需要关注：
+//从输入流读取k个字节到buffer
+if(l != -1L)
+    i1 = nativedispatcher.pread(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k, l, obj);
+else
+    i1 = nativedispatcher.read(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k);
+//NativeDispatcher
+ int pread(FileDescriptor filedescriptor, long l, int i, long l1, Object obj)
+        throws IOException
+    {
+        throw new IOException("Operation Unsupported");
+    }
+从NativeDispatcher的pread方法可以看出，当前JDK版本，还不支持pread操作，我的JDK版本为1.7.0.17。
+//SocketDispatcher
+ int read(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return read0(filedescriptor, l, i);
+    }
+ static native int read0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+至此读输入流到buffer，已经看完，首先同步读写，确保通道，输入流打开，通道连接建立，
+清除原始读线程，获取新的本地读线程，委托IOUtil读输入流到buffer；IOUtil读输入流到buffer，
+首先确保buffer是可写的，否则抛出IllegalArgumentException，然后判断buffer是否为Direct类型
+，是则委托给readIntoNativeBuffer，否则通过Util从当前线程缓冲区获取一个临时的DirectByteBuffer，
+然后通过readIntoNativeBuffer读输入流数据到临时的DirectByteBuffer，这一个过程是通过SocketDispatcher
+的read方法实现，读写数据到DirectByteBuffer中后，将DirectByteBuffer中数据，写到原始buffer中，并将
+DirectByteBuffer添加到添加临时DirectByteBuffer到当前线程的缓冲区，以便重用，
+因为重新DirectByteBuffer为直接操作物理内存，频繁分配物理内存，将耗费过多的资源。
+在来看从输入流读取数据，写到多个buffer：
+public long read(ByteBuffer abytebuffer[], int i, int j)
+        throws IOException
+    {
+        //校验参数
+        if(i < 0 || j < 0 || i > abytebuffer.length - j)
+            throw new IndexOutOfBoundsException();
+        Object obj = readLock;//获取读锁
+        JVM INSTR monitorenter ;//进入同步，try
+        if(!ensureReadOpen())//确保通道打开，连接建立，输入流打开
+            return -1L;
+        long l = 0L;
+        begin();//与end协同，记录中断器，处理读操作过程中的中断问题
+        long l2;
+        Object obj3;
+        Exception exception;
+        synchronized(stateLock)
+        {
+            if(isOpen())
+                break MISSING_BLOCK_LABEL_177;
+            l2 = 0L;
+        }
+	//清除原始读线程
+        readerCleanup();
+        end(l > 0L || l == -2L);
+        obj3 = stateLock;
+        JVM INSTR monitorenter ;
+        if(l > 0L || isInputOpen) goto _L2; else goto _L1
+_L1:
+        -1L;
+        obj;
+        JVM INSTR monitorexit ;
+        return;
+_L2:
+        obj3;
+        JVM INSTR monitorexit ;
+          goto _L3
+        exception;
+        obj3;
+        JVM INSTR monitorexit ;
+        throw exception;
+_L3:
+        if(!$assertionsDisabled && !IOStatus.check(l))
+            throw new AssertionError();
+        obj;
+        JVM INSTR monitorexit ;
+        return l2;
+	//获取本地读线程
+        readerThread = NativeThread.current();
+        obj1;
+        JVM INSTR monitorexit ;
+        long l1;
+        do
+	    //委托给IOUtil，从输入流读取数据，写到多个buffer
+            l = IOUtil.read(fd, abytebuffer, i, j, nd);
+        while(l == -3L && isOpen());
+        l1 = IOStatus.normalize(l);
+}
+从输入流读取数据，写到多个buffer，我们只需要关注下面这点
+ do
+    //委托给IOUtil，从输入流读取数据，写到多个buffer
+    l = IOUtil.read(fd, abytebuffer, i, j, nd);
+while(l == -3L && isOpen());
+这里循环的原因，线程读输入流，有可能因为某种原因被中断，中断位消除，继续读取输入流，写到buffer;
+//IOUtil
+static long read(FileDescriptor filedescriptor, ByteBuffer abytebuffer[], int i, int j, NativeDispatcher nativedispatcher)
+        throws IOException
+    {
+        IOVecWrapper iovecwrapper;
+        boolean flag;
+        int k;
+	//获取存放i个byteBuffer的IOVecWrapper
+        iovecwrapper = IOVecWrapper.get(j);
+        flag = false;
+        k = 0;
+        long l1;
+        int l = i + j;
+        for(int i1 = i; i1 < l && k < IOV_MAX; i1++)
+        {
+            ByteBuffer bytebuffer = abytebuffer[i1];
+            if(bytebuffer.isReadOnly())
+                throw new IllegalArgumentException("Read-only buffer");
+            int j1 = bytebuffer.position();
+            int k1 = bytebuffer.limit();
+            if(!$assertionsDisabled && j1 > k1)
+                throw new AssertionError();
+            int j2 = j1 > k1 ? 0 : k1 - j1;
+            if(j2 <= 0)
+                continue;
+	   //将buffer添加到iovecwrapper的字节缓冲区数组中
+            iovecwrapper.setBuffer(k, bytebuffer, j1, j2);
+            if(!(bytebuffer instanceof DirectBuffer))
+            {
+	       //获取容量为j2临时DirectByteBuffer
+                ByteBuffer bytebuffer2 = Util.getTemporaryDirectBuffer(j2);
+		//添加DirectByteBuffer到iovecwrapper的shadow buffer数组
+                iovecwrapper.setShadow(k, bytebuffer2);
+                bytebuffer = bytebuffer2;
+                j1 = bytebuffer2.position();
+            }
+	    //将字节缓冲区的起始地址写到iovecwrapper
+            iovecwrapper.putBase(k, ((DirectBuffer)bytebuffer).address() + (long)j1);
+	     //将字节缓冲区的实际容量写到iovecwrapper
+            iovecwrapper.putLen(k, j2);
+            k++;
+        }
+
+        if(k != 0)
+            break MISSING_BLOCK_LABEL_263;
+        l1 = 0L;
+        if(!flag)
+        {
+            for(int i2 = 0; i2 < k; i2++)
+            {   
+	        //获取iovecwrapper索引i2对应的字节序列副本
+                ByteBuffer bytebuffer1 = iovecwrapper.getShadow(i2);
+                if(bytebuffer1 != null)
+		//如果字节序列不为空，则添加到当前线程的缓存区中
+                    Util.offerLastTemporaryDirectBuffer(bytebuffer1);
+		 //清除索引i2对应的字节序列在iovecwrapper中的字节序列数组，及相应副本数组的信息
+                iovecwrapper.clearRefs(i2);
+            }
+
+        }
+        return l1;
+        long l4;
+	//委托给nativedispatcher，从filedescriptor对应的输入流读取数据，写到iovecwrapper的缓冲区中。
+        long l2 = nativedispatcher.readv(filedescriptor, iovecwrapper.address, k);
+}
+再来看IOUtil写buffer数组的关键点
+long l2 = nativedispatcher.readv(filedescriptor, iovecwrapper.address, k);
+//SocketDispatcher
+  long readv(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return readv0(filedescriptor, l, i);
+    }
+     static native long readv0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+至此我们把SocketChannelImpl从输入流读取数据，写到ByteBuffer数组的read方法看完，首先同步写锁，确保通道，连接建立，
+输入流打开，委托给IOUtil，从输入流读取数据写到ByteBuffer数组中；IOUtil首先获取存放i个字节缓冲区的IOVecWrapper，
+遍历ByteBuffer数组m，将buffer添加到iovecwrapper的字节缓冲区数组中，如果ByteBuffer非Direct类型，
+委托Util从当前线程的缓冲区获取容量为j2临时DirectByteBuffer，并将ByteBuffer写到DirectByteBuffer，
+并将DirectByteBuffer添加到iovecwrapper的字节缓冲区（Shadow-Direct）数组中，
+将字节缓冲区的起始地址写到iovecwrapper，字节缓冲区的实际容量写到iovecwrapper；
+遍历iovecwrapper的字节缓冲区（Shadow-Direct）数组，将Shadow数组中的DirectByteBuffer通过Util添加到
+本地线程的缓存区中，并清除DirectByteBuffer在iovecwrapper的相应数组中的信息；最后通过
+SocketDispatcher，从filedescriptor对应的输入流读取数据，写到iovecwrapper的缓冲区中。
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+总结：
+读输入流到buffer，首先同步读写，确保通道，输入流打开，通道连接建立，
+清除原始读线程，获取新的本地读线程，委托IOUtil读输入流到buffer；IOUtil读输入流到buffer，
+首先确保buffer是可写的，否则抛出IllegalArgumentException，然后判断buffer是否为Direct类型
+，是则委托给readIntoNativeBuffer，否则通过Util从当前线程缓冲区获取一个临时的DirectByteBuffer，
+然后通过readIntoNativeBuffer读输入流数据到临时的DirectByteBuffer，这一个过程是通过SocketDispatcher
+的read方法实现，读写数据到DirectByteBuffer中后，将DirectByteBuffer中数据，写到原始buffer中，并将
+DirectByteBuffer添加到添加临时DirectByteBuffer到当前线程的缓冲区，以便重用，
+因为重新DirectByteBuffer为直接操作物理内存，频繁分配物理内存，将耗费过多的资源。
+

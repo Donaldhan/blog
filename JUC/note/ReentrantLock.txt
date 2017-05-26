@@ -1,0 +1,670 @@
+AtomicInteger解析：http://donald-draper.iteye.com/blog/2359555
+锁持有者管理器AbstractOwnableSynchronizer：http://donald-draper.iteye.com/blog/2360109
+AQS线程挂起辅助类LockSupport：http://donald-draper.iteye.com/blog/2360206
+AQS详解-CLH队列，线程等待状态：http://donald-draper.iteye.com/blog/2360256
+AQS-Condition详解：http://donald-draper.iteye.com/blog/2360381
+/*
+ * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
+ * Written by Doug Lea with assistance from members of JCP JSR-166
+ * Expert Group and released to the public domain, as explained at
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+前面的文章中，我们看了CAS原理和AQS机制，今天我们来看已下可重入锁ReentrantLock。
+ReentrantLock本质上一种独占锁，获取锁方式有公平与非公平获取锁方式。
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
+
+/**
+ * A reentrant mutual exclusion {@link Lock} with the same basic
+ * behavior and semantics as the implicit monitor lock accessed using
+ * {@code synchronized} methods and statements, but with extended
+ * capabilities.
+ *
+ 一个与implicit monitor lock具有相同功能的可扩展的可重入互质锁。
+
+ * <p>A {@code ReentrantLock} is <em>owned</em> by the thread last
+ * successfully locking, but not yet unlocking it. A thread invoking
+ * {@code lock} will return, successfully acquiring the lock, when
+ * the lock is not owned by another thread. The method will return
+ * immediately if the current thread already owns the lock. This can
+ * be checked using methods {@link #isHeldByCurrentThread}, and {@link
+ * #getHoldCount}.
+可重入锁，被上次成功获取锁，还没释放的线程，所拥有的；当锁没有被其他线程所
+持有，线程可以调用lock函数，获取锁；当锁的持有者为当前线程，当前线程调用lock函数，
+立刻返回，并获取锁；可用isHeldByCurrentThread方法，判断锁是否被当前单线程所持有，
+用getHoldCount获取当前线程，持有锁的次数（在线程持有锁，再次调用lock，成功获取锁的次数）。
+
+ *
+ * <p>The constructor for this class accepts an optional
+ * <em>fairness</em> parameter.  When set {@code true}, under
+ * contention, locks favor granting access to the longest-waiting
+ * thread.  Otherwise this lock does not guarantee any particular
+ * access order.  Programs using fair locks accessed by many threads
+ * may display lower overall throughput (i.e., are slower; often much
+ * slower) than those using the default setting, but have smaller
+ * variances in times to obtain locks and guarantee lack of
+ * starvation. Note however, that fairness of locks does not guarantee
+ * fairness of thread scheduling. Thus, one of many threads using a
+ * fair lock may obtain it multiple times in succession while other
+ * active threads are not progressing and not currently holding the
+ * lock.
+ * Also note that the untimed {@link #tryLock() tryLock} method does not
+ * honor the fairness setting. It will succeed if the lock
+ * is available even if other threads are waiting.
+ *
+ReentrantLock的构造函数有一个公平性参数boolean，来确定，可重入锁是公平锁，还是非公平锁。
+如果是公平锁，当锁没有持有者时，将锁授予，最早等待获取锁的线程；非公平锁，不能保证按照
+获取锁的顺序，将锁的授予线程；非公平锁在性能上，更优一些，但在获取锁的尝试次数和保证
+lack of starvation（锁的饥渴性，暂时这么翻译）上，两种锁没有太多的差别。公平锁，也不能
+绝对的保证公平性，比如，当其他的线程等待锁的时候，一个线程持有锁，也许在持有锁的过程中，
+多次获取锁。tryLock也不能保证公平性，即使其他的线程在等待锁，一个线程持有锁，调用tryLock
+如果锁可利用，则线程获取锁成功。
+为什么，非公平锁的性能比公平锁要高呢？假设现在有一些线程在等待锁，当锁被持有者释放时，
+这时，正好有一个线程获取锁，非公平锁则获取成功，公平锁则要从锁等待队列线程中，唤醒一个线程
+，进入就绪运行状态，切换上下文，倒不如，让正在请求锁的线程，直接获取锁。
+
+ * <p>It is recommended practice to <em>always</em> immediately
+ * follow a call to {@code lock} with a {@code try} block, most
+ * typically in a before/after construction such as:
+ *
+在使用ReentrantLock时候，强烈建议在获取锁后面使用try语句块，以便在
+finally中释放锁，如下
+ * <pre>
+ * class X {
+ *   private final ReentrantLock lock = new ReentrantLock();
+ *   // ...
+ *
+ *   public void m() {
+ *     lock.lock();  // block until condition holds
+ *     try {
+ *       // ... method body
+ *     } finally {
+ *       lock.unlock()
+ *     }
+ *   }
+ * }
+ * </pre>
+ *
+ * <p>In addition to implementing the {@link Lock} interface, this
+ * class defines methods {@code isLocked} and
+ * {@code getLockQueueLength}, as well as some associated
+ * {@code protected} access methods that may be useful for
+ * instrumentation and monitoring.
+ 对于实现可重入锁ReentrantLock，除了Lock中的方法外，还可以调用
+ ReentrantLock锁的isLocked和getLockQueueLength方法，和一些protected的
+ 方法，以便监视锁的状态
+ *
+ * <p>Serialization of this class behaves in the same way as built-in
+ * locks: a deserialized lock is in the unlocked state, regardless of
+ * its state when serialized.
+ *
+ 序列化可重入锁ReentrantLock，则忽略锁状态,反序列化时，锁处于unlocked state；
+
+ * <p>This lock supports a maximum of 2147483647 recursive locks by
+ * the same thread. Attempts to exceed this limit result in
+ * {@link Error} throws from locking methods.
+ *一个线程可以持有锁的次数为2147483647(2^31-1),当尝试次数，超过最大限制时，则
+ 抛出异常，如果线程在持有2147483647次的情况下，再TryAcquire，则锁的持有数为-1；
+ 超过整数范围溢出；
+ * @since 1.5
+ * @author Doug Lea
+ */
+public class ReentrantLock implements Lock, java.io.Serializable {
+    private static final long serialVersionUID = 7373984872572414699L;
+    //同步器，提供所有锁机制
+    /** Synchronizer providing all implementation mechanics */
+    private final Sync sync;
+
+    /**
+     * Base of synchronization control for this lock. Subclassed
+     * into fair and nonfair versions below. Uses AQS state to
+     * represent the number of holds on the lock.
+     */
+    //可重入锁，依赖于同步Sync，同步是基于AQS的实现；同步Sync
+    //有两种实现一种是公平锁，一种是非公平锁；用AQS state表示，锁的状态。
+    abstract static class Sync extends AbstractQueuedSynchronizer {
+        private static final long serialVersionUID = -5179523762034025860L;
+
+        /**
+         * Performs {@link Lock#lock}. The main reason for subclassing
+         * is to allow fast path for nonfair version.
+         */
+	 在非公平锁实现中，允许快速获取锁
+        abstract void lock();
+
+        /**
+         * Performs non-fair tryLock.  tryAcquire is
+         * implemented in subclasses, but both need nonfair
+         * try for trylock method.
+         */
+	 //在非公平锁的尝试获取锁方法中，会调用nonfairTryAcquire
+	 //acquires为尝试获取次数，一般为1
+        final boolean nonfairTryAcquire(int acquires) {
+	   //获取当前线程
+            final Thread current = Thread.currentThread();
+            int c = getState();//获取锁状态
+            if (c == 0) {//如果没有线程持有锁
+                if (compareAndSetState(0, acquires)) {
+		    //尝试获取锁，如果获取成功，则设置锁的持有者，为当前线程，返回ture
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {
+	        //如果锁被线程持有，判断持有者是不是当前线程；
+		//如果当前线程是锁的持有者，则锁被当前线程持有的次数+获取次数acquires
+                int nextc = c + acquires;
+                if (nextc < 0) // overflow
+		    //如果锁被线程连续持有次数，小于0，则超出，一个线程可以连续持有锁的最大次数
+		    //抛出异常
+                    throw new Error("Maximum lock count exceeded");
+		 //否则，设置锁状态，返回true
+                setState(nextc);
+                return true;
+            }
+	    //锁被持有，且持有者非当前线程，返回false，获取锁失败。
+            return false;
+        }
+        //尝试释放锁，releases释放次数
+        protected final boolean tryRelease(int releases) {
+	    //获取释放releases次锁后的锁状态。
+            int c = getState() - releases;
+	    //如果当前线程非锁持有者，抛出状态监控异常
+            if (Thread.currentThread() != getExclusiveOwnerThread())
+                throw new IllegalMonitorStateException();
+            boolean free = false;
+	    //如果锁持有者线程释放，releases次后，锁状态为打开
+            if (c == 0) {
+	        //释放锁成功
+                free = true;
+		//设置锁持有者为NULL
+                setExclusiveOwnerThread(null);
+            }
+	    //如果，释放releases次后，线程仍持有锁，设置锁状态，释放失败。
+            setState(c);
+            return free;
+        }
+        //检查锁持有者是否为当前线程
+        protected final boolean isHeldExclusively() {
+            // While we must in general read state before owner,
+            // we don't need to do so to check if current thread is owner
+            return getExclusiveOwnerThread() == Thread.currentThread();
+        }
+        //创建条件，这个我们在前面讲过
+        final ConditionObject newCondition() {
+            return new ConditionObject();
+        }
+
+        // Methods relayed from outer class
+        //获取锁持有者线程，无持有者，则为null
+        final Thread getOwner() {
+            return getState() == 0 ? null : getExclusiveOwnerThread();
+        }
+        //获取线程连续持有锁的次数，如果是当前线程持有锁，则返回state，否则为0
+        final int getHoldCount() {
+            return isHeldExclusively() ? getState() : 0;
+        }
+        //锁是否被持有
+        final boolean isLocked() {
+            return getState() != 0;
+        }
+
+        /**
+         * Reconstitutes this lock instance from a stream.
+         * @param s the stream
+         */
+	//反序列化锁，设置锁为打开状态
+        private void readObject(java.io.ObjectInputStream s)
+            throws java.io.IOException, ClassNotFoundException {
+            s.defaultReadObject();
+            setState(0); // reset to unlocked state
+        }
+    }
+     /**
+     * Creates an instance of {@code ReentrantLock}.
+     * This is equivalent to using {@code ReentrantLock(false)}.
+     */
+    //创建可重入锁，默认为非公平锁
+    public ReentrantLock() {
+        sync = new NonfairSync();
+    }
+
+    /**
+     * Creates an instance of {@code ReentrantLock} with the
+     * given fairness policy.
+     *
+     * @param fair {@code true} if this lock should use a fair ordering policy
+     */
+     //根据公平锁与非公平锁标志，创建相应的锁
+    public ReentrantLock(boolean fair) {
+        sync = fair ? new FairSync() : new NonfairSync();
+    }
+     static final class NonfairSync extends Sync {}
+     static final class FairSync extends Sync {}
+}
+从上面可以看出ReentrantLock关联一个同步锁SYNC，内部的SYNC是基于AQS实现的。
+同步锁SYNC有两种实现，公平锁与非公平锁；ReentrantLock默认创建的是非公平锁。
+下面再来看一下公平锁与非公平锁，先看非公平锁
+ /**
+     * Sync object for non-fair locks
+     */
+    static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = 7316153563782823691L;
+
+        /**
+         * Performs lock.  Try immediate barge, backing up to normal
+         * acquire on failure.
+         */
+        final void lock() {
+	   //先以CAS方式获取锁，如果获取成功，设置当前线程为锁，持有者
+            if (compareAndSetState(0, 1))
+                setExclusiveOwnerThread(Thread.currentThread());
+            else
+	       //否则，这一步我们单看
+                acquire(1);
+        }
+        //尝试获取锁，acquires次，一般为1
+        protected final boolean tryAcquire(int acquires) {
+	   //以非公平的方式获取锁
+            return nonfairTryAcquire(acquires);
+        }
+    }
+//AQS
+/**
+     * Acquires in exclusive mode, ignoring interrupts.  Implemented
+     * by invoking at least once {@link #tryAcquire},
+     * returning on success.  Otherwise the thread is queued, possibly
+     * repeatedly blocking and unblocking, invoking {@link
+     * #tryAcquire} until success.  This method can be used
+     * to implement method {@link Lock#lock}.
+     *尝试以独占模式，获取锁，忽略中断。至少尝试一次，获取锁，成功则返回，
+     获取失败，添加到同步等待队列，可能重复的blocking and unblocking，
+     尝试获取锁，直到成功，用于lock方法
+     * @param arg the acquire argument.  This value is conveyed to
+     *        {@link #tryAcquire} but is otherwise uninterpreted and
+     *        can represent anything you like.
+     */
+    public final void acquire(int arg) {
+        //如果获取锁失败，则添加独占模式节点，到队列中，自旋，队列头部节点尝试获取锁，
+	如果尝试获取失败，检查是否可以中断当前线程，如果可以，则中断当前线程。
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+//待父类扩展
+ protected boolean tryAcquire(int arg) {
+        throw new UnsupportedOperationException();
+    }
+先看
+addWaiter(Node.EXCLUSIVE)
+再看
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+最后再看
+ selfInterrupt();
+
+//添加独占模式等待节点
+addWaiter(Node.EXCLUSIVE)
+
+/**
+     * Creates and enqueues node for current thread and given mode.
+     *
+     * @param mode Node.EXCLUSIVE for exclusive, Node.SHARED for shared
+     * @return the new node
+     */
+    创建独占或共享模式节点到同步等待队列中
+    private Node addWaiter(Node mode) {
+        Node node = new Node(Thread.currentThread(), mode);
+        // Try the fast path of enq; backup to full enq on failure
+        Node pred = tail;
+        if (pred != null) {
+            node.prev = pred;
+            if (compareAndSetTail(pred, node)) {
+                pred.next = node;
+                return node;
+            }
+        }
+        enq(node);
+        return node;
+    }
+再看
+acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+
+这个方法我们在Condition那篇文章中说过，
+首次查看节点的前驱节点线程，是否是头节点，如果时，则尝试获取
+锁，如果成功，则设置节点为头节点；否则检查当是否应该再获取锁的时候
+，唤醒后继节点；如果尝试获取锁失败，则park当前线程，如果失败，则整个
+过程失败，从队列中移除当前线程节点。
+ final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();
+                if (p == head && tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return interrupted;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)
+                cancelAcquire(node);
+        }
+    }
+自旋请求锁，如果可能的话挂起线程，直到得到锁，返回当前线程是否中断过
+（如果park()过并且中断过的话有一个interrupted中断位）。
+。acquireQueued过程是这样的：
+1. 如果当前节点是AQS队列的头结点（如果第一个节点是DUMP节点也就是傀儡节点，
+那么第二个节点实际上就是头结点了），就尝试在此获取锁tryAcquire(arg)。
+如果成功就将头结点设置为当前节点（不管第一个结点是否是DUMP节点），返回中断位。否则进行2。
+2. 检测当前节点是否应该park()，如果应该park()就挂起当前线程并且返回当前线程中断位。进行操作1。
+最后再看
+ selfInterrupt();
+    /**
+     * Convenience method to interrupt current thread.
+     */
+    private static void selfInterrupt() {
+        Thread.currentThread().interrupt();
+    }
+
+
+
+
+再看公平锁
+
+ /**
+     * Sync object for fair locks
+     */
+    static final class FairSync extends Sync {
+        private static final long serialVersionUID = -3000897897090466540L;
+
+        final void lock() {
+	   //这个过程，前面说过//如果获取锁失败，则添加独占模式节点，
+	   到队列中，自旋，队列头部节点尝试获取锁，
+	如果尝试获取失败，检查是否可以中断当前线程，如果可以，则中断当前线程。
+            acquire(1);
+        }
+
+        /**
+         * Fair version of tryAcquire.  Don't grant access unless
+         * recursive call or no waiters or is first.
+         */
+	 这个函数与SYNC的nonfairTryAcquire方法基本相同
+        protected final boolean tryAcquire(int acquires) {
+            final Thread current = Thread.currentThread();
+            int c = getState();
+            if (c == 0) {
+	        //首先检查是否有前继节点，如果没有，则获取锁
+                if (!hasQueuedPredecessors() &&
+                    compareAndSetState(0, acquires)) {
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {
+                int nextc = c + acquires;
+                if (nextc < 0)
+                    throw new Error("Maximum lock count exceeded");
+                setState(nextc);
+                return true;
+            }
+            return false;
+        }
+    }
+我们再回到SYNC的nonfairTryAcquire方法，非公平尝试获取锁；
+//SYNC
+        /**
+         * Performs non-fair tryLock.  tryAcquire is
+         * implemented in subclasses, but both need nonfair
+         * try for trylock method.
+         */
+	 //在非公平锁的尝试获取锁方法中，会调用nonfairTryAcquire
+	 //acquires为尝试获取次数，一般为1
+        final boolean nonfairTryAcquire(int acquires) {
+	   //获取当前线程
+            final Thread current = Thread.currentThread();
+            int c = getState();//获取锁状态
+            if (c == 0) {//如果没有线程持有锁
+                if (compareAndSetState(0, acquires)) {
+		    //尝试获取锁，如果获取成功，则设置锁的持有者，为当前线程，返回ture
+                    setExclusiveOwnerThread(current);
+                    return true;
+                }
+            }
+            else if (current == getExclusiveOwnerThread()) {
+	        //如果锁被线程持有，判断持有者是不是当前线程；
+		//如果当前线程是锁的持有者，则锁被当前线程持有的次数+获取次数acquires
+                int nextc = c + acquires;
+                if (nextc < 0) // overflow
+		    //如果锁被线程连续持有次数，小于0，则超出，一个线程可以连续持有锁的最大次数
+		    //抛出异常
+                    throw new Error("Maximum lock count exceeded");
+		 //否则，设置锁状态，返回true
+                setState(nextc);
+                return true;
+            }
+	    //锁被持有，且持有者非当前线程，返回false，获取锁失败。
+            return false;
+        }
+比较非公平锁的尝试获取锁nonfairTryAcquire与公平锁TryAcquire的区别在与
+非公平尝试获取锁时，如果锁为打开状态，则锁住锁；而公平锁，则先看有没有前驱节点
+，有前驱，则不能锁住锁，没有则可锁住。
+我们再对比一下公平锁和非公平锁的lock方法
+
+   static final class FairSync extends Sync {
+        private static final long serialVersionUID = -3000897897090466540L;
+
+        final void lock() {
+	   //这个过程，前面说过
+	   //如果获取锁失败，则添加独占模式节点，
+	   到队列中，自旋，队列头部节点尝试获取锁，如果获取成功，设置当前节点为头节点；
+	如果尝试获取失败，检查是否可以中断当前线程，如果可以，则中断当前线程。
+            acquire(1);
+        }
+}
+  static final class NonfairSync extends Sync {
+        private static final long serialVersionUID = 7316153563782823691L;
+
+        /**
+         * Performs lock.  Try immediate barge, backing up to normal
+         * acquire on failure.
+         */
+        final void lock() {
+	   //先以CAS方式获取锁，如果获取成功，设置当前线程为锁，持有者
+            if (compareAndSetState(0, 1))
+                setExclusiveOwnerThread(Thread.currentThread());
+            else
+                acquire(1);
+        }
+从上面可以看出，非公平锁与公平锁lock的时候，最大的不同是非公平锁，
+先以CAS的方式锁住锁，在进行acquire操作，而公平锁，直接acquire操作。
+
+再来看可重入锁的其他方法
+//ReentrantLock
+  /**
+     * Acquires the lock.
+     *
+     * <p>Acquires the lock if it is not held by another thread and returns
+     * immediately, setting the lock hold count to one.
+     * 如果锁没有被其他线程锁持有，则立即返回，锁持有锁为1
+     * <p>If the current thread already holds the lock then the hold
+     * count is incremented by one and the method returns immediately.
+     *如果当前线程已经持有锁，则所持有锁自增1
+     * <p>If the lock is held by another thread then the
+     * current thread becomes disabled for thread scheduling
+     * purposes and lies dormant until the lock has been acquired,
+     * at which time the lock hold count is set to one.
+     */
+     如果锁被其他线程所持有，则当前线程自旋，知道获取锁
+ public void lock() {
+        //委托给同步器
+        sync.lock();
+    }
+     /**
+     * Acquires the lock only if it is not held by another thread at the time
+     * of invocation.
+     * 如果锁没有被其他线程所持有，则获取锁成功
+     * <p>Acquires the lock if it is not held by another thread and
+     * returns immediately with the value {@code true}, setting the
+     * lock hold count to one. Even when this lock has been set to use a
+     * fair ordering policy, a call to {@code tryLock()} <em>will</em>
+     * immediately acquire the lock if it is available, whether or not
+     * other threads are currently waiting for the lock.
+     * This &quot;barging&quot; behavior can be useful in certain
+     * circumstances, even though it breaks fairness. If you want to honor
+     * the fairness setting for this lock, then use
+     * {@link #tryLock(long, TimeUnit) tryLock(0, TimeUnit.SECONDS) }
+     * which is almost equivalent (it also detects interruption).
+     *如果锁没有被其他线程持有，则获取锁成功，立即返回true，锁持有数设为1.
+     当我们获取锁的策略为公平策略时，尝试获取锁时，如果锁可用，则获取成功，
+     无论其他线程和当前线程是否在等待锁。如果必须要保持公平可以用tryLock(long, TimeUnit)
+     方法。
+     * <p> If the current thread already holds this lock then the hold
+     * count is incremented by one and the method returns {@code true}.
+     *
+     * <p>If the lock is held by another thread then this method will return
+     * immediately with the value {@code false}.
+     *
+     * @return {@code true} if the lock was free and was acquired by the
+     *         current thread, or the lock was already held by the current
+     *         thread; and {@code false} otherwise
+     */
+//以非公平方式尝试获取锁
+     public boolean tryLock() {
+        return sync.nonfairTryAcquire(1);
+    }
+
+//以公平方式获取锁，其实公平方式，也不一定能保证绝对的公平，前面讲AQS说过
+public boolean tryLock(long timeout, TimeUnit unit)
+            throws InterruptedException {
+        return sync.tryAcquireNanos(1, unit.toNanos(timeout));
+    }
+
+/**
+     * Acquires the lock unless the current thread is
+     * {@linkplain Thread#interrupt interrupted}.
+     *以可中断方式获取锁，当线程获取锁失败，则中断，当线程中断状态被消除时，
+     可以尝试获取锁。
+     * <p>Acquires the lock if it is not held by another thread and returns
+     * immediately, setting the lock hold count to one.
+     * 如果锁没有被其他线程锁持有，则立即返回，锁持有锁为1
+     * <p>If the current thread already holds this lock then the hold count
+     * is incremented by one and the method returns immediately.
+     *如果当前线程已经持有锁，则所持有锁自增1
+     * <p>If the lock is held by another thread then the
+     * current thread becomes disabled for thread scheduling
+     * purposes and lies dormant until one of two things happens:
+     *
+     * <ul>
+     当锁被其他线程持有，则自旋，尝试获取锁，直到以下两种条件发生
+     *
+     * <li>The lock is acquired by the current thread; or
+     *  锁被当前线程获取
+     * <li>Some other thread {@linkplain Thread#interrupt interrupts} the
+     * current thread.
+     * 其他线程中断当前线程
+     * </ul>
+     *
+     * <p>If the lock is acquired by the current thread then the lock hold
+     * count is set to one.
+     *
+     * <p>If the current thread:
+     *
+     * <ul>
+     *
+     * <li>has its interrupted status set on entry to this method; or
+     *
+     * <li>is {@linkplain Thread#interrupt interrupted} while acquiring
+     * the lock,
+     *
+     * </ul>
+     *
+     * then {@link InterruptedException} is thrown and the current thread's
+     * interrupted status is cleared.
+     *
+     * <p>In this implementation, as this method is an explicit
+     * interruption point, preference is given to responding to the
+     * interrupt over normal or reentrant acquisition of the lock.
+     *
+     * @throws InterruptedException if the current thread is interrupted
+     */
+    public void lockInterruptibly() throws InterruptedException {
+        sync.acquireInterruptibly(1);
+    }
+//AQS
+
+/**
+     * Acquires in exclusive mode, aborting if interrupted.
+     * Implemented by first checking interrupt status, then invoking
+     * at least once {@link #tryAcquire}, returning on
+     * success.  Otherwise the thread is queued, possibly repeatedly
+     * blocking and unblocking, invoking {@link #tryAcquire}
+     * until success or the thread is interrupted.  This method can be
+     * used to implement method {@link Lock#lockInterruptibly}.
+     *
+      以独占模式获取锁，如线程被中断，则aborting。
+     * @param arg the acquire argument.  This value is conveyed to
+     *        {@link #tryAcquire} but is otherwise uninterpreted and
+     *        can represent anything you like.
+     * @throws InterruptedException if the current thread is interrupted
+     */
+    public final void acquireInterruptibly(int arg)
+            throws InterruptedException {
+        if (Thread.interrupted())
+	   //检查线程是否处于中断状态，是，则抛出中断异常
+            throw new InterruptedException();
+        if (!tryAcquire(arg))
+	    //如果尝试获取锁，失败，则
+            doAcquireInterruptibly(arg);
+    }
+    /**
+     * Acquires in exclusive interruptible mode.
+     * @param arg the acquire argument
+     */
+    private void doAcquireInterruptibly(int arg)
+        throws InterruptedException {
+	//添加独占模式节点，到同步等待队列
+        final Node node = addWaiter(Node.EXCLUSIVE);
+        boolean failed = true;
+        try {
+            for (;;) {
+	        //以自旋方式，这个过程与acquireQueued相似
+                final Node p = node.predecessor();
+                if (p == head && tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())
+                    throw new InterruptedException();
+            }
+        } finally {
+            if (failed)
+	       //如果失败，移除取消等待的线程节点。
+                cancelAcquire(node);
+        }
+    }
+
+自旋请求锁，如果可能的话挂起线程，直到得到锁；在这一过程中，如果获取失败，且可park当前线程，
+则park当前线程，再判断是否可以中断，可以则抛出中断异常。
+
+
+总结：
+可重入自旋锁，当线程持有锁，可以多次获取锁，但最多只有2^31-1次；获取失败时，添加到同步等待队列
+自旋，直到获取锁成功；ReentrantLock关联一个同步锁SYNC，内部的SYNC是基于AQS实现的。
+同步锁SYNC有两种实现，公平锁与非公平锁；ReentrantLock默认创建的是非公平锁。
+比较非公平锁的尝试获取锁nonfairTryAcquire与公平锁TryAcquire的区别在于，
+非公平尝试获取锁时，如果锁为打开状态，则锁住锁；而公平锁，则先看有没有前驱节点
+，有前驱，则不能锁住锁，没有则可锁住。
+从上面可以看出，非公平锁与公平锁lock的时候，最大的不同是非公平锁，
+先以CAS的方式锁住锁，在进行acquire操作，而公平锁，直接acquire操作。
+acquire操作主要过程为，自旋，检查节点的前驱节点是否为头节点，如果是，当前节点为同步队列的
+第一个节点，则尝试获取锁，如果成功，设置头结点为当前节点，否则判断尝试获取锁失败，是否应该park
+，如果需要park，则park当前线程，park后，检查是否可中断当前线程，如果可，则中断当前线程。

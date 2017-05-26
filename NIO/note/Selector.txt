@@ -1,0 +1,411 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+本身打算将ServerSocketChannel的具体实现的，看了ServerSocketChannelImp的方法中设计到选择器，
+所以我们先看一下选择器，再看ServerSocketChannelImp：
+package java.nio.channels;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.nio.channels.spi.SelectorProvider;
+import java.util.Set;
+
+
+/**
+ * A multiplexor of {@link SelectableChannel} objects.
+ *Selector是可选择通道的多路复用器
+ * <p> A selector may be created by invoking the {@link #open open} method of
+ * this class, which will use the system's default {@link
+ * java.nio.channels.spi.SelectorProvider </code>selector provider<code>} to
+ * create a new selector.  A selector may also be created by invoking the
+ * {@link java.nio.channels.spi.SelectorProvider#openSelector openSelector}
+ * method of a custom selector provider.  A selector remains open until it is
+ * closed via its {@link #close close} method.
+ *选择器通过系统默认的选择器open实现创建，或者SelectorProvider的#openSelector方法。
+ 在选择器没关闭之前，都处于打开状态
+ * <a name="ks">
+ *
+ * <p> A selectable channel's registration with a selector is represented by a
+ * {@link SelectionKey} object.  A selector maintains three sets of selection
+ * keys:
+ *可选择通道注册到选择器的token，我们用SelectionKey表示。选择器主要维护3个选择key集合。
+ * <ul>
+ *
+ *   <li><p> The <i>key set</i> contains the keys representing the current
+ *   channel registrations of this selector.  This set is returned by the
+ *   {@link #keys() keys} method. </p></li>
+ *key set集合表示当前注册到选择的通道对应的选择key。这个集合通过keys方法返回。
+ *   <li><p> The <i>selected-key set</i> is the set of keys such that each
+ *   key's channel was detected to be ready for at least one of the operations
+ *   identified in the key's interest set during a prior selection operation.
+ *   This set is returned by the {@link #selectedKeys() selectedKeys} method.
+ *   The selected-key set is always a subset of the key set. </p></li>
+ *selected-key set集合表示在一个选择操作后，注册到选择器的通道已经准备就绪的
+ 选择key集合。通过#selectedKeys方法返回，selected-key set集合总是key set的子集。
+ *   <li><p> The <i>cancelled-key</i> set is the set of keys that have been
+ *   cancelled but whose channels have not yet been deregistered.  This set is
+ *   not directly accessible.  The cancelled-key set is always a subset of the
+ *   key set. </p></li>
+ *cancelled-key集合，表示通道还没有反注册，但选择key已经取消的选择key。这个集合不能直接访问。
+cancelled-key集合总是key set的子集。
+ * </ul>
+ *
+ * <p> All three sets are empty in a newly-created selector.
+ *在选择器创建时，三个集合都为空。
+ * <p> A key is added to a selector's key set as a side effect of registering a
+ * channel via the channel's {@link SelectableChannel#register(Selector,int)
+ * register} method.  Cancelled keys are removed from the key set during
+ * selection operations.  The key set itself is not directly modifiable.
+ *key set只会通过选择通道的注册方法添加选择key到key集合中。已取消的key在选择操作中被移除。
+ key set集合自己直接修改。
+ * <p> A key is added to its selector's cancelled-key set when it is cancelled,
+ * whether by closing its channel or by invoking its {@link SelectionKey#cancel
+ * cancel} method.  Cancelling a key will cause its channel to be deregistered
+ * during the next selection operation, at which time the key will removed from
+ * all of the selector's key sets.
+ *无论是由于通道关闭，还是选择key取消，key被取消后，将会添加到选择器的取消key集合。
+ 取消一个key将会使通道在下一次选择操作中，从选择器反注册，同时取消key将会从选择器的key集合中移除。
+ * <a name="sks"><p> Keys are added to the selected-key set by selection
+ * operations.  A key may be removed directly from the selected-key set by
+ * invoking the set's {@link java.util.Set#remove(java.lang.Object) remove}
+ * method or by invoking the {@link java.util.Iterator#remove() remove} method
+ * of an {@link java.util.Iterator </code>iterator<code>} obtained from the
+ * set.  Keys are never removed from the selected-key set in any other way;
+ * they are not, in particular, removed as a side effect of selection
+ * operations.  Keys may not be added directly to the selected-key set. </p>
+ *选择操作将会把已经就绪的通道对应的选择key添加到 selected-key set 集合中。
+ 通过set的remove和迭代器的remove操作，将会从取消key集合中，移除选择key。
+ 除选择操作可以从key集合中移除key，其他的方式或方法不能从选择key中移除key。
+ key不能直接添加的可选择key集合。
+ *
+ * <a name="selop">
+ * <h4>Selection</h4>
+ *
+ * <p> During each selection operation, keys may be added to and removed from a
+ * selector's selected-key set and may be removed from its key and
+ * cancelled-key sets.  Selection is performed by the {@link #select()}, {@link
+ * #select(long)}, and {@link #selectNow()} methods, and involves three steps:
+ * </p>
+ *在每一个选择操作过程中，可能从可选择key集合中添加或者移除可以，可能从key集合或者key取消集合中
+ 移除一个key。选择器执行#select，select(long)和#selectNow方法，将会涉及3步：
+ * <ol>
+ *
+ *   <li><p> Each key in the cancelled-key set is removed from each key set of
+ *   which it is a member, and its channel is deregistered.  This step leaves
+ *   the cancelled-key set empty. </p></li>
+ * 1.将会清空取消key集合，与取消key相关的通道将会反注册。这一步取消key集合将为空。
+ *   <li><p> The underlying operating system is queried for an update as to the
+ *   readiness of each remaining channel to perform any of the operations
+ *   identified by its key's interest set as of the moment that the selection
+ *   operation began.  For a channel that is ready for at least one such
+ *   operation, one of the following two actions is performed: </p>
+ *2.在每一次选择操作开始，底层操作系统都将检查和更显通道已经准备就绪的操作事件。
+ 在通道准备好至少一个的操作事件下，将会执行以下两个动作：
+ *   <ol type=a>
+ *
+ *     <li><p> If the channel's key is not already in the selected-key set then
+ *     it is added to that set and its ready-operation set is modified to
+ *     identify exactly those operations for which the channel is now reported
+ *     to be ready.  Any readiness information previously recorded in the ready
+ *     set is discarded.  </p></li>
+ *2.1 如果通道相关的选择key不在可选择key集合中，则添加key到可选择key集合，并更新就绪的
+ 操作事件，先前的就绪事件集将会被遗弃。
+ *     <li><p> Otherwise the channel's key is already in the selected-key set,
+ *     so its ready-operation set is modified to identify any new operations
+ *     for which the channel is reported to be ready.  Any readiness
+ *     information previously recorded in the ready set is preserved; in other
+ *     words, the ready set returned by the underlying system is
+ *     bitwise-disjoined into the key's current ready set. </p></li>
+ *2.2 如果通道相关key已经在可选择key集合中，更新就绪操作集，并保留先前准备就绪的操作事件，
+ 换句话，底层操作系统的返回的bitwise-disjoined就绪集将会更新到当前就绪操作事件集。
+ *   </ol></li>
+ *
+ *   If all of the keys in the key set at the start of this step have empty
+ *   interest sets then neither the selected-key set nor any of the keys'
+ *   ready-operation sets will be updated.
+ *3.如果在这一步开始时，key集合中的所有key的兴趣操作事件为空，可选择key集合或其他任何key的
+ 就绪操作事件集没有更新（这一步不太明白，想表示什么意思？，理解的网友给我留言，共同成长。
+ 这个要结合具体的选择方法的实现，这个在以后的文章中，再看）
+ *   <li><p> If any keys were added to the cancelled-key set while step (2) was
+ *   in progress then they are processed as in step (1). </p></li>
+ *在第二步的过程中，key被添加到取消key集合，将会返回第一步移除取消key
+ * </ol>
+ *
+ * <p> Whether or not a selection operation blocks to wait for one or more
+ * channels to become ready, and if so for how long, is the only essential
+ * difference between the three selection methods. </p>
+ *无论一个选择操作在阻塞等待一个或多个通道准备就绪，到目前为止等待多久，
+ 三个选方法基本上不同。
+ *
+ * <h4>Concurrency</h4>
+ *并发性
+ * <p> Selectors are themselves safe for use by multiple concurrent threads;
+ * their key sets, however, are not.
+ *选择器是线程安全的，而他的几个key集合不是线程安全的
+ * <p> The selection operations synchronize on the selector itself, on the key
+ * set, and on the selected-key set, in that order.  They also synchronize on
+ * the cancelled-key set during steps (1) and (3) above.
+ *选择操作同步选择器，key集合，可选择key集合，同时在第一步和第三步中同步取消key集合。
+ * <p> Changes made to the interest sets of a selector's keys while a
+ * selection operation is in progress have no effect upon that operation; they
+ * will be seen by the next selection operation.
+ *当一个选择key的兴趣操作事件集在选择操作的过程中改变时，对当前选择操作没有影响，
+ 当下一次选择操作中，才能被看到。
+ * <p> Keys may be cancelled and channels may be closed at any time.  Hence the
+ * presence of a key in one or more of a selector's key sets does not imply
+ * that the key is valid or that its channel is open.  Application code should
+ * be careful to synchronize and check these conditions as necessary if there
+ * is any possibility that another thread will cancel a key or close a channel.
+ *在任何时候，通道都有可能关闭，key都有可能取消。一个key存在与选择器的key集合中，
+ 不意味着key有效或key关联的通道打开。如果其他线程有可能取消key或关闭通道，
+ 应用必须小心这些同步，并检查需要的条件。
+ * <p> A thread blocked in one of the {@link #select()} or {@link
+ * #select(long)} methods may be interrupted by some other thread in one of
+ * three ways:
+ *一个线程阻塞在选择操作中，可以被其他线程以一下三种方式中断：
+ * <ul>
+ *
+ *   <li><p> By invoking the selector's {@link #wakeup wakeup} method,
+ *   </p></li>
+ *选择器调用#wakeup方法
+ *   <li><p> By invoking the selector's {@link #close close} method, or
+ *   </p></li>
+ *选择器调用#close方法
+ *   <li><p> By invoking the blocked thread's {@link
+ *   java.lang.Thread#interrupt() interrupt} method, in which case its
+ *   interrupt status will be set and the selector's {@link #wakeup wakeup}
+ *   method will be invoked. </p></li>
+ *调用阻塞线程的中断方法Thread#interrupt，线程中断位被设置，选择器的#wakeup方法将会
+ 被调用。
+ * </ul>
+ *
+ * <p> The {@link #close close} method synchronizes on the selector and all
+ * three key sets in the same order as in a selection operation.
+ *关闭方法将会同步到选择操作中的选择器和关联的3个key集合。
+ * <a name="ksc">
+ *
+ * <p> A selector's key and selected-key sets are not, in general, safe for use
+ * by multiple concurrent threads.  If such a thread might modify one of these
+ * sets directly then access should be controlled by synchronizing on the set
+ * itself.  The iterators returned by these sets' {@link
+ * java.util.Set#iterator() iterator} methods are <i>fail-fast:</i> If the set
+ * is modified after the iterator is created, in any way except by invoking the
+ * iterator's own {@link java.util.Iterator#remove() remove} method, then a
+ * {@link java.util.ConcurrentModificationException} will be thrown. </p>
+ * key集合和可选择key集合，一般情况下多线程访问时不是线程安全的。如果线程想要直接修改
+ 相关集合应该控制集合同步。在迭代器创建时，如果集合被修改，Set#iterator将会fail-fast。
+ 任何调用迭代器的Iterator#remove方法，都将抛出ConcurrentModificationException。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ *
+ * @see SelectableChannel
+ * @see SelectionKey
+ */
+
+public abstract class Selector implements Closeable {
+
+    /**
+     * Initializes a new instance of this class.
+     */
+    protected Selector() { }
+
+    /**
+     * Opens a selector.
+     *用系统默认的SelectorProvider实例打开一个选择器
+     * <p> The new selector is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openSelector openSelector} method
+     * of the system-wide default {@link
+     * java.nio.channels.spi.SelectorProvider} object.  </p>
+     *
+     * @return  A new selector
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public static Selector open() throws IOException {
+        return SelectorProvider.provider().openSelector();
+    }
+
+    /**
+     * Tells whether or not this selector is open.  </p>
+     *判断选择器是否打开
+     * @return <tt>true</tt> if, and only if, this selector is open
+     */
+    public abstract boolean isOpen();
+
+    /**
+     * Returns the provider that created this channel.  </p>
+     *返回创建选择器的选取器服务提供者。
+     * @return  The provider that created this channel
+     */
+    public abstract SelectorProvider provider();
+
+    /**
+     * Returns this selector's key set.
+     *返回选择器的选择key集合
+     * <p> The key set is not directly modifiable.  A key is removed only after
+     * it has been cancelled and its channel has been deregistered.  Any
+     * attempt to modify the key set will cause an {@link
+     * UnsupportedOperationException} to be thrown.
+     *选择key集合不能直接地修改。在通道反注册或选择key取消时，相关的选择key将会
+     从选择key集合中移除。任何尝试修改选择key集合的操作，将抛出UnsupportedOperationException
+     * <p> The key set is <a href="#ksc">not thread-safe</a>. </p>
+     *
+     * @return  This selector's key set
+     *
+     * @throws  ClosedSelectorException 通道已关闭，则抛出ClosedSelectorException
+     *          If this selector is closed
+     */
+    public abstract Set<SelectionKey> keys();
+
+    /**
+     * Returns this selector's selected-key set.
+     *返回选择器的已选择的key集合，及操作事件已经就绪的key集合
+     * <p> Keys may be removed from, but not directly added to, the
+     * selected-key set.  Any attempt to add an object to the key set will
+     * cause an {@link UnsupportedOperationException} to be thrown.
+     *选择key不可以直接添加到已选择的key集合，但可以移除。
+     任何尝试添加选择key到key集合的操作，将抛出UnsupportedOperationException
+     * <p> The selected-key set is <a href="#ksc">not thread-safe</a>. </p>
+     *
+     * @return  This selector's selected-key set
+     *
+     * @throws  ClosedSelectorException
+     *          If this selector is closed
+     */
+    public abstract Set<SelectionKey> selectedKeys();
+
+    /**
+     * Selects a set of keys whose corresponding channels are ready for I/O
+     * operations.
+     *选择一个关联通道已经准备好ＩＯ操作的选择key数量。
+     * <p> This method performs a non-blocking <a href="#selop">selection
+     * operation</a>.  If no channels have become selectable since the previous
+     * selection operation then this method immediately returns zero.
+     *这个方法以非阻塞模式执行。由于先前已经进行选择操作，没有通道可选择，此方法，
+     将立即返回为0.
+     * <p> Invoking this method clears the effect of any previous invocations
+     * of the {@link #wakeup wakeup} method.  </p>
+     *调用此方法，将清除wakeup方法的效果。
+     * @return  The number of keys, possibly zero, whose ready-operation sets
+     *          were updated by the selection operation
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @throws  ClosedSelectorException
+     *          If this selector is closed
+     */
+    public abstract int selectNow() throws IOException;
+
+    /**
+     * Selects a set of keys whose corresponding channels are ready for I/O
+     * operations.
+     *选择一个关联通道已经准备好ＩＯ操作的选择key数量。
+     * <p> This method performs a blocking <a href="#selop">selection
+     * operation</a>.  It returns only after at least one channel is selected,
+     * this selector's {@link #wakeup wakeup} method is invoked, the current
+     * thread is interrupted, or the given timeout period expires, whichever
+     * comes first.
+     *这个方法以非阻塞模式执行。在至少有一个通道可选择，选择器wakeup方法被调用，
+     当前线程被中断，或超时，无论这几种情况，那一个先发生，都将直接返回。
+     * <p> This method does not offer real-time guarantees: It schedules the
+     * timeout as if by invoking the {@link Object#wait(long)} method. </p>
+     *此方法不能保证事实的保证，因为通过Object#wait(long)去调度超时时间。
+     * @param  timeout  If positive, block for up to <tt>timeout</tt>
+     *                  milliseconds, more or less, while waiting for a
+     *                  channel to become ready; if zero, block indefinitely;
+     *                  must not be negative
+     *
+     * @return  The number of keys, possibly zero,
+     *          whose ready-operation sets were updated
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @throws  ClosedSelectorException
+     *          If this selector is closed
+     *
+     * @throws  IllegalArgumentException
+     *          If the value of the timeout argument is negative
+     */
+    public abstract int select(long timeout)
+        throws IOException;
+
+    /**
+     * Selects a set of keys whose corresponding channels are ready for I/O
+     * operations.
+     *选择一个关联通道已经准备好ＩＯ操作的选择key数量。
+     * <p> This method performs a blocking <a href="#selop">selection
+     * operation</a>.  It returns only after at least one channel is selected,
+     * this selector's {@link #wakeup wakeup} method is invoked, or the current
+     * thread is interrupted, whichever comes first.  </p>
+     *这个方法以阻塞模式执行。在至少有一个通道可选择，选择器wakeup方法被调用，
+     当前线程被中断，无论这几种情况，那一个先发生，都将直接返回。
+     * @return  The number of keys, possibly zero,
+     *          whose ready-operation sets were updated
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @throws  ClosedSelectorException
+     *          If this selector is closed
+     */
+    public abstract int select() throws IOException;
+
+    /**
+     * Causes the first selection operation that has not yet returned to return
+     * immediately.
+     *唤醒一个等待选取key可用的线程。
+     * <p> If another thread is currently blocked in an invocation of the
+     * {@link #select()} or {@link #select(long)} methods then that invocation
+     * will return immediately.  If no selection operation is currently in
+     * progress then the next invocation of one of these methods will return
+     * immediately unless the {@link #selectNow()} method is invoked in the
+     * meantime.  In any case the value returned by that invocation may be
+     * non-zero.  Subsequent invocations of the {@link #select()} or {@link
+     * #select(long)} methods will block as usual unless this method is invoked
+     * again in the meantime.
+     *如果其他线程当前正在阻塞或超时等待选择操作，wakeup方法调用，将唤醒上述线程。
+     如果当前没有选择操作在进程中，下一个调用选择操作相关方法将立即返回，除非#selectNow
+     方法在同时调用，#selectNow是非阻塞的。在wakeup之后，任何调用select操作的都将返回非0。
+    #select和select(long)将会向平常一样阻塞，除非wakeup方法同时被调用。
+     * <p> Invoking this method more than once between two successive selection
+     * operations has the same effect as invoking it just once.  </p>
+     *在多次选择操作中，wakeup只起效一次。
+     * @return  This selector
+     */
+    public abstract Selector wakeup();
+
+    /**
+     * Closes this selector.
+     *关闭选择器
+     * <p> If a thread is currently blocked in one of this selector's selection
+     * methods then it is interrupted as if by invoking the selector's {@link
+     * #wakeup wakeup} method.
+     *如果当前线程阻塞在选择器的选择操作上，调用选择器的wakeup方法，将会消除中断位。
+     * <p> Any uncancelled keys still associated with this selector are
+     * invalidated, their channels are deregistered, and any other resources
+     * associated with this selector are released.
+     *所有与选择器相关联的通道的选择key将会无效，通道将被反注册，与选择器关联的
+     任何资源都将会被释放
+     * <p> If this selector is already closed then invoking this method has no
+     * effect.
+     *如果选择器已关闭，再次调用无效
+     * <p> After a selector is closed, any further attempt to use it, except by
+     * invoking this method or the {@link #wakeup wakeup} method, will cause a
+     * {@link ClosedSelectorException} to be thrown. </p>
+     *在选择器关闭后，任何尝试wakeup方法调用的，将抛出ClosedSelectorException
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public abstract void close() throws IOException;
+
+}

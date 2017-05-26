@@ -1,0 +1,4 @@
+ C3P0 ComboPooledDataSource初始化：[url]http://donald-draper.iteye.com/admin/blogs/2343522[/url]
+ C3P0 DriverManagerDataSource初始化:[url]http://donald-draper.iteye.com/admin/blogs/2343564[/url]
+ WrapperConnectionPoolDataSource初始化:http://donald-draper.iteye.com/admin/blogs/2345008
+ C3P0属性设置和数据库连接池的获取：http://donald-draper.iteye.com/admin/blogs/2345084

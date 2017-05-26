@@ -1,0 +1,866 @@
+文件通道解析一（读写操作，通道数据传输等）:http://donald-draper.iteye.com/blog/2374603
+引言：
+上一篇文章看了文件通道，读写操作，通道数据传输操作，先来回顾一下：
+文件通道的构造，主要是初始化通道读写模式，追加模式append及文件分发器，FileDispatcherImpl。
+    文件通道的读写操作的实际操作都是由IOUtil协助FileDispatcherImpl完成，这一点和SocketChannel通道读写思路基本相同。
+    文件通道传输方法transferTo，首先确保当前文件通道是否打开，是否可读，然后检查目的通道是否关闭，是否可写；然后先调用文件通道本地方法传输通道的数据到目的通道，如果失败，则将文件通道数据，映射到内存MappedByteBuffer，然后调用目的通道的写操作（MappedByteBuffer），如果再失败，则将通道数据，写到DirectByteBuffer中，然后在调用目的通道的写操作（DirectByteBuffer）。
+     文件通道传输方法transferFrom，确保当前通道可写，打开，源通道可读打开，如果源通道为文件通道，将源通道数据映射的内存MappedByteBuffer，然后由IOUtil协助FileDispatcherImpl，将MappedByteBuffer
+写入当前通道，如果源通道非文件通道，则先调用源通道的读操作，从源通道读取数据，写到临时DirectByteBuffer，委托write，写DirectByteBuffer到当前通道，即由IOUtil协助FileDispatcherImpl，将DirectByteBuffer写入当前通道。
+在往下看之前我们先把文件通道的相关filed贴出，以便我们理解:
+public class FileChannelImpl extends FileChannel
+{
+ private static final long allocationGranularity = initIDs();
+    private final FileDispatcher nd;//文件分发器
+    private final FileDescriptor fd;//文件描述
+    private final boolean writable;//通道是否可写
+    private final boolean readable;//通道是否可读
+    private final boolean append;//通道写是否为追加模式
+    private final Object parent;//创建通道的对象
+    //下面这些属性，暂时不能确定是具体什么意思，只能先从字面上去理解，
+    //这里我们先放在这里，后面用到在讲
+    private final NativeThreadSet threads = new NativeThreadSet(2);
+    private final Object positionLock = new Object();//文件读写是位置锁
+    private static volatile boolean transferSupported = true;//是否支持通道传输
+    private static volatile boolean pipeSupported = true;//是否支持管道
+    private static volatile boolean fileSupported = true;//是否支持文件
+    private static final long MAPPED_TRANSFER_SIZE = 8388608L;/
+    private static final int TRANSFER_SIZE = 8192;
+    private static final int MAP_RO = 0;
+    private static final int MAP_RW = 1;
+    private static final int MAP_PV = 2;
+    private volatile FileLockTable fileLockTable;//存放文件锁的Table
+    private static boolean isSharedFileLockTable;//文件锁table是否为共享
+    private static volatile boolean propertyChecked;
+    static final boolean $assertionsDisabled = !sun/nio/ch/FileChannelImpl.desiredAssertionStatus();
+
+    static 
+    {
+        //加载nio，net资源库
+        Util.load();
+    }
+     private static native long initIDs();
+ }
+现在我们来文件的lock和trylock方法
+再来看锁文件region方法：
+ public FileLock lock(long l, long l1, boolean flag)
+        throws IOException
+    {
+        FileLockImpl filelockimpl;
+        FileLockTable filelocktable;
+        boolean flag1;
+        int i;
+        ensureOpen();
+        if(flag && !readable)//如果写模式，锁不能为共享模式
+            throw new NonReadableChannelException();
+        if(!flag && !writable)//如果为读模，则锁必须共享模式
+            throw new NonWritableChannelException();
+	//创建文件锁
+        filelockimpl = new FileLockImpl(this, l, l1, flag);
+	//获取文件通道的文件锁table
+        filelocktable = fileLockTable();
+	//将文件锁，加入通道文件锁table中
+        filelocktable.add(filelockimpl);
+        flag1 = false;
+        i = -1;
+        FileLock filelock;
+        begin();
+        ...
+        int j;
+       //不断的尝试加锁，直到成功
+        do
+	    //尝试锁文件region
+            j = nd.lock(fd, true, l, l1, flag);
+        while(j == 2 && isOpen());
+        if(isOpen())
+        {
+            if(j == 1)
+            {
+                if(!$assertionsDisabled && !flag)
+                    throw new AssertionError();
+		//创建新的文件锁
+                FileLockImpl filelockimpl1 = new FileLockImpl(this, l, l1, false);
+		//替换filelocktable旧的文件锁
+                filelocktable.replace(filelockimpl, filelockimpl1);
+                filelockimpl = filelockimpl1;
+            }
+            flag1 = true;
+        }
+	如果锁文件region失败，则从filelocktable移除
+        if(!flag1)
+            filelocktable.remove(filelockimpl);
+        threads.remove(i);
+        try
+        {
+            end(flag1);
+        }
+        catch(ClosedByInterruptException closedbyinterruptexception)
+        {
+            throw new FileLockInterruptionException();
+        }
+        ...
+        return filelockimpl;
+    }
+ 
+//尝试加锁
+public FileLock tryLock(long l, long l1, boolean flag)
+        throws IOException
+    {
+        FileLockImpl filelockimpl;
+        FileLockTable filelocktable;
+        int j;
+        ensureOpen();
+        if(flag && !readable)//如果写模式，锁不能为共享模式
+            throw new NonReadableChannelException();
+        if(!flag && !writable)//如果为读模，则锁必须共享模式
+            throw new NonWritableChannelException();
+	 //创建文件锁
+        filelockimpl = new FileLockImpl(this, l, l1, flag);
+        filelocktable = fileLockTable();//获取文件通道的文件锁table
+        filelocktable.add(filelockimpl);//将文件锁，加入通道文件锁table中
+        j = threads.add();
+        int i;
+        Object obj;
+        try
+        {
+            ensureOpen();
+	    //尝试锁文件region
+            i = nd.lock(fd, false, l, l1, flag);
+        }
+        catch(IOException ioexception)
+        {
+            filelocktable.remove(filelockimpl);
+            throw ioexception;
+        }
+        ...
+	//创建新的文件锁
+        obj = new FileLockImpl(this, l, l1, false);
+	//替换filelocktable旧的文件锁
+        filelocktable.replace(filelockimpl, ((FileLock) (obj)));
+        filelockimpl1 = ((FileLockImpl) (obj));
+        threads.remove(j);
+        return filelockimpl1;
+        ...
+    }
+从lock方法和try方法来看，首先检查共享模式参数shared与当前通道的读写模式是否匹配，然后
+更具postion，size和shared信息构造文件锁FileLockImpl，添加到通道文件锁表filelocktable中，
+再通过文件分发器FileDispatcherImpl锁文件region，如果成功，则创建新的文件锁替换旧的文件锁。
+如果lock失败，则从通道文件锁表filelocktable移除先前添加的文件锁。
+这里为什么要先创建文件锁添加到通道文件锁表filelocktable中，可能是为了先抢占通道文件锁表的位置，
+再去通FileDispatcherImpl锁文件region，成功则创建新的文件锁替换旧的文件锁。lock方法和trylock方法不同的
+是在FileDispatcherImpl锁文件region这个过程，lock为循环文件region，直到成功，而trylock方法，只锁一次，
+成功则则创建新的文件锁替换旧的文件锁，失败则从通道文件锁表filelocktable移除先前添加的文件锁，返回。
+
+lock方法和trylock方法我们几点要关注：
+1.
+ //创建文件锁
+filelockimpl = new FileLockImpl(this, l, l1, flag);
+2.
+filelocktable = fileLockTable();//获取文件通道的文件锁table
+3.
+j = nd.lock(fd, true, l, l1, flag);
+下面分别来看这几点：
+1.
+ //创建文件锁
+filelockimpl = new FileLockImpl(this, l, l1, flag);
+//FileLockImpl
+public class FileLockImpl extends FileLock
+{
+    private volatile boolean valid;//有效性标志
+    static final boolean $assertionsDisabled = !sun/nio/ch/FileLockImpl.desiredAssertionStatus();
+    //构造
+    FileLockImpl(FileChannel filechannel, long l, long l1, boolean flag)
+    {
+        super(filechannel, l, l1, flag);
+        valid = true;//初始化有效
+    }
+
+    FileLockImpl(AsynchronousFileChannel asynchronousfilechannel, long l, long l1, boolean flag)
+    {
+        super(asynchronousfilechannel, l, l1, flag);
+        valid = true;
+    }
+    //判断文件锁是否有效
+    public boolean isValid()
+    {
+        return valid;
+    }
+    //使文件锁无效
+    void invalidate()
+    {
+        //如果断言开启，断言线程是否持有锁
+        if(!$assertionsDisabled && !Thread.holdsLock(this))
+        {
+            throw new AssertionError();
+        } else
+        {
+            valid = false;
+            return;
+        }
+    }
+    //释放文件锁
+    public synchronized void release()
+        throws IOException
+    {
+       //获取锁关联的通道
+        Channel channel = acquiredBy();
+        if(!channel.isOpen())//通道关闭
+            throw new ClosedChannelException();
+        if(valid)//在通道有效的情况下
+        {
+            if(channel instanceof FileChannelImpl)
+	        //将实际工作委托相应的通道
+                ((FileChannelImpl)channel).release(this);
+            else
+            if(channel instanceof AsynchronousFileChannelImpl)
+                ((AsynchronousFileChannelImpl)channel).release(this);
+            else
+                throw new AssertionError();
+            valid = false;
+        }
+    }
+}
+//FileLock
+public abstract class FileLock implements AutoCloseable {
+    private final Channel channel;//锁关联通道
+    private final long position;//文件锁region的起始位置
+    private final long size;//region大小
+    private final boolean shared;//是否为共享模式
+    //构造文件锁
+    protected FileLock(FileChannel channel,
+                       long position, long size, boolean shared)
+    {
+        if (position < 0)
+            throw new IllegalArgumentException("Negative position");
+        if (size < 0)
+            throw new IllegalArgumentException("Negative size");
+        if (position + size < 0)
+            throw new IllegalArgumentException("Negative position + size");
+        this.channel = channel;
+        this.position = position;
+        this.size = size;
+        this.shared = shared;
+    }
+   /**
+     * Returns the file channel upon whose file this lock was acquired.
+     *返回用有本文件锁的通道
+     * <p> This method has been superseded by the {@link #acquiredBy acquiredBy}
+     * method.
+     *
+     * @return  The file channel, or {@code null} if the file lock was not
+     *          acquired by a file channel.
+     */
+    public final FileChannel channel() {
+        return (channel instanceof FileChannel) ? (FileChannel)channel : null;
+    }
+     /**
+     * Returns the channel upon whose file this lock was acquired.
+     *//获取锁关联通道
+     * @return  The channel upon whose file this lock was acquired.
+     *
+     * @since 1.7
+     */
+    public Channel acquiredBy() {
+        return channel;
+    }
+    /**
+     * Returns the position within the file of the first byte of the locked
+     * region.
+     *获取锁文件region的起始position
+     * <p> A locked region need not be contained within, or even overlap, the
+     * actual underlying file, so the value returned by this method may exceed
+     * the file's current size.  </p>
+     *
+     * @return  The position
+     */
+    public final long position() {
+        return position;
+    }
+
+    /**
+     * Returns the size of the locked region in bytes.
+     *获取锁文件region的size
+     * <p> A locked region need not be contained within, or even overlap, the
+     * actual underlying file, so the value returned by this method may exceed
+     * the file's current size.  </p>
+     *
+     * @return  The size of the locked region
+     */
+    public final long size() {
+        return size;
+    }
+
+    /**
+     * Tells whether this lock is shared.  </p>
+     *判断锁是否为共享模式
+     * @return <tt>true</tt> if lock is shared,
+     *         <tt>false</tt> if it is exclusive
+     */
+    public final boolean isShared() {
+        return shared;
+    }
+
+    /**
+     * Tells whether or not this lock overlaps the given lock range.  </p>
+     *//判断加锁的文件region是否重叠
+     * @return  <tt>true</tt> if, and only if, this lock and the given lock
+     *          range overlap by at least one byte
+     */
+    public final boolean overlaps(long position, long size) {
+        if (position + size <= this.position)
+            return false;               // That is below this
+        if (this.position + this.size <= position)
+            return false;               // This is below that
+        return true;
+    }
+
+    /**
+     * Tells whether or not this lock is valid.
+     *判断锁是否有效
+     * <p> A lock object remains valid until it is released or the associated
+     * file channel is closed, whichever comes first.  </p>
+     *
+     * @return  <tt>true</tt> if, and only if, this lock is valid
+     */
+    public abstract boolean isValid();
+
+    /**
+     * Releases this lock.
+     *
+     * <p> If this lock object is valid then invoking this method releases the
+     * lock and renders the object invalid.  If this lock object is invalid
+     * then invoking this method has no effect.  </p>
+     *释放锁
+     * @throws  ClosedChannelException
+     *          If the channel that was used to acquire this lock
+     *          is no longer open
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public abstract void release() throws IOException;
+
+    /**
+     * This method invokes the {@link #release} method. It was added
+     * to the class so that it could be used in conjunction with the
+     * automatic resource management block construct.
+     *关闭文件锁
+     * @since 1.7
+     */
+    public final void close() throws IOException {
+        release();
+    }
+}
+2.
+filelocktable = fileLockTable();//获取文件通道的文件锁table
+
+//获取文件通道的文件锁table
+private FileLockTable fileLockTable()
+        throws IOException
+    {
+        if(fileLockTable != null)
+            break MISSING_BLOCK_LABEL_96;
+        FileChannelImpl filechannelimpl = this;
+        JVM INSTR monitorenter ;
+        int i;
+        if(fileLockTable != null)
+            break MISSING_BLOCK_LABEL_84;
+        if(!isSharedFileLockTable())
+            break MISSING_BLOCK_LABEL_73;
+        i = threads.add();
+        ensureOpen();
+	//如果为共享模式
+        fileLockTable = FileLockTable.newSharedFileLockTable(this, fd);
+        threads.remove(i);
+        break MISSING_BLOCK_LABEL_84;
+        Exception exception;
+        exception;
+        threads.remove(i);
+        throw exception;
+	//否则
+        fileLockTable = new SimpleFileLockTable();
+        break MISSING_BLOCK_LABEL_96;
+        Exception exception1;
+        exception1;
+        throw exception1;
+        return fileLockTable;
+    }
+从上面可以看出如果为通道文件锁表为共享模式，则创建SharedFileLockTable，否则为
+SimpleFileLockTable；
+上述方法中break MISSING_BLOCK_LABEL_73类似的语句，这就由于反编译错误导致的，break即平时我们用的
+无label的break，及在for或while，switch语句中直接break;,break还有一种方式为break Label；即跳出循环到指定的Label：
+实例：
+testLable:
+for (obj : list){
+     if (flag) 
+        break testLable;
+}
+由于反编译插件无法识别这样的语句，所以出现break MISSING_BLOCK_LABEL_73类似的语句。
+
+Branching Statements-The break Statement：http://docs.oracle.com/javase/tutorial/java/nutsandbolts/branch.html
+Dealing with labels in decompiled code：http://stackoverflow.com/questions/6347930/dealing-with-labels-in-decompiled-code
+我们先看一下FileLockTable的定义
+abstract class FileLockTable
+{
+    protected FileLockTable()
+    {
+    }
+    //创建共享文件锁表
+    public static FileLockTable newSharedFileLockTable(Channel channel, FileDescriptor filedescriptor)
+        throws IOException
+    {
+        return new SharedFileLockTable(channel, filedescriptor);
+    }
+    public abstract void add(FileLock filelock)//添加
+        throws OverlappingFileLockException;
+    public abstract void remove(FileLock filelock);//移除
+    public abstract List removeAll();//移除所有
+    public abstract void replace(FileLock filelock, FileLock filelock1);//替换
+}
+再来看SimpleFileLockTable
+//FileChannelImpl-SimpleFileLockTable
+ private static class SimpleFileLockTable extends FileLockTable
+    {
+        private final List lockList = new ArrayList(2);//文件锁集合
+        static final boolean $assertionsDisabled = !sun/nio/ch/FileChannelImpl.desiredAssertionStatus();
+        public SimpleFileLockTable()
+        {
+        }
+	//添加文件锁
+	 public void add(FileLock filelock)
+            throws OverlappingFileLockException
+        {
+            synchronized(lockList)
+            {
+                checkList(filelock.position(), filelock.size());
+                lockList.add(filelock);
+            }
+        }
+	//查看添加的文件锁，是否与文件锁集合中，已经加锁的文件region重叠
+	private void checkList(long l, long l1)
+            throws OverlappingFileLockException
+        {
+	   //如果断言开启，当前线程不只有文件锁集合，则抛出AssertionError
+            if(!$assertionsDisabled && !Thread.holdsLock(lockList))
+                throw new AssertionError();
+            //遍历当前文件锁集合，查看添加的文件锁，是否与已经加锁的文件region重叠，
+	    //重叠则抛出OverlappingFileLockException
+            for(Iterator iterator = lockList.iterator(); iterator.hasNext();)
+            {
+                FileLock filelock = (FileLock)iterator.next();
+                if(filelock.overlaps(l, l1))
+                    throw new OverlappingFileLockException();
+            }
+
+        }
+        //移除文件锁
+        public void remove(FileLock filelock)
+        {
+            synchronized(lockList)
+            {
+                lockList.remove(filelock);
+            }
+        }
+       //移除所有文件锁
+        public List removeAll()
+        {
+            List list = lockList;
+            JVM INSTR monitorenter ;
+            ArrayList arraylist;
+            arraylist = new ArrayList(lockList);
+            lockList.clear();//直接clear文件锁集合
+            return arraylist;
+            Exception exception;
+            exception;
+            throw exception;
+        }
+       //替换文件锁，先移除filelock，后添加filelock1
+        public void replace(FileLock filelock, FileLock filelock1)
+        {
+            synchronized(lockList)
+            {
+                lockList.remove(filelock);
+                lockList.add(filelock1);
+            }
+        }
+    }
+再来看SharedFileLockTable
+ class SharedFileLockTable extends FileLockTable
+{
+    private static ConcurrentHashMap lockMap = new ConcurrentHashMap();//文件锁Map
+    private static ReferenceQueue queue = new ReferenceQueue();
+    private final Channel channel;//关联通道
+    private final FileKey fileKey;//文件锁key
+    static final boolean $assertionsDisabled = !sun/nio/ch/SharedFileLockTable.desiredAssertionStatus();
+    //文件锁引用
+    private static class FileLockReference extends WeakReference
+    {
+
+        FileKey fileKey()
+        {
+            return fileKey;
+        }
+
+        private FileKey fileKey;
+
+        FileLockReference(FileLock filelock, ReferenceQueue referencequeue, FileKey filekey)
+        {
+            super(filelock, referencequeue);
+            fileKey = filekey;
+        }
+    }
+
+    //构造共享文件锁table
+    SharedFileLockTable(Channel channel1, FileDescriptor filedescriptor)
+        throws IOException
+    {
+        channel = channel1;
+	//创建文件key
+        fileKey = FileKey.create(filedescriptor);
+    }
+    //添加文件锁
+    public void add(FileLock filelock)
+        throws OverlappingFileLockException
+    {
+       //从文件锁Map获取，文件key对应的锁集合
+        Object obj = (List)lockMap.get(fileKey);
+_L3:
+        List list;
+label0:
+        {
+            if(obj != null)
+                break MISSING_BLOCK_LABEL_95;
+	    //文件锁集合为null，则创建共享锁集合
+            obj = new ArrayList(2);
+            synchronized(obj)
+            {
+	        //将文件key与文件锁集合放入Map中
+                list = (List)lockMap.putIfAbsent(fileKey, obj);
+                if(list != null)
+                    break label0;
+		//将文件锁索引添加到锁集合中
+                ((List) (obj)).add(new FileLockReference(filelock, queue, fileKey));
+            }
+            break; /* Loop/switch isn't completed */
+        }
+        obj2;
+        JVM INSTR monitorexit ;
+          goto _L1
+        exception;
+        throw exception;
+_L1:
+        obj = list;
+        List list1;
+label1:
+        {
+            synchronized(obj)
+            {
+                list1 = (List)lockMap.get(fileKey);
+                if(obj != list1)
+                    break label1;
+                checkList(((List) (obj)), filelock.position(), filelock.size());
+                ((List) (obj)).add(new FileLockReference(filelock, queue, fileKey));
+            }
+            break; /* Loop/switch isn't completed */
+        }
+        obj = list1;
+        obj1;
+        JVM INSTR monitorexit ;
+        if(true) goto _L3; else goto _L2
+        exception1;
+        throw exception1;
+_L2:
+        removeStaleEntries();
+        return;
+    }
+    //如果文件key对应的，文件锁集合为空，则从map中移除文件key Entry
+    private void removeKeyIfEmpty(FileKey filekey, List list)
+    {
+        if(!$assertionsDisabled && !Thread.holdsLock(list))
+            throw new AssertionError();
+        if(!$assertionsDisabled && lockMap.get(filekey) != list)
+            throw new AssertionError();
+        if(list.isEmpty())
+            lockMap.remove(filekey);
+    }
+    //移除文件锁
+    public void remove(FileLock filelock)
+    {
+        if(!$assertionsDisabled && filelock == null)
+            throw new AssertionError();
+	//从锁Map中获取文件key对应的集合 
+        List list = (List)lockMap.get(fileKey);
+        if(list == null)
+            return;
+        synchronized(list)
+        {
+            int i = 0;
+            do
+            {
+                if(i >= list.size())
+                    break;
+		//获取文件锁引用
+                FileLockReference filelockreference = (FileLockReference)list.get(i);
+		//参文件锁引用获取文件锁
+                FileLock filelock1 = (FileLock)filelockreference.get();
+                if(filelock1 == filelock)
+                {
+                    if(!$assertionsDisabled && (filelock1 == null || filelock1.acquiredBy() != channel))
+                        throw new AssertionError();
+		    //找到，则清除引用，help GC
+                    filelockreference.clear();
+                    list.remove(i);//从文件锁集合中移除
+                    break;
+                }
+                i++;
+            } while(true);
+        }
+    }
+    //移除所有文件锁
+    public List removeAll()
+    {
+        ArrayList arraylist = new ArrayList();
+	//获取文件key的文件锁集合
+        List list = (List)lockMap.get(fileKey);
+        if(list != null)
+            synchronized(list)
+            {
+	        //遍历锁集合，将通读文件的文件锁添加到arraylist
+                for(int i = 0; i < list.size();)
+                {
+                    FileLockReference filelockreference = (FileLockReference)list.get(i);
+                    FileLock filelock = (FileLock)filelockreference.get();
+                    if(filelock != null && filelock.acquiredBy() == channel)
+                    {
+                        filelockreference.clear();
+                        list.remove(i);
+                        arraylist.add(filelock);
+                    } else
+                    {
+                        i++;
+                    }
+                }
+                //移除文件key的锁集合
+                removeKeyIfEmpty(fileKey, list);
+            }
+        return arraylist;
+    }
+    //替换文件锁
+    public void replace(FileLock filelock, FileLock filelock1)
+    {
+        //获取文件锁集合
+        List list = (List)lockMap.get(fileKey);
+        if(!$assertionsDisabled && list == null)
+            throw new AssertionError();
+        synchronized(list)
+        {
+            int i = 0;
+            do
+            {
+                if(i >= list.size())
+                    break;
+                FileLockReference filelockreference = (FileLockReference)list.get(i);
+                FileLock filelock2 = (FileLock)filelockreference.get();
+                if(filelock2 == filelock)
+                {
+		    //找到对应的文件锁，则清除引用，help gc
+                    filelockreference.clear();
+                    list.set(i, new FileLockReference(filelock1, queue, fileKey));//替换文件锁引用
+                    break;
+                }
+                i++;
+            } while(true);
+        }
+    }
+   //检查文件key的锁集中的文件锁，锁住文件的region是否重叠
+    private void checkList(List list, long l, long l1)
+        throws OverlappingFileLockException
+    {
+        if(!$assertionsDisabled && !Thread.holdsLock(list))
+            throw new AssertionError();
+        for(Iterator iterator = list.iterator(); iterator.hasNext();)
+        {
+            FileLockReference filelockreference = (FileLockReference)iterator.next();
+            FileLock filelock = (FileLock)filelockreference.get();
+            if(filelock != null && filelock.overlaps(l, l1))
+                throw new OverlappingFileLockException();
+        }
+
+    }
+    //清空文件锁Map
+    private void removeStaleEntries()
+    {
+        do
+        {
+            FileLockReference filelockreference;
+	    //从引用队列中取出文件锁引用
+            if((filelockreference = (FileLockReference)queue.poll()) == null)
+                break;
+            //从文件锁引用获取文件key
+            FileKey filekey = filelockreference.fileKey();
+	    //获取文件key对应的文件锁
+            List list = (List)lockMap.get(filekey);
+            if(list != null)
+                synchronized(list)
+                {
+                    list.remove(filelockreference);
+		    //移除文件key对应的文件锁集合
+                    removeKeyIfEmpty(filekey, list);
+                }
+        } while(true);
+    }
+}
+SharedFileLockTable用于存储文件共享锁，SimpleFileLockTable用于存储文件互质锁；
+两者最大的不同是SimpleFileLockTable用list去管理文件锁，而SharedFileLockTable
+用于ConcurrentHashMap管理文件锁。
+3.
+j = nd.lock(fd, true, l, l1, flag);
+//FileDispatcherImpl
+ int lock(FileDescriptor filedescriptor, boolean flag, long l, long l1, boolean flag1)
+        throws IOException
+    {
+        return lock0(filedescriptor, flag, l, l1, flag1);
+    }
+ static native int lock0(FileDescriptor filedescriptor, boolean flag, long l, long l1, boolean flag1)
+        throws IOException;
+来看释放文件锁
+ void release(FileLockImpl filelockimpl)
+        throws IOException
+    {
+        int i = threads.add();
+        ensureOpen();
+	//文件分发器先释放锁住的文件region
+        nd.release(fd, filelockimpl.position(), filelockimpl.size());
+        ...
+        if(!$assertionsDisabled && fileLockTable == null)
+        {
+            throw new AssertionError();
+        } else
+        {
+	    //从文件锁table中移除文件锁
+            fileLockTable.remove(filelockimpl);
+            return;
+        }
+    }
+来看这一句：
+//文件分发器先释放锁住的文件region
+nd.release(fd, filelockimpl.position(), filelockimpl.size());
+//FileDispatcherImpl
+void release(FileDescriptor filedescriptor, long l, long l1)
+        throws IOException
+    {
+        release0(filedescriptor, l, l1);
+    }
+  static native void release0(FileDescriptor filedescriptor, long l, long l1)
+        throws IOException
+//获取文件锁table共享模式
+ private static boolean isSharedFileLockTable()
+    {
+        if(!propertyChecked)
+            synchronized(sun/nio/ch/FileChannelImpl)
+            {
+                if(!propertyChecked)
+                {
+                    String s = (String)AccessController.doPrivileged(new GetPropertyAction("sun.nio.ch.disableSystemWideOverlappingFileLockCheck"));
+                    isSharedFileLockTable = s == null || s.equals("false");
+                    propertyChecked = true;
+                }
+            }
+        return isSharedFileLockTable;
+    }
+再来看关闭通道
+protected void implCloseChannel()
+        throws IOException
+    {
+        if(fileLockTable != null)
+        {
+	    //清空文件锁table
+            for(Iterator iterator = fileLockTable.removeAll().iterator(); iterator.hasNext();)
+            {
+                FileLock filelock = (FileLock)iterator.next();
+                synchronized(filelock)
+                {
+                    if(filelock.isValid())
+                    {
+		        //释放文件锁，锁住的文件region
+                        nd.release(fd, filelock.position(), filelock.size());
+                        ((FileLockImpl)filelock).invalidate();//使文件锁无效
+                    }
+                }
+            }
+
+        }
+	//预先关闭文件描述
+        nd.preClose(fd);
+        threads.signalAndWait();
+	//如果父对象不为null，则关闭父对象，否则关闭文件分发器
+        if(parent != null)
+            ((Closeable)parent).close();
+        else
+            nd.close(fd);
+    }
+//FileDispatcherImpl
+void close(FileDescriptor filedescriptor)
+        throws IOException
+    {
+        close0(filedescriptor);
+    }
+ static native void close0(FileDescriptor filedescriptor)
+        throws IOException;
+总结：
+lock方法和try方法，首先检查共享模式参数shared与当前通道的读写模式是否匹配，然后
+更具postion，size和shared信息构造文件锁FileLockImpl，添加到通道文件锁表filelocktable中，
+再通过文件分发器FileDispatcherImpl锁文件region，如果成功，则创建新的文件锁替换旧的文件锁。
+如果lock失败，则从通道文件锁表filelocktable移除先前添加的文件锁。
+这里为什么要先创建文件锁添加到通道文件锁表filelocktable中，可能是为了先抢占通道文件锁表的位置，
+再去通FileDispatcherImpl锁文件region，成功则创建新的文件锁替换旧的文件锁。lock方法和trylock方法不同的
+是在FileDispatcherImpl锁文件region这个过程，lock为循环文件region，直到成功，而trylock方法，只锁一次，
+成功则则创建新的文件锁替换旧的文件锁，失败则从通道文件锁表filelocktable移除先前添加的文件锁，返回。
+
+
+
+附：
+public class FileKey
+{
+    private static native void initIDs();
+    private long dwVolumeSerialNumber;
+    private long nFileIndexHigh;
+    private long nFileIndexLow;
+
+    static 
+    {
+        initIDs();
+    }
+    private FileKey()
+    {
+    }
+
+    public static FileKey create(FileDescriptor filedescriptor)
+    {
+        FileKey filekey = new FileKey();
+        try
+        {
+            filekey.init(filedescriptor);
+        }
+        catch(IOException ioexception)
+        {
+            throw new Error(ioexception);
+        }
+        return filekey;
+    }
+    private native void init(FileDescriptor filedescriptor)
+        throws IOException;
+    public int hashCode()
+    {
+        return (int)(dwVolumeSerialNumber ^ dwVolumeSerialNumber >>> 32) + (int)(nFileIndexHigh ^ nFileIndexHigh >>> 32) + (int)(nFileIndexLow ^ nFileIndexHigh >>> 32);
+    }
+
+    public boolean equals(Object obj)
+    {
+        if(obj == this)
+            return true;
+        if(!(obj instanceof FileKey))
+            return false;
+        FileKey filekey = (FileKey)obj;
+        return dwVolumeSerialNumber == filekey.dwVolumeSerialNumber && nFileIndexHigh == filekey.nFileIndexHigh && nFileIndexLow == filekey.nFileIndexLow;
+    }
+}

@@ -1,0 +1,412 @@
+WeakHashMap:http://mikewang.blog.51cto.com/3826268/880775/
+WeakReference ：http://blog.csdn.net/matrix_xu/article/details/8424038
+在上一篇ComboPooledDataSource的初始化时，父类AbstractComboPooledDataSource构造函数中有
+这么一句，今天来看一下DriverManagerDataSource。
+//新建驱动数据源管理器
+dmds = new DriverManagerDataSource();
+
+public final class DriverManagerDataSource extends DriverManagerDataSourceBase
+    implements DataSource
+{
+    static final MLogger logger;
+    Driver driver;//驱动
+    boolean driver_class_loaded;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+
+    static 
+    {
+        logger = MLog.getLogger(com/mchange/v2/c3p0/DriverManagerDataSource);
+        try
+        {
+	    //加载驱动管理器
+            Class.forName("java.sql.DriverManager");
+        }
+        catch(Exception e)
+        {
+            String msg = "Could not load the DriverManager class?!?";
+            if(logger.isLoggable(MLevel.SEVERE))
+                logger.log(MLevel.SEVERE, msg);
+            throw new InternalError(msg);
+        }
+    }
+    public DriverManagerDataSource()
+    {
+        this(true);
+    }
+    public DriverManagerDataSource(boolean autoregister)
+    {
+        //父类初始化
+        super(autoregister);
+        driver_class_loaded = false;
+	//设置属性监听器
+        setUpPropertyListeners();
+	//初始化用户名
+        String user = C3P0Config.initializeStringPropertyVar("user", null);
+	//初始化密码
+        String password = C3P0Config.initializeStringPropertyVar("password", null);
+        if(user != null)
+            setUser(user);
+        if(password != null)
+            setPassword(password);
+    }
+    //设置属性监听器
+     private void setUpPropertyListeners()
+    {
+        PropertyChangeListener driverClassListener = new PropertyChangeListener() {
+
+            public void propertyChange(PropertyChangeEvent evt)
+            {
+                if("driverClass".equals(evt.getPropertyName()))
+                    synchronized(DriverManagerDataSource.this)
+                    {
+		       
+                        setDriverClassLoaded(false);
+                        if(DriverManagerDataSource.this.this$0 != null && DriverManagerDataSource.this.this$0.trim().length() == 0)
+                            null.this$0 = evt;
+                    }
+            }
+
+            final DriverManagerDataSource this$0;
+
+            
+            {
+                this.this$0 = DriverManagerDataSource.this;
+                super();
+            }
+        };
+        addPropertyChangeListener(driverClassListener);
+    }
+
+    //设置驱动加载属性为dcl，如果dcl为false，则重置driver为null
+       private synchronized void setDriverClassLoaded(boolean dcl)
+    {
+        driver_class_loaded = dcl;
+        if(!driver_class_loaded)
+	    //清除驱动
+            clearDriver();
+    }
+      private synchronized void clearDriver()
+    {
+        driver = null;
+    }
+     private boolean isWrapperForThis(Class iface)
+    {
+        return iface.isAssignableFrom(getClass());
+    }
+
+    public boolean isWrapperFor(Class iface)
+        throws SQLException
+    {
+        return isWrapperForThis(iface);
+    }
+
+    public Object unwrap(Class iface)
+        throws SQLException
+    {
+        if(isWrapperForThis(iface))
+            return this;
+        else
+            throw new SQLException((new StringBuilder()).append(this).append(" is not a wrapper for or implementation of ").append(iface.getName()).toString());
+    }
+}
+从DriverManagerDataSource的构造函数可以看出，其初始化是，加载驱动管理器，添加属性监听器
+，驱动driver属性改变时，则重置drive为null，然后数据库用户名及密码。
+//DriverManagerDataSourceBase
+public abstract class DriverManagerDataSourceBase extends IdentityTokenResolvable
+    implements Referenceable, Serializable
+{
+    //属性ChangeSupport
+    protected PropertyChangeSupport pcs;
+    protected String description;
+    protected String driverClass;//驱动
+    protected String factoryClassLocation;
+    protected boolean forceUseNamedDriverClass;
+    private volatile String identityToken;//系统唯一token
+    protected String jdbcUrl;//url
+    protected Properties properties;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+    static final JavaBeanReferenceMaker referenceMaker;
+
+    static 
+    {
+        referenceMaker = new JavaBeanReferenceMaker();
+        referenceMaker.setFactoryClassName("com.mchange.v2.c3p0.impl.C3P0JavaBeanObjectFactory");
+        referenceMaker.addReferenceProperty("description");
+        referenceMaker.addReferenceProperty("driverClass");
+        referenceMaker.addReferenceProperty("factoryClassLocation");
+        referenceMaker.addReferenceProperty("forceUseNamedDriverClass");
+        referenceMaker.addReferenceProperty("identityToken");
+        referenceMaker.addReferenceProperty("jdbcUrl");
+        referenceMaker.addReferenceProperty("properties");
+    }
+     public DriverManagerDataSourceBase(boolean autoregister)
+    {
+        //创建PropertyChangeSupport
+        pcs = new PropertyChangeSupport(this);
+	//初始化驱动class
+        driverClass = C3P0Config.initializeStringPropertyVar("driverClass", C3P0Defaults.driverClass());
+        factoryClassLocation = C3P0Config.initializeStringPropertyVar("factoryClassLocation", C3P0Defaults.factoryClassLocation());
+        forceUseNamedDriverClass = C3P0Config.initializeBooleanPropertyVar("forceUseNamedDriverClass", C3P0Defaults.forceUseNamedDriverClass());
+        //初始化url
+	jdbcUrl = C3P0Config.initializeStringPropertyVar("jdbcUrl", C3P0Defaults.jdbcUrl());
+        properties = new AuthMaskingProperties();
+        if(autoregister)
+        {
+	    //分配系统唯一token
+            identityToken = C3P0ImplUtils.allocateIdentityToken(this);
+	    //注册到C3P0Registry
+            C3P0Registry.reregister(this);
+        }
+    }
+}
+从DriverManagerDataSourceBase的构造可以看出，主要工作是创建PropertyChangeSupport，
+初始化驱动，jdbcUrl，给DriverManagerDataSourceBase分配唯一token，并注册到C3P0Registry的
+token Map中。
+来看一下给对象分配系统唯一token
+//分配系统唯一token
+identityToken = C3P0ImplUtils.allocateIdentityToken(this);
+public final class C3P0ImplUtils
+{
+    private static final boolean CONDITIONAL_LONG_TOKENS = false;
+    static final MLogger logger = MLog.getLogger(com/mchange/v2/c3p0/impl/C3P0ImplUtils);
+    public static final DbAuth NULL_AUTH = new DbAuth(null, null);
+    public static final Object NOARGS[] = new Object[0];
+    public static final Logger PARENT_LOGGER = new ForwardingLogger(MLog.getLogger("com.mchange.v2.c3p0"), null);
+    private static final EncounterCounter ID_TOKEN_COUNTER = createEncounterCounter();
+    public static final String VMID_PROPKEY = "com.mchange.v2.c3p0.VMID";
+    private static final String VMID_PFX;
+    static String connectionTesterClassName = null;
+    private static final String HASM_HEADER = "HexAsciiSerializedMap";
+
+    static 
+    {
+        //虚拟机id
+        String vmid = C3P0Config.getPropsFileConfigProperty("com.mchange.v2.c3p0.VMID");
+        if(vmid == null || (vmid = vmid.trim()).equals("") || vmid.equals("AUTO"))
+            VMID_PFX = (new StringBuilder()).append(UidUtils.VM_ID).append('|').toString();
+        else
+        if(vmid.equals("NONE"))
+            VMID_PFX = "";
+        else
+            VMID_PFX = (new StringBuilder()).append(vmid).append("|").toString();
+    }
+    //给对象分配系统唯一token
+     public static String allocateIdentityToken(Object o)
+    {
+        if(o == null)
+            return null;
+	//通过System获取对应hashcode
+        String shortIdToken = Integer.toString(System.identityHashCode(o), 16);
+        StringBuffer sb = new StringBuffer(128);
+        sb.append(VMID_PFX);
+        long count;
+        if(ID_TOKEN_COUNTER != null && (count = ID_TOKEN_COUNTER.encounter(shortIdToken)) > 0L)
+        {
+            sb.append(shortIdToken);
+            sb.append('#');
+            sb.append(count);
+        } else
+        {
+            sb.append(shortIdToken);
+        }
+        String out = sb.toString().intern();
+        return out;
+    }
+}
+再来看C3P0Registry注册对象
+//注册到C3P0Registry
+C3P0Registry.reregister(this);
+//C3P0Registry
+public final class C3P0Registry
+{
+    private static final String MC_PARAM = "com.mchange.v2.c3p0.management.ManagementCoordinator";
+    static final MLogger logger;
+    static boolean banner_printed = false;
+    static boolean registry_mbean_registered = false;
+    private static CoalesceChecker CC;
+    private static Coalescer idtCoalescer;
+    //token Map
+    private static Map tokensToTokenized = new DoubleWeakHashMap();
+    private static HashSet unclosedPooledDataSources = new HashSet();
+    private static final Map classNamesToConnectionTesters = new HashMap();
+    private static final Map classNamesToConnectionCustomizers = new HashMap();
+    private static ManagementCoordinator mc;
+    static 
+    {
+        logger = MLog.getLogger(com/mchange/v2/c3p0/C3P0Registry);
+        CC = IdentityTokenizedCoalesceChecker.INSTANCE;
+	//获取Coalescer,实际为WeakEqualsCoalescer
+        idtCoalescer = CoalescerFactory.createCoalescer(CC, true, false);
+
+     }
+}
+//CoalescerFactory
+public static Coalescer createCoalescer(CoalesceChecker coalescechecker, boolean flag, boolean flag1)
+    {
+        Object obj;
+        if(coalescechecker == null)
+            obj = flag ? ((Object) (new WeakEqualsCoalescer())) : ((Object) (new StrongEqualsCoalescer()));
+        else
+            obj = flag ? ((Object) (new WeakCcCoalescer(coalescechecker))) : ((Object) (new StrongCcCoalescer(coalescechecker)));
+        return ((Coalescer) (flag1 ? new SyncedCoalescer(((Coalescer) (obj))) : obj));
+    }
+//WeakEqualsCoalescer
+class WeakEqualsCoalescer extends AbstractWeakCoalescer
+{
+
+    WeakEqualsCoalescer()
+    {
+        super(new WeakHashMap());
+    }
+}
+//AbstractWeakCoalescer
+class AbstractWeakCoalescer
+    implements Coalescer
+{
+   
+    Map wcoalesced;//对象管理Map，实际为WeakHashMap
+    AbstractWeakCoalescer(Map map)
+    {
+        wcoalesced = map;
+    }
+    //返回对应的弱引用token
+    public Object coalesce(Object obj)
+    {
+        Object obj1 = null;
+        WeakReference weakreference = (WeakReference)wcoalesced.get(obj);
+        if(weakreference != null)
+            obj1 = weakreference.get();
+        if(obj1 == null)
+        {
+            wcoalesced.put(obj, new WeakReference(obj));
+            obj1 = obj;
+        }
+        return obj1;
+    }
+
+    public int countCoalesced()
+    {
+        return wcoalesced.size();
+    }
+
+    public Iterator iterator()
+    {
+        return new CoalescerIterator(wcoalesced.keySet().iterator());
+    }
+}
+现在回到C3P0Registry的注册函数
+public static synchronized IdentityTokenized reregister(IdentityTokenized idt)
+    {
+        if(idt instanceof PooledDataSource)
+        {
+	    //发布信息
+            banner();
+            attemptRegisterRegistryMBean();
+        }
+        if(idt.getIdentityToken() == null)
+            throw new RuntimeException("[c3p0 issue] The identityToken of a registered object should be set prior to registration.");
+        //从idtCoalescer获取idt的弱引用token
+	IdentityTokenized coalesceCheck = (IdentityTokenized)idtCoalescer.coalesce(idt);
+        if(!isIncorporated(coalesceCheck))
+	    //添加到token集合
+            incorporate(coalesceCheck);
+        return coalesceCheck;
+    }
+//发布信息
+       private static void banner()
+    {
+        if(!banner_printed)
+        {
+            if(logger.isLoggable(MLevel.INFO))
+                logger.info("Initializing c3p0-0.9.5.2 [built 08-December-2015 22:06:04 -0800; debug? true; trace: 10]");
+            banner_printed = true;
+        }
+    }
+//添加到token集合
+   private static void incorporate(IdentityTokenized idt)
+    {
+        tokensToTokenized.put(idt.getIdentityToken(), idt);
+        if(idt instanceof PooledDataSource)
+        {
+            unclosedPooledDataSources.add(idt);
+            mc.attemptManagePooledDataSource((PooledDataSource)idt);
+        }
+    }
+
+//DoubleWeakHashMap
+public class DoubleWeakHashMap  implements Map
+
+//IdentityTokenized
+public interface IdentityTokenized
+{
+    public abstract String getIdentityToken();
+    public abstract void setIdentityToken(String s);
+}
+总结：
+从DriverManagerDataSource的构造函数可以看出，其初始化是，加载驱动管理器，添加属性监听器
+，驱动driver属性改变时，则重置drive为null，然后数据库用户名及密码。
+从DriverManagerDataSourceBase的构造可以看出，主要工作是创建PropertyChangeSupport，
+初始化驱动，jdbcUrl，给DriverManagerDataSourceBase分配唯一token，并注册到C3P0Registry的
+token Map中。
+   
+//System
+   /**
+     * Returns the same hash code for the given object as
+     * would be returned by the default method hashCode(),
+     * whether or not the given object's class overrides
+     * hashCode().
+     * The hash code for the null reference is zero.
+     *
+     * @param x object for which the hashCode is to be calculated
+     * @return  the hashCode
+     * @since   JDK1.1
+     */
+    public static native int identityHashCode(Object x);
+
+
+/**
+ * Weak reference objects, which do not prevent their referents from being
+ * made finalizable, finalized, and then reclaimed.  Weak references are most
+ * often used to implement canonicalizing mappings.
+ *
+ * <p> Suppose that the garbage collector determines at a certain point in time
+ * that an object is <a href="package-summary.html#reachability">weakly
+ * reachable</a>.  At that time it will atomically clear all weak references to
+ * that object and all weak references to any other weakly-reachable objects
+ * from which that object is reachable through a chain of strong and soft
+ * references.  At the same time it will declare all of the formerly
+ * weakly-reachable objects to be finalizable.  At the same time or at some
+ * later time it will enqueue those newly-cleared weak references that are
+ * registered with reference queues.
+ *
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+//WeakReference
+public class WeakReference<T> extends Reference<T> {
+
+    /**
+     * Creates a new weak reference that refers to the given object.  The new
+     * reference is not registered with any queue.
+     *
+     * @param referent object the new weak reference will refer to
+     */
+    public WeakReference(T referent) {
+        super(referent);
+    }
+
+    /**
+     * Creates a new weak reference that refers to the given object and is
+     * registered with the given queue.
+     *
+     * @param referent object the new weak reference will refer to
+     * @param q the queue with which the reference is to be registered,
+     *          or <tt>null</tt> if registration is not required
+     */
+    public WeakReference(T referent, ReferenceQueue<? super T> q) {
+        super(referent, q);
+    }
+
+}

@@ -1,0 +1,386 @@
+测试实例：
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.Statement;
+import java.sql.Timestamp;
+import java.util.Date;
+public class testMysqlX {
+	public static void main(String[] args){
+		testMysqlConnection();
+	}
+	@SuppressWarnings("deprecation")
+	public static void testMysqlConnection()
+	{
+	    Connection con = null;// 创建一个数据库连接
+	    PreparedStatement pre = null;// 创建预编译语句对象，一般都是用这个而不用Statement
+	    ResultSet result = null;// 创建一个结果集对象
+	    try
+	    {
+	        Class.forName("com.mysql.jdbc.Driver");// 加载驱动程序
+	        System.out.println("开始尝试连接数据库！");
+	        String url = "jdbc:mysql://localhost:3306/test?useUnicode=true&characterEncoding=utf8&characterSetResults=utf8";
+			String user = "root";// 用户名,系统默认的账户名
+			String password = "123456";// 你安装时选设置的密码	
+	        long startTime = System.currentTimeMillis();
+	        con = DriverManager.getConnection(url, user, password);// 获取连接
+	        PreparedStatement ps = con.prepareStatement("select count(*) from ?"); 
+	        ps.setString(1, "user");
+	        result = ps.executeQuery();
+	        //result 初始游标为head，移动next到第一个记录
+	          while(result.next()){
+		         int sum = result.getInt(1);
+	        	 System.out.println("============sum:"+sum);
+	         }
+	        long endTime = System.currentTimeMillis();
+	 
+	        System.out.println("============time:"+ (endTime-startTime));
+	        System.out.println("============hashCode:"+ con.hashCode());
+	        if(!con.isClosed()){
+	        	 System.out.println("============连接成功！");
+	        }
+	    }
+	    catch (Exception e)
+	    {
+	    	System.out.println("=============连接失败："+e.getMessage());
+	    	e.printStackTrace();
+	    }
+	    finally
+	    {
+	        try
+	        {
+	            // 逐一将上面的几个对象关闭，因为不关闭的话会影响性能、并且占用资源
+	            // 注意关闭的顺序，最后使用的最先关闭
+	            if (result != null)
+	                result.close();
+	            if (pre != null)
+	                pre.close();
+	            if (con != null)
+	                con.close();
+	            System.out.println("数据库连接已关闭！");  
+	        }
+	        catch (Exception e)
+	        {
+	            e.printStackTrace();
+	        }
+	    }
+	}
+}
+
+
+下面我们来看一下，从驱动加载，获取连接，及获取PreparedStatement，执行查询，结果集的处理的整个过程；
+先看加载驱动
+从这一句开始：
+ Class.forName("com.mysql.jdbc.Driver");
+ //Class
+ public final
+    class Class<T> implements java.io.Serializable, 
+			      java.lang.reflect.GenericDeclaration, 
+			      java.lang.reflect.Type,
+                              java.lang.reflect.AnnotatedElement {
+    private static final int ANNOTATION= 0x00002000;
+    private static final int ENUM      = 0x00004000;
+    private static final int SYNTHETIC = 0x00001000;
+
+    private static native void registerNatives();
+    static {
+        registerNatives();
+    }
+//根据类名加载对应class
+   public static Class<?> forName(String className) 
+                throws ClassNotFoundException {
+        return forName0(className, true, ClassLoader.getCallerClassLoader());
+    }
+ /** Called after security checks have been made. */
+    private static native Class forName0(String name, boolean initialize,
+					    ClassLoader loader)
+	throws ClassNotFoundException;
+}
+来看一下的mysql的Driver类
+//com.mysql.jdbc.Driver  
+ public class Driver extends NonRegisteringDriver
+    implements java.sql.Driver
+{
+    public Driver()
+        throws SQLException
+    {
+    }
+    static 
+    {
+        try
+        {
+	    //将驱动注册到驱动管理器
+            DriverManager.registerDriver(new Driver());
+        }
+        catch(SQLException E)
+        {
+            throw new RuntimeException("Can't register driver!");
+        }
+    }
+}
+//DriverManager
+public class DriverManager {
+    /* write copy of the drivers vector */
+    private static java.util.Vector writeDrivers = new java.util.Vector();
+
+    /* write copy of the drivers vector */
+    private static java.util.Vector readDrivers = new java.util.Vector();
+
+    private static int loginTimeout = 0;
+    private static java.io.PrintWriter logWriter = null;
+    private static java.io.PrintStream logStream = null;
+    private static boolean initialized = false;
+        //注册驱动
+	public static synchronized void registerDriver(java.sql.Driver driver)
+	throws SQLException {
+	if (!initialized) {
+	    initialize();
+	}
+        //初始化驱动信息
+	DriverInfo di = new DriverInfo();
+
+	di.driver = driver;
+	di.driverClass = driver.getClass();
+	di.driverClassName = di.driverClass.getName();
+
+        //将driver信息添加到writeDrivers集合中
+	writeDrivers.addElement(di); 
+	println("registerDriver: " + di);
+	//克隆writeDrivers到readDrivers
+	readDrivers = (java.util.Vector) writeDrivers.clone();
+
+    }
+     //初始化
+    static void initialize() {
+        if (initialized) {
+            return;
+        }
+        initialized = true;
+	//加载驱动，初始化
+        loadInitialDrivers();
+        println("JDBC DriverManager initialized");
+    }
+    //加载驱动
+     private static void loadInitialDrivers() {
+        String drivers;
+        try {
+	    drivers = (String) java.security.AccessController.doPrivileged(
+		new sun.security.action.GetPropertyAction("jdbc.drivers"));
+        } catch (Exception ex) {
+            drivers = null;
+        }
+	//如果driver是放在jar包中，通过类型加载器加载，所有Driver，每个java.sql.Driver.class是一个Service
+	 DriverService ds = new DriverService();
+
+	 //获取所有驱动的访问权限
+	 java.security.AccessController.doPrivileged(ds);		
+	        
+         println("DriverManager.initialize: jdbc.drivers = " + drivers);
+        if (drivers == null) {
+            return;
+        }
+        while (drivers.length() != 0) {
+            int x = drivers.indexOf(':');
+            String driver;
+            if (x < 0) {
+                driver = drivers;
+                drivers = "";
+            } else {
+                driver = drivers.substring(0, x);
+                drivers = drivers.substring(x+1);
+            }
+            if (driver.length() == 0) {
+                continue;
+            }
+            try {
+                println("DriverManager.Initialize: loading " + driver);
+		//加载驱动
+                Class.forName(driver, true,
+			      ClassLoader.getSystemClassLoader());
+            } catch (Exception ex) {
+                println("DriverManager.Initialize: load failed: " + ex);
+            }
+        }
+    }
+    class DriverService implements java.security.PrivilegedAction {
+        Iterator ps = null;
+	public DriverService() {};
+        public Object run() {
+
+	// uncomment the followin line before mustang integration 	
+        // Service s = Service.lookup(java.sql.Driver.class);
+	// ps = s.iterator();
+        //通过Service加载所有Driver
+	ps = Service.providers(java.sql.Driver.class);
+
+	/* Load these drivers, so that they can be instantiated. 
+	 * It may be the case that the driver class may not be there
+         * i.e. there may be a packaged driver with the service class
+         * as implementation of java.sql.Driver but the actual class
+         * may be missing. In that case a sun.misc.ServiceConfigurationError
+         * will be thrown at runtime by the VM trying to locate 
+	 * and load the service.
+         * 
+	 * Adding a try catch block to catch those runtime errors
+         * if driver not available in classpath but it's 
+	 * packaged as service and that service is there in classpath.
+	 */
+		
+	try {
+           while (ps.hasNext()) {
+	       //初始化Driver
+               ps.next();
+           } // end while
+	} catch(Throwable t) {
+	    // Do nothing
+	}
+        return null;
+    } //end run
+
+} //end DriverService
+    //驱动信息类
+    class DriverInfo {
+    Driver         driver;
+    Class          driverClass;
+    String         driverClassName;
+
+    public String toString() {
+	return ("driver[className=" + driverClassName + "," + driver + "]");
+    }
+}
+从DriverManager的初始化过程可以看出，Driver的加载是委托给DriverService，而DriverService是通过
+Service去加载,我们来看一下Service
+public final class Service
+{
+    //加载驱动，委托给providers(Class class1, ClassLoader classloader)
+    public static Iterator providers(Class class1)
+        throws ServiceConfigurationError
+    {
+        ClassLoader classloader = Thread.currentThread().getContextClassLoader();
+        return providers(class1, classloader);
+    }
+    public static Iterator providers(Class class1, ClassLoader classloader)
+        throws ServiceConfigurationError
+    {
+         //实际上返回的为一个Iterater，LazyIterator为Service的静态内部类
+        return new LazyIterator(class1, classloader);
+    }
+    //LazyIterator,懒加载驱动集合
+    private static class LazyIterator
+        implements Iterator
+    {
+
+        public boolean hasNext()
+            throws ServiceConfigurationError
+        {
+            if(nextName != null)
+                return true;
+            if(configs == null)
+                try
+                {
+                    String s = (new StringBuilder()).append("META-INF/services/").append(service.getName()).toString();
+                    if(loader == null)
+                        configs = ClassLoader.getSystemResources(s);
+                    else
+                        configs = loader.getResources(s);
+                }
+                catch(IOException ioexception)
+                {
+                    Service.fail(service, (new StringBuilder()).append(": ").append(ioexception).toString());
+                }
+            for(; pending == null || !pending.hasNext(); pending = Service.parse(service, (URL)configs.nextElement(), returned))
+                if(!configs.hasMoreElements())
+                    return false;
+
+            nextName = (String)pending.next();
+            return true;
+        }
+        //next函数在DriverService，有调用，通过遍历LazyIterator，加载驱动
+        public Object next()
+            throws ServiceConfigurationError
+        {
+            String s;
+            Class class1;
+            if(!hasNext())
+                throw new NoSuchElementException();
+            s = nextName;
+            nextName = null;
+            class1 = null;
+            try
+            {
+                class1 = Class.forName(s, false, loader);
+            }
+            catch(ClassNotFoundException classnotfoundexception)
+            {
+                Service.fail(service, (new StringBuilder()).append("Provider ").append(s).append(" not found").toString());
+            }
+            if(!service.isAssignableFrom(class1))
+                Service.fail(service, (new StringBuilder()).append("Provider ").append(s).append(" not a subtype").toString());
+            return service.cast(class1.newInstance());
+            Throwable throwable;
+            throwable;
+            Service.fail(service, (new StringBuilder()).append("Provider ").append(s).append(" could not be instantiated: ").append(throwable).toString(), throwable);
+            return null;
+        }
+
+        public void remove()
+        {
+            throw new UnsupportedOperationException();
+        }
+
+        Class service;
+        ClassLoader loader;
+        Enumeration configs;
+        Iterator pending;
+        Set returned;
+        String nextName;
+
+        private LazyIterator(Class class1, ClassLoader classloader)
+        {
+            configs = null;
+            pending = null;
+            returned = new TreeSet();
+            nextName = null;
+            service = class1;
+            loader = classloader;
+        }
+	
+    private static void fail(Class class1, String s, Throwable throwable)
+        throws ServiceConfigurationError
+    {
+        ServiceConfigurationError serviceconfigurationerror = new ServiceConfigurationError((new StringBuilder()).append(class1.getName()).append(": ").append(s).toString());
+        serviceconfigurationerror.initCause(throwable);
+        throw serviceconfigurationerror;
+    }
+    //驱动加载失败的处理，抛出异常
+    private static void fail(Class class1, String s)
+        throws ServiceConfigurationError
+    {
+        throw new ServiceConfigurationError((new StringBuilder()).append(class1.getName()).append(": ").append(s).toString());
+    }
+
+    private static void fail(Class class1, URL url, int i, String s)
+        throws ServiceConfigurationError
+    {
+        fail(class1, (new StringBuilder()).append(url).append(":").append(i).append(": ").append(s).toString());
+    }
+}
+//ServiceConfigurationError
+public class ServiceConfigurationError extends Error
+{
+    public ServiceConfigurationError(String s)
+    {
+        super(s);
+    }
+    public ServiceConfigurationError(Throwable throwable)
+    {
+        super(throwable);
+    }
+}
+至此,driver的加载结束，我们来回顾一下整个过程，Class加载com.mysql.jdbc.Driver，
+com.mysql.jdbc.Driver通过静态语句块，将Driver注册到DriverManager，DriverManager
+首先检查有没有初始化，没有则加载驱动类，整个驱动加载过程是通过DriverService，而DriverService
+则委托给Service，Service加载驱动是返回的是，所有java.sql.Driver实现的Iterator,Iterator为LazyIterator，
+DriverService通过遍历LazyIterator，加载驱动所有驱动;最后将Driver包装成DriverInfo，添加到writeDrivers集合中
+，并clone到readDrivers。

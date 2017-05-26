@@ -1,0 +1,798 @@
+Java NIO ByteBuffer详解：[url]http://donald-draper.iteye.com/blog/2357084[/url]
+MappedByteBuffer定义:[url]http://donald-draper.iteye.com/blog/2371594[/url]
+Reference定义（PhantomReference，Cleaner）:[url]http://donald-draper.iteye.com/blog/2371661[/url]
+ByteBuffer有两个实现一个为，HeapByteBuffer，另一个为DirectByteBuffer，
+在上一篇文章中我们看了HeapByteBuffer，今天来看另外一个DirectByteBuffer。
+下面是两种ByteBuffer创建的方法：
+1.HeapByteBuffer
+[code="java"]//ByteBuffer,创建HeapByteBuffer方法
+ public static ByteBuffer allocate(int capacity) {
+        if (capacity < 0)
+            throw new IllegalArgumentException();
+        return new HeapByteBuffer(capacity, capacity);
+    }[/code]
+HeapByteBuffer使用的java堆内存
+2.DirectByteBuffer
+[code="java"]//ByteBuffer,创建DirectByteBuffer方法
+public static ByteBuffer allocateDirect(int capacity) {
+        return new DirectByteBuffer(capacity);
+    }
+为了更好的理解两者的区别，先来读一下ByteBuffer的java doc
+<a name="direct">
+ * <h4> Direct <i>vs.</i> non-direct buffers </h4>
+ *
+ * <p> A byte buffer is either <i>direct</i> or <i>non-direct</i>.  Given a
+ * direct byte buffer, the Java virtual machine will make a best effort to
+ * perform native I/O operations directly upon it.  That is, it will attempt to
+ * avoid copying the buffer's content to (or from) an intermediate buffer
+ * before (or after) each invocation of one of the underlying operating
+ * system's native I/O operations.
+ *ByteBuffer有direct（DirectByteBuffer）和non-direct（HeapByteBuffer）两种。
+ Java虚拟机将会直接依赖于direct类型的ByteBuffer，尽最大努力执行本地的IO操作。
+在进行系统底层的IO操作前或后，尝试避免直接拷贝buffer。
+ * <p> A direct byte buffer may be created by invoking the {@link
+ * #allocateDirect(int) allocateDirect} factory method of this class.  The
+ * buffers returned by this method typically have somewhat higher allocation
+ * and deallocation costs than non-direct buffers.  The contents of direct
+ * buffers may reside outside of the normal garbage-collected heap, and so
+ * their impact upon the memory footprint of an application might not be
+ * obvious.  It is therefore recommended that direct buffers be allocated
+ * primarily for large, long-lived buffers that are subject to the underlying
+ * system's native I/O operations.  In general it is best to allocate direct
+ * buffers only when they yield a measureable gain in program performance.
+ *direct类型的buffer通过allocateDirect(int)方法创建。direct类型的buffer分配空间和
+ 重新分配空间，比non-direct类型的buffer代价某种程度上要高。由于direct类型的buffer的
+ 内容存储在正常的可回收垃圾的堆之外，所以对应用的内存使用影响不是太明显。因此强烈建议
+ 将direct类型buffer初始化分配足够大&long-lived的空间，以便底层操作系统的IO操作。
+ 如果对应用性能有一个客观的提升，则最好使用#allocateDirect(int)创建一个DirectByteBuffer。
+ * <p> A direct byte buffer may also be created by {@link
+ * java.nio.channels.FileChannel#map </code>mapping<code>} a region of a file
+ * directly into memory.  An implementation of the Java platform may optionally
+ * support the creation of direct byte buffers from native code via JNI.  If an
+ * instance of one of these kinds of buffers refers to an inaccessible region
+ * of memory then an attempt to access that region will not change the buffer's
+ * content and will cause an unspecified exception to be thrown either at the
+ * time of the access or at some later time.
+ *一个direct类型buffer，亦可以通过java.nio.channels.FileChannel#map创建，映射文件
+直接到内存一个region。Java平台的具体实现可以选择通过JNI调用本地代码创建一个direct类型buffer。
+如果direct类型buffer一个具体实例引用不可访问的内存region，尝试访问region，不会改变buffer的内容，
+无论在访问的时间，还是访问后，将会引起一个不确定的异常抛出。
+ * <p> Whether a byte buffer is direct or non-direct may be determined by
+ * invoking its {@link #isDirect isDirect} method.  This method is provided so
+ * that explicit buffer management can be done in performance-critical code.
+ *是不是direct类型的buffer，我们可以通过#isDirect方法来确定。
+从上面一段话可以看出， DirectByteBuffer的字节直接存放在内存中，对提升底层IO操作的性能有利，由于
+ DirectByteBuffer的字节直接存放在内存中，并不会影响应用的堆内存。HeapByteBuffer的字节，则是存放在
+ Java堆内存中。DirectByteBuffer主要用于Java NIO包中一些又进行底层IO操作的通道（SocketChannel，FileChannel等）。
+package java.nio;
+import java.io.FileDescriptor;
+import sun.misc.Cleaner;
+import sun.misc.Unsafe;
+import sun.misc.VM;
+import sun.nio.ch.DirectBuffer;
+class DirectByteBuffer
+    extends MappedByteBuffer
+    implements DirectBuffer
+{
+    // Cached unsafe-access object，缓存安全访问对象
+    protected static final Unsafe unsafe = Bits.unsafe();
+
+    // Cached array base offset，缓存数据开始位置
+    private static final long arrayBaseOffset = (long)unsafe.arrayBaseOffset(byte[].class);
+
+    // Cached unaligned-access capability 这个的含义不是太清楚，有知道的可以留言给我，谢谢
+    protected static final boolean unaligned = Bits.unaligned();
+
+    // Base address, used in all indexing calculations
+    // NOTE: moved up to Buffer.java for speed in JNI GetDirectBufferAddress
+    //    protected long address;
+
+    // An object attached to this buffer. If this buffer is a view of another
+    // buffer then we use this field to keep a reference to that buffer to
+    // ensure that its memory isn't freed before we are done with it.
+    //att为缓冲的附加物。如果缓存是两一个缓存的视图，我们可以用att标记参考的buffer，
+    //以确保参与buffer的内存在我们用之前不会释放。
+    private final Object att;
+    //清除引用对象cleaner
+    private final Cleaner cleaner;
+}
+我们来看一下这个unaligned的含义：
+ protected static final boolean unaligned = Bits.unaligned();
+//Bits
+private static boolean unaligned;
+private static boolean unalignedKnown = false;
+ static boolean unaligned() {
+     if (unalignedKnown)
+         return unaligned;
+     String arch = AccessController.doPrivileged(
+         new sun.security.action.GetPropertyAction("os.arch"));
+     unaligned = arch.equals("i386") || arch.equals("x86")
+         || arch.equals("amd64") || arch.equals("x86_64");
+     unalignedKnown = true;
+     return unaligned;
+ }
+从Bits的unaligned我们大致可以猜出unaligned的含义，为操作系统架构是否为已知；以便我们
+在已知的架构下，操作物理内存。
+我们来看一下DirectByteBuffer的构造
+ // Primary constructor
+ DirectByteBuffer(int cap) {                   // package-private
+
+     super(-1, 0, cap, cap);
+     //获取系统内存使用是否分页
+     boolean pa = VM.isDirectMemoryPageAligned();
+     //获取分页size
+     int ps = Bits.pageSize();
+     //确定分页size
+     long size = Math.max(1L, (long)cap + (pa ? ps : 0));
+     //预留内存
+     Bits.reserveMemory(size, cap);
+
+     long base = 0;
+     try {
+         //分配内存
+         base = unsafe.allocateMemory(size);
+     } catch (OutOfMemoryError x) {
+         //释放预留内存
+         Bits.unreserveMemory(size, cap);
+         throw x;
+     }
+     //设置安全访问对象unsafe的起始位置
+     unsafe.setMemory(base, size, (byte) 0);
+     //设置缓存的起始位置
+     if (pa && (base % ps != 0)) {
+         // Round up to page boundary
+         address = base + ps - (base & (ps - 1));
+     } else {
+         address = base;
+     }
+     //创建buffer的Cleaner
+     cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+     att = null;
+}
+DirectByteBuffer的构造有几点我们要关注：
+1.
+ //获取系统内存使用是否分页
+ boolean pa = VM.isDirectMemoryPageAligned();
+2.
+ //预留内存
+ Bits.reserveMemory(size, cap);
+3.
+//分配内存
+ base = unsafe.allocateMemory(size);
+4.
+ //释放预留内存
+ Bits.unreserveMemory(size, cap);
+5.
+ //设置安全访问对象unsafe的起始位置
+ unsafe.setMemory(base, size, (byte) 0);
+
+6.
+//设置缓存的起始位置
+     if (pa && (base % ps != 0)) {
+         // Round up to page boundary
+         address = base + ps - (base & (ps - 1));
+     } else {
+         address = base;
+     }
+7.
+ //创建buffer的Cleaner
+ cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+下面分别来看这几点：
+1.
+ //获取系统内存使用是否分页
+ boolean pa = VM.isDirectMemoryPageAligned();
+//VM
+private static boolean pageAlignDirectMemory;//内存是否分页
+ public static boolean isDirectMemoryPageAligned()
+    {
+        return pageAlignDirectMemory;
+    }
+ public static void saveAndRemoveProperties(Properties properties)
+    {
+        if(booted)
+            throw new IllegalStateException("System initialization has completed");
+        savedProps.putAll(properties);
+        String s = (String)properties.remove("sun.nio.MaxDirectMemorySize");
+        if(s != null)
+            if(s.equals("-1"))
+            {
+                directMemory = Runtime.getRuntime().maxMemory();
+            } else
+            {
+                long l = Long.parseLong(s);
+                if(l > -1L)
+                    directMemory = l;
+            }
+	//如果系统属性中有sun.nio.PageAlignDirectMemory配置项，则pageAlignDirectMemory为true
+        s = (String)properties.remove("sun.nio.PageAlignDirectMemory");
+        if("true".equals(s))
+            pageAlignDirectMemory = true;
+        s = properties.getProperty("sun.lang.ClassLoader.allowArraySyntax");
+        allowArraySyntax = s != null ? Boolean.parseBoolean(s) : defaultAllowArraySyntax;
+        properties.remove("java.lang.Integer.IntegerCache.high");
+        properties.remove("sun.zip.disableMemoryMapping");
+        properties.remove("sun.java.launcher.diag");
+    }
+2.
+ //预留内存
+ Bits.reserveMemory(size, cap);
+//Bits
+    private static volatile long maxMemory = VM.maxDirectMemory();//最大可用内存
+    private static volatile long reservedMemory;//预留内存
+    private static volatile long totalCapacity;//内存使用量
+    private static volatile long count;
+    private static boolean memoryLimitSet = false;
+
+    // These methods should be called whenever direct memory is allocated or
+    // freed.  They allow the user to control the amount of direct memory
+    // which a process may access.  All sizes are specified in bytes.
+    static void reserveMemory(long size, int cap) {
+        synchronized (Bits.class) {
+            if (!memoryLimitSet && VM.isBooted()) {
+                maxMemory = VM.maxDirectMemory();
+                memoryLimitSet = true;
+            }
+            // -XX:MaxDirectMemorySize limits the total capacity rather than the
+            // actual memory usage, which will differ when buffers are page
+            // aligned.
+	    //如果有足够的内存可以使用，则更新预留内存和内存使用量
+            if (cap <= maxMemory - totalCapacity) {
+                reservedMemory += size;
+                totalCapacity += cap;
+                count++;
+                return;
+            }
+        }
+        //来及回收
+        System.gc();
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException x) {
+            // Restore interrupt status
+            Thread.currentThread().interrupt();
+        }
+        synchronized (Bits.class) {
+	    //如果内存使用量+需要分配的内存容量超时最大内存使用量，则抛出OutOfMemoryError
+            if (totalCapacity + cap > maxMemory)
+                throw new OutOfMemoryError("Direct buffer memory");
+            reservedMemory += size;
+            totalCapacity += cap;
+            count++;
+        }
+
+    }
+3.
+//分配内存
+ base = unsafe.allocateMemory(size);
+//Unsafe
+public native long allocateMemory(long l);
+4.
+ //释放预留内存
+ Bits.unreserveMemory(size, cap);
+//Bits
+//如果预留内存大于0，则释放预留内存，更新内存使用量
+  static synchronized void unreserveMemory(long size, int cap) {
+        if (reservedMemory > 0) {
+            reservedMemory -= size;
+            totalCapacity -= cap;
+            count--;
+            assert (reservedMemory > -1);
+        }
+    }
+5.
+ //设置安全访问对象unsafe的起始位置
+ unsafe.setMemory(base, size, (byte) 0);
+//Unsafe
+    public void setMemory(long l, long l1, byte byte0)
+    {
+        setMemory(null, l, l1, byte0);
+    }
+    public native void setMemory(Object obj, long l, long l1, byte byte0);
+
+
+ //  Used only by direct buffers
+    // NOTE: hoisted here for speed in JNI GetDirectBufferAddress
+    //long address;
+6.
+//设置缓存的起始位置
+     if (pa && (base % ps != 0)) {
+         // Round up to page boundary
+         address = base + ps - (base & (ps - 1));
+     } else {
+         address = base;
+     }
+//Buffer
+public abstract class Buffer {
+
+    // Invariants: mark <= position <= limit <= capacity
+    private int mark = -1;
+    private int position = 0;
+    private int limit;
+    private int capacity;
+
+    // Used only by direct buffers
+    // NOTE: hoisted here for speed in JNI GetDirectBufferAddress
+    //内存地址
+    long address;
+}
+7.
+ //创建buffer的Cleaner（清除引用对象cleaner）
+ cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+再看这步之前，我们来看一下Deallocator
+ private static class Deallocator
+        implements Runnable
+    {
+        private static Unsafe unsafe = Unsafe.getUnsafe();
+        private long address;
+        private long size;
+        private int capacity;
+
+        private Deallocator(long address, long size, int capacity) {
+            assert (address != 0);
+            this.address = address;
+            this.size = size;
+            this.capacity = capacity;
+        }
+        public void run() {
+            if (address == 0) {
+                // Paranoia
+                return;
+            }
+	    //释放内存
+            unsafe.freeMemory(address);
+            address = 0;
+	    //释放预留内存
+            Bits.unreserveMemory(size, capacity);
+        }
+}
+在Reference定义（PhantomReference，Cleaner）这篇文章中，我们说过Cleaner清除引用对象的
+实际上是首先从引用对应队列ReferenceQueue移除引用对象，再执行清除线程thunk，完成实际的清除工作。
+//Cleaner
+private static final ReferenceQueue dummyQueue = new ReferenceQueue();
+private static Cleaner first = null;
+private Cleaner next;
+private Cleaner prev;
+private final Runnable thunk;
+public void clean()
+{
+        if(!remove(this))
+            return;
+        try
+        {
+            thunk.run();
+        }
+	...
+}
+在DirectByteBuffer中Cleaner的thunk为Deallocator
+从以上7步可以看，在DirectByteBuffer的构造主要是获取系统内存使用是否分页，预留内存，分配内存，
+设置安全访问对象unsafe的起始位置，设置缓存Buffer的起始位置address，创建buffer的Cleaner。
+再看看其他的构造
+// Invoked to construct a direct ByteBuffer referring to the block of
+    // memory. A given arbitrary object may also be attached to the buffer.
+    DirectByteBuffer(long addr, int cap, Object ob) {
+       //ByteBuffer构造
+        super(-1, 0, cap, cap);
+        address = addr;
+        cleaner = null;
+        att = ob;
+    }
+    // Invoked only by JNI: NewDirectByteBuffer(void*, long)
+    private DirectByteBuffer(long addr, int cap) {
+        //ByteBuffer构造
+        super(-1, 0, cap, cap);
+        address = addr;
+        cleaner = null;
+        att = null;
+    }
+    上面这两的构造方法大同小异，
+    // For memory-mapped buffers -- invoked by FileChannelImpl via reflection
+    //此方法用于内存映射缓存，主要是FileChannelImpl通过反射调用
+    protected DirectByteBuffer(int cap, long addr,
+                                     FileDescriptor fd,
+                                     Runnable unmapper)
+    {
+        //MappedByteBuffer构造
+        super(-1, 0, cap, cap, fd);
+        address = addr;
+        cleaner = Cleaner.create(this, unmapper);
+        att = null;
+    }
+    // For duplicates and slices，复制构造
+    DirectByteBuffer(DirectBuffer db,         // package-private
+                               int mark, int pos, int lim, int cap,
+                               int off)
+    {
+        super(mark, pos, lim, cap);
+	//定位起始地址
+        address = db.address() + off;
+        cleaner = null;
+        att = db;
+    }
+ //将DirectByteBuffer分割空间出来
+ public ByteBuffer slice() {
+        int pos = this.position();
+        int lim = this.limit();
+        assert (pos <= lim);
+        int rem = (pos <= lim ? lim - pos : 0);
+        int off = (pos << 0);
+        assert (off >= 0);
+        return new DirectByteBuffer(this, -1, 0, rem, rem, off);
+    }
+   //复制DirectByteBuffer
+    public ByteBuffer duplicate() {
+        return new DirectByteBuffer(this,
+                                              this.markValue(),
+                                              this.position(),
+                                              this.limit(),
+                                              this.capacity(),
+                                              0);
+    }
+    //返回一个只读的DirectByteBufferR
+     public ByteBuffer asReadOnlyBuffer() {
+        return new DirectByteBufferR(this,
+                                           this.markValue(),
+                                           this.position(),
+                                           this.limit(),
+                                           this.capacity(),
+                                           0);
+
+    }
+我们来看DirectByteBufferR的定义
+class DirectByteBufferR
+    extends DirectByteBuffer
+    implements DirectBuffer
+{
+     DirectByteBufferR(int cap) {                   // package-private
+        super(cap);
+    }
+     // For memory-mapped buffers -- invoked by FileChannelImpl via reflection
+    //
+    protected DirectByteBufferR(int cap, long addr,
+                                     FileDescriptor fd,
+                                     Runnable unmapper)
+    {
+        super(cap, addr, fd, unmapper);
+
+    }
+    // For duplicates and slices
+    DirectByteBufferR(DirectBuffer db,         // package-private
+                               int mark, int pos, int lim, int cap,
+                               int off)
+    {
+        super(db, mark, pos, lim, cap, off);
+
+    }
+    //切割DirectByteBufferR剩余空间
+     public ByteBuffer slice() {
+        int pos = this.position();
+        int lim = this.limit();
+        assert (pos <= lim);
+        int rem = (pos <= lim ? lim - pos : 0);
+        int off = (pos << 0);
+        assert (off >= 0);
+        return new DirectByteBufferR(this, -1, 0, rem, rem, off);
+    }
+    //复制DirectByteBufferR
+    public ByteBuffer duplicate() {
+        return new DirectByteBufferR(this,
+                                              this.markValue(),
+                                              this.position(),
+                                              this.limit(),
+                                              this.capacity(),
+                                              0);
+    }
+    //获取只读的DirectByteBufferR
+    public ByteBuffer asReadOnlyBuffer() {
+        return duplicate();
+    }
+     public ByteBuffer put(byte x) {
+        throw new ReadOnlyBufferException();
+
+    }
+     public ByteBuffer put(ByteBuffer src) {
+       throw new ReadOnlyBufferException();
+     }
+     public ByteBuffer put*(...) {
+       throw new ReadOnlyBufferException();
+     }
+    //为Direct类型缓存区
+    public boolean isDirect() {
+        return true;
+    }
+    //只读
+    public boolean isReadOnly() {
+        return true;
+    }
+    /*相关的读操作与DirectByteBuffer基本相同*/
+}
+DirectByteBufferR为一个支持读操中的DirectByteBuffer，所有的写操作，将抛出ReadOnlyBufferException异常。
+回到DirectByteBuffer的相关操作
+//获取缓冲buffer起始地址
+public long address() {
+        return address;
+    }
+ //获取索引i对应的内存实际地址
+ private long ix(int i) {
+     return address + (i << 0);
+ }
+先来看put操作
+//将byte放在position位置上
+public ByteBuffer put(byte x) {
+    unsafe.putByte(ix(nextPutIndex()), ((x)));
+    return this;
+}
+//Buffer
+//返回当前position位置，position位置自增
+final int nextPutIndex() {                          // package-private
+    if (position >= limit)
+        throw new BufferOverflowException();
+    return position++;
+}
+
+//将byte放在i位置上
+public ByteBuffer put(int i, byte x) {
+    unsafe.putByte(ix(checkIndex(i)), ((x)));
+    return this;
+}
+//Buffer
+//返回当前i位置是否有效
+final int checkIndex(int i) {                       // package-private
+    if ((i < 0) || (i >= limit))
+        throw new IndexOutOfBoundsException();
+    return i;
+}
+//读取Bufffer的数据，写到当前缓冲区中
+public ByteBuffer put(ByteBuffer src) {
+        //如果ByteBuffer为DirectByteBuffer
+        if (src instanceof DirectByteBuffer) {
+            if (src == this)
+                throw new IllegalArgumentException();
+            DirectByteBuffer sb = (DirectByteBuffer)src;
+	    //在读buffer之前，要调用flip函数，所以position与limit数据，即为缓冲区真实数据
+	    //这也是为什么在缓存区读写模式切换时，要调用flip函数的原因
+	    //获取源DirectByteBuffer的position，limit
+            int spos = sb.position();
+            int slim = sb.limit();
+            assert (spos <= slim);
+	    //获取源DirectByteBuffer实际数据长度（buffer.flip()）
+            int srem = (spos <= slim ? slim - spos : 0);
+            //获取当前DirectByteBuffer的position，limit
+            int pos = position();
+            int lim = limit();
+            assert (pos <= lim);
+	    //获取当前DirectByteBuffer剩余容量
+            int rem = (pos <= lim ? lim - pos : 0);
+            //如果当前buffer的剩余空间小于源buffer的数据长度，则抛出BufferOverflowException
+            if (srem > rem)
+                throw new BufferOverflowException();
+            //copy源buffer到当前buffer
+            unsafe.copyMemory(sb.ix(spos), ix(pos), srem << 0);
+	    //重新定位源buffer和目的buffer的postion位置
+            sb.position(spos + srem);
+            position(pos + srem);
+        } else if (src.hb != null) {
+           //如果源buffer类型非DirectByteBuffer
+            int spos = src.position();
+            int slim = src.limit();
+            assert (spos <= slim);
+            int srem = (spos <= slim ? slim - spos : 0);
+	    //读取源buffer的字节数组中数据，写到当前缓冲区
+            put(src.hb, src.offset + spos, srem);
+            src.position(spos + srem);
+
+        } else {
+	    //ByteBuffer
+            super.put(src);
+        }
+        return this;
+ }
+ put(ByteBuffer src) 有几点要看
+ 1. 
+ //copy源buffer到当前buffer
+  unsafe.copyMemory(sb.ix(spos), ix(pos), srem << 0);
+ 2.
+ //读取源buffer的字节数组中数据，写到当前缓冲区
+  put(src.hb, src.offset + spos, srem);
+ 我们分别来看这两点
+ 1. 
+ //copy源buffer到当前buffer
+  unsafe.copyMemory(sb.ix(spos), ix(pos), srem << 0);
+ //Unsafe
+  public void copyMemory(long l, long l1, long l2)
+    {
+        copyMemory(null, l, null, l1, l2);
+    }
+public native void copyMemory(Object obj, long l, Object obj1, long l1, long l2);
+ 2.
+ //读取源buffer的字节数组中数据，写到当前缓冲区
+  put(src.hb, src.offset + spos, srem);
+
+ //读取源buffer的字节数组中数据，写到当前缓冲区
+  public ByteBuffer put(byte[] src, int offset, int length) {
+        if ((length << 0) > Bits.JNI_COPY_FROM_ARRAY_THRESHOLD) {
+            checkBounds(offset, length, src.length);
+            int pos = position();
+            int lim = limit();
+            assert (pos <= lim);
+	    //获取当前缓冲区剩余空间
+            int rem = (pos <= lim ? lim - pos : 0);
+            if (length > rem)
+                throw new BufferOverflowException();
+            Bits.copyFromArray(src, arrayBaseOffset, offset << 0,
+                                   ix(pos), length << 0);
+            //重新定位position
+            position(pos + length);
+        } else {
+	    //ByteBuffer
+            super.put(src, offset, length);
+        }
+        return this;
+    }
+//Bit
+// These numbers represent the point at which we have empirically
+// determined that the average cost of a JNI call exceeds the expense
+// of an element by element copy.  These numbers may change over time.
+//JNI字节数组拷贝临界条件
+static final int JNI_COPY_TO_ARRAY_THRESHOLD   = 6;
+static final int JNI_COPY_FROM_ARRAY_THRESHOLD = 6;
+
+// This number limits the number of bytes to copy per call to Unsafe's
+// copyMemory method. A limit is imposed to allow for safepoint polling
+// during a large copy
+//UNSAFE内存拷贝临界条件
+static final long UNSAFE_COPY_THRESHOLD = 1024L * 1024L;
+/**
+     * Copy from given source array to destination address.
+     *拷贝给定的字节数组到目的地址
+     * @param   src
+     *          source array
+     * @param   srcBaseOffset
+     *          offset of first element of storage in source array
+     * @param   srcPos
+     *          offset within source array of the first element to read
+     * @param   dstAddr
+     *          destination address
+     * @param   length
+     *          number of bytes to copy
+     */
+ static void copyFromArray(Object src, long srcBaseOffset, long srcPos,
+                              long dstAddr, long length)
+    {
+        long offset = srcBaseOffset + srcPos;
+        while (length > 0) {
+            long size = (length > UNSAFE_COPY_THRESHOLD) ? UNSAFE_COPY_THRESHOLD : length;
+            unsafe.copyMemory(src, offset, null, dstAddr, size);
+            length -= size;
+            offset += size;
+            dstAddr += size;
+        }
+    }
+从上面来看put（ByteBuffer）操作，如果ByteBuffer为DirectByteBuffer，则利用Unsafe
+将源缓冲区position和limit之前的数据拷贝到当前缓冲区。否则拷贝缓冲区字节序列数据到
+当前缓冲区。
+//写一个int值到缓冲区
+ public ByteBuffer putInt(int x) {
+     //position向后移动4个字节，获取当前position的内存地址，委托给putInt(long a, int x)
+     putInt(ix(nextPutIndex((1 << 2))), x);
+     return this;
+ }
+//将x放到内存地址a上
+ private ByteBuffer putInt(long a, int x) {
+        //如果系统架构为已知架构，则通过Unsafe将x放到内存地址a上
+        if (unaligned) {
+            int y = (x);
+            unsafe.putInt(a, (nativeByteOrder ? y : Bits.swap(y)));
+        } else {
+            Bits.putInt(a, x, bigEndian);
+        }
+        return this;
+    }
+//Unsafe
+ public native void putInt(long l, int i);
+
+来看get（byte ）操作
+//获取当前索引位置的byte
+ public byte get() {
+     return ((unsafe.getByte(ix(nextGetIndex()))));
+ }
+//获取索引i位置的byte
+ public byte get(int i) {
+     return ((unsafe.getByte(ix(checkIndex(i)))));
+ } 
+ //读取当前缓冲数据，写到字节数组中
+ public ByteBuffer get(byte[] dst, int offset, int length) {
+        if ((length << 0) > Bits.JNI_COPY_TO_ARRAY_THRESHOLD) {
+            checkBounds(offset, length, dst.length);
+	    //在读buffer之前，要调用flip函数，所以position与limit数据，即为缓冲区真实数据
+	    //这也是为什么在缓存区读写模式切换时，要调用flip函数的原因
+            int pos = position();
+            int lim = limit();
+            assert (pos <= lim);
+            int rem = (pos <= lim ? lim - pos : 0);
+            if (length > rem)
+	        //如果字节序列长度，大于当前缓冲剩余空间，抛出BufferUnderflowException
+                throw new BufferUnderflowException();
+            //拷贝当前缓冲数据目的字节数组中
+            Bits.copyToArray(ix(pos), dst, arrayBaseOffset,
+                                 offset << 0,
+                                 length << 0);
+            position(pos + length);
+        } else {
+            super.get(dst, offset, length);
+        }
+        return this;
+    }
+//Bit
+/**
+     * Copy from source address into given destination array.
+     *从源地址拷贝length字节到给定的字节数组中
+     * @param   srcAddr
+     *          source address
+     * @param   dst
+     *          destination array
+     * @param   dstBaseOffset
+     *          offset of first element of storage in destination array
+     * @param   dstPos
+     *          offset within destination array of the first element to write
+     * @param   length
+     *          number of bytes to copy
+     */
+    static void copyToArray(long srcAddr, Object dst, long dstBaseOffset, long dstPos,
+                            long length)
+    {
+        long offset = dstBaseOffset + dstPos;
+        while (length > 0) {
+            long size = (length > UNSAFE_COPY_THRESHOLD) ? UNSAFE_COPY_THRESHOLD : length;
+            unsafe.copyMemory(null, srcAddr, dst, offset, size);
+            length -= size;
+            srcAddr += size;
+            offset += size;
+        }
+    }
+从上可以看出get(byte[] dst, int offset, int length)方法，实际上为利用Bit，从当前缓冲地址
+拷贝length字节到字节数组dst中。
+//从缓冲区获取一个int值
+public int getInt() {
+   //position向后移动4个字节，获取当前position的内存地址，委托给getInt(long a, int x)
+    return getInt(ix(nextGetIndex((1 << 2))));
+}
+private int getInt(long a) {
+   //如果系统架构为已知架构，则通过Unsafe从内存地址a上获取一个int值
+    if (unaligned) {
+        int x = unsafe.getInt(a);
+        return (nativeByteOrder ? x : Bits.swap(x));
+    }
+    return Bits.getInt(a, bigEndian);
+}
+//Unsafe
+public native int getInt(long l);
+当然DirectByteBuffer还要其他get和put方法，这里我们就不一一介绍了，大致思路相同。
+再看其他一些方法。
+//是否为Direct类型缓冲区
+public boolean isDirect() {
+    return true;
+}
+//是否只读
+public boolean isReadOnly() {
+    return false;
+}
+总结：
+在DirectByteBuffer的构造主要是获取系统内存使用是否分页，预留内存，分配内存，
+设置安全访问对象unsafe的起始位置，设置缓存Buffer的起始位置address，创建buffer的Cleaner。
+put（ByteBuffer）操作，如果ByteBuffer为DirectByteBuffer，则利用Unsafe的copyMemory方法
+将源缓冲区position和limit之前的数据拷贝到当前缓冲区。否则拷贝缓冲区字节序列数据到当前缓冲区。
+get(byte[] dst, int offset, int length)方法，实际上为利用Bit，从当前缓冲地址
+拷贝length字节到字节数组dst中，实际上是通过Unsafe的copyMemory方法。
+
+附：
+//DirectByteBuffer
+
+//DirectBuffer
+package sun.nio.ch;
+import sun.misc.Cleaner;
+public interface DirectBuffer
+{
+    public abstract long address();
+    public abstract Object attachment();
+    public abstract Cleaner cleaner();
+}

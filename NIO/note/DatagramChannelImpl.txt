@@ -1,0 +1,363 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+MembershipKey定义:[url]http://donald-draper.iteye.com/blog/2372947[/url]
+MulticastChanne接口定义：[url]http://donald-draper.iteye.com/blog/2373009[/url]
+MembershipKeyImpl 简介：[url]http://donald-draper.iteye.com/blog/2373066[/url]
+DatagramChannel定义：http://donald-draper.iteye.com/blog/2373046
+引言：
+先来回顾一下报文通道相关的概念
+MembershipKeyImpl内部有一个多播关系key关联的多播通道和多播分组地址，及多播报文源地址，及一个地址阻塞集。MembershipKeyImpl主要操作为drop关系key，直接委托个多播通道drop方法；block地址，首先判断多播关系key中的阻塞Set中是否包含对应的地址，有，则直接返回，否则委托给DatagramChannelImpl的block方法，完成实际的阻塞工作，然后添加地址的多播关系key阻塞set；unblock，首先判断多播关系key中的阻塞Set中是否包含对应的地址，无，则直接返回，有则委托给DatagramChannelImpl的unblock方法，完成实际的的解除阻塞工作，并从多播关系key中的阻塞Set移除对应的地址。
+MulticastChanne定义一个通道加入多播组的接口方法join。
+DatagramChannel的send和receive方法是不需要进行网络连接的，而read和write方法有与不能接受和返回socket地址。
+通道必须建立连接。
+在上面一篇DatagramChannel文章中我们看了一下报文通道抽象类的方法的定义，
+今天这篇我们来看报文通道的具体实现我们需要关注的方法为drop，block，unblock，join，
+send，receive，read和write。
+我们从DatagramChannel的open方法看起
+//DatagramChannel
+  public static DatagramChannel open() throws IOException {
+        return SelectorProvider.provider().openDatagramChannel();
+    }
+SelectorProvider.provider()这个过程我们就不详说了实际是加载系统默认的SelectorProvider
+实例，则个我们在SelectorProvider定义有提过，简单看一下：
+//SelectorProviderImpl
+public abstract class SelectorProviderImpl extends SelectorProvider
+{
+    public DatagramChannel openDatagramChannel()
+        throws IOException
+    {
+        return new DatagramChannelImpl(this);
+    }
+
+    public DatagramChannel openDatagramChannel(ProtocolFamily protocolfamily)
+        throws IOException
+    {
+        return new DatagramChannelImpl(this, protocolfamily);
+    }
+}
+从上面可以看出报文通道的具体实现为DatagramChannelImpl，下面来看DatagramChannelImpl
+//DatagramChannelImpl
+package sun.nio.ch;
+import java.io.FileDescriptor;
+import java.io.IOException;
+import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.*;
+import java.nio.channels.spi.SelectorProvider;
+import java.util.*;
+import sun.net.ResourceManager;
+
+// Referenced classes of package sun.nio.ch:
+//            DatagramDispatcher, DatagramSocketAdaptor, DirectBuffer, IOStatus, 
+//            IOUtil, MembershipKeyImpl, MembershipRegistry, NativeDispatcher, 
+//            NativeThread, Net, SelChImpl, SelectionKeyImpl, 
+//            SelectorImpl, Util
+
+class DatagramChannelImpl extends DatagramChannel
+    implements SelChImpl
+{
+   private static NativeDispatcher nd = new DatagramDispatcher();//报文分发器
+    private final FileDescriptor fd;//报文通道的文件描述
+    private final int fdVal;//文件描述值
+    private final ProtocolFamily family;//网络协议
+    private volatile long readerThread;//读线程
+    private volatile long writerThread;//写线程
+    private InetAddress cachedSenderInetAddress;//缓存的发送者InetAddress
+    private int cachedSenderPort;//缓存的发送者port
+    private final Object readLock;//读锁
+    private final Object writeLock;//写锁
+    private final Object stateLock;//状态锁
+    private static final int ST_UNINITIALIZED = -1;//未初始化
+    private static final int ST_UNCONNECTED = 0;//未连接
+    private static final int ST_CONNECTED = 1;//已连接
+    private static final int ST_KILLED = 2;//关闭
+    private int state;//状态
+    private SocketAddress localAddress;//本地SocketAddress
+    private SocketAddress remoteAddress;//远端SocketAddress
+    private DatagramSocket socket;//报文Sockeet
+    private MembershipRegistry registry;//多播关系注册器
+    private SocketAddress sender;//报文发送者的SocketAddress
+    static final boolean $assertionsDisabled = !sun/nio/ch/DatagramChannelImpl.desiredAssertionStatus();
+
+    static 
+    {
+        //加载net和nio资源库
+        Util.load();
+        initIDs();
+    }
+}
+//初始化ID
+private static native void initIDs();
+我们来看一下多播关系注册器
+//MembershipRegistry
+class MembershipRegistry
+{
+    private Map groups;//HashMap<InetAddress,LinkedList<MembershipKeyImpl>>
+    MembershipRegistry()
+    {
+        groups = null;
+    }
+    //注册多播关系到注册器
+     void add(MembershipKeyImpl membershipkeyimpl)
+    {
+        InetAddress inetaddress = membershipkeyimpl.group();
+        Object obj;
+	//从当前注册器获取多播地址对应的obj-LinkedList<membershipkeyimpl>
+        if(groups == null)
+        {
+            groups = new HashMap();
+            obj = null;
+        } else
+        {
+            obj = (List)groups.get(inetaddress);
+        }
+	//如果obj为null，则创建LinkedList，并将多播地址与obj的映射关系添加到注册器的Group中
+        if(obj == null)
+        {
+            obj = new LinkedList();
+            groups.put(inetaddress, obj);
+        }
+	//添加多播关系key到多播地址对应的多播关系key集合中
+        ((List) (obj)).add(membershipkeyimpl);
+    }
+    //移除多播关系key
+     void remove(MembershipKeyImpl membershipkeyimpl)
+    {
+        //根据多播关系key的多播组地址，获取对应的多播关系key集合
+        InetAddress inetaddress = membershipkeyimpl.group();
+        List list = (List)groups.get(inetaddress);
+        if(list != null)
+        {
+            Iterator iterator = list.iterator();
+	    //遍历多播关系key集合，找多播关系key，则移除
+            do
+            {
+                if(!iterator.hasNext())
+                    break;
+                if(iterator.next() != membershipkeyimpl)
+                    continue;
+                iterator.remove();
+                break;
+            } while(true);
+	    //多播关系key集合为空，则从注册器中移除对应的多播组地址映射
+            if(list.isEmpty())
+                groups.remove(inetaddress);
+        }
+    }
+    //使注册器中的所有多播组中的多播关系key无效
+      void invalidateAll()
+    {
+        if(groups != null)
+        {
+	    //遍历多播组
+            for(Iterator iterator = groups.keySet().iterator(); iterator.hasNext();)
+            {
+                InetAddress inetaddress = (InetAddress)iterator.next();
+                Iterator iterator1 = ((List)groups.get(inetaddress)).iterator();
+		//遍历多播关系key集合
+                while(iterator1.hasNext()) 
+                {
+                    MembershipKeyImpl membershipkeyimpl = (MembershipKeyImpl)iterator1.next();
+		    //使多播关系key无效
+                    membershipkeyimpl.invalidate();
+                }
+            }
+
+        }
+    }
+    //检查多播关系注册器中是否有，多播组地址为inetaddress，源地址为inetaddress1，网络接口为networkinterface的MembershipKey
+     MembershipKey checkMembership(InetAddress inetaddress, NetworkInterface networkinterface, InetAddress inetaddress1)
+    {
+label0:
+        {
+            if(groups == null)
+                break label0;
+            //获取多播组对应的多播关系集合
+            List list = (List)groups.get(inetaddress);
+            if(list == null)
+                break label0;
+            Iterator iterator = list.iterator();
+            MembershipKeyImpl membershipkeyimpl;
+	    //遍历多播关系集合中源地址为inetaddress1的多播关系key
+            do
+            {
+	        //遍历源地址为inetaddress1的多播关系key，找到网络接口为networkinterface的MembershipKeyImpl
+                do
+                {
+                    if(!iterator.hasNext())
+                        break label0;
+                    membershipkeyimpl = (MembershipKeyImpl)iterator.next();
+                } while(!membershipkeyimpl.networkInterface().equals(networkinterface));
+                if(inetaddress1 == null)
+                    if(membershipkeyimpl.sourceAddress() == null)
+                        return membershipkeyimpl;
+                    else
+                        throw new IllegalStateException("Already a member to receive all packets");
+                if(membershipkeyimpl.sourceAddress() == null)
+                    throw new IllegalStateException("Already have source-specific membership");
+            } while(!inetaddress1.equals(membershipkeyimpl.sourceAddress()));
+            return membershipkeyimpl;
+        }
+        return null;
+    }
+}
+从上可以看出多播关系注册器MembershipRegistry主要是通过一个Map-HashMap<InetAddress,LinkedList<MembershipKeyImpl>>
+来管理多播组和多播组成员关系key的映射（关系）。
+再来看构造
+//根据选择器提供者创建报文通道
+public DatagramChannelImpl(SelectorProvider selectorprovider)
+        throws IOException
+    {
+        super(selectorprovider);
+        readerThread = 0L;
+        writerThread = 0L;
+        readLock = new Object();
+        writeLock = new Object();
+        stateLock = new Object();
+        state = -1;
+	//更新socket计数器，自增1
+        ResourceManager.beforeUdpCreate();
+        try
+        {
+	    //确定网络协议
+            family = Net.isIPv6Available() ? ((ProtocolFamily) (StandardProtocolFamily.INET6)) : ((ProtocolFamily) (StandardProtocolFamily.INET));
+            //获取文件描述
+	    fd = Net.socket(family, false);
+	    //获取文件描述的id
+            fdVal = IOUtil.fdVal(fd);
+            state = 0;
+        }
+        catch(IOException ioexception)
+        {
+	    //更新socket计数器，自减1
+            ResourceManager.afterUdpClose();
+            throw ioexception;
+        }
+    }
+这个构造我们需要关注的是
+//更新socket计数器，自增1
+ResourceManager.beforeUdpCreate();
+//更新socket计数器，自减1
+ResourceManager.afterUdpClose();
+我们来看一下ResourceManager
+//ResourceManager
+package sun.net;
+
+import java.net.SocketException;
+import java.security.AccessController;
+import java.util.concurrent.atomic.AtomicInteger;
+import sun.security.action.GetPropertyAction;
+
+public class ResourceManager
+{
+    private static final int DEFAULT_MAX_SOCKETS = 25;//默认最大socket数量
+    private static final int maxSockets;//最大socket数量
+    private static final AtomicInteger numSockets = new AtomicInteger(0);//当前socket数量
+
+    static 
+    {
+        //获取虚拟机最大报文socket配置
+        String s = (String)AccessController.doPrivileged(new GetPropertyAction("sun.net.maxDatagramSockets"));
+        int i = 25;
+        try
+        {
+            if(s != null)
+                i = Integer.parseInt(s);
+        }
+        catch(NumberFormatException numberformatexception) { }
+        maxSockets = i;
+    } 
+    public ResourceManager()
+    {
+    }
+
+    public static void beforeUdpCreate()
+        throws SocketException
+    {
+        //如果系统安全检查器不为空，同时当前socket数量自增后大于最大Socket数量，则抛出SocketException
+        if(System.getSecurityManager() != null && numSockets.incrementAndGet() > maxSockets)
+        {
+            numSockets.decrementAndGet();
+            throw new SocketException("maximum number of DatagramSockets reached");
+        } else
+        {
+            return;
+        }
+    }
+    //更新当前报文socket计数器，自减1
+    public static void afterUdpClose()
+    {
+        if(System.getSecurityManager() != null)
+            numSockets.decrementAndGet();
+    }
+}
+
+我们再看其他两个构造方法：
+    public DatagramChannelImpl(SelectorProvider selectorprovider, ProtocolFamily protocolfamily)
+        throws IOException
+    {
+        super(selectorprovider);
+        readerThread = 0L;
+        writerThread = 0L;
+        readLock = new Object();
+        writeLock = new Object();
+        stateLock = new Object();
+        state = -1;
+        if(protocolfamily != StandardProtocolFamily.INET && protocolfamily != StandardProtocolFamily.INET6)
+            if(protocolfamily == null)
+                throw new NullPointerException("'family' is null");
+            else
+                throw new UnsupportedOperationException("Protocol family not supported");
+        if(protocolfamily == StandardProtocolFamily.INET6 && !Net.isIPv6Available())
+        {
+            throw new UnsupportedOperationException("IPv6 not available");
+        } else
+        {
+            family = protocolfamily;
+            fd = Net.socket(protocolfamily, false);
+            fdVal = IOUtil.fdVal(fd);
+            state = 0;
+            return;
+        }
+    }
+
+    public DatagramChannelImpl(SelectorProvider selectorprovider, FileDescriptor filedescriptor)
+        throws IOException
+    {
+        super(selectorprovider);
+        readerThread = 0L;
+        writerThread = 0L;
+        readLock = new Object();
+        writeLock = new Object();
+        stateLock = new Object();
+        state = -1;
+        family = Net.isIPv6Available() ? ((ProtocolFamily) (StandardProtocolFamily.INET6)) : ((ProtocolFamily) (StandardProtocolFamily.INET));
+        fd = filedescriptor;
+        fdVal = IOUtil.fdVal(filedescriptor);
+        state = 0;
+	//初始化报文socket本地地址
+        localAddress = Net.localAddress(filedescriptor);
+    }
+从上面三个构造方法可以看出，主要是初始化读写线程，及读写锁和状态锁，初始化网络协议family，
+及报文通道描述符和文件描述id。
+总结：
+DatagramChannelImpl主要成员有报文socket分发器，这个与SocketChannleImpl中的socket分发器原理
+基本相同，报文socket分发器可以理解为报文通道的静态代理；网络协议family表示当前报文通道的网络协议family；
+多播关系注册器MembershipRegistry，主要是通过一个Map-HashMap<InetAddress,LinkedList<MembershipKeyImpl>>
+来管理多播组和多播组成员关系key的映射（关系）；通道本地读写线程记录器，及读写锁控制通道读写，一个状态锁，
+当通道状态改变时，需要获取状态锁。DatagramChannelImpl构造方法，主要是初始化读写线程，
+及读写锁和状态锁，初始化网络协议family，及报文通道描述符和文件描述id。
+DatagramChannelImpl(SelectorProvider selectorprovider)与
+其他两个不同的是构造时更新当前报文socket的数量。

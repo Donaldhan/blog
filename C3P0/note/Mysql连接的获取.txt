@@ -1,0 +1,1378 @@
+MySQL读写分离又一好办法 使用 com.mysql.jdbc.ReplicationDriver :
+http://www.cnblogs.com/taven/archive/2013/04/24/3040489.html
+Configuring Master/Slave Replication with Connector/J:
+http://dev.mysql.com/doc/connector-j/5.1/en/connector-j-master-slave-replication-connection.html
+JDBC访问Mysql进行读写分离测试：http://blog.csdn.net/hzw2312/article/details/9145307
+ Configuring Load Balancing with Connector/J:
+ http://dev.mysql.com/doc/connector-j/5.1/en/connector-j-usagenotes-j2ee-concepts-managing-load-balanced-connections.html
+ DatabaseMetaData：http://blog.csdn.net/anxinliu2011/article/details/7560511
+下面来看如果从DriverManager获取连接：
+ con = DriverManager.getConnection(url, user, password);
+ //DriverManager
+ //获取连接，将user和password放到Properties，将工作委托给
+ public static Connection getConnection(String url, 
+	String user, String password) throws SQLException {
+        java.util.Properties info = new java.util.Properties();
+
+        // Gets the classloader of the code that called this method, may 
+	// be null.
+	ClassLoader callerCL = DriverManager.getCallerClassLoader();
+
+	if (user != null) {
+	    info.put("user", user);
+	}
+	if (password != null) {
+	    info.put("password", password);
+	}
+
+        return (getConnection(url, info, callerCL));
+    }
+    //获取类加载器
+   /* Returns the caller's class loader, or null if none */
+    private static native ClassLoader getCallerClassLoader();
+    //连接的获取
+    //  Worker method called by the public getConnection() methods.
+    private static Connection getConnection(
+	String url, java.util.Properties info, ClassLoader callerCL) throws SQLException {
+	java.util.Vector drivers = null;
+        /*
+	 * When callerCl is null, we should check the application's
+	 * (which is invoking this class indirectly)
+	 * classloader, so that the JDBC driver class outside rt.jar
+	 * can be loaded from here.
+	 */
+	synchronized(DriverManager.class) {	 
+	  // synchronize loading of the correct classloader.
+	  if(callerCL == null) {
+	      callerCL = Thread.currentThread().getContextClassLoader();
+	   }    
+	} 
+	 
+	if(url == null) {
+	    throw new SQLException("The url cannot be null", "08001");
+	}
+    
+	println("DriverManager.getConnection(\"" + url + "\")");
+        //如果没有初始化，先初始化，这部分，我们在上一篇，已经说过，这里不再赘述
+	if (!initialized) {
+	    initialize();
+	}
+        //copy readDrivers
+	synchronized (DriverManager.class){ 
+            // use the readcopy of drivers
+	    drivers = readDrivers;  
+        }
+
+	// Walk through the loaded drivers attempting to make a connection.
+	// Remember the first exception that gets raised so we can reraise it.
+	SQLException reason = null;
+	for (int i = 0; i < drivers.size(); i++) {
+	    //从驱动集合类获取驱动
+	    DriverInfo di = (DriverInfo)drivers.elementAt(i);
+      
+	    // If the caller does not have permission to load the driver then 
+	    // skip it.
+	    //获取合适的驱动
+	    if ( getCallerClass(callerCL, di.driverClassName ) != di.driverClass ) {
+		println("    skipping: " + di);
+		continue;
+	    }
+	    try {
+		println("    trying " + di);
+		//从驱动获取Connection，关键在这里
+		Connection result = di.driver.connect(url, info);
+		if (result != null) {
+		    // Success!
+		    println("getConnection returning " + di);
+		    return (result);
+		}
+	    } catch (SQLException ex) {
+		if (reason == null) {
+		    reason = ex;
+		}
+	    }
+	}
+    
+	// if we got here nobody could connect.
+	if (reason != null)    {
+	    println("getConnection failed: " + reason);
+	    throw reason;
+	}
+	println("getConnection: no suitable driver found for "+ url);
+	throw new SQLException("No suitable driver found for "+ url, "08001");
+    }
+下面我们来看com.mysql.jdbc.Driver如何获取连接
+public class Driver extends NonRegisteringDriver
+    implements java.sql.Driver
+{
+    public Driver()
+        throws SQLException
+    {
+    }
+    static 
+    {
+        try
+        {
+            DriverManager.registerDriver(new Driver());
+        }
+        catch(SQLException E)
+        {
+            throw new RuntimeException("Can't register driver!");
+        }
+    }
+}
+查看NonRegisteringDriver
+//NonRegisteringDriver
+public class NonRegisteringDriver
+    implements Driver
+{
+   //获取连接
+ public Connection connect(String url, Properties info)
+        throws SQLException
+    {
+        Properties props;
+        if(url != null)
+        {
+	    //如果url以jdbc:mysql:loadbalance://则调用负载均衡连接获取方法
+            if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:loadbalance://"))
+                return connectLoadBalanced(url, info);
+	    //如果url以jdbc:mysql:replication://则调用集群连接获取方法
+            if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:replication://"))
+                return connectReplicationConnection(url, info);
+        }
+        props = null;
+	解析url
+        if((props = parseURL(url, info)) == null)
+            return null;
+	//获取mysql连接
+        com.mysql.jdbc.Connection newConn = ConnectionImpl.getInstance(host(props), port(props), props, database(props), url);
+        return newConn;
+        SQLException sqlEx;
+        sqlEx;
+        throw sqlEx;
+        Exception ex;
+        ex;
+        SQLException sqlEx = SQLError.createSQLException(Messages.getString("NonRegisteringDriver.17") + ex.toString() + Messages.getString("NonRegisteringDriver.18"), "08001", null);
+        sqlEx.initCause(ex);
+        throw sqlEx;
+    }
+连接的获取这一部分有3个点我们分别来看：
+1.
+//如果url以jdbc:mysql:loadbalance://则调用负载均衡连接获取方法
+if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:loadbalance://"))
+       return connectLoadBalanced(url, info);
+2.
+//如果url以jdbc:mysql:replication://则调用集群连接获取方法
+if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:replication://"))
+                return connectReplicationConnection(url, info);
+3.
+//解析url
+if((props = parseURL(url, info)) == null)
+       return null;
+//获取mysql连接
+com.mysql.jdbc.Connection newConn = ConnectionImpl.getInstance(host(props), port(props), props, database(props), url);
+
+
+我们先看获取单个Server的连接
+//解析url
+ public Properties parseURL(String url, Properties defaults)
+        throws SQLException
+    {
+        Properties urlProps = defaults == null ? new Properties() : new Properties(defaults);
+        if(url == null)
+            return null;
+	//如果url不以jdbc:mysql://开头，则返回
+        if(!StringUtils.startsWithIgnoreCase(url, "jdbc:mysql://") && !StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:mxj://") && !StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:loadbalance://") && !StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:replication://"))
+            return null;
+        int beginningOfSlashes = url.indexOf("//");
+        if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:mxj://"))
+            urlProps.setProperty("socketFactory", "com.mysql.management.driverlaunched.ServerLauncherSocketFactory");
+        int index = url.indexOf("?");
+	//解析查询参数useUnicode=true&characterEncoding=utf8&characterSetResults=utf8
+	//jdbc:mysql://localhost:3306/test?useUnicode=true&characterEncoding=utf8&characterSetResults=utf8
+        if(index != -1)
+        {
+            String paramString = url.substring(index + 1, url.length());
+            url = url.substring(0, index);
+            StringTokenizer queryParams = new StringTokenizer(paramString, "&");
+            do
+            {
+                if(!queryParams.hasMoreTokens())
+                    break;
+                String parameterValuePair = queryParams.nextToken();
+                int indexOfEquals = StringUtils.indexOfIgnoreCase(0, parameterValuePair, "=");
+                String parameter = null;
+                String value = null;
+                if(indexOfEquals != -1)
+                {
+                    parameter = parameterValuePair.substring(0, indexOfEquals);
+                    if(indexOfEquals + 1 < parameterValuePair.length())
+                        value = parameterValuePair.substring(indexOfEquals + 1);
+                }
+                if(value != null && value.length() > 0 && parameter != null && parameter.length() > 0)
+                    try
+                    {
+                        urlProps.put(parameter, URLDecoder.decode(value, "UTF-8"));
+                    }
+                    catch(UnsupportedEncodingException badEncoding)
+                    {
+                        urlProps.put(parameter, URLDecoder.decode(value));
+                    }
+                    catch(NoSuchMethodError nsme)
+                    {
+                        urlProps.put(parameter, URLDecoder.decode(value));
+                    }
+            } while(true);
+        }
+        url = url.substring(beginningOfSlashes + 2);
+        String hostStuff = null;
+        int slashIndex = url.indexOf("/");
+        if(slashIndex != -1)
+        {
+            hostStuff = url.substring(0, slashIndex);
+            if(slashIndex + 1 < url.length())
+	        //url中的db
+                urlProps.put("DBNAME", url.substring(slashIndex + 1, url.length()));
+        } else
+        {
+            hostStuff = url;
+        }
+        if(hostStuff != null && hostStuff.length() > 0)
+	     //url中host
+            urlProps.put("HOST", hostStuff);
+        String propertiesTransformClassName = urlProps.getProperty("propertiesTransform");
+        if(propertiesTransformClassName != null)
+            try
+            {
+                ConnectionPropertiesTransform propTransformer = (ConnectionPropertiesTransform)Class.forName(propertiesTransformClassName).newInstance();
+                urlProps = propTransformer.transformProperties(urlProps);
+            }
+            catch(InstantiationException e)
+            {
+                throw SQLError.createSQLException("Unable to create properties transform instance '" + propertiesTransformClassName + "' due to underlying exception: " + e.toString(), "01S00", null);
+            }
+            catch(IllegalAccessException e)
+            {
+                throw SQLError.createSQLException("Unable to create properties transform instance '" + propertiesTransformClassName + "' due to underlying exception: " + e.toString(), "01S00", null);
+            }
+            catch(ClassNotFoundException e)
+            {
+                throw SQLError.createSQLException("Unable to create properties transform instance '" + propertiesTransformClassName + "' due to underlying exception: " + e.toString(), "01S00", null);
+            }
+        if(Util.isColdFusion() && urlProps.getProperty("autoConfigureForColdFusion", "true").equalsIgnoreCase("true"))
+        {
+            String configs = urlProps.getProperty("useConfigs");
+            StringBuffer newConfigs = new StringBuffer();
+            if(configs != null)
+            {
+                newConfigs.append(configs);
+                newConfigs.append(",");
+            }
+            newConfigs.append("coldFusion");
+            urlProps.setProperty("useConfigs", newConfigs.toString());
+        }
+        String configNames = null;
+        if(defaults != null)
+            configNames = defaults.getProperty("useConfigs");
+        if(configNames == null)
+            configNames = urlProps.getProperty("useConfigs");
+        if(configNames != null)
+        {
+            List splitNames = StringUtils.split(configNames, ",", true);
+            Properties configProps = new Properties();
+            Iterator namesIter = splitNames.iterator();
+            do
+            {
+                if(!namesIter.hasNext())
+                    break;
+                String configName = (String)namesIter.next();
+                try
+                {
+                    java.io.InputStream configAsStream = getClass().getResourceAsStream("configs/" + configName + ".properties");
+                    if(configAsStream == null)
+                        throw SQLError.createSQLException("Can't find configuration template named '" + configName + "'", "01S00", null);
+                    configProps.load(configAsStream);
+                }
+                catch(IOException ioEx)
+                {
+                    SQLException sqlEx = SQLError.createSQLException("Unable to load configuration template '" + configName + "' due to underlying IOException: " + ioEx, "01S00", null);
+                    sqlEx.initCause(ioEx);
+                    throw sqlEx;
+                }
+            } while(true);
+            String key;
+            String property;
+            for(Iterator propsIter = urlProps.keySet().iterator(); propsIter.hasNext(); configProps.setProperty(key, property))
+            {
+                key = propsIter.next().toString();
+                property = urlProps.getProperty(key);
+            }
+
+            urlProps = configProps;
+        }
+        if(defaults != null)
+        {
+            String key;
+            String property;
+            for(Iterator propsIter = defaults.keySet().iterator(); propsIter.hasNext(); urlProps.setProperty(key, property))
+            {
+                key = propsIter.next().toString();
+                property = defaults.getProperty(key);
+            }
+
+        }
+        return urlProps;
+    }
+从上我们可以看出url解析实际上，是解析出host，port，db，查询参数
+//获取mysql连接
+com.mysql.jdbc.Connection newConn = ConnectionImpl.getInstance(host(props), port(props), props, database(props), url);
+//ConnectionImpl
+public class ConnectionImpl extends ConnectionPropertiesImpl
+    implements Connection
+{
+    private static Map mapTransIsolationNameToValue;//事务隔离级别Map
+    private static Timer cancelTimer;
+    private static final Constructor JDBC_4_CONNECTION_CTOR;//jdbc4Connection构造函数
+    private boolean autoCommit;//autoCommit
+    private Map cachedPreparedStatementParams;
+    private String characterSetMetadata;
+    private String characterSetResultsOnServer;
+    private Map charsetConverterMap;
+    private long connectionId;//connectionId
+    private String database;//database
+    private DatabaseMetaData dbmd;
+    private String host;//host
+    private List hostList;
+    private int hostListSize;
+    private MysqlIO io;//MysqlIO
+    private boolean isClientTzUTC;
+    private boolean isClosed;
+    private boolean isInGlobalTx;
+    private boolean isRunningOnJDK13;
+    private int isolationLevel;//事务隔离级别
+    private final Object mutex;
+    private String myURL;//myURL
+    private boolean needsPing;
+    private int netBufferLength;
+    private boolean noBackslashEscapes;
+    private Map openStatements;//statment Map
+    private LRUCache parsedCallableStatementCache;//存储过程缓存
+    private String password;//password
+    private long perfMetricsHistBreakpoints[];
+    private int perfMetricsHistCounts[];
+    private Throwable pointOfOrigin;
+    private int port;//port
+    private boolean preferSlaveDuringFailover;
+    protected Properties props;
+    private long queriesIssuedFailedOver;
+    private boolean readInfoMsg;
+    private boolean readOnly;//readOnly
+    protected LRUCache resultSetMetadataCache;//结果集缓存
+    private TimeZone serverTimezoneTZ;//服务器TimeZone
+    private Map serverVariables;
+    private long shortestQueryTimeMs;
+    private Map statementsUsingMaxRows;
+    private double totalQueryTimeMs;
+    private boolean transactionsSupported;
+    private Map typeMap;
+    private boolean useAnsiQuotes;
+    private String user;//user
+    private boolean useServerPreparedStmts;
+    private LRUCache serverSideStatementCheckCache;
+    private LRUCache serverSideStatementCache;
+    private Calendar sessionCalendar;
+    private Calendar utcCalendar;
+    private String origHostToConnectTo;
+    private int origPortToConnectTo;
+    private String origDatabaseToConnectTo;
+    private String errorMessageEncoding;
+    private boolean usePlatformCharsetConverters;
+    private boolean hasTriedMasterFlag;
+    private String statementComment;
+    private boolean storesLowerCaseTableName;
+    private List statementInterceptors;
+    private boolean requiresEscapingEncoder;
+    private boolean usingCachedConfig;
+    private int autoIncrementIncrement;
+
+    static 
+    {
+        mapTransIsolationNameToValue = null;
+        mapTransIsolationNameToValue = new HashMap(8);
+	//五种事务隔离级别
+        mapTransIsolationNameToValue.put("READ-UNCOMMITED", Constants.integerValueOf(1));
+        mapTransIsolationNameToValue.put("READ-UNCOMMITTED", Constants.integerValueOf(1));
+        mapTransIsolationNameToValue.put("READ-COMMITTED", Constants.integerValueOf(2));
+        mapTransIsolationNameToValue.put("REPEATABLE-READ", Constants.integerValueOf(4));
+        mapTransIsolationNameToValue.put("SERIALIZABLE", Constants.integerValueOf(8));
+        boolean createdNamedTimer = false;
+        try
+        {
+            Constructor ctr = (java.util.Timer.class).getConstructor(new Class[] {
+                java.lang.String.class, Boolean.TYPE
+            });
+            cancelTimer = (Timer)ctr.newInstance(new Object[] {
+                "MySQL Statement Cancellation Timer", Boolean.TRUE
+            });
+            createdNamedTimer = true;
+        }
+        catch(Throwable t)
+        {
+            createdNamedTimer = false;
+        }
+        if(!createdNamedTimer)
+            cancelTimer = new Timer(true);
+        if(Util.isJdbc4())
+            try
+            {
+	        //获取JDBC4Connection的构造函数
+                JDBC_4_CONNECTION_CTOR = Class.forName("com.mysql.jdbc.JDBC4Connection").getConstructor(new Class[] {
+                    java.lang.String.class, Integer.TYPE, java.util.Properties.class, java.lang.String.class, java.lang.String.class
+                });
+            }
+            catch(ClassNotFoundException e)
+            {
+                throw new RuntimeException(e);
+            }
+    }
+    //获取Connection
+   protected static Connection getInstance(String hostToConnectTo, int portToConnectTo, Properties info, String databaseToConnectTo, String url)
+        throws SQLException
+    {
+        //如果不是jdbc4则返回ConnectionImpl，否则为JDBC4Connection
+        if(!Util.isJdbc4())
+            return new ConnectionImpl(hostToConnectTo, portToConnectTo, info, databaseToConnectTo, url);
+        else
+            return (Connection)Util.handleNewInstance(JDBC_4_CONNECTION_CTOR, new Object[] {
+                hostToConnectTo, Constants.integerValueOf(portToConnectTo), info, databaseToConnectTo, url
+            }, null);
+    }
+}
+先看ConnectionImpl，
+//ConnectionImpl
+
+ protected ConnectionImpl(String hostToConnectTo, int portToConnectTo, Properties info, String databaseToConnectTo, String url)
+        throws SQLException
+    {
+        autoCommit = true;//自动提交为true
+	//所有变量先赋值为null，待不用时，垃圾回收器，回收变量
+        characterSetMetadata = null;
+        characterSetResultsOnServer = null;
+        charsetConverterMap = new HashMap(CharsetMapping.getNumberOfCharsetsConfigured());
+        connectionCreationTimeMillis = 0L;
+        database = null;
+        dbmd = null;
+        executingFailoverReconnect = false;
+        failedOver = false;
+        hasIsolationLevels = false;
+        hasQuotedIdentifiers = false;
+        host = null;
+        hostList = null;
+        hostListSize = 0;
+        indexToCharsetMapping = CharsetMapping.INDEX_TO_CHARSET;
+        io = null;
+        isClientTzUTC = false;
+        isClosed = true;
+        isInGlobalTx = false;
+        isRunningOnJDK13 = false;
+        isolationLevel = 2;//默认隔离级别为READ-COMMITTED
+        isServerTzUTC = false;
+        lastQueryFinishedTime = 0L;
+        log = NULL_LOGGER;
+        longestQueryTimeMs = 0L;
+        lowerCaseTableNames = false;
+        masterFailTimeMillis = 0L;
+        maximumNumberTablesAccessed = 0L;
+        maxRowsChanged = false;
+        minimumNumberTablesAccessed = 9223372036854775807L;
+        mutex = new Object();//互斥量
+        myURL = null;
+        needsPing = false;
+        netBufferLength = 16384;
+        noBackslashEscapes = false;
+        numberOfPreparedExecutes = 0L;
+        numberOfPrepares = 0L;
+        numberOfQueriesIssued = 0L;
+        numberOfResultSetsCreated = 0L;
+        oldHistBreakpoints = null;
+        oldHistCounts = null;
+        parserKnowsUnicode = false;
+        password = null;
+        port = 3306;
+        preferSlaveDuringFailover = false;
+        props = null;
+        queriesIssuedFailedOver = 0L;
+        readInfoMsg = false;
+        readOnly = false;//默认读写
+        serverTimezoneTZ = null;
+        serverVariables = null;
+        shortestQueryTimeMs = 9223372036854775807L;
+        totalQueryTimeMs = 0.0D;
+        transactionsSupported = false;
+        useAnsiQuotes = false;
+        user = null;
+        useServerPreparedStmts = false;
+        errorMessageEncoding = "Cp1252";
+        hasTriedMasterFlag = false;
+        statementComment = null;
+        usingCachedConfig = false;
+        autoIncrementIncrement = 0;
+        charsetToNumBytesMap = new HashMap();
+        connectionCreationTimeMillis = System.currentTimeMillis();
+        pointOfOrigin = new Throwable();
+        origHostToConnectTo = hostToConnectTo;
+        origPortToConnectTo = portToConnectTo;
+        origDatabaseToConnectTo = databaseToConnectTo;
+        try
+        {
+            (java.sql.Blob.class).getMethod("truncate", new Class[] {
+                Long.TYPE
+            });
+            isRunningOnJDK13 = false;
+        }
+        catch(NoSuchMethodException nsme)
+        {
+            isRunningOnJDK13 = true;
+        }
+        sessionCalendar = new GregorianCalendar();
+        utcCalendar = new GregorianCalendar();
+        utcCalendar.setTimeZone(TimeZone.getTimeZone("GMT"));
+        log = LogFactory.getLogger(getLogger(), "MySQL", getExceptionInterceptor());
+        defaultTimeZone = Util.getDefaultTimeZone();
+        if("GMT".equalsIgnoreCase(defaultTimeZone.getID()))
+            isClientTzUTC = true;
+        else
+            isClientTzUTC = false;
+        openStatements = new HashMap();
+        serverVariables = new HashMap();
+	//初始化db信息，host，port，user，password等
+        hostList = new ArrayList();
+        if(hostToConnectTo == null)
+        {
+            host = "localhost";
+            hostList.add(host);
+        } else
+        if(hostToConnectTo.indexOf(',') != -1)
+        {
+            for(StringTokenizer hostTokenizer = new StringTokenizer(hostToConnectTo, ",", false); hostTokenizer.hasMoreTokens(); hostList.add(hostTokenizer.nextToken().trim()));
+        } else
+        {
+            host = hostToConnectTo;
+            hostList.add(host);
+        }
+        hostListSize = hostList.size();
+        port = portToConnectTo;
+        if(databaseToConnectTo == null)
+            databaseToConnectTo = "";
+        database = databaseToConnectTo;
+        myURL = url;
+        user = info.getProperty("user");
+        password = info.getProperty("password");
+        if(user == null || user.equals(""))
+            user = "";
+        if(password == null)
+            password = "";
+        props = info;
+	//初始化驱动属性
+        initializeDriverProperties(info);
+        try
+        {
+	    //初始化数据库元数据信息
+	    //private DatabaseMetaData dbmd;
+            dbmd = getMetaData(false, false);
+	    //创建MysqlIO
+            createNewIO(false);
+	    //初始化mysqlStatement拦截器
+            initializeStatementInterceptors();
+	    //设置IO拦截器
+            io.setStatementInterceptors(statementInterceptors);
+        }
+        catch(SQLException ex)
+        {
+	    //关闭mysqlIO
+            cleanup(ex);
+            throw ex;
+        }
+        catch(Exception ex)
+        {
+            cleanup(ex);
+            StringBuffer mesg = new StringBuffer(128);
+            if(!getParanoid())
+            {
+                mesg.append("Cannot connect to MySQL server on ");
+                mesg.append(host);
+                mesg.append(":");
+                mesg.append(port);
+                mesg.append(".\n\n");
+                mesg.append("Make sure that there is a MySQL server ");
+                mesg.append("running on the machine/port you are trying ");
+                mesg.append("to connect to and that the machine this software is running on ");
+                mesg.append("is able to connect to this host/port (i.e. not firewalled). ");
+                mesg.append("Also make sure that the server has not been started with the --skip-networking ");
+                mesg.append("flag.\n\n");
+            } else
+            {
+                mesg.append("Unable to connect to database.");
+            }
+            SQLException sqlEx = SQLError.createSQLException(mesg.toString(), "08S01", getExceptionInterceptor());
+            sqlEx.initCause(ex);
+            throw sqlEx;
+        }
+    }
+
+
+
+//初始化驱动属性
+initializeDriverProperties(info);
+ private void initializeDriverProperties(Properties info)
+        throws SQLException
+    {
+        initializeProperties(info);
+        String exceptionInterceptorClasses = getExceptionInterceptors();
+        if(exceptionInterceptorClasses != null && !"".equals(exceptionInterceptorClasses))
+        {
+            exceptionInterceptor = new ExceptionInterceptorChain(exceptionInterceptorClasses);
+            exceptionInterceptor.init(this, info);
+        }
+        usePlatformCharsetConverters = getUseJvmCharsetConverters();
+        log = LogFactory.getLogger(getLogger(), "MySQL", getExceptionInterceptor());
+        if(getProfileSql() || getUseUsageAdvisor())
+            eventSink = ProfilerEventHandlerFactory.getInstance(this);
+        if(getCachePreparedStatements())
+	    //创建PreparedStatement缓存
+            createPreparedStatementCaches();
+        if(getNoDatetimeStringSync() && getUseTimezone())
+            throw SQLError.createSQLException("Can't enable noDatetimeSync and useTimezone configuration properties at the same time", "01S00", getExceptionInterceptor());
+        if(getCacheCallableStatements())
+	   //设置CallableStatement缓存
+            parsedCallableStatementCache = new LRUCache(getCallableStatementCacheSize());
+        if(getAllowMultiQueries())
+            setCacheResultSetMetadata(false);
+        if(getCacheResultSetMetadata())
+	     //设置结果集缓存
+            resultSetMetadataCache = new LRUCache(getMetadataCacheSize());
+    }
+  //初始化属性
+ protected void initializeProperties(Properties info)
+        throws SQLException
+    {
+        if(info != null)
+        {
+            String profileSqlLc = info.getProperty("profileSql");
+            if(profileSqlLc != null)
+                info.put("profileSQL", profileSqlLc);
+            Properties infoCopy = (Properties)info.clone();
+            infoCopy.remove("HOST");
+            infoCopy.remove("user");
+            infoCopy.remove("password");
+            infoCopy.remove("DBNAME");
+            infoCopy.remove("PORT");
+            infoCopy.remove("profileSql");
+            int numPropertiesToSet = PROPERTY_LIST.size();
+            for(int i = 0; i < numPropertiesToSet; i++)
+            {
+                Field propertyField = (Field)PROPERTY_LIST.get(i);
+                try
+                {
+                    ConnectionProperty propToSet = (ConnectionProperty)propertyField.get(this);
+                    propToSet.initializeFrom(infoCopy);
+                }
+            }
+
+            postInitialization();
+        }
+    }
+//初始化数据库元数据信息
+ //private DatabaseMetaData dbmd;
+dbmd = getMetaData(false, false);
+   private DatabaseMetaData getMetaData(boolean checkClosed, boolean checkForInfoSchema)
+        throws SQLException
+    {
+        if(checkClosed)
+            checkClosed();
+        return DatabaseMetaData.getInstance(this, database, checkForInfoSchema);
+    }
+//创建MysqlIO
+createNewIO(false);
+protected void createNewIO(boolean isForReconnect)
+        throws SQLException
+    {
+        Object obj = mutex;
+        JVM INSTR monitorenter ;
+        Properties mergedProps;
+        long queriesIssuedFailedOverCopy;
+        mergedProps = exposeAsProperties(props);
+        queriesIssuedFailedOverCopy = queriesIssuedFailedOver;
+        queriesIssuedFailedOver = 0L;
+	//对于Standyalone Sever情况
+        if(!getHighAvailability() && !failedOver)
+        {
+            boolean connectionGood = false;
+            Exception connectionNotEstablishedBecause = null;
+            int hostIndex = 0;
+            if(getRoundRobinLoadBalance())
+                hostIndex = getNextRoundRobinHostIndex(getURL(), hostList);
+            while(hostIndex < hostListSize) 
+            {
+                if(hostIndex == 0)
+                    hasTriedMasterFlag = true;
+                try
+                {
+                    String newHostPortPair = (String)hostList.get(hostIndex);
+                    int newPort = 3306;
+                    String hostPortPair[] = NonRegisteringDriver.parseHostPortPair(newHostPortPair);
+                    String newHost = hostPortPair[0];
+                    if(newHost == null || StringUtils.isEmptyOrWhitespaceOnly(newHost))
+                        newHost = "localhost";
+                    if(hostPortPair[1] != null)
+                        try
+                        {
+                            newPort = Integer.parseInt(hostPortPair[1]);
+                        }
+                        catch(NumberFormatException nfe)
+                        {
+                            throw SQLError.createSQLException("Illegal connection port value '" + hostPortPair[1] + "'", "01S00", getExceptionInterceptor());
+                        }
+		     //创建MysqlIO
+                    io = new MysqlIO(newHost, newPort, mergedProps, getSocketFactoryClassName(), this, getSocketTimeout(), largeRowSizeThreshold.getValueAsInt());
+                    //握手
+		    io.doHandshake(user, password, database);
+		    //获取io的线程id
+                    connectionId = io.getThreadId();
+                    isClosed = false;
+                    boolean oldAutoCommit = getAutoCommit();//AutoCommit
+                    int oldIsolationLevel = isolationLevel;//事务隔离级别
+                    boolean oldReadOnly = isReadOnly();//ReadOnly
+                    String oldCatalog = getCatalog();
+                    initializePropsFromServer();
+                    if(isForReconnect)
+                    {
+                        setAutoCommit(oldAutoCommit);
+                        if(hasIsolationLevels)
+                            setTransactionIsolation(oldIsolationLevel);
+                        setCatalog(oldCatalog);
+                    }
+                    if(hostIndex != 0)
+                    {
+                        setFailedOverState();
+                        queriesIssuedFailedOverCopy = 0L;
+                    } else
+                    {
+                        failedOver = false;
+                        queriesIssuedFailedOverCopy = 0L;
+                        if(hostListSize > 1)
+                            setReadOnlyInternal(false);
+                        else
+                            setReadOnlyInternal(oldReadOnly);
+                    }
+                    connectionGood = true;
+                    break;
+                }
+                catch(Exception EEE)
+                {
+                    if(io != null)
+                        io.forceClose();
+                    connectionNotEstablishedBecause = EEE;
+                    connectionGood = false;
+                    if(EEE instanceof SQLException)
+                    {
+                        SQLException sqlEx = (SQLException)EEE;
+                        String sqlState = sqlEx.getSQLState();
+                        if(sqlState == null || !sqlState.equals("08S01"))
+                            throw sqlEx;
+                    }
+                    if(getRoundRobinLoadBalance())
+                    {
+                        hostIndex = getNextRoundRobinHostIndex(getURL(), hostList) - 1;
+                        continue;
+                    }
+                    if(hostListSize - 1 == hostIndex)
+                        throw SQLError.createCommunicationsException(this, io == null ? 0L : io.getLastPacketSentTimeMs(), io == null ? 0L : io.getLastPacketReceivedTimeMs(), EEE, getExceptionInterceptor());
+                    hostIndex++;
+                }
+            }
+            if(!connectionGood)
+            {
+                SQLException chainedEx = SQLError.createSQLException(Messages.getString("Connection.UnableToConnect"), "08001", getExceptionInterceptor());
+                chainedEx.initCause(connectionNotEstablishedBecause);
+                throw chainedEx;
+            }
+        } else
+        {
+	   //对于负载均衡集群
+            double timeout = getInitialTimeout();
+            boolean connectionGood = false;
+            Exception connectionException = null;
+            int hostIndex = 0;
+            if(getRoundRobinLoadBalance())
+                hostIndex = getNextRoundRobinHostIndex(getURL(), hostList);
+            for(; hostIndex < hostListSize && !connectionGood; hostIndex++)
+            {
+                if(hostIndex == 0)
+                    hasTriedMasterFlag = true;
+                if(preferSlaveDuringFailover && hostIndex == 0)
+                    hostIndex++;
+                for(int attemptCount = 0; attemptCount < getMaxReconnects() && !connectionGood; attemptCount++)
+                {
+                    try
+                    {
+                        if(io != null)
+                            io.forceClose();
+                        String newHostPortPair = (String)hostList.get(hostIndex);
+                        int newPort = 3306;
+                        String hostPortPair[] = NonRegisteringDriver.parseHostPortPair(newHostPortPair);
+                        String newHost = hostPortPair[0];
+                        if(newHost == null || StringUtils.isEmptyOrWhitespaceOnly(newHost))
+                            newHost = "localhost";
+                        if(hostPortPair[1] != null)
+                            try
+                            {
+                                newPort = Integer.parseInt(hostPortPair[1]);
+                            }
+                            catch(NumberFormatException nfe)
+                            {
+                                throw SQLError.createSQLException("Illegal connection port value '" + hostPortPair[1] + "'", "01S00", getExceptionInterceptor());
+                            }
+			//创建MysqlIO
+                        io = new MysqlIO(newHost, newPort, mergedProps, getSocketFactoryClassName(), this, getSocketTimeout(), largeRowSizeThreshold.getValueAsInt());
+                        //握手
+			io.doHandshake(user, password, database);
+                        pingInternal(false, 0);
+                         //获取io的线程id
+                        connectionId = io.getThreadId();
+                        isClosed = false;
+                        boolean oldAutoCommit = getAutoCommit();//AutoCommit
+                        int oldIsolationLevel = isolationLevel;//事务级别
+                        boolean oldReadOnly = isReadOnly();//ReadOnly
+                        String oldCatalog = getCatalog();
+                        initializePropsFromServer();
+                        if(isForReconnect)
+                        {
+                            setAutoCommit(oldAutoCommit);
+                            if(hasIsolationLevels)
+                                setTransactionIsolation(oldIsolationLevel);
+                            setCatalog(oldCatalog);
+                        }
+                        connectionGood = true;
+                        if(hostIndex != 0)
+                        {
+                            setFailedOverState();
+                            queriesIssuedFailedOverCopy = 0L;
+                            break;
+                        }
+                        failedOver = false;
+                        queriesIssuedFailedOverCopy = 0L;
+                        if(hostListSize > 1)
+                            setReadOnlyInternal(false);
+                        else
+                            setReadOnlyInternal(oldReadOnly);
+                        break;
+                    }
+                    catch(Exception EEE)
+                    {
+                        connectionException = EEE;
+                    }
+                    connectionGood = false;
+                    if(getRoundRobinLoadBalance())
+                        hostIndex = getNextRoundRobinHostIndex(getURL(), hostList) - 1;
+                    if(connectionGood)
+                        break;
+                    if(attemptCount <= 0)
+                        continue;
+                    try
+                    {
+                        Thread.sleep((long)timeout * 1000L);
+                    }
+                    catch(InterruptedException IE) { }
+                }
+
+            }
+
+            if(!connectionGood)
+            {
+                SQLException chainedEx = SQLError.createSQLException(Messages.getString("Connection.UnableToConnectWithRetries", new Object[] {
+                    new Integer(getMaxReconnects())
+                }), "08001", getExceptionInterceptor());
+                chainedEx.initCause(connectionException);
+                throw chainedEx;
+            }
+        }
+        if(getParanoid() && !getHighAvailability() && hostListSize <= 1)
+        {
+            password = null;
+            user = null;
+        }
+        if(isForReconnect)
+        {
+            Iterator statementIter = openStatements.values().iterator();
+            Stack serverPreparedStatements = null;
+            do
+            {
+                if(!statementIter.hasNext())
+                    break;
+                Object statementObj = statementIter.next();
+                if(statementObj instanceof ServerPreparedStatement)
+                {
+                    if(serverPreparedStatements == null)
+                        serverPreparedStatements = new Stack();
+                    serverPreparedStatements.add(statementObj);
+                }
+            } while(true);
+            if(serverPreparedStatements != null)
+                for(; !serverPreparedStatements.isEmpty(); ((ServerPreparedStatement)serverPreparedStatements.pop()).rePrepare());
+        }
+        queriesIssuedFailedOver = queriesIssuedFailedOverCopy;
+        break MISSING_BLOCK_LABEL_1241;
+        Exception exception;
+        exception;
+        queriesIssuedFailedOver = queriesIssuedFailedOverCopy;
+        throw exception;
+        Exception exception1;
+        exception1;
+        throw exception1;
+ }
+//初始化mysqlStatement拦截器
+initializeStatementInterceptors();
+   protected void initializeStatementInterceptors()
+        throws SQLException
+    {
+        statementInterceptors = Util.loadExtensions(this, props, getStatementInterceptors(), "MysqlIo.BadStatementInterceptor", getExceptionInterceptor());
+    }
+
+//设置IO拦截器
+io.setStatementInterceptors(statementInterceptors);
+
+//关闭mysqlIO
+private void cleanup(Throwable whyCleanedUp)
+    {
+        try
+        {
+            if(io != null && !isClosed())
+                realClose(false, false, false, whyCleanedUp);
+            else
+            if(io != null)
+                io.forceClose();
+        }
+        catch(SQLException sqlEx) { }
+        isClosed = true;
+    }
+从上面的分析，可以看出从DriverManager获取连接，实际上是事委托给com.mysql.jdbc.Driver,
+com.mysql.jdbc.Driver实际调用的是NonRegisteringDriver获取连接方法，首先分析url，
+如果url以jdbc:mysql:loadbalance://或jdbc:mysql:replication://开头，则调用负载均衡，集群的连接获取方法；
+如果是单机服务器，根据jdbc4的属性，创建相应的连接；如果不是jdbc4类型，则创建ConnectionImpl实例，初始化
+连接事务级别，db信息，autoCommit，readonly等属性，初始化驱动属性，创建PreparedStatement缓存，
+设置CallableStatement缓存，设置结果集缓存，初始化数据库元数据信息DatabaseMetaData，创建MysqlIO，
+初始化mysqlStatement拦截器，设置IO拦截器。
+下面来看一下jdbc4连接：
+
+//JDBC4Connection
+public class JDBC4Connection extends ConnectionImpl
+{
+
+
+  public JDBC4Connection(String hostToConnectTo, int portToConnectTo, Properties info, String databaseToConnectTo, String url)
+        throws SQLException
+    {
+        super(hostToConnectTo, portToConnectTo, info, databaseToConnectTo, url);
+    }
+    private JDBC4ClientInfoProvider infoProvider;
+}
+从上面可以看出JDBC4Connection是ConnectionImpl的包装。
+至此mysql连接的获取讲完，下一篇，看一下集群及负载均衡的连接获取 。
+
+
+
+//NonRegisteringDriver
+public class NonRegisteringDriver
+    implements Driver
+{
+   //返回host，无返回localhost
+   public String host(Properties props)
+    {
+        return props.getProperty("HOST", "localhost");
+    }
+    public String database(Properties props)
+    {
+        return props.getProperty("DBNAME");
+    }
+     //返回PORT，无返回3306
+     public int port(Properties props)
+    {
+        return Integer.parseInt(props.getProperty("PORT", "3306"));
+    }
+    private static final String REPLICATION_URL_PREFIX = "jdbc:mysql:replication://";
+    private static final String URL_PREFIX = "jdbc:mysql://";
+    private static final String MXJ_URL_PREFIX = "jdbc:mysql:mxj://";
+    private static final String LOADBALANCE_URL_PREFIX = "jdbc:mysql:loadbalance://";
+    public static final String DBNAME_PROPERTY_KEY = "DBNAME";
+    public static final boolean DEBUG = false;
+    public static final int HOST_NAME_INDEX = 0;
+    public static final String HOST_PROPERTY_KEY = "HOST";
+    public static final String PASSWORD_PROPERTY_KEY = "password";
+    public static final int PORT_NUMBER_INDEX = 1;
+    public static final String PORT_PROPERTY_KEY = "PORT";
+    public static final String PROPERTIES_TRANSFORM_KEY = "propertiesTransform";
+    public static final boolean TRACE = false;
+    public static final String USE_CONFIG_PROPERTY_KEY = "useConfigs";
+    public static final String USER_PROPERTY_KEY = "user";
+}
+
+//ConnectionImpl
+public class ConnectionImpl extends ConnectionPropertiesImpl
+    implements Connection
+{
+   
+    private static final String JDBC_LOCAL_CHARACTER_SET_RESULTS = "jdbc.local.character_set_results";
+    private static final Object CHARSET_CONVERTER_NOT_AVAILABLE_MARKER = new Object();
+    public static Map charsetMap;
+    protected static final String DEFAULT_LOGGER_CLASS = "com.mysql.jdbc.log.StandardLogger";
+    private static final int HISTOGRAM_BUCKETS = 20;
+    private static final String LOGGER_INSTANCE_NAME = "MySQL";
+    private static Map mapTransIsolationNameToValue;
+    private static final Log NULL_LOGGER = new NullLogger("MySQL");
+    private static Map roundRobinStatsMap;
+    private static final Map serverCollationByUrl = new HashMap();
+    private static final Map serverConfigByUrl = new HashMap();
+    private long queryTimeCount;
+    private double queryTimeSum;
+    private double queryTimeSumSquares;
+    private double queryTimeMean;
+    private static Timer cancelTimer;
+    private List connectionLifecycleInterceptors;
+    private static final Constructor JDBC_4_CONNECTION_CTOR;
+    private static final int DEFAULT_RESULT_SET_TYPE = 1003;
+    private static final int DEFAULT_RESULT_SET_CONCURRENCY = 1007;
+    private boolean autoCommit;
+    private Map cachedPreparedStatementParams;
+    private String characterSetMetadata;
+    private String characterSetResultsOnServer;
+    private Map charsetConverterMap;
+    private Map charsetToNumBytesMap;
+    private long connectionCreationTimeMillis;
+    private long connectionId;
+    private String database;
+    private DatabaseMetaData dbmd;
+    private TimeZone defaultTimeZone;
+    private ProfilerEventHandler eventSink;
+    private boolean executingFailoverReconnect;
+    private boolean failedOver;
+    private Throwable forceClosedReason;
+    private Throwable forcedClosedLocation;
+    private boolean hasIsolationLevels;
+    private boolean hasQuotedIdentifiers;
+    private String host;
+    private List hostList;
+    private int hostListSize;
+    private String indexToCharsetMapping[];
+    private MysqlIO io;
+    private boolean isClientTzUTC;
+    private boolean isClosed;
+    private boolean isInGlobalTx;
+    private boolean isRunningOnJDK13;
+    private int isolationLevel;
+    private boolean isServerTzUTC;
+    private long lastQueryFinishedTime;
+    private Log log;
+    private long longestQueryTimeMs;
+    private boolean lowerCaseTableNames;
+    private long masterFailTimeMillis;
+    private long maximumNumberTablesAccessed;
+    private boolean maxRowsChanged;
+    private long metricsLastReportedMs;
+    private long minimumNumberTablesAccessed;
+    private final Object mutex;
+    private String myURL;
+    private boolean needsPing;
+    private int netBufferLength;
+    private boolean noBackslashEscapes;
+    private long numberOfPreparedExecutes;
+    private long numberOfPrepares;
+    private long numberOfQueriesIssued;
+    private long numberOfResultSetsCreated;
+    private long numTablesMetricsHistBreakpoints[];
+    private int numTablesMetricsHistCounts[];
+    private long oldHistBreakpoints[];
+    private int oldHistCounts[];
+    private Map openStatements;
+    private LRUCache parsedCallableStatementCache;
+    private boolean parserKnowsUnicode;
+    private String password;
+    private long perfMetricsHistBreakpoints[];
+    private int perfMetricsHistCounts[];
+    private Throwable pointOfOrigin;
+    private int port;
+    private boolean preferSlaveDuringFailover;
+    protected Properties props;
+    private long queriesIssuedFailedOver;
+    private boolean readInfoMsg;
+    private boolean readOnly;
+    protected LRUCache resultSetMetadataCache;
+    private TimeZone serverTimezoneTZ;
+    private Map serverVariables;
+    private long shortestQueryTimeMs;
+    private Map statementsUsingMaxRows;
+    private double totalQueryTimeMs;
+    private boolean transactionsSupported;
+    private Map typeMap;
+    private boolean useAnsiQuotes;
+    private String user;
+    private boolean useServerPreparedStmts;
+    private LRUCache serverSideStatementCheckCache;
+    private LRUCache serverSideStatementCache;
+    private Calendar sessionCalendar;
+    private Calendar utcCalendar;
+    private String origHostToConnectTo;
+    private int origPortToConnectTo;
+    private String origDatabaseToConnectTo;
+    private String errorMessageEncoding;
+    private boolean usePlatformCharsetConverters;
+    private boolean hasTriedMasterFlag;
+    private String statementComment;
+    private boolean storesLowerCaseTableName;
+    private List statementInterceptors;
+    private boolean requiresEscapingEncoder;
+    private boolean usingCachedConfig;
+    private int autoIncrementIncrement;
+    private ExceptionInterceptor exceptionInterceptor;
+}
+public class DatabaseMetaData
+    implements java.sql.DatabaseMetaData
+{
+ private static String mysqlKeywordsThatArentSQL92;
+    protected static final int MAX_IDENTIFIER_LENGTH = 64;
+    private static final int DEFERRABILITY = 13;
+    private static final int DELETE_RULE = 10;
+    private static final int FK_NAME = 11;
+    private static final int FKCOLUMN_NAME = 7;
+    private static final int FKTABLE_CAT = 4;
+    private static final int FKTABLE_NAME = 6;
+    private static final int FKTABLE_SCHEM = 5;
+    private static final int KEY_SEQ = 8;
+    private static final int PK_NAME = 12;
+    private static final int PKCOLUMN_NAME = 3;
+    private static final int PKTABLE_CAT = 0;
+    private static final int PKTABLE_NAME = 2;
+    private static final int PKTABLE_SCHEM = 1;
+    private static final String SUPPORTS_FK = "SUPPORTS_FK";
+    private static final byte TABLE_AS_BYTES[] = "TABLE".getBytes();
+    private static final byte SYSTEM_TABLE_AS_BYTES[] = "SYSTEM TABLE".getBytes();
+    private static final int UPDATE_RULE = 9;
+    private static final byte VIEW_AS_BYTES[] = "VIEW".getBytes();
+    private static final Constructor JDBC_4_DBMD_SHOW_CTOR;
+    private static final Constructor JDBC_4_DBMD_IS_CTOR;
+    protected ConnectionImpl conn;
+    protected String database;
+    protected String quotedId;
+    private ExceptionInterceptor exceptionInterceptor;
+
+    static 
+    {
+        if(Util.isJdbc4())
+        {
+            try
+            {
+                JDBC_4_DBMD_SHOW_CTOR = Class.forName("com.mysql.jdbc.JDBC4DatabaseMetaData").getConstructor(new Class[] {
+                    com.mysql.jdbc.ConnectionImpl.class, java.lang.String.class
+                });
+                JDBC_4_DBMD_IS_CTOR = Class.forName("com.mysql.jdbc.JDBC4DatabaseMetaDataUsingInfoSchema").getConstructor(new Class[] {
+                    com.mysql.jdbc.ConnectionImpl.class, java.lang.String.class
+                });
+            }
+            catch(SecurityException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch(NoSuchMethodException e)
+            {
+                throw new RuntimeException(e);
+            }
+            catch(ClassNotFoundException e)
+            {
+                throw new RuntimeException(e);
+            }
+        } else
+        {
+            JDBC_4_DBMD_IS_CTOR = null;
+            JDBC_4_DBMD_SHOW_CTOR = null;
+        }
+	//mysql关键字
+        String allMySQLKeywords[] = {
+            "ACCESSIBLE", "ADD", "ALL", "ALTER", "ANALYZE", "AND", "AS", "ASC", "ASENSITIVE", "BEFORE", 
+            "BETWEEN", "BIGINT", "BINARY", "BLOB", "BOTH", "BY", "CALL", "CASCADE", "CASE", "CHANGE", 
+            "CHAR", "CHARACTER", "CHECK", "COLLATE", "COLUMN", "CONDITION", "CONNECTION", "CONSTRAINT", "CONTINUE", "CONVERT", 
+            "CREATE", "CROSS", "CURRENT_DATE", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "CURSOR", "DATABASE", "DATABASES", "DAY_HOUR", 
+            "DAY_MICROSECOND", "DAY_MINUTE", "DAY_SECOND", "DEC", "DECIMAL", "DECLARE", "DEFAULT", "DELAYED", "DELETE", "DESC", 
+            "DESCRIBE", "DETERMINISTIC", "DISTINCT", "DISTINCTROW", "DIV", "DOUBLE", "DROP", "DUAL", "EACH", "ELSE", 
+            "ELSEIF", "ENCLOSED", "ESCAPED", "EXISTS", "EXIT", "EXPLAIN", "FALSE", "FETCH", "FLOAT", "FLOAT4", 
+            "FLOAT8", "FOR", "FORCE", "FOREIGN", "FROM", "FULLTEXT", "GRANT", "GROUP", "HAVING", "HIGH_PRIORITY", 
+            "HOUR_MICROSECOND", "HOUR_MINUTE", "HOUR_SECOND", "IF", "IGNORE", "IN", "INDEX", "INFILE", "INNER", "INOUT", 
+            "INSENSITIVE", "INSERT", "INT", "INT1", "INT2", "INT3", "INT4", "INT8", "INTEGER", "INTERVAL", 
+            "INTO", "IS", "ITERATE", "JOIN", "KEY", "KEYS", "KILL", "LEADING", "LEAVE", "LEFT", 
+            "LIKE", "LIMIT", "LINEAR", "LINES", "LOAD", "LOCALTIME", "LOCALTIMESTAMP", "LOCK", "LONG", "LONGBLOB", 
+            "LONGTEXT", "LOOP", "LOW_PRIORITY", "MATCH", "MEDIUMBLOB", "MEDIUMINT", "MEDIUMTEXT", "MIDDLEINT", "MINUTE_MICROSECOND", "MINUTE_SECOND", 
+            "MOD", "MODIFIES", "NATURAL", "NOT", "NO_WRITE_TO_BINLOG", "NULL", "NUMERIC", "ON", "OPTIMIZE", "OPTION", 
+            "OPTIONALLY", "OR", "ORDER", "OUT", "OUTER", "OUTFILE", "PRECISION", "PRIMARY", "PROCEDURE", "PURGE", 
+            "RANGE", "READ", "READS", "READ_ONLY", "READ_WRITE", "REAL", "REFERENCES", "REGEXP", "RELEASE", "RENAME", 
+            "REPEAT", "REPLACE", "REQUIRE", "RESTRICT", "RETURN", "REVOKE", "RIGHT", "RLIKE", "SCHEMA", "SCHEMAS", 
+            "SECOND_MICROSECOND", "SELECT", "SENSITIVE", "SEPARATOR", "SET", "SHOW", "SMALLINT", "SPATIAL", "SPECIFIC", "SQL", 
+            "SQLEXCEPTION", "SQLSTATE", "SQLWARNING", "SQL_BIG_RESULT", "SQL_CALC_FOUND_ROWS", "SQL_SMALL_RESULT", "SSL", "STARTING", "STRAIGHT_JOIN", "TABLE", 
+            "TERMINATED", "THEN", "TINYBLOB", "TINYINT", "TINYTEXT", "TO", "TRAILING", "TRIGGER", "TRUE", "UNDO", 
+            "UNION", "UNIQUE", "UNLOCK", "UNSIGNED", "UPDATE", "USAGE", "USE", "USING", "UTC_DATE", "UTC_TIME", 
+            "UTC_TIMESTAMP", "VALUES", "VARBINARY", "VARCHAR", "VARCHARACTER", "VARYING", "WHEN", "WHERE", "WHILE", "WITH", 
+            "WRITE", "X509", "XOR", "YEAR_MONTH", "ZEROFILL"
+        };
+	//sql92关键字
+        String sql92Keywords[] = {
+            "ABSOLUTE", "EXEC", "OVERLAPS", "ACTION", "EXECUTE", "PAD", "ADA", "EXISTS", "PARTIAL", "ADD", 
+            "EXTERNAL", "PASCAL", "ALL", "EXTRACT", "POSITION", "ALLOCATE", "FALSE", "PRECISION", "ALTER", "FETCH", 
+            "PREPARE", "AND", "FIRST", "PRESERVE", "ANY", "FLOAT", "PRIMARY", "ARE", "FOR", "PRIOR", 
+            "AS", "FOREIGN", "PRIVILEGES", "ASC", "FORTRAN", "PROCEDURE", "ASSERTION", "FOUND", "PUBLIC", "AT", 
+            "FROM", "READ", "AUTHORIZATION", "FULL", "REAL", "AVG", "GET", "REFERENCES", "BEGIN", "GLOBAL", 
+            "RELATIVE", "BETWEEN", "GO", "RESTRICT", "BIT", "GOTO", "REVOKE", "BIT_LENGTH", "GRANT", "RIGHT", 
+            "BOTH", "GROUP", "ROLLBACK", "BY", "HAVING", "ROWS", "CASCADE", "HOUR", "SCHEMA", "CASCADED", 
+            "IDENTITY", "SCROLL", "CASE", "IMMEDIATE", "SECOND", "CAST", "IN", "SECTION", "CATALOG", "INCLUDE", 
+            "SELECT", "CHAR", "INDEX", "SESSION", "CHAR_LENGTH", "INDICATOR", "SESSION_USER", "CHARACTER", "INITIALLY", "SET", 
+            "CHARACTER_LENGTH", "INNER", "SIZE", "CHECK", "INPUT", "SMALLINT", "CLOSE", "INSENSITIVE", "SOME", "COALESCE", 
+            "INSERT", "SPACE", "COLLATE", "INT", "SQL", "COLLATION", "INTEGER", "SQLCA", "COLUMN", "INTERSECT", 
+            "SQLCODE", "COMMIT", "INTERVAL", "SQLERROR", "CONNECT", "INTO", "SQLSTATE", "CONNECTION", "IS", "SQLWARNING", 
+            "CONSTRAINT", "ISOLATION", "SUBSTRING", "CONSTRAINTS", "JOIN", "SUM", "CONTINUE", "KEY", "SYSTEM_USER", "CONVERT", 
+            "LANGUAGE", "TABLE", "CORRESPONDING", "LAST", "TEMPORARY", "COUNT", "LEADING", "THEN", "CREATE", "LEFT", 
+            "TIME", "CROSS", "LEVEL", "TIMESTAMP", "CURRENT", "LIKE", "TIMEZONE_HOUR", "CURRENT_DATE", "LOCAL", "TIMEZONE_MINUTE", 
+            "CURRENT_TIME", "LOWER", "TO", "CURRENT_TIMESTAMP", "MATCH", "TRAILING", "CURRENT_USER", "MAX", "TRANSACTION", "CURSOR", 
+            "MIN", "TRANSLATE", "DATE", "MINUTE", "TRANSLATION", "DAY", "MODULE", "TRIM", "DEALLOCATE", "MONTH", 
+            "TRUE", "DEC", "NAMES", "UNION", "DECIMAL", "NATIONAL", "UNIQUE", "DECLARE", "NATURAL", "UNKNOWN", 
+            "DEFAULT", "NCHAR", "UPDATE", "DEFERRABLE", "NEXT", "UPPER", "DEFERRED", "NO", "USAGE", "DELETE", 
+            "NONE", "USER", "DESC", "NOT", "USING", "DESCRIBE", "NULL", "VALUE", "DESCRIPTOR", "NULLIF", 
+            "VALUES", "DIAGNOSTICS", "NUMERIC", "VARCHAR", "DISCONNECT", "OCTET_LENGTH", "VARYING", "DISTINCT", "OF", "VIEW", 
+            "DOMAIN", "ON", "WHEN", "DOUBLE", "ONLY", "WHENEVER", "DROP", "OPEN", "WHERE", "ELSE", 
+            "OPTION", "WITH", "END", "OR", "WORK", "END-EXEC", "ORDER", "WRITE", "ESCAPE", "OUTER", 
+            "YEAR", "EXCEPT", "OUTPUT", "ZONE", "EXCEPTION"
+        };
+        TreeMap mySQLKeywordMap = new TreeMap();
+        for(int i = 0; i < allMySQLKeywords.length; i++)
+            mySQLKeywordMap.put(allMySQLKeywords[i], null);
+
+        HashMap sql92KeywordMap = new HashMap(sql92Keywords.length);
+        for(int i = 0; i < sql92Keywords.length; i++)
+            sql92KeywordMap.put(sql92Keywords[i], null);
+
+        Iterator it;
+        for(it = sql92KeywordMap.keySet().iterator(); it.hasNext(); mySQLKeywordMap.remove(it.next()));
+        StringBuffer keywordBuf = new StringBuffer();
+        it = mySQLKeywordMap.keySet().iterator();
+        if(it.hasNext())
+            keywordBuf.append(it.next().toString());
+        for(; it.hasNext(); keywordBuf.append(it.next().toString()))
+            keywordBuf.append(",");
+
+        mysqlKeywordsThatArentSQL92 = keywordBuf.toString();
+    }
+//Util
+public class Util
+{
+	public static boolean isJdbc4()
+    {
+        return isJdbc4;
+    }
+    protected static Method systemNanoTimeMethod;
+    private static Method CAST_METHOD;
+    private static final TimeZone DEFAULT_TIMEZONE = TimeZone.getDefault();
+    private static Util enclosingInstance = new Util();
+    private static boolean isJdbc4 = false;
+    private static boolean isColdFusion = false;
+
+    static 
+    {
+        try
+        {
+            systemNanoTimeMethod = (java.lang.System.class).getMethod("nanoTime", null);
+        }
+        catch(SecurityException e)
+        {
+            systemNanoTimeMethod = null;
+        }
+        catch(NoSuchMethodException e)
+        {
+            systemNanoTimeMethod = null;
+        }
+        try
+        {
+            CAST_METHOD = (java.lang.Class.class).getMethod("cast", new Class[] {
+                java.lang.Object.class
+            });
+        }
+        catch(Throwable t) { }
+        try
+        {
+	   //如果加载java.sql.NClob正常，则isJdbc4为true
+            Class.forName("java.sql.NClob");
+            isJdbc4 = true;
+        }
+        catch(Throwable t)
+        {
+            isJdbc4 = false;
+        }
+        String loadedFrom = stackTraceToString(new Throwable());
+        if(loadedFrom != null)
+            isColdFusion = loadedFrom.indexOf("coldfusion") != -1;
+        else
+            isColdFusion = false;
+    }
+    //构造className
+    public static Object getInstance(String className, Class argTypes[], Object args[], ExceptionInterceptor exceptionInterceptor)
+        throws SQLException
+    {
+        return handleNewInstance(Class.forName(className).getConstructor(argTypes), args, exceptionInterceptor);
+        SecurityException e;
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+    }
+    //根据Constructor，args创建，构建object
+    public static final Object handleNewInstance(Constructor ctor, Object args[], ExceptionInterceptor exceptionInterceptor)
+        throws SQLException
+    {
+        return ctor.newInstance(args);
+        IllegalArgumentException e;
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+        e;
+        throw SQLError.createSQLException("Can't instantiate required class", "S1000", e, exceptionInterceptor);
+        e;
+        Throwable target = e.getTargetException();
+        if(target instanceof SQLException)
+            throw (SQLException)target;
+        if(target instanceof ExceptionInInitializerError)
+            target = ((ExceptionInInitializerError)target).getException();
+        throw SQLError.createSQLException(target.toString(), "S1000", exceptionInterceptor);
+    }
+
+    public static boolean interfaceExists(String hostname)
+    {
+        Class networkInterfaceClass = Class.forName("java.net.NetworkInterface");
+        return networkInterfaceClass.getMethod("getByName", null).invoke(networkInterfaceClass, new Object[] {
+            hostname
+        }) != null;
+        Throwable t;
+        t;
+        return false;
+    }
+
+    public static Object cast(Object invokeOn, Object toCast)
+    {
+        if(CAST_METHOD == null)
+            break MISSING_BLOCK_LABEL_25;
+        return CAST_METHOD.invoke(invokeOn, new Object[] {
+            toCast
+        });
+        Throwable t;
+        t;
+        return null;
+        return null;
+    }
+}

@@ -1,0 +1,124 @@
+
+线程池多余任务的拒绝执行策略有四中，分别是直接丢弃任务DiscardPolicy，
+丢弃old线程任务DiscardOldestPolicy，抛出异常AbortPolicy和调用线程执行多余任务CallerRunsPolicy，
+下面我们用一个实例来测试一下这几种策略：
+测试实例：
+package juc.executor;
+
+import java.lang.reflect.Field;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ThreadPoolExecutor.AbortPolicy;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * 测试线程池拒绝执行任务策略
+ * 
+ * @author donald 2017年3月24日 上午8:56:07
+ */
+public class TestRejectedExecutionHandler {
+	/**
+	 * 
+	 * @param msg
+	 */
+	static void log(String msg) {
+		System.out.println("time："+System.currentTimeMillis() + " -> " + msg);
+	}
+
+	public static void main(String[] args) throws Exception {
+		ThreadPoolExecutor pool = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS,
+				new ArrayBlockingQueue<Runnable>(1));
+		//直接丢弃任务
+		 pool.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+		//丢弃old线程任务
+//		 pool.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardOldestPolicy());
+		//抛出异常
+//		 pool.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+		//调用线程执行多余任务
+//		pool.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+		for (int i = 0; i < 10; i++) {
+			final int index = i;
+			pool.submit(new Runnable() {
+				public void run() {
+					log("run task:" + index + " -> " + Thread.currentThread().getName());
+					try {
+						Thread.sleep(1000L);
+					} catch (Exception e) {
+						e.printStackTrace();
+					}
+					log("run over:" + index + " -> " + Thread.currentThread().getName());
+				}
+			});
+		}
+		log("==========before sleep");
+		Thread.sleep(4000L);
+		log("==========before shutdown()");
+		pool.shutdown();
+		log("==========after shutdown(),pool.isTerminated=" + pool.isTerminated());
+		pool.awaitTermination(1000L, TimeUnit.SECONDS);
+		log("==========now,pool.isTerminated=" + pool.isTerminated());
+	}	
+}
+分别使用四中多余任务执行策略，
+直接丢弃任务DiscardPolicy：
+控制台输出:多余任务直接丢弃
+time：1490366101248 -> ==========before sleep
+time：1490366101248 -> run task:0 -> pool-1-thread-1
+time：1490366102250 -> run over:0 -> pool-1-thread-1
+time：1490366102250 -> run task:1 -> pool-1-thread-1
+time：1490366103251 -> run over:1 -> pool-1-thread-1
+time：1490366105250 -> ==========before shutdown()
+time：1490366105251 -> ==========after shutdown(),pool.isTerminated=false
+time：1490366105253 -> ==========now,pool.isTerminated=true
+
+丢弃old线程任务DiscardOldestPolicy：
+控制台输出:直接丢弃旧的任务
+time：1490366209872 -> run task:0 -> pool-1-thread-1
+time：1490366209872 -> ==========before sleep
+time：1490366210872 -> run over:0 -> pool-1-thread-1
+time：1490366210872 -> run task:9 -> pool-1-thread-1
+time：1490366211875 -> run over:9 -> pool-1-thread-1
+time：1490366213872 -> ==========before shutdown()
+time：1490366213873 -> ==========after shutdown(),pool.isTerminated=false
+time：1490366213874 -> ==========now,pool.isTerminated=true
+
+
+抛出异常：AbortPolicy
+控制台输出:抛出异常
+time：1490366258974 -> run task:0 -> pool-1-thread-1Exception in thread "main" 
+java.util.concurrent.RejectedExecutionException: Task java.util.concurrent.FutureTask@3639b3a2 rejected from java.util.concurrent.ThreadPoolExecutor@684be8b8[Running, pool size = 1, active threads = 1, queued tasks = 1, completed tasks = 0]
+	at java.util.concurrent.ThreadPoolExecutor$AbortPolicy.rejectedExecution(ThreadPoolExecutor.java:2048)
+	at java.util.concurrent.ThreadPoolExecutor.reject(ThreadPoolExecutor.java:821)
+	at java.util.concurrent.ThreadPoolExecutor.execute(ThreadPoolExecutor.java:1372)
+	at java.util.concurrent.AbstractExecutorService.submit(AbstractExecutorService.java:110)
+	at juc.executor.TestRejectedExecutionHandler.main(TestRejectedExecutionHandler.java:36)
+time：1490366259974 -> run over:0 -> pool-1-thread-1
+time：1490366259974 -> run task:1 -> pool-1-thread-1
+time：1490366260976 -> run over:1 -> pool-1-thread-1
+
+调用线程执行多余任务：CallerRunsPolicy
+控制台输出:调用线程执行多余任务
+time：1490366322359 -> run task:0 -> pool-1-thread-1
+time：1490366322359 -> run task:2 -> main
+time：1490366323360 -> run over:0 -> pool-1-thread-1
+time：1490366323360 -> run over:2 -> main
+time：1490366323360 -> run task:1 -> pool-1-thread-1
+time：1490366323360 -> run task:4 -> main
+time：1490366324361 -> run over:4 -> main
+time：1490366324361 -> run over:1 -> pool-1-thread-1
+time：1490366324361 -> run task:5 -> main
+time：1490366324361 -> run task:3 -> pool-1-thread-1
+time：1490366325362 -> run over:5 -> main
+time：1490366325362 -> run task:7 -> main
+time：1490366325363 -> run over:3 -> pool-1-thread-1
+time：1490366325363 -> run task:6 -> pool-1-thread-1
+time：1490366326363 -> run over:7 -> main
+time：1490366326363 -> run over:6 -> pool-1-thread-1
+time：1490366326363 -> run task:8 -> pool-1-thread-1
+time：1490366326363 -> run task:9 -> main
+time：1490366327365 -> run over:9 -> main
+time：1490366327365 -> run over:8 -> pool-1-thread-1
+time：1490366327365 -> ==========before sleep
+time：1490366331366 -> ==========before shutdown()
+time：1490366331367 -> ==========after shutdown(),pool.isTerminated=false
+time：1490366331367 -> ==========now,pool.isTerminated=true

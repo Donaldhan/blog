@@ -1,0 +1,691 @@
+ 前面几讲，说过mysql的连接获取，MysqlIO，今天来看一下mysql的PreparedStatement查询
+ //ConnectionImpl
+ protected PreparedStatement clientPrepareStatement(String sql, int resultSetType, int resultSetConcurrency, boolean processEscapeCodesIfNeeded)
+        throws SQLException
+    {
+        checkClosed();
+        String nativeSql = !processEscapeCodesIfNeeded || !getProcessEscapeCodesForPrepStmts() ? sql : nativeSQL(sql);
+        com.mysql.jdbc.PreparedStatement pStmt = null;
+        if(getCachePreparedStatements())
+            synchronized(cachedPreparedStatementParams)
+            {
+                PreparedStatement.ParseInfo pStmtInfo = (PreparedStatement.ParseInfo)cachedPreparedStatementParams.get(nativeSql);
+                if(pStmtInfo == null)
+                {
+                    pStmt = PreparedStatement.getInstance(this, nativeSql, database);
+                    PreparedStatement.ParseInfo parseInfo = pStmt.getParseInfo();
+                    if(parseInfo.statementLength < getPreparedStatementCacheSqlLimit())
+                    {
+                        if(cachedPreparedStatementParams.size() >= getPreparedStatementCacheSize())
+                        {
+                            Iterator oldestIter = cachedPreparedStatementParams.keySet().iterator();
+                            long lruTime = 9223372036854775807L;
+                            String oldestSql = null;
+                            do
+                            {
+                                if(!oldestIter.hasNext())
+                                    break;
+                                String sqlKey = (String)oldestIter.next();
+                                PreparedStatement.ParseInfo lruInfo = (PreparedStatement.ParseInfo)cachedPreparedStatementParams.get(sqlKey);
+                                if(lruInfo.lastUsed < lruTime)
+                                {
+                                    lruTime = lruInfo.lastUsed;
+                                    oldestSql = sqlKey;
+                                }
+                            } while(true);
+                            if(oldestSql != null)
+                                cachedPreparedStatementParams.remove(oldestSql);
+                        }
+                        cachedPreparedStatementParams.put(nativeSql, pStmt.getParseInfo());
+                    }
+                } else
+                {
+                    pStmtInfo.lastUsed = System.currentTimeMillis();
+                    pStmt = new com.mysql.jdbc.PreparedStatement(this, nativeSql, database, pStmtInfo);
+                }
+            }
+        else
+	   //如果没有缓存，获取PreparedStatement实例
+	   pStmt = PreparedStatement.getInstance(this, nativeSql, database);
+        pStmt.setResultSetType(resultSetType);
+        pStmt.setResultSetConcurrency(resultSetConcurrency);
+        return pStmt;
+}
+来看PreparedStatement的构造
+//PreparedStatement
+public class PreparedStatement extends StatementImpl
+    implements java.sql.PreparedStatement
+{
+  protected static PreparedStatement getInstance(ConnectionImpl conn, String sql, String catalog)
+        throws SQLException
+    {
+        if(!Util.isJdbc4())
+            return new PreparedStatement(conn, sql, catalog);
+        else
+            return (PreparedStatement)Util.handleNewInstance(JDBC_4_PSTMT_3_ARG_CTOR, new Object[] {
+                conn, sql, catalog
+            }, conn.getExceptionInterceptor());
+    }
+    public PreparedStatement(ConnectionImpl conn, String sql, String catalog)
+        throws SQLException
+    {
+        super(conn, catalog);
+        batchHasPlainStatements = false;
+        dbmd = null;
+        firstCharOfStmt = '\0';
+        hasLimitClause = false;
+        isLoadDataQuery = false;
+        isNull = null;
+        isStream = null;
+        numberOfExecutions = 0;
+        originalSql = null;
+        parameterStreams = null;
+	//参数值
+        parameterValues = (byte[][])null;
+	//参数类型
+        parameterTypes = null;
+        staticSqlStrings = (byte[][])null;
+        streamConvertBuf = new byte[4096];
+        streamLengths = null;
+        tsdf = null;
+        useTrueBoolean = false;
+        hasCheckedForRewrite = false;
+        canRewrite = false;
+        compensateForOnDuplicateKeyUpdate = false;
+        batchCommandIndex = -1;
+        if(sql == null)
+            throw SQLError.createSQLException(Messages.getString("PreparedStatement.0"), "S1009", getExceptionInterceptor());
+        originalSql = sql;
+        if(originalSql.startsWith("/* ping */"))
+            doPingInstead = true;
+        else
+            doPingInstead = false;
+	//获取数据库MetaData
+        dbmd = connection.getMetaData();
+        useTrueBoolean = connection.versionMeetsMinimum(3, 21, 23);
+	//构建Statement的
+        parseInfo = new ParseInfo(sql, connection, dbmd, charEncoding, charConverter);
+        initializeFromParseInfo();
+        compensateForOnDuplicateKeyUpdate = connection.getCompensateOnDuplicateKeyUpdateCounts();
+        if(conn.getRequiresEscapingEncoder())
+            charsetEncoder = Charset.forName(conn.getEncoding()).newEncoder();
+    }
+}
+构造PreparedStatement完毕，来看一下，如何查询
+ public ResultSet executeQuery()
+        throws SQLException
+    {
+        checkClosed();
+        ConnectionImpl locallyScopedConn = connection;
+        checkForDml(originalSql, firstCharOfStmt);
+        CachedResultSetMetaData cachedMetadata = null;
+        synchronized(locallyScopedConn.getMutex())
+        {
+            clearWarnings();
+            boolean doStreaming = createStreamingResultSet();
+            batchedGeneratedKeys = null;
+            if(doStreaming && connection.getNetTimeoutForStreamingResults() > 0)
+                locallyScopedConn.execSQL(this, "SET net_write_timeout=" + connection.getNetTimeoutForStreamingResults(), -1, null, 1003, 1007, false, currentCatalog, null, false);
+            Buffer sendPacket = fillSendPacket();
+            if(results != null && !connection.getHoldResultsOpenOverStatementClose() && !holdResultsOpenOverClose)
+                results.realClose(false);
+            String oldCatalog = null;
+            if(!locallyScopedConn.getCatalog().equals(currentCatalog))
+            {
+                oldCatalog = locallyScopedConn.getCatalog();
+                locallyScopedConn.setCatalog(currentCatalog);
+            }
+            if(locallyScopedConn.getCacheResultSetMetadata())
+                cachedMetadata = locallyScopedConn.getCachedMetaData(originalSql);
+            Field metadataFromCache[] = null;
+            if(cachedMetadata != null)
+                metadataFromCache = cachedMetadata.fields;
+            if(locallyScopedConn.useMaxRows())
+            {
+                if(hasLimitClause)
+                {
+		    //没有分页语句的查询
+                    results = executeInternal(maxRows, sendPacket, createStreamingResultSet(), true, metadataFromCache, false);
+                } else
+                {
+                    if(maxRows <= 0)
+                        executeSimpleNonQuery(locallyScopedConn, "SET OPTION SQL_SELECT_LIMIT=DEFAULT");
+                    else
+                        executeSimpleNonQuery(locallyScopedConn, "SET OPTION SQL_SELECT_LIMIT=" + maxRows);
+                    results = executeInternal(-1, sendPacket, doStreaming, true, metadataFromCache, false);
+                    if(oldCatalog != null)
+                        connection.setCatalog(oldCatalog);
+                }
+            } else
+            {
+                results = executeInternal(-1, sendPacket, doStreaming, true, metadataFromCache, false);
+            }
+            if(oldCatalog != null)
+                locallyScopedConn.setCatalog(oldCatalog);
+            if(cachedMetadata != null)
+                locallyScopedConn.initializeResultsMetadataFromCache(originalSql, cachedMetadata, results);
+            else
+            if(locallyScopedConn.getCacheResultSetMetadata())
+                locallyScopedConn.initializeResultsMetadataFromCache(originalSql, null, results);
+        }
+        lastInsertId = results.getUpdateID();
+        return results;
+    }
+来看没有分页语句的查询executeInternal
+ protected ResultSetInternalMethods executeInternal(int maxRowsToRetrieve, Buffer sendPacket, boolean createStreamingResultSet, boolean queryIsSelectOnly, Field metadataFromCache[], boolean isBatch)
+        throws SQLException
+    {
+        ConnectionImpl locallyScopedConnection;
+        resetCancelledState();
+        locallyScopedConnection = connection;
+        numberOfExecutions++;
+        if(!doPingInstead)
+            break MISSING_BLOCK_LABEL_36;
+        doPingInstead();
+        return results;
+        StatementImpl.CancelTask timeoutTask = null;
+        ResultSetInternalMethods rs;
+        if(locallyScopedConnection.getEnableQueryTimeouts() && timeoutInMillis != 0 && locallyScopedConnection.versionMeetsMinimum(5, 0, 0))
+        {
+            timeoutTask = new StatementImpl.CancelTask(this, this);
+	    //连接定时任务执行器Timer，等待timeoutInMillis毫秒后，执行查询定时任务timeoutTask
+            ConnectionImpl.getCancelTimer().schedule(timeoutTask, timeoutInMillis);
+        }
+	//执行查询，并返回结果集
+        rs = locallyScopedConnection.execSQL(this, null, maxRowsToRetrieve, sendPacket, resultSetType, resultSetConcurrency, createStreamingResultSet, currentCatalog, metadataFromCache, isBatch);
+        if(timeoutTask != null)
+        {
+            timeoutTask.cancel();
+            if(timeoutTask.caughtWhileCancelling != null)
+                throw timeoutTask.caughtWhileCancelling;
+            timeoutTask = null;
+        }
+        synchronized(cancelTimeoutMutex)
+        {
+            if(wasCancelled)
+            {
+                SQLException cause = null;
+                if(wasCancelledByTimeout)
+                    cause = new MySQLTimeoutException();
+                else
+                    cause = new MySQLStatementCancelledException();
+                resetCancelledState();
+                throw cause;
+            }
+        }
+        if(timeoutTask != null)
+            timeoutTask.cancel();
+        break MISSING_BLOCK_LABEL_242;
+        Exception exception1;
+        exception1;
+        if(timeoutTask != null)
+            timeoutTask.cancel();
+        throw exception1;
+        return rs;
+        NullPointerException npe;
+        npe;
+        checkClosed();
+        throw npe;
+    }
+我们来看一下这一段都做了些什么？
+if(locallyScopedConnection.getEnableQueryTimeouts() && timeoutInMillis != 0 && locallyScopedConnection.versionMeetsMinimum(5, 0, 0))
+{
+       timeoutTask = new StatementImpl.CancelTask(this, this);
+       //连接定时任务执行器Timer，等待timeoutInMillis毫秒后，执行查询定时任务timeoutTask
+        ConnectionImpl.getCancelTimer().schedule(timeoutTask, timeoutInMillis);
+}
+//StatementImpl
+public class StatementImpl
+    implements com.mysql.jdbc.Statement
+{
+    class CancelTask extends TimerTask
+    {
+
+        public void run()
+        {
+            Thread cancelThread = new Thread() {
+
+                public void run()
+                {
+                    com.mysql.jdbc.Connection cancelConn = null;
+                    Statement cancelStmt = null;
+                    try
+                    {
+                        synchronized(cancelTimeoutMutex)
+                        {
+			    //复制connection
+                            cancelConn = connection.duplicate();
+			    //创建Statement
+                            cancelStmt = cancelConn.createStatement();
+                            cancelStmt.execute("KILL QUERY " + connectionId);
+                            toCancel.wasCancelled = true;
+                            toCancel.wasCancelledByTimeout = true;
+                        }
+                    }
+                    catch(SQLException sqlEx)
+                    {
+                        caughtWhileCancelling = sqlEx;
+                    }
+                    catch(NullPointerException npe) { }
+                    finally
+                    {
+                        if(cancelStmt != null)
+                            try
+                            {
+                                cancelStmt.close();
+                            }
+                            catch(SQLException sqlEx)
+                            {
+                                throw new RuntimeException(sqlEx.toString());
+                            }
+                        if(cancelConn != null)
+                            try
+                            {
+                                cancelConn.close();
+                            }
+                            catch(SQLException sqlEx)
+                            {
+                                throw new RuntimeException(sqlEx.toString());
+                            }
+                    }
+                }
+
+            };
+            cancelThread.start();
+        }
+
+        long connectionId;
+        SQLException caughtWhileCancelling;
+        StatementImpl toCancel;
+
+
+        CancelTask(StatementImpl cancellee)
+            throws SQLException
+        {
+            connectionId = 0L;
+            caughtWhileCancelling = null;
+            connectionId = connection.getIO().getThreadId();
+            toCancel = cancellee;
+        }
+    }
+}
+//创建Statement
+cancelStmt = cancelConn.createStatement();
+//ConnectionImpl
+public Statement createStatement()
+        throws SQLException
+    {
+        return createStatement(1003, 1007);
+    }
+public Statement createStatement(int resultSetType, int resultSetConcurrency)
+        throws SQLException
+    {
+        checkClosed();
+        StatementImpl stmt = new StatementImpl(this, database);
+        stmt.setResultSetType(resultSetType);
+        stmt.setResultSetConcurrency(resultSetConcurrency);
+        return stmt;
+    }
+ //连接定时任务执行器Timer，等待timeoutInMillis毫秒后，执行查询定时任务timeoutTask
+ConnectionImpl.getCancelTimer().schedule(timeoutTask, timeoutInMillis);
+//ConnectionImpl
+  protected static Timer getCancelTimer()
+    {
+        //private static Timer cancelTimer;
+        return cancelTimer;
+    }
+从上面这一段可以看出，如果延时查询的话，就创建StatementImpl.CancelTask（TimeTask）定时任务，
+并有ConnectionImpl的cancelTimer（Timer）去调度。
+
+回到executeInternal方法，
+来看执行查询，返回结果集，这个时调用ConnectionImpl的execSQL
+//ConnectionImpl
+ResultSetInternalMethods execSQL(StatementImpl callingStatement, String sql, int maxRows, Buffer packet, int resultSetType, int resultSetConcurrency, boolean streamResults, 
+            String catalog, Field cachedMetadata[], boolean isBatch)
+        throws SQLException
+    {
+        Object obj = mutex;
+        JVM INSTR monitorenter ;
+        long queryStartTime;
+        int endOfQueryPacketPosition;
+        queryStartTime = 0L;
+        endOfQueryPacketPosition = 0;
+        if(packet != null)
+            endOfQueryPacketPosition = packet.getPosition();
+        if(getGatherPerformanceMetrics())
+            queryStartTime = System.currentTimeMillis();
+        lastQueryFinishedTime = 0L;
+        if(!failedOver || !autoCommit || isBatch || !shouldFallBack() || executingFailoverReconnect)
+            break MISSING_BLOCK_LABEL_151;
+        executingFailoverReconnect = true;
+	//创建MysqlIO，这个我们在前面ServerPrepareStatement中讲过
+        createNewIO(true);
+        String connectedHost = io.getHost();
+        if(connectedHost != null && hostList.get(0).equals(connectedHost))
+        {
+            failedOver = false;
+            queriesIssuedFailedOver = 0L;
+            setReadOnlyInternal(false);
+        }
+        if((getHighAvailability() || failedOver) && (autoCommit || getAutoReconnectForPools()) && needsPing && !isBatch)
+            try
+            {
+                pingInternal(false, 0);
+                needsPing = false;
+            }
+            catch(Exception Ex)
+            {
+                createNewIO(true);
+            }
+        ResultSetInternalMethods resultsetinternalmethods1;
+        if(packet != null)
+            break MISSING_BLOCK_LABEL_267;
+        String encoding = null;
+        if(getUseUnicode())
+            encoding = getEncoding();
+	//关键在这一句MysqlIO执行查询
+        resultsetinternalmethods1 = io.sqlQueryDirect(callingStatement, sql, encoding, null, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, cachedMetadata);
+        return resultsetinternalmethods1;
+        ResultSetInternalMethods resultsetinternalmethods;
+        try
+        {
+            resultsetinternalmethods = io.sqlQueryDirect(callingStatement, null, null, packet, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, cachedMetadata);
+        }
+        return resultsetinternalmethods;
+    }
+来看MysqlIO执行查询
+//MysqlIO
+final ResultSetInternalMethods sqlQueryDirect(StatementImpl callingStatement, String query, String characterEncoding, Buffer queryPacket, int maxRows, int resultSetType, int resultSetConcurrency, 
+            boolean streamResults, String catalog, Field cachedMetadata[])
+        throws Exception
+    {
+        statementExecutionDepth++;
+	//返回结果集
+        ResultSetInternalMethods resultsetinternalmethods;
+        if(statementInterceptors == null)
+            break MISSING_BLOCK_LABEL_47;
+	//拦截器处理
+        ResultSetInternalMethods interceptedResults = invokeStatementInterceptorsPre(query, callingStatement);
+        if(interceptedResults == null)
+            break MISSING_BLOCK_LABEL_47;
+        resultsetinternalmethods = interceptedResults;
+        statementExecutionDepth--;
+        return resultsetinternalmethods;
+        ResultSetInternalMethods resultsetinternalmethods1;
+        long queryStartTime = 0L;
+        long queryEndTime = 0L;
+        if(query != null)
+        {
+            int packLength = 5 + query.length() * 2 + 2;
+            String statementComment = connection.getStatementComment();
+            byte commentAsBytes[] = null;
+            if(statementComment != null)
+            {
+                commentAsBytes = StringUtils.getBytes(statementComment, null, characterEncoding, connection.getServerCharacterEncoding(), connection.parserKnowsUnicode(), getExceptionInterceptor());
+                packLength += commentAsBytes.length;
+                packLength += 6;
+            }
+            if(sendPacket == null)
+                sendPacket = new Buffer(packLength);
+            else
+                sendPacket.clear();
+            sendPacket.writeByte((byte)3);
+            if(commentAsBytes != null)
+            {
+	        //将注释添加的查询包中
+                sendPacket.writeBytesNoNull(Constants.SLASH_STAR_SPACE_AS_BYTES);
+                sendPacket.writeBytesNoNull(commentAsBytes);
+                sendPacket.writeBytesNoNull(Constants.SPACE_STAR_SLASH_SPACE_AS_BYTES);
+            }
+            if(characterEncoding != null)
+            {
+	        //如果有编码信息，则将查询编码后，组装到包中
+                if(platformDbCharsetMatches)
+                    sendPacket.writeStringNoNull(query, characterEncoding, connection.getServerCharacterEncoding(), connection.parserKnowsUnicode(), connection);
+                else
+                if(StringUtils.startsWithIgnoreCaseAndWs(query, "LOAD DATA"))
+                    sendPacket.writeBytesNoNull(query.getBytes());
+                else
+                    sendPacket.writeStringNoNull(query, characterEncoding, connection.getServerCharacterEncoding(), connection.parserKnowsUnicode(), connection);
+            } else
+            {
+                sendPacket.writeStringNoNull(query);
+            }
+            queryPacket = sendPacket;
+        }
+        byte queryBuf[] = null;
+        int oldPacketPosition = 0;
+        if(needToGrabQueryFromPacket)
+        {
+            queryBuf = queryPacket.getByteBuffer();
+            oldPacketPosition = queryPacket.getPosition();
+            queryStartTime = getCurrentTimeNanosOrMillis();
+        }
+        if(autoGenerateTestcaseScript)
+        {
+            String testcaseQuery = null;
+            if(query != null)
+                testcaseQuery = query;
+            else
+                testcaseQuery = new String(queryBuf, 5, oldPacketPosition - 5);
+            StringBuffer debugBuf = new StringBuffer(testcaseQuery.length() + 32);
+            connection.generateConnectionCommentBlock(debugBuf);
+            debugBuf.append(testcaseQuery);
+            debugBuf.append(';');
+            connection.dumpTestcaseQuery(debugBuf.toString());
+        }
+	//MysqlIO发送查询包到Server，获取返回结果
+        Buffer resultPacket = sendCommand(3, null, queryPacket, false, null, 0);
+        long fetchBeginTime = 0L;
+        long fetchEndTime = 0L;
+        String profileQueryToLog = null;
+        boolean queryWasSlow = false;
+        if(profileSql || logSlowQueries)
+        {
+            queryEndTime = System.currentTimeMillis();
+            boolean shouldExtractQuery = false;
+            if(profileSql)
+                shouldExtractQuery = true;
+            else
+            if(logSlowQueries)
+            {
+                long queryTime = queryEndTime - queryStartTime;
+                boolean logSlow = false;
+                if(useAutoSlowLog)
+                {
+                    logSlow = queryTime > (long)connection.getSlowQueryThresholdMillis();
+                } else
+                {
+                    logSlow = connection.isAbonormallyLongQuery(queryTime);
+                    connection.reportQueryTime(queryTime);
+                }
+                if(logSlow)
+                {
+                    shouldExtractQuery = true;
+                    queryWasSlow = true;
+                }
+            }
+            if(shouldExtractQuery)
+            {
+                boolean truncated = false;
+                int extractPosition = oldPacketPosition;
+                if(oldPacketPosition > connection.getMaxQuerySizeToLog())
+                {
+                    extractPosition = connection.getMaxQuerySizeToLog() + 5;
+                    truncated = true;
+                }
+                profileQueryToLog = new String(queryBuf, 5, extractPosition - 5);
+                if(truncated)
+                    profileQueryToLog = profileQueryToLog + Messages.getString("MysqlIO.25");
+            }
+            fetchBeginTime = queryEndTime;
+        }
+	//从中resultPacket，获取返回结果
+        ResultSetInternalMethods rs = readAllResults(callingStatement, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, resultPacket, false, -1L, cachedMetadata);
+        if(queryWasSlow && !serverQueryWasSlow)
+        {
+            StringBuffer mesgBuf = new StringBuffer(48 + profileQueryToLog.length());
+            mesgBuf.append(Messages.getString("MysqlIO.SlowQuery", new Object[] {
+                new Long(slowQueryThreshold), queryTimingUnits, new Long(queryEndTime - queryStartTime)
+            }));
+            mesgBuf.append(profileQueryToLog);
+            ProfilerEventHandler eventSink = ProfilerEventHandlerFactory.getInstance(connection);
+            eventSink.consumeEvent(new ProfilerEvent((byte)6, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), (int)(queryEndTime - queryStartTime), queryTimingUnits, null, new Throwable(), mesgBuf.toString()));
+            if(connection.getExplainSlowQueries())
+                if(oldPacketPosition < 1048576)
+                    explainSlowQuery(queryPacket.getBytes(5, oldPacketPosition - 5), profileQueryToLog);
+                else
+                    connection.getLog().logWarn(Messages.getString("MysqlIO.28") + 1048576 + Messages.getString("MysqlIO.29"));
+        }
+        if(logSlowQueries)
+        {
+            ProfilerEventHandler eventSink = ProfilerEventHandlerFactory.getInstance(connection);
+            if(queryBadIndexUsed)
+                eventSink.consumeEvent(new ProfilerEvent((byte)6, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), queryEndTime - queryStartTime, queryTimingUnits, null, new Throwable(), Messages.getString("MysqlIO.33") + profileQueryToLog));
+            if(queryNoIndexUsed)
+                eventSink.consumeEvent(new ProfilerEvent((byte)6, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), queryEndTime - queryStartTime, queryTimingUnits, null, new Throwable(), Messages.getString("MysqlIO.35") + profileQueryToLog));
+            if(serverQueryWasSlow)
+                eventSink.consumeEvent(new ProfilerEvent((byte)6, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), queryEndTime - queryStartTime, queryTimingUnits, null, new Throwable(), Messages.getString("MysqlIO.ServerSlowQuery") + profileQueryToLog));
+        }
+        if(profileSql)
+        {
+            fetchEndTime = getCurrentTimeNanosOrMillis();
+            ProfilerEventHandler eventSink = ProfilerEventHandlerFactory.getInstance(connection);
+            eventSink.consumeEvent(new ProfilerEvent((byte)3, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), queryEndTime - queryStartTime, queryTimingUnits, null, new Throwable(), profileQueryToLog));
+            eventSink.consumeEvent(new ProfilerEvent((byte)5, "", catalog, connection.getId(), callingStatement == null ? 999 : callingStatement.getId(), ((ResultSetImpl)rs).resultId, System.currentTimeMillis(), fetchEndTime - fetchBeginTime, queryTimingUnits, null, new Throwable(), null));
+        }
+        if(hadWarnings)
+            scanForAndThrowDataTruncation();
+        if(statementInterceptors != null)
+        {
+            ResultSetInternalMethods interceptedResults = invokeStatementInterceptorsPost(query, callingStatement, rs);
+            if(interceptedResults != null)
+                rs = interceptedResults;
+        }
+        resultsetinternalmethods1 = rs;
+        statementExecutionDepth--;
+        return resultsetinternalmethods1;  
+}
+//从缓冲区，去除结果集
+ResultSetImpl readAllResults(StatementImpl callingStatement, int maxRows, int resultSetType, int resultSetConcurrency, boolean streamResults, String catalog, Buffer resultPacket, 
+            boolean isBinaryEncoded, long preSentColumnCount, Field metadataFromCache[])
+        throws SQLException
+    {
+        resultPacket.setPosition(resultPacket.getPosition() - 1);
+        ResultSetImpl topLevelResultSet = readResultsForQueryOrUpdate(callingStatement, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, resultPacket, isBinaryEncoded, preSentColumnCount, metadataFromCache);
+        ResultSetImpl currentResultSet = topLevelResultSet;
+        boolean checkForMoreResults = (clientParam & 131072L) != 0L;
+        boolean serverHasMoreResults = (serverStatus & 8) != 0;
+        if(serverHasMoreResults && streamResults)
+        {
+            if(topLevelResultSet.getUpdateCount() != -1L)
+                tackOnMoreStreamingResults(topLevelResultSet);
+            reclaimLargeReusablePacket();
+            return topLevelResultSet;
+        }
+        for(boolean moreRowSetsExist = checkForMoreResults & serverHasMoreResults; moreRowSetsExist; moreRowSetsExist = (serverStatus & 8) != 0)
+        {
+            Buffer fieldPacket = checkErrorPacket();
+            fieldPacket.setPosition(0);
+	    //读取结果集
+            ResultSetImpl newResultSet = readResultsForQueryOrUpdate(callingStatement, maxRows, resultSetType, resultSetConcurrency, streamResults, catalog, fieldPacket, isBinaryEncoded, preSentColumnCount, metadataFromCache);
+            currentResultSet.setNextResultSet(newResultSet);
+            currentResultSet = newResultSet;
+        }
+
+        if(!streamResults)
+            clearInputStream();
+        reclaimLargeReusablePacket();
+        return topLevelResultSet;
+    }
+总结：
+Prepared执行查询，实际上是通过ConnectionImpl的execSQL，而ConnectionImpl的执行查询
+实际上是通过MysqlIO，MysqlIO执行查询，就是将Sql查询，组包证Mysql的查询包，通过socket的发送给Server，
+Server返回查询结果缓存区，然后MysqlIO将结果缓存区转换为ResultSetInternalMethods（ResultSetImpl），
+就是我们需要的结果集，即ResultSet。
+public class ResultSetImpl
+    implements ResultSetInternalMethods
+{
+public float getFloat(int columnIndex)
+        throws SQLException
+    {
+        if(!isBinaryEncoded)
+        {
+            String val = null;
+	    //获取columnIndex对应的String值
+            val = getString(columnIndex);
+	    //将String转换为Float
+            return getFloatFromString(val, columnIndex);
+        } else
+        {
+            return getNativeFloat(columnIndex);
+        }
+    }
+    public float getFloat(String columnName)
+        throws SQLException
+    {
+        return getFloat(findColumn(columnName));
+    }
+    //获取columnIndex对应的String值
+    public String getString(int columnIndex)
+        throws SQLException
+    {
+        String stringVal = getStringInternal(columnIndex, true);
+        if(padCharsWithSpace && stringVal != null)
+        {
+            Field f = fields[columnIndex - 1];
+            if(f.getMysqlType() == 254)
+            {
+                int fieldLength = (int)f.getLength() / f.getMaxBytesPerCharacter();
+                int currentLength = stringVal.length();
+                if(currentLength < fieldLength)
+                {
+                    StringBuffer paddedBuf = new StringBuffer(fieldLength);
+                    paddedBuf.append(stringVal);
+                    int difference = fieldLength - currentLength;
+                    paddedBuf.append(EMPTY_SPACE, 0, difference);
+                    stringVal = paddedBuf.toString();
+                }
+            }
+        }
+        return stringVal;
+   }
+}
+//ResultSetInternalMethods
+public interface ResultSetInternalMethods
+    extends ResultSet
+{
+    public abstract ResultSetInternalMethods copy()
+        throws SQLException;
+    public abstract boolean reallyResult();
+    public abstract Object getObjectStoredProc(int i, int j)
+        throws SQLException;
+    public abstract Object getObjectStoredProc(int i, Map map, int j)
+        throws SQLException;
+    public abstract Object getObjectStoredProc(String s, int i)
+        throws SQLException;
+    public abstract Object getObjectStoredProc(String s, Map map, int i)
+        throws SQLException;
+    public abstract String getServerInfo();
+    public abstract long getUpdateCount();
+    public abstract long getUpdateID();
+    public abstract void realClose(boolean flag)
+        throws SQLException;
+    public abstract void setFirstCharOfQuery(char c);
+    public abstract void setOwningStatement(StatementImpl statementimpl);
+    public abstract char getFirstCharOfQuery();
+    public abstract void clearNextResult();
+    public abstract ResultSetInternalMethods getNextResultSet();
+    public abstract void setStatementUsedForFetchingRows(PreparedStatement preparedstatement);
+    public abstract void setWrapperStatement(Statement statement);
+    public abstract void buildIndexMapping()
+        throws SQLException;
+    public abstract void initializeWithMetadata()
+        throws SQLException;
+    public abstract void redefineFieldsForDBMD(Field afield[]);
+    public abstract void populateCachedMetaData(CachedResultSetMetaData cachedresultsetmetadata)
+        throws SQLException;
+    public abstract void initializeFromCachedMetaData(CachedResultSetMetaData cachedresultsetmetadata);
+}
+
+

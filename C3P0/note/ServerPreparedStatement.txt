@@ -1,0 +1,157 @@
+再前面说过PreparedStatement的查询，今天看一下ServerPreparedStatement的查询，
+这篇文章要结合PreparedStatement的查询来理解。
+//ServerPreparedStatement执行查询的时候，调用的是PreparedStatement的查询方法
+ public ResultSet executeQuery()
+        throws SQLException
+    {
+        checkClosed();
+        ConnectionImpl locallyScopedConn = connection;
+        checkForDml(originalSql, firstCharOfStmt);
+        CachedResultSetMetaData cachedMetadata = null;
+        synchronized(locallyScopedConn.getMutex())
+        {
+            if(locallyScopedConn.useMaxRows())
+            {
+                if(hasLimitClause)
+                {
+		    //没有分页语句的查询
+                    results = executeInternal(maxRows, sendPacket, createStreamingResultSet(), true, metadataFromCache, false);
+                } else
+                {
+                    if(maxRows <= 0)
+                        executeSimpleNonQuery(locallyScopedConn, "SET OPTION SQL_SELECT_LIMIT=DEFAULT");
+                    else
+                        executeSimpleNonQuery(locallyScopedConn, "SET OPTION SQL_SELECT_LIMIT=" + maxRows);
+                    results = executeInternal(-1, sendPacket, doStreaming, true, metadataFromCache, false);
+                    if(oldCatalog != null)
+                        connection.setCatalog(oldCatalog);
+                }
+            } else
+            {
+                results = executeInternal(-1, sendPacket, doStreaming, true, metadataFromCache, false);
+            }
+        }
+        return results;
+    }
+executeInternal此方法在PreparedStatement有实现，由于ServerPreparedStatement继承
+PreparedStatement，重写了这个方法，我们来看ServerPreparedStatement的这个方法
+public class ServerPreparedStatement extends com.mysql.jdbc.PreparedStatement
+{
+    //执行查询，返回查询结果集
+ protected ResultSetInternalMethods executeInternal(int maxRowsToRetrieve, Buffer sendPacket, boolean createStreamingResultSet, boolean queryIsSelectOnly, Field metadataFromCache[], boolean isBatch)
+        throws SQLException
+    {
+        numberOfExecutions++;
+	//委托给serverExecute方法
+        return serverExecute(maxRowsToRetrieve, createStreamingResultSet, metadataFromCache);  
+     }
+}
+//ServerPreparedStatement查询
+private ResultSetInternalMethods serverExecute(int maxRowsToRetrieve, boolean createStreamingResultSet, Field metadataFromCache[])
+        throws SQLException
+    {
+       //获取互斥锁
+        Object obj = connection.getMutex();
+        JVM INSTR monitorenter ;
+        MysqlIO mysql;
+        Buffer packet;
+        long begin;
+        boolean logSlowQueries;
+        boolean gatherPerformanceMetrics;
+        StatementImpl.CancelTask timeoutTask;
+	//从连接获取MysqlIO
+        mysql = connection.getIO();
+	//从MysqlIO获取查询包
+        packet = mysql.getSharedSendPacket();
+        packet.clear();
+        packet.writeByte((byte)23);
+        packet.writeLong(serverStatementId);
+        boolean usingCursor = false;
+        if(connection.versionMeetsMinimum(4, 1, 2))
+        {
+            if(resultFields != null && connection.isCursorFetchEnabled() && getResultSetType() == 1003 && getResultSetConcurrency() == 1007 && getFetchSize() > 0)
+            {
+                packet.writeByte((byte)1);
+                usingCursor = true;
+            } else
+            {
+                packet.writeByte((byte)0);
+            }
+            packet.writeLong(1L);
+        }
+        int nullCount = (parameterCount + 7) / 8;
+        int nullBitsPosition = packet.getPosition();
+        for(int i = 0; i < nullCount; i++)
+            packet.writeByte((byte)0);
+
+        byte nullBitsBuffer[] = new byte[nullCount];
+        packet.writeByte(((byte)(sendTypesToServer ? 1 : 0)));
+        if(sendTypesToServer)
+        {
+            for(int i = 0; i < parameterCount; i++)
+                packet.writeInt(parameterBindings[i].bufferType);
+
+        }
+        for(int i = 0; i < parameterCount; i++)
+        {
+            if(parameterBindings[i].isLongData)
+                continue;
+            if(!parameterBindings[i].isNull)
+                storeBinding(packet, parameterBindings[i], mysql);
+            else
+                nullBitsBuffer[i / 8] |= 1 << (i & 7);
+        }
+
+        int endPosition = packet.getPosition();
+        packet.setPosition(nullBitsPosition);
+        packet.writeBytesNoNull(nullBitsBuffer);
+        packet.setPosition(endPosition);
+        begin = 0L;
+        logSlowQueries = connection.getLogSlowQueries();
+        gatherPerformanceMetrics = connection.getGatherPerformanceMetrics();
+        if(profileSQL || logSlowQueries || gatherPerformanceMetrics)
+            begin = mysql.getCurrentTimeNanosOrMillis();
+        resetCancelledState();
+        timeoutTask = null;
+        ResultSetInternalMethods resultsetinternalmethods;
+        if(connection.getEnableQueryTimeouts() && timeoutInMillis != 0 && connection.versionMeetsMinimum(5, 0, 0))
+        {
+	    //如果启动延时查询，创建延时查询TimeTask，并通过ConnectionImpl的CancelTimer（Timer）去调度
+            timeoutTask = new StatementImpl.CancelTask(this, this);
+            connection;
+            ConnectionImpl.getCancelTimer().schedule(timeoutTask, timeoutInMillis);
+        }
+	//MysqlIO向Server发送查询命令
+        Buffer resultPacket = mysql.sendCommand(23, null, packet, false, null, 0);
+        long queryEndTime = 0L;
+        if(logSlowQueries || gatherPerformanceMetrics || profileSQL)
+            queryEndTime = mysql.getCurrentTimeNanosOrMillis();
+        if(timeoutTask != null)
+        {
+            timeoutTask.cancel();
+            if(timeoutTask.caughtWhileCancelling != null)
+                throw timeoutTask.caughtWhileCancelling;
+            timeoutTask = null;
+        }
+        synchronized(cancelTimeoutMutex)
+        {
+            if(wasCancelled)
+            {
+                SQLException cause = null;
+                if(wasCancelledByTimeout)
+                    cause = new MySQLTimeoutException();
+                else
+                    cause = new MySQLStatementCancelledException();
+                resetCancelledState();
+                throw cause;
+            }
+        }
+	//转化结果集，这个我们在PreparedStatement，看过，这里就不说了
+        ResultSetInternalMethods rs = mysql.readAllResults(this, maxRowsToRetrieve, resultSetType, resultSetConcurrency, createStreamingResultSet, currentCatalog, resultPacket, true, fieldCount, metadataFromCache);       
+        return resultsetinternalmethods;
+}
+总结：
+ServerPreparedStatement的查询与PreparedStatement的思想基本上一直的都是首先组装查询包，
+并通MysqlIO将包发送到Server，Server返回查询结果，MysqlIO将返回结果转换为
+ResultSetInternalMethods（ResultSetImpl）
+即ResultSet。

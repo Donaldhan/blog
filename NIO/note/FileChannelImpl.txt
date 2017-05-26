@@ -1,0 +1,756 @@
+FileChanne定义：[url]http://donald-draper.iteye.com/blog/2374149[/url]
+文件读写方式简单综述:[url]http://donald-draper.iteye.com/blog/2374237[/url]
+文件读写方式简单综述后续（文件，流构造）:[url]http://donald-draper.iteye.com/blog/2374294[/url]
+再看了FileChanne定义后，为了更好了理解FileChanne，我们简单的看了文件File，路径Path ，文件系统FileSystem，
+文件系统提供者FileSystemProvider。我们先回顾下相关概念：
+file内部关联一个文件系统FileSystem，用于操作底层的系统，file的文件分隔符和路径分隔符都是从
+FileSystem获取，windows（\\,;）和unix(\,:)有所不同，FileSystem根据底层操作获取不同文件系统实现，
+windows默认为Win32FileSystem。file的创建，删除，list当前目录文件等待操作，实际是委托给Win32FileSystem。
+获取文件Path，首先获取文件的默认文件系统提供者，默认为WindowsFileSystemProvider，WindowsFileSystemProvider通过
+文件path（URI），创建文件Path（WindowsPath），这个主要用于创建文件通达需要。
+今天我们来看一下通道的具体实现，从获取通道开始，获取通道有4中方法：
+1.从FileOutputStream获取可写不可读文件通道
+//FileOutputStream
+ public FileChannel getChannel() {
+        synchronized (this) {
+            if (channel == null) {
+	        //可写不可读
+                channel = FileChannelImpl.open(fd, false, true, append, this);
+
+                /*
+                 * Increment fd's use count. Invoking the channel's close()
+                 * method will result in decrementing the use count set for
+                 * the channel.
+                 */
+                fd.incrementAndGetUseCount();
+            }
+            return channel;
+        }
+    }
+2.从FileInputStream获取可读不可写文件通道
+//FileInputStream
+public FileChannel getChannel() {
+        synchronized (this) {
+            if (channel == null) {
+	        //可读不可写
+                channel = FileChannelImpl.open(fd, true, false, this);
+
+                /*
+                 * Increment fd's use count. Invoking the channel's close()
+                 * method will result in decrementing the use count set for
+                 * the channel.
+                 */
+                fd.incrementAndGetUseCount();
+            }
+            return channel;
+        }
+    }
+3.从RandomAccessFile获取可读可写文件通道
+//RandomAccessFile
+public class RandomAccessFile implements DataOutput, DataInput, Closeable {
+
+    private FileDescriptor fd;
+    private FileChannel channel = null;
+    private boolean rw;//是否读写
+
+    private Object closeLock = new Object();
+    private volatile boolean closed = false;
+
+    private static final int O_RDONLY = 1;
+    private static final int O_RDWR =   2;
+    private static final int O_SYNC =   4;
+    private static final int O_DSYNC =  8;
+ /* @since 1.4
+  * @spec JSR-51
+  */
+ public final FileChannel getChannel() {
+     synchronized (this) {
+         if (channel == null) {
+	     //默认可读，在根据rw判断是否可写
+             channel = FileChannelImpl.open(fd, true, rw, this);
+
+             /*
+              * FileDescriptor could be shared by FileInputStream or
+              * FileOutputStream.
+              * Ensure that FD is GC'ed only when all the streams/channels
+              * are done using it.
+              * Increment fd's use count. Invoking the channel's close()
+              * method will result in decrementing the use count set for
+              * the channel.
+              */
+             fd.incrementAndGetUseCount();
+         }
+         return channel;
+     }
+ }
+ ...
+ }
+//FileChannelImpl
+    public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, false, obj);
+    }
+    public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, flag2, obj);
+    }
+    private FileChannelImpl(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        fd = filedescriptor;
+        readable = flag;//可读标志
+        writable = flag1;//可写标志
+        append = flag2;//是否尾部追加文件，默认为fasle
+	//创建文件通道的对象，为FileInput/OutputStream，
+	//RandomAccessFile获取FileSystemProvider(WindowsFileSystemProvider)
+        parent = obj;
+        nd = new FileDispatcherImpl(flag2);
+    }
+4.从文件系统提供者获取文件通道(FileChannel#open)
+//FileChannel
+//根据文件Path和打开选项创建文件通道
+public static FileChannel open(Path path, OpenOption... options)
+        throws IOException
+    {
+        Set<OpenOption> set = new HashSet<OpenOption>(options.length);
+        Collections.addAll(set, options);
+	//委托给 FileChannel open(Path path, Set<? extends OpenOption> options,FileAttribute<?>... attrs)
+        return open(path, set, NO_ATTRIBUTES);
+    }
+//根据文件Path，打开选项，及文件属性创建文件通道
+public static FileChannel open(Path path,
+                                   Set<? extends OpenOption> options,
+                                   FileAttribute<?>... attrs)
+        throws IOException
+    {
+        //这一步我们在前面一篇文章已讲，文件系统提供者为WindowsFileSystemProvider
+        FileSystemProvider provider = path.getFileSystem().provider();
+        return provider.newFileChannel(path, options, attrs);
+    }
+
+//WindowsFileSystemProvider
+public transient FileChannel newFileChannel(Path path, Set set, FileAttribute afileattribute[])
+        throws IOException
+    {
+        WindowsPath windowspath;//文件Path
+        WindowsSecurityDescriptor windowssecuritydescriptor;//文件属性描述
+        if(path == null)
+            throw new NullPointerException();
+        if(!(path instanceof WindowsPath))
+            throw new ProviderMismatchException();
+        windowspath = (WindowsPath)path;
+        windowssecuritydescriptor = WindowsSecurityDescriptor.fromAttribute(afileattribute);
+	我们需要关注的是这一点
+        FileChannel filechannel = WindowsChannelFactory.newFileChannel(windowspath.getPathForWin32Calls(), windowspath.getPathForPermissionCheck(), set, windowssecuritydescriptor.address());
+        if(windowssecuritydescriptor != null)
+            windowssecuritydescriptor.release();
+        return filechannel;
+        ...
+        windowsexception.rethrowAsIOException(windowspath);
+        ...
+        Exception exception;
+        exception;
+        if(windowssecuritydescriptor != null)
+            windowssecuritydescriptor.release();
+        throw exception;
+    }
+再来看WindowsChannelFactory创建文件通道：
+class WindowsChannelFactory
+{
+    private static final JavaIOFileDescriptorAccess fdAccess = SharedSecrets.getJavaIOFileDescriptorAccess();
+    static final OpenOption OPEN_REPARSE_POINT = new OpenOption() {};
+    private WindowsChannelFactory()
+    {
+    }
+    static FileChannel newFileChannel(String s, String s1, Set set, long l)
+        throws WindowsException
+    {
+        //转换打开选项集为Flags
+        Flags flags = Flags.toFlags(set);
+        if(!flags.read && !flags.write)
+            if(flags.append)
+                flags.write = true;
+            else
+                flags.read = true;
+        //可读可append，抛出选项配置错误
+        if(flags.read && flags.append)
+            throw new IllegalArgumentException("READ + APPEND not allowed");
+	//可append，存在压缩抛出选项配置错误
+        if(flags.append && flags.truncateExisting)
+        {
+            throw new IllegalArgumentException("APPEND + TRUNCATE_EXISTING not allowed");
+        } else
+        {
+	    //创建文件描述符
+            FileDescriptor filedescriptor = open(s, s1, flags, l);
+	    //委托给FileChannelImpl
+            return FileChannelImpl.open(filedescriptor, flags.read, flags.write, flags.append, null);
+        }
+    }
+}
+上述过程我们需要关注的有以下几点：
+1.
+//转换打开选项集为Flags
+Flags flags = Flags.toFlags(set);
+2.
+//创建文件描述符
+FileDescriptor filedescriptor = open(s, s1, flags, l);
+3.
+ //委托给FileChannelImpl
+return FileChannelImpl.open(filedescriptor, flags.read, flags.write, flags.append, null);
+下面分别来看：
+1.
+//转换打开选项集为Flags
+Flags flags = Flags.toFlags(set);
+//WindowsChannelFactory - Flags
+ private static class Flags
+    {
+        boolean read;//是否可读
+        boolean write;//是否可写
+        boolean append;//追加文件
+        boolean truncateExisting;//存在，则压缩
+        boolean create;//文件不存在，则创建
+        boolean createNew;//无论文件不在与否，创建文件
+        boolean deleteOnClose;//关闭文件删除，可用于创建临时文件
+        boolean sparse;//是否稀疏文件
+        boolean overlapped;
+        boolean sync;//同步文件更新（内容及元数据）到底层文件
+        boolean dsync;同步文件更新（内容）到底层文件
+        boolean shareRead;//共享读
+        boolean shareWrite;//贡献写
+        boolean shareDelete;//共享删除
+        boolean noFollowLinks;
+        boolean openReparsePoint;
+
+        private Flags()
+        {
+            shareRead = true;
+            shareWrite = true;
+            shareDelete = true;
+        }
+	//将打开选项集转化为Flags
+        static Flags toFlags(Set set)
+        {
+	   
+            Flags flags = new Flags();
+	    //遍历打开选项集，转化选项配置为Flags对应的field
+            for(Iterator iterator = set.iterator(); iterator.hasNext();)
+            {
+                OpenOption openoption = (OpenOption)iterator.next();
+		//标准打开选项和拓展打开选项的配置转化类，将配置转化为Int，类型
+                static class _cls2
+                {
+
+                    static final int $SwitchMap$java$nio$file$StandardOpenOption[];
+                    static final int $SwitchMap$com$sun$nio$file$ExtendedOpenOption[];
+
+                    static 
+                    {
+                        $SwitchMap$com$sun$nio$file$ExtendedOpenOption = new int[ExtendedOpenOption.values().length];
+                        try
+                        {
+                            $SwitchMap$com$sun$nio$file$ExtendedOpenOption[ExtendedOpenOption.NOSHARE_READ.ordinal()] = 1;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror) { }
+                        try
+                        {
+                            $SwitchMap$com$sun$nio$file$ExtendedOpenOption[ExtendedOpenOption.NOSHARE_WRITE.ordinal()] = 2;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror1) { }
+                        try
+                        {
+                            $SwitchMap$com$sun$nio$file$ExtendedOpenOption[ExtendedOpenOption.NOSHARE_DELETE.ordinal()] = 3;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror2) { }
+                        $SwitchMap$java$nio$file$StandardOpenOption = new int[StandardOpenOption.values().length];
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.READ.ordinal()] = 1;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror3) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.WRITE.ordinal()] = 2;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror4) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.APPEND.ordinal()] = 3;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror5) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.TRUNCATE_EXISTING.ordinal()] = 4;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror6) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.CREATE.ordinal()] = 5;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror7) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.CREATE_NEW.ordinal()] = 6;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror8) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.DELETE_ON_CLOSE.ordinal()] = 7;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror9) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.SPARSE.ordinal()] = 8;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror10) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.SYNC.ordinal()] = 9;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror11) { }
+                        try
+                        {
+                            $SwitchMap$java$nio$file$StandardOpenOption[StandardOpenOption.DSYNC.ordinal()] = 10;
+                        }
+                        catch(NoSuchFieldError nosuchfielderror12) { }
+                    }
+                }
+               //标准打开选项
+                if(openoption instanceof StandardOpenOption)
+                    switch(_cls2..SwitchMap.java.nio.file.StandardOpenOption[((StandardOpenOption)openoption).ordinal()])
+                    {
+                    case 1: // '\001'
+                        flags.read = true;
+                        break;
+
+                    case 2: // '\002'
+                        flags.write = true;
+                        break;
+
+                    case 3: // '\003'
+                        flags.append = true;
+                        break;
+
+                    case 4: // '\004'
+                        flags.truncateExisting = true;
+                        break;
+
+                    case 5: // '\005'
+                        flags.create = true;
+                        break;
+
+                    case 6: // '\006'
+                        flags.createNew = true;
+                        break;
+
+                    case 7: // '\007'
+                        flags.deleteOnClose = true;
+                        break;
+
+                    case 8: // '\b'
+                        flags.sparse = true;
+                        break;
+
+                    case 9: // '\t'
+                        flags.sync = true;
+                        break;
+
+                    case 10: // '\n'
+                        flags.dsync = true;
+                        break;
+
+                    default:
+                        throw new UnsupportedOperationException();
+                    }
+                else
+		//拓展打开选项
+                if(openoption instanceof ExtendedOpenOption)
+                    switch(_cls2..SwitchMap.com.sun.nio.file.ExtendedOpenOption[((ExtendedOpenOption)openoption).ordinal()])
+                    {
+                    case 1: // '\001'
+                        flags.shareRead = false;
+                        break;
+
+                    case 2: // '\002'
+                        flags.shareWrite = false;
+                        break;
+
+                    case 3: // '\003'
+                        flags.shareDelete = false;
+                        break;
+
+                    default:
+                        throw new UnsupportedOperationException();
+                    }
+                else
+                if(openoption == LinkOption.NOFOLLOW_LINKS)
+                    flags.noFollowLinks = true;
+                else
+                if(openoption == WindowsChannelFactory.OPEN_REPARSE_POINT)
+                    flags.openReparsePoint = true;
+                else
+                if(openoption == null)
+                    throw new NullPointerException();
+                else
+                    throw new UnsupportedOperationException();
+            }
+
+            return flags;
+        }
+    }
+2.
+//创建文件描述符
+FileDescriptor filedescriptor = open(s, s1, flags, l);
+
+ private static FileDescriptor open(String s, String s1, Flags flags, long l)
+        throws WindowsException
+    {
+        boolean flag = false;
+        int i = 0;//标准配置项，读写配置
+        if(flags.read)
+            i |= -2147483648;
+        if(flags.write)
+            i |= 1073741824;
+        int j = 0;//扩展配置项共享读写删除配置
+        if(flags.shareRead)
+            j |= 1;
+        if(flags.shareWrite)
+            j |= 2;
+        if(flags.shareDelete)
+            j |= 4;
+        int k = 128;//记录createNew，create，truncateExisting，dsync，sync，overlapped，deleteOnClose
+        byte byte0 = 3;
+        if(flags.write)
+            if(flags.createNew)
+            {
+                byte0 = 1;
+                k |= 2097152;
+            } else
+            {
+                if(flags.create)
+                    byte0 = 4;
+                if(flags.truncateExisting)
+                    if(byte0 == 4)
+                        flag = true;
+                    else
+                        byte0 = 5;
+            }
+        if(flags.dsync || flags.sync)
+            k |= -2147483648;
+        if(flags.overlapped)
+            k |= 1073741824;
+        if(flags.deleteOnClose)
+            k |= 67108864;
+        boolean flag1 = true;//记录noFollowLinks，openReparsePoint，deleteOnClose
+        if(byte0 != 1 && (flags.noFollowLinks || flags.openReparsePoint || flags.deleteOnClose))
+        {
+            if(flags.noFollowLinks || flags.deleteOnClose)
+                flag1 = false;
+            k |= 2097152;
+        }
+        if(s1 != null)
+        {
+            SecurityManager securitymanager = System.getSecurityManager();
+            if(securitymanager != null)
+            {
+	       //检查读写删除权限
+                if(flags.read)
+                    securitymanager.checkRead(s1);
+                if(flags.write)
+                    securitymanager.checkWrite(s1);
+                if(flags.deleteOnClose)
+                    securitymanager.checkDelete(s1);
+            }
+        }
+	//创建文件
+        long l1 = WindowsNativeDispatcher.CreateFile(s, i, j, l, byte0, k);
+        ...
+        FileDescriptor filedescriptor = new FileDescriptor();
+	//设置文件描述的处理器
+        fdAccess.setHandle(filedescriptor, l1);
+        return filedescriptor;
+    }
+来看这一步的关键点：
+//创建文件
+long l1 = WindowsNativeDispatcher.CreateFile(s, i, j, l, byte0, k);
+//WindowsNativeDispatcher
+  static long CreateFile(String s, int i, int j, int k, int l)
+        throws WindowsException
+    {
+        return CreateFile(s, i, j, 0L, k, l);
+    }
+static long CreateFile(String s, int i, int j, long l, int k, int i1)
+        throws WindowsException
+    {
+        //将文件Path信息，放在本地buffer中
+        NativeBuffer nativebuffer = asNativeBuffer(s);
+        long l1 = CreateFile0(nativebuffer.address(), i, j, l, k, i1);
+        nativebuffer.release();
+        return l1;
+        Exception exception;
+        exception;
+        nativebuffer.release();
+        throw exception;
+    }
+ private static native long CreateFile0(long l, int i, int j, long l1, int k, int i1)
+        throws WindowsException;
+创建方法中我们还有两点要看
+2.a
+//将文件Path信息，放在本地buffer中
+ NativeBuffer nativebuffer = asNativeBuffer(s);
+2.b
+ nativebuffer.release();
+下面分别来看这两点：
+再看这个之前先看一下NativeBuffer
+//NativeBuffer
+class NativeBuffer
+{
+    private static final Unsafe unsafe = Unsafe.getUnsafe();
+    private final long address;//内存地址
+    private final int size;//内存size
+    private final Cleaner cleaner;//清理器
+    private Object owner;//buffer拥有者
+    private static class Deallocator
+        implements Runnable
+    {
+
+        public void run()
+        {
+	    //释放本地buffer空间
+            NativeBuffer.unsafe.freeMemory(address);
+        }
+
+        private final long address;
+
+        Deallocator(long l)
+        {
+            address = l;
+        }
+    }
+    NativeBuffer(int i)
+    {
+        address = unsafe.allocateMemory(i);
+        size = i;
+        cleaner = Cleaner.create(this, new Deallocator(address));
+    }
+    void release()
+    {
+        NativeBuffers.releaseNativeBuffer(this);
+    }
+    long address()
+    {
+        return address;
+    }
+    int size()
+    {
+        return size;
+    }
+    Cleaner cleaner()
+    {
+        return cleaner;
+    }
+    void setOwner(Object obj)
+    {
+        owner = obj;
+    }
+    Object owner()
+    {
+        return owner;
+    }
+}
+
+再回到刚才创建文件中的两点
+2.a
+//将文件Path信息，放在本地buffer中
+ NativeBuffer nativebuffer = asNativeBuffer(s);
+//WindowsNativeDispatcher
+static NativeBuffer asNativeBuffer(String s)
+    {
+        int i = s.length() << 1;
+        int j = i + 2;
+	//从线程本地缓冲获取本地buffer
+        NativeBuffer nativebuffer = NativeBuffers.getNativeBufferFromCache(j);
+	//如果获取本地buffer为空，则创建一个
+        if(nativebuffer == null)
+            nativebuffer = NativeBuffers.allocNativeBuffer(j);
+        else//不为null，检查本地buffer的拥有者，是则直接返回
+        if(nativebuffer.owner() == s)
+            return nativebuffer;
+        char ac[] = s.toCharArray();
+	//否则,拷贝buffer内存
+        unsafe.copyMemory(ac, Unsafe.ARRAY_CHAR_BASE_OFFSET, null, nativebuffer.address(), i);
+        unsafe.putChar(nativebuffer.address() + (long)i, '\0');
+	//设置buffer的拥有者
+        nativebuffer.setOwner(s);
+        return nativebuffer;
+    }
+2.b
+ nativebuffer.release();
+//NativeBuffers
+void release()
+    {
+        //委托给NativeBuffers
+        NativeBuffers.releaseNativeBuffer(this);
+    }
+从以上a,b两点,我们需要关注的是getNativeBufferFromCache，allocNativeBuffer，releaseNativeBuffer方法，
+下面我们单独来看一下NativeBuffers
+class NativeBuffers
+{
+    private static native void initIDs();
+    private static final Unsafe unsafe = Unsafe.getUnsafe();
+    static 
+    {
+        //在当前线程访问控制权限下，加载net和nio库
+        AccessController.doPrivileged(new PrivilegedAction() {
+
+            public Void run()
+            {
+                System.loadLibrary("net");
+                System.loadLibrary("nio");
+                return null;
+            }
+
+            public volatile Object run()
+            {
+                return run();
+            }
+
+        });
+        initIDs();
+    }
+    private NativeBuffers()
+    {
+    }
+    private static final Unsafe unsafe = Unsafe.getUnsafe();
+    private static final int TEMP_BUF_POOL_SIZE = 3;//临时buffer
+    private static ThreadLocal threadLocal = new ThreadLocal();//存放线程本地buffer
+    static final boolean $assertionsDisabled = !sun/nio/fs/NativeBuffers.desiredAssertionStatus();
+    //从线程本地缓存获取NativeBuffer
+     static NativeBuffer getNativeBufferFromCache(int i)
+    {
+        //从线程本地缓存获取NativeBuffer数组
+        NativeBuffer anativebuffer[] = (NativeBuffer[])threadLocal.get();
+        if(anativebuffer != null)
+        {
+            for(int j = 0; j < 3; j++)
+            {
+                NativeBuffer nativebuffer = anativebuffer[j];
+                if(nativebuffer != null && nativebuffer.size() >= i)
+                {
+		    //返回线程本地缓存NativeBuffer数组中，第一个可用的NativeBuffer(容量大于i)，
+		    //将NativeBuffer数组index索引对应的置null
+                    anativebuffer[j] = null;
+                    return nativebuffer;
+                }
+            }
+
+        }
+        return null;
+    }
+    //创建本地buffer
+     static NativeBuffer allocNativeBuffer(int i)
+    {
+        if(i < 2048)
+            i = 2048;
+	//size最小为2M
+        return new NativeBuffer(i);
+    }
+    //获取容量大于等于i的NativeBuffer
+     static NativeBuffer getNativeBuffer(int i)
+    {
+       //从线程本地缓存获取NativeBuffer
+        NativeBuffer nativebuffer = getNativeBufferFromCache(i);
+        if(nativebuffer != null)
+        {
+	   //拥有者不为null，则置null
+            nativebuffer.setOwner(null);
+            return nativebuffer;
+        } else
+        {
+	    //否则创建一个NativeBuffer
+            return allocNativeBuffer(i);
+        }
+    }
+    //将字节序列存放到NativeBuffer
+     static NativeBuffer asNativeBuffer(byte abyte0[])
+    {
+        //从线程本地缓存获取NativeBuffer
+        NativeBuffer nativebuffer = getNativeBuffer(abyte0.length + 1);
+         //拷贝字符串到nativebuffer
+        copyCStringToNativeBuffer(abyte0, nativebuffer);
+        return nativebuffer;
+    }
+    //拷贝字符串到nativebuffer
+     static void copyCStringToNativeBuffer(byte abyte0[], NativeBuffer nativebuffer)
+    {
+        long l = Unsafe.ARRAY_BYTE_BASE_OFFSET;
+        long l1 = abyte0.length;
+	//断言开启，断言nativebuffer容量是否够用，不够用，则抛AssertionError
+        if(!$assertionsDisabled && (long)nativebuffer.size() < l1 + 1L)
+        {
+            throw new AssertionError();
+        } else
+        {
+            unsafe.copyMemory(abyte0, l, null, nativebuffer.address(), l1);
+            unsafe.putByte(nativebuffer.address() + l1, (byte)0);
+            return;
+        }
+    }
+    //释放nativebuffer
+    static void releaseNativeBuffer(NativeBuffer nativebuffer)
+    {
+        //从线程本地缓存获取NativeBuffer数组
+        NativeBuffer anativebuffer[] = (NativeBuffer[])threadLocal.get();
+        if(anativebuffer == null)
+        {
+	    //如果数组为空，则创长度为3的NativeBuffer数组，并将nativebuffer放入缓存中
+            anativebuffer = new NativeBuffer[3];
+            anativebuffer[0] = nativebuffer;
+	    //将NativeBuffer数组添加到线程本地缓存
+            threadLocal.set(anativebuffer);
+            return;
+        }
+	//NativeBuffer数组不为null
+        for(int i = 0; i < 3; i++)
+            if(anativebuffer[i] == null)
+            {
+	        //将nativebuffer放到线程本地缓冲NativeBuffer数组，
+		//索引对应的NativeBuffer为null的位置上
+                anativebuffer[i] = nativebuffer;
+                return;
+            }
+        //如果NativeBuffer的元素没有为null的，则将nativebuffer放在第一个容量小于它的index上，
+	//并释放小于nativebuffer的内存空间
+        for(int j = 0; j < 3; j++)
+        {
+            NativeBuffer nativebuffer1 = anativebuffer[j];
+	    //将
+            if(nativebuffer1.size() < nativebuffer.size())
+            {
+                nativebuffer1.cleaner().clean();
+                anativebuffer[j] = nativebuffer;
+                return;
+            }
+        }
+        //释放nativebuffer内存空间
+        nativebuffer.cleaner().clean();
+    }
+    //这里之所以将释放的NativeBuffer放在线程本地缓存中，主要为了重用NativeBuffer，因为NativeBuffer直接操作底层
+    内存，创建一个要耗费一定的系统资源。
+
+}
+3.
+ //委托给FileChannelImpl
+return FileChannelImpl.open(filedescriptor, flags.read, flags.write, flags.append, null);
+在这一步我们又看到了FileChannelImpl#open方法，这个我们在后面再看。
+
+总结：
+获取区文件的通道一共有四种，第一种从FileOutputStream获取写模式文件通道，第二种从FileInputStream获取读模式文件通道，
+第三种从RandomAccessFile获取读写模式文件通道，第四种调用FileChannelImpl#open方法，这个过程首先从参数文件Path（WindowsPath）获取文件
+系统的提供者，实际为WindowsFileSystemProvider，委托给WindowsFileSystemProvider创建文件通道，WindowsFileSystemProvider
+根据WindowsPath和，文件属性WindowsSecurityDescriptor（FileAttribute[]），和打开选项集，将实际创建通道任务交给WindowsChannelFactory，
+WindowsChannelFactory首先将打开选项装换为内部的通道配置标志Flags（读写模式（read，writer），同步方式（sync，dsync），append等），
+然后根据Flags,和Path信息等信息创建文件，创建文件实际由WindowsNativeDispatcher完成。WindowsNativeDispatcher首先从线程本地缓存获取
+NativeBuffer，将Path信息放在NativeBuffer中，然后创建文件，创建后，将NativeBuffer释放，即放入线程本地缓存，以便重用。
+具体选择哪种方式，根据需要选择。
+
+

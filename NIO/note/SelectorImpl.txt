@@ -1,0 +1,916 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+
+上一篇我们看了一下AbstractSelector，主要是维护取消key集合，和key的反注册。
+取消的key放在一个set集合中，对集合进行添加操作时，必须同步取消key set集合。
+反注册选择key完成的实际工作是，将key，从key对应的通道的选择key数组（这个我们在选择通道相关文章中有讲）中移除。 
+今天来看一下SelectorImpl
+abstract class SelectorImpl extends AbstractSelector
+{
+    protected Set selectedKeys;//就绪key集合，即已经操作事件准备就绪的选择key
+    protected HashSet keys;//与选择器关联的key集合
+    private Set publicKeys;//外部访问key集合的代理
+    private Set publicSelectedKeys;//外部访问就绪key集合代理
+        protected SelectorImpl(SelectorProvider selectorprovider)
+    {
+        super(selectorprovider);
+	//初始化就绪key集合和key集合
+        keys = new HashSet();
+        selectedKeys = new HashSet();
+        if(Util.atBugLevel("1.4"))
+        {
+            publicKeys = keys;
+            publicSelectedKeys = selectedKeys;
+        } else
+        {
+	    //将当前key集合包装成不可修改的集合publicKes
+            publicKeys = Collections.unmodifiableSet(keys);
+	    //将就绪key集合包装成容量固定的集合
+            publicSelectedKeys = Util.ungrowableSet(selectedKeys);
+        }
+    }
+}
+再来看构造的在bugLevel为1.4的情况下，就绪key和key集合的代理集合初始化分2步看：
+1.BugLevel为1.4
+if(Util.atBugLevel("1.4"))
+    {
+        publicKeys = keys;
+        publicSelectedKeys = selectedKeys;
+    }
+2.BugLevel不为1.4
+ else
+        {
+	    //将当前key集合包装成不可修改的集合publicKes
+            publicKeys = Collections.unmodifiableSet(keys);
+	    //将就绪key集合包装成容量固定的集合
+            publicSelectedKeys = Util.ungrowableSet(selectedKeys);
+        }
+
+//Util,nio通道工具类，从定义来看应该是缓冲区工具
+class Util
+{
+    private static ThreadLocal localSelector = new ThreadLocal();
+    private static ThreadLocal localSelectorWrapper = new ThreadLocal();
+    private static Unsafe unsafe = Unsafe.getUnsafe();
+    private static int pageSize = -1;
+    private static volatile Constructor directByteBufferConstructor = null;
+    private static volatile Constructor directByteBufferRConstructor = null;
+    private static volatile String bugLevel = null;
+    private static boolean loaded = false;
+    static final boolean $assertionsDisabled = !sun/nio/ch/Util.desiredAssertionStatus();
+    static 
+    {
+        //通道IO工具
+        TEMP_BUF_POOL_SIZE = IOUtil.IOV_MAX;
+    }
+}
+//通道IO工具
+class IOUtil
+{
+    ...,这里省略一些方法，用到的时候再讲，主要是读写Socket
+    static native boolean randomBytes(byte abyte0[]);
+    static native long makePipe(boolean flag);
+    static native boolean drain(int i)
+        throws IOException;
+    //配置阻塞模式
+    static native void configureBlocking(FileDescriptor filedescriptor, boolean flag)
+        throws IOException;
+   //获取文件描述（Socket）的值
+    static native int fdVal(FileDescriptor filedescriptor);
+    //设置文件描述的值
+    static native void setfdVal(FileDescriptor filedescriptor, int i);
+    static native int iovMax();
+    static native void initIDs();
+    static final int IOV_MAX = iovMax();
+    static final boolean $assertionsDisabled = !sun/nio/ch/IOUtil.desiredAssertionStatus();
+    static 
+    {
+        Util.load();
+    }
+}
+上面两个工具类我们在以后遇到的时候再讲，粗略地看一了，Util为nio的缓冲区工具，IOUtil为通道IO工具。
+再回到就绪key和key集合的代理集合初始化的第一点：
+if(Util.atBugLevel("1.4"))
+    {
+        publicKeys = keys;
+        publicSelectedKeys = selectedKeys;
+    } 
+//Util
+ static boolean atBugLevel(String s)
+    {
+        if(bugLevel == null)
+        {
+            if(!VM.isBooted())
+	        //如果虚拟器没启动，则返回false
+                return false;
+	    //在当前线程访问控制权限的环境下，获取系统属性sun.nio.ch.bugLevel
+            String s1 = (String)AccessController.doPrivileged(new GetPropertyAction("sun.nio.ch.bugLevel"));
+            bugLevel = s1 == null ? "" : s1;
+        }
+        return bugLevel.equals(s);
+    }
+关于bugLevel的相关连接：
+Sun GlassFish Enterprise Server v3 Release Notes：
+https://docs.oracle.com/cd/E19226-01/820-7688/6niu9p8i3/index.html
+Use of the bug level variable  -Dsun.nio.ch.bugLevel=1.4：
+https://community.oracle.com/thread/1240510
+从上面来看bugLevel对应的是虚拟机启动的参数配置sun.nio.ch.bugLevel，
+由于在nio包在1.4时加入，包中有一个bug问题，
+"java.lang.NullPointerException
+at sun.nio.ch.Util.atBugLevel(Util.java:326)
+at sun.nio.ch.SelectorImpl.<init>(SelectorImpl.java:40)
+at sun.nio.ch.WindowsSelectorImpl.<init>(WindowsSelectorImpl.java:104)
+at sun.nio.ch.WindowsSelectorProvider.openSelector(WindowsSelectorProvider.java:26)
+at java.nio.channels.Selector.open(Selector.java:209)
+这个bug在jdk1.5中存在，直到jdk1.7才修复。
+从上面的这些信息来看bugLevel应该是标记nio存在bug情况的jdk版本，
+如果有不同的理解，可以给我留言。
+
+atBugLevel方法有两点关注：
+a.判断虚拟机是否启动
+b.获取虚拟机参数sun.nio.ch.bugLevel
+先看第一点
+a.判断虚拟机是否启动
+package sun.misc;
+import java.util.Properties;
+
+// Referenced classes of package sun.misc:
+//            OSEnvironment, VMNotification
+
+public class VM
+{
+    public VM()
+    {
+    }
+    //下面这些变量，暂时不选关注，以后有时间，
+    //我们在看，只需要看到的虚拟机是否启动booted
+    private static boolean suspended = false;
+    /**
+     * @deprecated Field STATE_GREEN is deprecated
+     */
+    public static final int STATE_GREEN = 1;
+    /**
+     * @deprecated Field STATE_YELLOW is deprecated
+     */
+    public static final int STATE_YELLOW = 2;
+    /**
+     * @deprecated Field STATE_RED is deprecated
+     */
+    public static final int STATE_RED = 3;
+    private static volatile boolean booted = false;
+    private static long directMemory = 67108864L;/64M
+    private static boolean pageAlignDirectMemory;
+    private static boolean defaultAllowArraySyntax;
+    private static boolean allowArraySyntax;
+    private static final Properties savedProps = new Properties();
+    private static volatile int finalRefCount = 0;
+    private static volatile int peakFinalRefCount = 0;
+    private static final int JVMTI_THREAD_STATE_ALIVE = 1;
+    private static final int JVMTI_THREAD_STATE_TERMINATED = 2;
+    private static final int JVMTI_THREAD_STATE_RUNNABLE = 4;
+    private static final int JVMTI_THREAD_STATE_BLOCKED_ON_MONITOR_ENTER = 1024;
+    private static final int JVMTI_THREAD_STATE_WAITING_INDEFINITELY = 16;
+    private static final int JVMTI_THREAD_STATE_WAITING_WITH_TIMEOUT = 32;
+    static 
+    {
+        defaultAllowArraySyntax = false;
+        allowArraySyntax = defaultAllowArraySyntax;
+        initialize();
+    }
+    private static native void initialize();
+    public static void booted()
+    {
+        booted = true;
+    }
+    //VM是否启动
+    public static boolean isBooted()
+    {
+        return booted;
+    }
+}
+b.获取虚拟机参数sun.nio.ch.bugLevel
+//GetPropertyAction，获取系统属性Action
+package sun.security.action;
+import java.security.PrivilegedAction;
+public class GetPropertyAction
+    implements PrivilegedAction
+{
+    private String theProp;
+    private String defaultVal;
+    public GetPropertyAction(String s)
+    {
+        theProp = s;
+    }
+    public GetPropertyAction(String s, String s1)
+    {
+        theProp = s;
+        defaultVal = s1;
+    }
+    //获取系统属性，为空返回默认属性值
+    public String run()
+    {
+        String s = System.getProperty(theProp);
+        return s != null ? s : defaultVal;
+    }
+    public volatile Object run()
+    {
+        return run();
+    }
+}
+从上面一段分析可以看出，如果nio包的JDK版本存在bug问题，则就绪key和key集合的代理集合
+直接引用就绪key和key集合。
+ 
+再回到就绪key和key集合的代理集合初始化的第二点：
+2.BugLevel不为1.4
+ else
+   {
+      //将当前key集合包装成不可修改的集合publicKes
+       publicKeys = Collections.unmodifiableSet(keys);
+      //将就绪key集合包装成容量固定的集合
+       publicSelectedKeys = Util.ungrowableSet(selectedKeys);
+   }
+将当前key集合包装成不可修改的集合publicKes，这个就不用说了，我们以前在java的集合综述篇中
+有说。我们主要将下一点将就绪key集合包装成容量固定的集合，
+//Util
+ static Set ungrowableSet(Set set)
+    {
+        return new Set(set) {
+             final Set val$s;
+            {
+                s = set;
+                super();
+            }
+            public int size()
+            {
+                return s.size();
+            }
+            public boolean isEmpty()
+            {
+                return s.isEmpty();
+            }
+            public boolean contains(Object obj)
+            {
+                return s.contains(obj);
+            }
+            ...
+            public Iterator iterator()
+            {
+                return s.iterator();
+            }
+            ...
+            public void clear()
+            {
+                s.clear();
+            }
+
+            public boolean remove(Object obj)
+            {
+                return s.remove(obj);
+            }
+
+            public boolean containsAll(Collection collection)
+            {
+                return s.containsAll(collection);
+            }
+
+            public boolean removeAll(Collection collection)
+            {
+                return s.removeAll(collection);
+            }
+
+            public boolean retainAll(Collection collection)
+            {
+                return s.retainAll(collection);
+            }
+	    //集合不可添加元素
+            public boolean add(Object obj)
+            {
+                throw new UnsupportedOperationException();
+            }
+            public boolean addAll(Collection collection)
+            {
+                throw new UnsupportedOperationException();
+            }
+        };
+    }
+从上面来看
+Util.ungrowableSet(Set set)方法，对集合Set进行简单的封装，移除迭代，比较等操作
+直接委托给原始的Set集合，只是封装后的集合不允许添加元素，但可以移除，查询操作。
+这段话是不是很熟悉，在Selector定义的文章，Java Doc有说就绪key集合SelectedKeys的
+这些属性。
+小节一下就绪key和key集合的初始化：
+如果nio包的JDK版本存在bug问题，则就绪key和key集合的代理集合直接引用就绪key和key集合。
+否则将当前key集合包装成不可修改的代理集合publicKes，将就绪key集合包装成容量固定的集合publicSelectedKeys
+
+再来看获取就绪key和key集合
+//key集合
+ public Set keys()
+ {
+     if(!isOpen() && !Util.atBugLevel("1.4"))
+         throw new ClosedSelectorException();
+     else
+         return publicKeys;
+ }
+ //就绪key
+ public Set selectedKeys()
+ {
+     if(!isOpen() && !Util.atBugLevel("1.4"))
+         throw new ClosedSelectorException();
+     else
+         return publicSelectedKeys;
+ }
+从上面来看，其他线程获取选择器的就绪key和key集合，实际上返回的是
+key集合的代理publicKeys和就绪key集合的代理publicSelectedKeys。
+
+再来看几个选择操作：
+ public int select()
+        throws IOException
+    {
+        //委托给select(long l)
+        return select(0L);
+    }
+ public int select(long l)
+        throws IOException
+    {
+        if(l < 0L)
+	    //负数抛出异常
+            throw new IllegalArgumentException("Negative timeout");
+        else
+	    //委托给lockAndDoSelect(long l)
+            return lockAndDoSelect(l != 0L ? l : -1L);
+    }
+ public int selectNow()
+        throws IOException
+    {
+         //委托给lockAndDoSelect(long l)
+        return lockAndDoSelect(0L);
+    }
+再来看lockAndDoSelect方法：
+ private int lockAndDoSelect(long l)
+        throws IOException
+    {
+        SelectorImpl selectorimpl = this;
+        JVM INSTR monitorenter ;
+        if(!isOpen())
+            throw new ClosedSelectorException();
+	//取得key集合代理
+        Set set = publicKeys;
+        JVM INSTR monitorenter ;
+	//取得就绪key代理
+        Set set1 = publicSelectedKeys;
+        JVM INSTR monitorenter ;
+	//实际选择操作代理
+        return doSelect(l);
+        Exception exception;
+        exception;
+        throw exception;
+        Exception exception1;
+        exception1;
+        throw exception1;
+        Exception exception2;
+        exception2;
+        throw exception2;
+    }
+在上面的方法中有一些：
+ JVM INSTR monitorenter ;
+ ...
+ Exception exception;
+ exception;
+ throw exception;
+这个是什么意思，不是很理解，找了一下资料
+JVM INSTR:
+https://coderanch.com/t/385088/java/JVM-INSTR
+JVM INSTR monitorenter and JVM INSTR monitorexit:
+http://stackoverflow.com/questions/9547975/jvm-instr-monitorenter-and-jvm-instr-monitorexit
+按照资料的说法，上述的这标记是JVM规范，实际相当与同步语句块（synchronized）；
+JVM INSTR monitorenter进入同步，JVM INSTR monitorexit退出同步；
+Exception exception;
+exception;
+throw exception;
+相等于
+catch(Exception exception)
+{
+    throw exception;
+}
+再来看实际选择操作
+//实际选择操作
+return doSelect(l);
+//待父类扩展，我们在下一篇文章中再看
+protected abstract int doSelect(long l)
+        throws IOException;
+select方法的3中操作形式，实际上委托给为lockAndDoSelect方法，方法实际上是同步的，
+可安全访问，获取key集合代理publicKeys和就绪key代理集合publicSelectedKeys，然后交给
+doSelect(long l)方法，这个方法为抽象方法，待子类扩展。
+在AbstractSelector的close方法，最有调用了implCloseSelector；
+下面来看关闭选择器的实际操作implCloseSelector
+  public void implCloseSelector()
+        throws IOException
+    {
+        wakeup();
+        synchronized(this)
+        {
+            synchronized(publicKeys)
+            {
+                synchronized(publicSelectedKeys)
+                {
+                    implClose();
+                }
+            }
+        }
+    }
+    //唤醒等待选择操作的线程，待子类扩展
+    public abstract Selector wakeup();
+    //完成实际的关闭选择器工作
+    protected abstract void implClose()
+        throws IOException;
+从implCloseSelector方法来看，首先唤醒等待选择操作的线程，唤醒方法wakeup待实现，
+同步选择器，就绪key和key集合的代理publicKeys，publicSelectedKeys，调用implClose完成实际的关闭
+通道工作，待子类实现。
+再来看注册通道到选择器：
+ protected final SelectionKey register(AbstractSelectableChannel abstractselectablechannel, int i, Object obj)
+    {
+        if(!(abstractselectablechannel instanceof SelChImpl))
+	    //如果可选择通道不是SelChImpl的实例，则抛出IllegalSelectorException
+            throw new IllegalSelectorException();
+	//更具可选择通道和选择器创建选择key
+        SelectionKeyImpl selectionkeyimpl = new SelectionKeyImpl((SelChImpl)abstractselectablechannel, this);
+        //设置key的附加物
+	selectionkeyimpl.attach(obj);
+	//同步key集合代理
+        synchronized(publicKeys)
+        {
+	    //完成实际的注册工作
+            implRegister(selectionkeyimpl);
+        }
+	//设置key的兴趣事件集
+        selectionkeyimpl.interestOps(i);
+        return selectionkeyimpl;
+    }
+    //待子类实现
+    protected abstract void implRegister(SelectionKeyImpl selectionkeyimpl);
+从可选通道注册方法来看，首先注册的通道必须是AbstractSelectableChannel类型，并且是SelChImpl实例。
+更具可选择通道和选择器构造选择key，设置选择key的附加物，同步key集合代理，调用implRegister方法
+完成实际的注册工作，implRegister方法待子类实现。
+//再来看处理反注册队列，现在看，还不能完全理解此方法的意思，在后面的文章，
+我们会继续说，现在不能能完全看到，只以目前的能力，阅读以下代码，理解多少是多少，
+因为里面牵涉到JVM规范，不知道说的正不正确，我只以目前的能力来阅读代码。
+ void processDeregisterQueue()
+        throws IOException
+    {
+        Set set = cancelledKeys();//获取取消key集合
+        Set set1 = set;
+        JVM INSTR monitorenter ;//进入同步语句块
+        Iterator iterator;
+        if(set.isEmpty())
+            break MISSING_BLOCK_LABEL_110;
+        iterator = set.iterator();
+_L2://遍历取消key集合
+        SelectionKeyImpl selectionkeyimpl;
+        if(!iterator.hasNext())
+            break; /* Loop/switch isn't completed */
+        selectionkeyimpl = (SelectionKeyImpl)iterator.next();
+        try
+        {
+	    //完成实际取消选择key的反注册
+            implDereg(selectionkeyimpl);
+        }
+        catch(SocketException socketexception)
+        {
+            IOException ioexception = new IOException("Error deregistering key");
+            ioexception.initCause(socketexception);
+            throw ioexception;
+        }
+	//从取消key集合中移除已经反注册的取消选择key
+        iterator.remove();
+        if(true) goto _L2; else goto _L1
+_L1:
+        break MISSING_BLOCK_LABEL_110;
+        Exception exception;
+        exception;
+        iterator.remove();
+        throw exception;
+        Exception exception1;
+        exception1;
+        throw exception1;
+    }
+   //完成SelectionKey的实际反注册工作
+    protected abstract void implDereg(SelectionKeyImpl selectionkeyimpl)
+        throws IOException;
+从processDeregisterQueue方法来看，主要是遍历取消key集合，反注册取消key，实际的
+反注册工作由implDereg方法，implDereg方法待子类扩展。
+成功，则从集合中移除。
+
+这个方法，待子类实现，我们以后再看
+void putEventOps(SelectionKeyImpl selectionkeyimpl, int i)
+{
+   }
+总结：
+SelectorImpl有4个集合分别为就绪key集合，key集合，key集合的代理publicKeys及就绪key集合的代理publicSelectedKeys；
+实际是两个集合就绪key集合和key集合，publicSelectedKeys和publicKeys是其他线程访问上述两个集合的代理。
+SelectorImpl构造的时候，初始化选择器提供者SelectorProvider，创建就绪key集合和key集合，然后初始化
+就绪key和key集合的代理，初始化过程为，如果nio包的JDK版本存在bug问题，则就绪key和key集合的代理集合直接引用就绪key和key集合。
+否则将当前key集合包装成不可修改的代理集合publicKes，将就绪key集合包装成容量固定的集合publicSelectedKeys。
+其他线程获取选择器的就绪key和key集合，实际上返回的是
+key集合的代理publicKeys和就绪key集合的代理publicSelectedKeys；
+select方法的3中操作形式，实际上委托给为lockAndDoSelect方法，方法实际上是同步的，
+可安全访问，获取key集合代理publicKeys和就绪key代理集合publicSelectedKeys，然后交给
+doSelect(long l)方法，这个方法为抽象方法，待子类扩展。
+实际的关闭选择器操作implCloseSelector方法，首先唤醒等待选择操作的线程，唤醒方法wakeup待实现，
+同步选择器，就绪key和key集合的代理publicKeys，publicSelectedKeys，调用implClose完成实际的关闭
+通道工作，待子类实现。
+从可选通道注册方法来看，首先注册的通道必须是AbstractSelectableChannel类型，并且是SelChImpl实例。
+更具可选择通道和选择器构造选择key，设置选择key的附加物，同步key集合代理，调用implRegister方法
+完成实际的注册工作，implRegister方法待子类实现。
+processDeregisterQueue方法，主要是遍历取消key集合，反注册取消key，实际的
+反注册工作由implDereg方法，implDereg方法待子类扩展。成功，则从集合中移除。
+
+
+附：这部分只作为扩展，没有特别的解析，设计，只是贴出代码，有兴趣可以看一下
+//VM
+package sun.misc;
+
+import java.util.Properties;
+
+// Referenced classes of package sun.misc:
+//            OSEnvironment, VMNotification
+
+public class VM
+{ 
+     private static boolean suspended = false;
+    /**
+     * @deprecated Field STATE_GREEN is deprecated
+     */
+    public static final int STATE_GREEN = 1;
+    /**
+     * @deprecated Field STATE_YELLOW is deprecated
+     */
+    public static final int STATE_YELLOW = 2;
+    /**
+     * @deprecated Field STATE_RED is deprecated
+     */
+    public static final int STATE_RED = 3;
+    private static volatile boolean booted = false;
+    private static long directMemory = 67108864L;
+    private static boolean pageAlignDirectMemory;
+    private static boolean defaultAllowArraySyntax;
+    private static boolean allowArraySyntax;
+    private static final Properties savedProps = new Properties();
+    private static volatile int finalRefCount = 0;
+    private static volatile int peakFinalRefCount = 0;
+    private static final int JVMTI_THREAD_STATE_ALIVE = 1;
+    private static final int JVMTI_THREAD_STATE_TERMINATED = 2;
+    private static final int JVMTI_THREAD_STATE_RUNNABLE = 4;
+    private static final int JVMTI_THREAD_STATE_BLOCKED_ON_MONITOR_ENTER = 1024;
+    private static final int JVMTI_THREAD_STATE_WAITING_INDEFINITELY = 16;
+    private static final int JVMTI_THREAD_STATE_WAITING_WITH_TIMEOUT = 32;
+
+    static 
+    {
+        defaultAllowArraySyntax = false;
+        allowArraySyntax = defaultAllowArraySyntax;
+        initialize();
+    }
+    public VM()
+    {
+    }
+    
+    private static native void initialize();
+     public static void booted()
+    {
+        booted = true;
+    }
+
+    public static boolean isBooted()
+    {
+        return booted;
+    }
+
+    public static long maxDirectMemory()
+    {
+        return directMemory;
+    }
+
+    public static boolean isDirectMemoryPageAligned()
+    {
+        return pageAlignDirectMemory;
+    }
+     public static void initializeOSEnvironment()
+    {
+        if(!booted)
+            OSEnvironment.initialize();
+    }
+
+    public static int getFinalRefCount()
+    {
+        return finalRefCount;
+    }
+
+    public static int getPeakFinalRefCount()
+    {
+        return peakFinalRefCount;
+    }
+
+    public static void addFinalRefCount(int i)
+    {
+        finalRefCount += i;
+        if(finalRefCount > peakFinalRefCount)
+            peakFinalRefCount = finalRefCount;
+    }
+
+    public static Thread.State toThreadState(int i)
+    {
+        if((i & 4) != 0)
+            return Thread.State.RUNNABLE;
+        if((i & 1024) != 0)
+            return Thread.State.BLOCKED;
+        if((i & 16) != 0)
+            return Thread.State.WAITING;
+        if((i & 32) != 0)
+            return Thread.State.TIMED_WAITING;
+        if((i & 2) != 0)
+            return Thread.State.TERMINATED;
+        if((i & 1) == 0)
+            return Thread.State.NEW;
+        else
+            return Thread.State.RUNNABLE;
+    }
+    public static boolean allowArraySyntax()
+    {
+        return allowArraySyntax;
+    }
+    /**
+     * @deprecated Method threadsSuspended is deprecated
+     */
+
+    public static boolean threadsSuspended()
+    {
+        return suspended;
+    }
+
+    public static boolean allowThreadSuspension(ThreadGroup threadgroup, boolean flag)
+    {
+        return threadgroup.allowThreadSuspension(flag);
+    }
+
+    /**
+     * @deprecated Method suspendThreads is deprecated
+     */
+
+    public static boolean suspendThreads()
+    {
+        suspended = true;
+        return true;
+    }
+
+    /**
+     * @deprecated Method unsuspendThreads is deprecated
+     */
+
+    public static void unsuspendThreads()
+    {
+        suspended = false;
+    }
+
+    /**
+     * @deprecated Method unsuspendSomeThreads is deprecated
+     */
+
+    public static void unsuspendSomeThreads()
+    {
+    }
+
+    /**
+     * @deprecated Method getState is deprecated
+     */
+
+    public static final int getState()
+    {
+        return 1;
+    }
+
+    /**
+     * @deprecated Method registerVMNotification is deprecated
+     */
+
+    public static void registerVMNotification(VMNotification vmnotification)
+    {
+    }
+
+    /**
+     * @deprecated Method asChange is deprecated
+     */
+
+    public static void asChange(int i, int j)
+    {
+    }
+
+    /**
+     * @deprecated Method asChange_otherthread is deprecated
+     */
+
+    public static void asChange_otherthread(int i, int j)
+    {
+    }
+
+   
+
+    public static String getSavedProperty(String s)
+    {
+        if(savedProps.isEmpty())
+            throw new IllegalStateException("Should be non-empty if initialized");
+        else
+            return savedProps.getProperty(s);
+    }
+
+    public static void saveAndRemoveProperties(Properties properties)
+    {
+        if(booted)
+            throw new IllegalStateException("System initialization has completed");
+        savedProps.putAll(properties);
+        String s = (String)properties.remove("sun.nio.MaxDirectMemorySize");
+        if(s != null)
+            if(s.equals("-1"))
+            {
+                directMemory = Runtime.getRuntime().maxMemory();
+            } else
+            {
+                long l = Long.parseLong(s);
+                if(l > -1L)
+                    directMemory = l;
+            }
+        s = (String)properties.remove("sun.nio.PageAlignDirectMemory");
+        if("true".equals(s))
+            pageAlignDirectMemory = true;
+        s = properties.getProperty("sun.lang.ClassLoader.allowArraySyntax");
+        allowArraySyntax = s != null ? Boolean.parseBoolean(s) : defaultAllowArraySyntax;
+        properties.remove("java.lang.Integer.IntegerCache.high");
+        properties.remove("sun.zip.disableMemoryMapping");
+        properties.remove("sun.java.launcher.diag");
+    }
+}
+在代码中经常看到这个语句JVM INSTR monitorenter ;来看一下JVM：
+只贴出源码，暂时放在这以后再啃。
+class JVM
+{
+    JVM()
+    {
+    }
+    static long activate(String s, DTraceProvider adtraceprovider[])
+    {
+        return activate0(s, adtraceprovider);
+    }
+    static void dispose(long l)
+    {
+        dispose0(l);
+    }
+    static boolean isEnabled(Method method)
+    {
+        return isEnabled0(method);
+    }
+    static boolean isSupported()
+    {
+        return isSupported0();
+    }
+    static Class defineClass(ClassLoader classloader, String s, byte abyte0[], int i, int j)
+    {
+        return defineClass0(classloader, s, abyte0, i, j);
+    }
+    private static native long activate0(String s, DTraceProvider adtraceprovider[]);
+    private static native void dispose0(long l);
+    private static native boolean isEnabled0(Method method);
+    private static native boolean isSupported0();
+    private static native Class defineClass0(ClassLoader classloader, String s, byte abyte0[], int i, int j);
+    static 
+    {
+        AccessController.doPrivileged(new LoadLibraryAction("jsdt"));
+    }
+}
+来看这一句：
+ static 
+    {
+        AccessController.doPrivileged(new LoadLibraryAction("jsdt"));
+    }
+jsdt:JavaScript Development Tools (JSDT)
+http://www.eclipse.org/webtools/jsdt/
+//LoadLibraryAction
+package sun.security.action;
+import java.security.PrivilegedAction;
+public class LoadLibraryAction
+    implements PrivilegedAction
+{
+
+    public LoadLibraryAction(String s)
+    {
+        theLib = s;
+    }
+
+    public Void run()
+    {
+
+       //系统加载lib库
+        System.loadLibrary(theLib);
+        return null;
+    }
+
+    public volatile Object run()
+    {
+        return run();
+    }
+
+    private String theLib;
+}
+
+//System
+/**
+     * Loads the system library specified by the <code>libname</code>
+     * argument. The manner in which a library name is mapped to the
+     * actual system library is system dependent.
+     * <p>
+     * The call <code>System.loadLibrary(name)</code> is effectively
+     * equivalent to the call
+     * <blockquote><pre>
+     * Runtime.getRuntime().loadLibrary(name)
+     * </pre></blockquote>
+     *
+     * @param      libname   the name of the library.
+     * @exception  SecurityException  if a security manager exists and its
+     *             <code>checkLink</code> method doesn't allow
+     *             loading of the specified dynamic library
+     * @exception  UnsatisfiedLinkError  if the library does not exist.
+     * @exception  NullPointerException if <code>libname</code> is
+     *             <code>null</code>
+     * @see        java.lang.Runtime#loadLibrary(java.lang.String)
+     * @see        java.lang.SecurityManager#checkLink(java.lang.String)
+     */
+    public static void loadLibrary(String libname) {
+        Runtime.getRuntime().loadLibrary0(getCallerClass(), libname);
+    }
+ 
+//Runtime
+synchronized void loadLibrary0(Class fromClass, String libname) {
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+            security.checkLink(libname);
+        }
+        if (libname.indexOf((int)File.separatorChar) != -1) {
+            throw new UnsatisfiedLinkError(
+    "Directory separator should not appear in library name: " + libname);
+        }
+        ClassLoader.loadLibrary(fromClass, libname, false);
+    }
+//ClassLoader
+ // Invoked in the java.lang.Runtime class to implement load and loadLibrary.
+    static void loadLibrary(Class fromClass, String name,
+                            boolean isAbsolute) {
+        ClassLoader loader =
+            (fromClass == null) ? null : fromClass.getClassLoader();
+        if (sys_paths == null) {
+            usr_paths = initializePath("java.library.path");
+            sys_paths = initializePath("sun.boot.library.path");
+        }
+        if (isAbsolute) {
+            if (loadLibrary0(fromClass, new File(name))) {
+                return;
+            }
+            throw new UnsatisfiedLinkError("Can't load library: " + name);
+        }
+        if (loader != null) {
+            String libfilename = loader.findLibrary(name);
+            if (libfilename != null) {
+                File libfile = new File(libfilename);
+                if (!libfile.isAbsolute()) {
+                    throw new UnsatisfiedLinkError(
+    "ClassLoader.findLibrary failed to return an absolute path: " + libfilename);
+                }
+                if (loadLibrary0(fromClass, libfile)) {
+                    return;
+                }
+                throw new UnsatisfiedLinkError("Can't load " + libfilename);
+            }
+        }
+        for (int i = 0 ; i < sys_paths.length ; i++) {
+            File libfile = new File(sys_paths[i], System.mapLibraryName(name));
+            if (loadLibrary0(fromClass, libfile)) {
+                return;
+            }
+        }
+        if (loader != null) {
+            for (int i = 0 ; i < usr_paths.length ; i++) {
+                File libfile = new File(usr_paths[i],
+                                        System.mapLibraryName(name));
+                if (loadLibrary0(fromClass, libfile)) {
+                    return;
+                }
+            }
+        }
+        // Oops, it failed
+        throw new UnsatisfiedLinkError("no " + name + " in java.library.path");
+    }

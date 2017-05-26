@@ -1,0 +1,150 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+ByteChannel，分散聚集通道接口的定义（SocketChannel）:
+[url]http://donald-draper.iteye.com/blog/2371065[/url]
+NIO-Pipe示例：[url]http://donald-draper.iteye.com/blog/2373535[/url]
+前面一篇文章我们看了一个管道实例，今天来看一下管道的定义
+package java.nio.channels;
+import java.io.IOException;
+import java.nio.channels.spi.*;
+
+
+/**
+ * A pair of channels that implements a unidirectional pipe.
+ *Pipe是一对单向通道的实现
+ * <p> A pipe consists of a pair of channels: A writable {@link
+ * Pipe.SinkChannel </code>sink<code>} channel and a readable {@link
+ * Pipe.SourceChannel </code>source<code>} channel.  Once some bytes are
+ * written to the sink channel they can be read from source channel in exactly
+ * the order in which they were written.
+ *管道Pipe包括一对通道，一个可写的SinkChannel，一个可读的SourceChannel。只要有字节序列
+ 写到sink通道，那么source通道可以按字节写的顺序读取字节序列。
+ * <p> Whether or not a thread writing bytes to a pipe will block until another
+ * thread reads those bytes, or some previously-written bytes, from the pipe is
+ * system-dependent and therefore unspecified.  Many pipe implementations will
+ * buffer up to a certain number of bytes between the sink and source channels,
+ * but such buffering should not be assumed.  </p>
+ *一个线程是否可以写字节序列到管道，取决于是否有其他线程从依赖于系统的管道，
+ 读取这些字节序列或先前已写到管道的字节序列，因此是不确定的。许多管道的实现将会
+ 把一定数量的字节序列在sink与source通道之前缓存起来，但这种缓存不应该assumed。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class Pipe {
+
+    /**
+     * A channel representing the readable end of a {@link Pipe}.  </p>
+     *SourceChannel表示管道的可读端
+     * @since 1.4
+     */
+    public static abstract class SourceChannel
+        extends AbstractSelectableChannel
+        implements ReadableByteChannel, ScatteringByteChannel
+    {
+        /**
+         * Constructs a new instance of this class.
+         */
+        protected SourceChannel(SelectorProvider provider) {
+            super(provider);
+        }
+
+        /**
+         * Returns an operation set identifying this channel's supported
+         * operations.
+         *返回通道支持的操作事件
+         * <p> Pipe-source channels only support reading, so this method
+         * returns {@link SelectionKey#OP_READ}.  </p>
+         *由于管道的Source通道只支持读操作，所以此方只返回SelectionKey#OP_READ
+         * @return  The valid-operation set
+         */
+        public final int validOps() {
+            return SelectionKey.OP_READ;
+        }
+
+    }
+
+    /**
+     * A channel representing the writable end of a {@link Pipe}.  </p>
+     * SinkChannel表示管道的可写端
+     * @since 1.4
+     */
+    public static abstract class SinkChannel
+        extends AbstractSelectableChannel
+        implements WritableByteChannel, GatheringByteChannel
+    {
+        /**
+         * Initializes a new instance of this class.
+         */
+        protected SinkChannel(SelectorProvider provider) {
+            super(provider);
+        }
+
+        /**
+         * Returns an operation set identifying this channel's supported
+         * operations.
+         *返回通道支持的操作事件
+         * <p> Pipe-sink channels only support writing, so this method returns
+         * {@link SelectionKey#OP_WRITE}.  </p>
+         *由于管道的Sink通道只支持写操作，所以此方只返回SelectionKey#OP_WRITE
+         * @return  The valid-operation set
+         */
+        public final int validOps() {
+            return SelectionKey.OP_WRITE;
+        }
+
+    }
+
+    /**
+     * Initializes a new instance of this class.
+     */
+    protected Pipe() { }
+
+    /**
+     * Returns this pipe's source channel.  </p>
+     *获取管道的source通道
+     * @return  This pipe's source channel
+     */
+    public abstract SourceChannel source();
+
+    /**
+     * Returns this pipe's sink channel.  </p>
+     *获取管道的sink通道
+     * @return  This pipe's sink channel
+     */
+    public abstract SinkChannel sink();
+
+    /**
+     * Opens a pipe.
+     *打开一个管道
+     * <p> The new pipe is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openPipe openPipe} method of the
+     * system-wide default {@link java.nio.channels.spi.SelectorProvider}
+     * object.  </p>
+     *
+     * @return  A new pipe
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public static Pipe open() throws IOException {
+        return SelectorProvider.provider().openPipe();
+    }
+}
+总结：
+Pipe中包含一个可写通道SinkChannel和一个可读通道SourceChannel。sink向管道写字节序序列，
+source从管道读取字节序列。

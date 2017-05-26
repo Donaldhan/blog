@@ -1,0 +1,606 @@
+Reference定义（PhantomReference，Cleaner）:[url]http://donald-draper.iteye.com/blog/2371661[/url]
+FileChanne定义：[url]http://donald-draper.iteye.com/blog/2374149[/url]
+文件读写方式简单综述:[url]http://donald-draper.iteye.com/blog/2374237[/url]
+文件读写方式简单综述后续（文件，流构造）:[url]http://donald-draper.iteye.com/blog/2374294[/url]
+文件通道创建方式综述：[url]http://donald-draper.iteye.com/blog/2374537[/url]
+引言：
+获取区文件的通道一共有四种，第一种从FileOutputStream获取写模式文件通道，第二种从FileInputStream获取读模式文件通道，第三种从RandomAccessFile获取读写模式文件通道，第四种调用FileChannelImpl#open方法，这个过程首先从参数文件Path（WindowsPath）获取文件系统的提供者，实际为WindowsFileSystemProvider，委托给WindowsFileSystemProvider创建文件通道，WindowsFileSystemProvider根据WindowsPath和，文件属性WindowsSecurityDescriptor（FileAttribute[]），和打开选项集，将实际创建通道任务交给WindowsChannelFactory，WindowsChannelFactory首先将打开选项装换为内部的通道配置标志Flags（读写模式（read，writer），同步方式（sync，dsync），append等），然后根据Flags,和Path信息等信息创建文件，创建文件实际由WindowsNativeDispatcher完成。WindowsNativeDispatcher首先从线程本地缓存获取NativeBuffer，将Path信息放在NativeBuffer中，然后创建文件，创建后，将NativeBuffer释放，即放入线程本地缓存，以便重用。具体选择哪种方式，根据需要选择。
+从今天开始，文件通道的具体实现FileChanneImpl
+public class FileChannelImpl extends FileChannel
+{
+ private static final long allocationGranularity = initIDs();
+    private final FileDispatcher nd;//文件分发器
+    private final FileDescriptor fd;//文件描述
+    private final boolean writable;//通道是否可写
+    private final boolean readable;//通道是否可读
+    private final boolean append;//通道写是否为追加模式
+    private final Object parent;//创建通道的对象
+    //下面这些属性，暂时不能确定是具体什么意思，只能先从字面上去理解，
+    //这里我们先放在这里，后面用到在讲
+    private final NativeThreadSet threads = new NativeThreadSet(2);
+    private final Object positionLock = new Object();//文件读写是位置锁
+    private static volatile boolean transferSupported = true;//是否支持通道传输
+    private static volatile boolean pipeSupported = true;//是否支持管道
+    private static volatile boolean fileSupported = true;//是否支持文件
+    private static final long MAPPED_TRANSFER_SIZE = 8388608L;/
+    private static final int TRANSFER_SIZE = 8192;
+    private static final int MAP_RO = 0;
+    private static final int MAP_RW = 1;
+    private static final int MAP_PV = 2;
+    private volatile FileLockTable fileLockTable;//存放文件锁的Table
+    private static boolean isSharedFileLockTable;//文件锁table是否为共享
+    private static volatile boolean propertyChecked;
+    static final boolean $assertionsDisabled = !sun/nio/ch/FileChannelImpl.desiredAssertionStatus();
+
+    static 
+    {
+        //加载nio，net资源库
+        Util.load();
+    }
+     private static native long initIDs();
+ }
+ 来看构造
+  public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, false, obj);
+    }
+
+    public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, flag2, obj);
+    }
+    //创建FileChannelImpl
+    private FileChannelImpl(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        fd = filedescriptor;
+        readable = flag;
+        writable = flag1;
+        append = flag2;
+        parent = obj;
+        nd = new FileDispatcherImpl(flag2);
+    }
+从上面可以看出文件通道的构造，主要是初始化通道读写模式，追加模式append及文件分发器
+FileDispatcherImpl。
+public int write(ByteBuffer bytebuffer)
+        throws IOException
+    {
+        ensureOpen();//确保通道打开
+        if(!writable)//如果通道不可写，则抛出不可写异常
+            throw new NonWritableChannelException();
+        Object obj = positionLock;//获取position锁
+        JVM INSTR monitorenter ;//进入同步
+        int i;
+        int j;
+        i = 0;
+        j = -1;
+        int k;
+        begin();
+	...
+        j = threads.add();
+	//看到这里是不是很熟悉，在socketChannel和DatagramChannel都有讲过，这里不再讲
+	//只不过nd为FileDispatcherImpl
+        do
+            i = IOUtil.write(fd, bytebuffer, -1L, nd, positionLock);
+        while(i == -3 && isOpen());
+	...
+    }
+    
+    public long write(ByteBuffer abytebuffer[], int i, int j)
+        throws IOException
+    {
+        if(i < 0 || j < 0 || i > abytebuffer.length - j)
+            throw new IndexOutOfBoundsException();
+        ensureOpen();
+        if(!writable)
+            throw new NonWritableChannelException();
+        Object obj = positionLock;
+        JVM INSTR monitorenter ;
+        ...
+	//看到这里是不是很熟悉，在socketChannel和DatagramChannel都有讲过，这里不再讲
+	//只不过nd为FileDispatcherImpl
+        do
+            l = IOUtil.write(fd, abytebuffer, i, j, nd);
+        while(l == -3L && isOpen());
+	...
+}
+public int read(ByteBuffer bytebuffer)
+        throws IOException
+    {
+        ensureOpen();
+        if(!readable)
+            throw new NonReadableChannelException();
+        Object obj = positionLock;
+        JVM INSTR monitorenter ;
+        int i;
+        int j;
+        i = 0;
+        j = -1;
+        int k;
+        ...
+	//看到这里是不是很熟悉，在socketChannel和DatagramChannel都有讲过，这里不再讲
+	//只不过nd为FileDispatcherImpl
+        do
+            i = IOUtil.read(fd, bytebuffer, -1L, nd, positionLock);
+        while(i == -3 && isOpen());
+	...
+}
+ public long read(ByteBuffer abytebuffer[], int i, int j)
+        throws IOException
+    {
+        if(i < 0 || j < 0 || i > abytebuffer.length - j)
+            throw new IndexOutOfBoundsException();
+        ensureOpen();
+        if(!readable)
+            throw new NonReadableChannelException();
+        Object obj = positionLock;
+        JVM INSTR monitorenter ;
+        ...
+        do
+            l = IOUtil.read(fd, abytebuffer, i, j, nd);
+        while(l == -3L && isOpen());
+       ...
+    }
+从上面可以看出文件通道的读写操作的实际操作都是由IOUtil协助FileDispatcherImpl完成完成，这一点和SocketChannel
+通道思路相似。
+public long transferTo(long l, long l1, WritableByteChannel writablebytechannel)
+        throws IOException
+    {
+        ensureOpen();//确保当前通道打开
+        if(!writablebytechannel.isOpen())//如果目的通道，不可写则抛出ClosedChannelException
+            throw new ClosedChannelException();
+        if(!readable)//如果当前通道不可读，则抛出NonReadableChannelException
+            throw new NonReadableChannelException();
+	//如果目的通道为FileChannelImpl，且不可写，则抛出NonWritableChannelException
+        if((writablebytechannel instanceof FileChannelImpl) && !((FileChannelImpl)writablebytechannel).writable)
+            throw new NonWritableChannelException();
+        if(l < 0L || l1 < 0L)//检查position和count参数
+            throw new IllegalArgumentException();
+	//获取当前文件通道size
+        long l2 = size();
+        if(l > l2)//如果position大于当前文件size，返回0
+            return 0L;
+        int i = (int)Math.min(l1, 2147483647L);//获取需要读取字节数，为count参数和2^31-1当中的最小的一个
+        if(l2 - l < (long)i)
+            i = (int)(l2 - l);//需要读取的字节数
+        long l3;
+        if((l3 = transferToDirectly(l, i, writablebytechannel)) >= 0L)
+            return l3;
+        if((l3 = transferToTrustedChannel(l, i, writablebytechannel)) >= 0L)
+            return l3;
+        else
+            return transferToArbitraryChannel(l, i, writablebytechannel);
+    }
+transferTo方法有3点要关注
+1
+if((l3 = transferToDirectly(l, i, writablebytechannel)) >= 0L)
+    return l3;
+ private long transferToDirectly(long l, int i, WritableByteChannel writablebytechannel)
+        throws IOException
+    {
+        int j;
+        int k;
+        long l1;
+        int i1;
+        if(!transferSupported)//不支持通道传输，
+            return -4L;
+        FileDescriptor filedescriptor = null;
+	//这一段的目的就是获取目的通道文件描述符
+        if(writablebytechannel instanceof FileChannelImpl)
+        {
+            if(!fileSupported)//如果通道为文件通道，但不支持文件
+                return -6L;
+            filedescriptor = ((FileChannelImpl)writablebytechannel).fd;
+        } else
+        if(writablebytechannel instanceof SelChImpl)
+        {
+	    //如果目的通道为SinkChannelImpl，且不支持管道
+            if((writablebytechannel instanceof SinkChannelImpl) && !pipeSupported)
+                return -6L;
+            filedescriptor = ((SelChImpl)writablebytechannel).getFD();
+        }
+        if(filedescriptor == null)
+            return -4L;
+        j = IOUtil.fdVal(fd);//获取当前文件通道文件描述符的值
+        k = IOUtil.fdVal(filedescriptor);//获取目的通道文件描述符的值
+        if(j == k)//当前通道与目的通道相同
+            return -4L;
+        ...
+        do
+            l1 = transferTo0(j, l, i, k);
+        while(l1 == -3L && isOpen());
+        ...
+    }
+    private native long transferTo0(int i, long l, long l1, int j);
+2.
+if((l3 = transferToTrustedChannel(l, i, writablebytechannel)) >= 0L)
+    return l3;
+private long transferToTrustedChannel(long l, long l1, WritableByteChannel writablebytechannel)
+        throws IOException
+    {
+        boolean flag;
+        long l2;
+	//判断目的通道是否为可选择通道，及socketChannel或DatagramChannel，Pipe（sink，source）
+        flag = writablebytechannel instanceof SelChImpl;
+	//如果目的通道不是文件通道也不是可选择通道，则返回
+        if(!(writablebytechannel instanceof FileChannelImpl) && !flag)
+            return -4L;
+        l2 = l1;
+_L2:
+        long l3;
+        if(l2 <= 0L)
+            break; /* Loop/switch isn't completed */
+        l3 = Math.min(l2, 8388608L);//获取读取的size，为count和2^23中间小的一个
+	//将当前文件通达映射到内存中
+        MappedByteBuffer mappedbytebuffer = map(java.nio.channels.FileChannel.MapMode.READ_ONLY, l, l3);
+        int i;
+	//直接调用目的通道的write方法将映射文件内存写到通道中。
+        i = writablebytechannel.write(mappedbytebuffer);
+        if(!$assertionsDisabled && i < 0)
+            throw new AssertionError();
+        l2 -= i;
+        if(flag)
+        {
+	    //如果目的通道非文件通道，则释放文件通道映射内存空间
+            unmap(mappedbytebuffer);
+            break; /* Loop/switch isn't completed */
+        }
+        ...
+   }
+   再来看将通道数据映射到内存和释放映射内存空间
+    //将通道数据映射到内存
+     public MappedByteBuffer map(java.nio.channels.FileChannel.MapMode mapmode, long l, long l1)
+        throws IOException
+    {
+     ...
+      mappedbytebuffer = Util.newMappedByteBufferR(0, 0L, j, null);
+      ...
+    }
+    //释放映射内存空间
+     private static void unmap(MappedByteBuffer mappedbytebuffer)
+    {
+        Cleaner cleaner = ((DirectBuffer)mappedbytebuffer).cleaner();
+        if(cleaner != null)
+            cleaner.clean();
+    }
+3.
+else
+    return transferToArbitraryChannel(l, i, writablebytechannel);
+private long transferToArbitraryChannel(long l, int i, WritableByteChannel writablebytechannel)
+        throws IOException
+    {
+        ByteBuffer bytebuffer;
+        long l1;
+        long l2;
+        int j = Math.min(i, 8192);
+	//从线程缓存获取临时DirectByteBuffer
+        bytebuffer = Util.getTemporaryDirectBuffer(j);
+        l1 = 0L;
+        l2 = l;
+        long l3;
+        Util.erase(bytebuffer);
+        do
+        {
+            if(l1 >= (long)i)
+                break;
+            bytebuffer.limit(Math.min((int)((long)i - l1), 8192));
+            int k = read(bytebuffer, l2);
+            if(k <= 0)
+                break;
+            bytebuffer.flip();
+	    //调用目的通道的写操作，直接写临时DirectByteBuffer
+            int i1 = writablebytechannel.write(bytebuffer);
+            l1 += i1;
+            if(i1 != k)
+                break;
+            l2 += i1;
+            bytebuffer.clear();
+        } while(true);
+        l3 = l1;
+        Util.releaseTemporaryDirectBuffer(bytebuffer);
+        return l3;
+        ...
+    }
+  
+从上面可以看出文件通道传输方法transferTo，首先确保当前文件通道是否打开，是否可读，然后检查目的通道是否关闭，是否可写；
+然后先调用文件通道本地方法传输通道的数据到目的通道，如果失败，则将文件通道数据，映射到内存MappedByteBuffer，
+然后调用目的通道的写操作（MappedByteBuffer），如果再失败，则将通道数据，写到DirectByteBuffer中，
+然后在调用目的通道的写操作（DirectByteBuffer）。
+再看文件通道传输方法transferFrom
+ public long transferFrom(ReadableByteChannel readablebytechannel, long l, long l1)
+        throws IOException
+    {
+        ensureOpen();//确保当前通道打开
+        if(!readablebytechannel.isOpen())//确保源通道打开
+            throw new ClosedChannelException();
+        if(!writable)//如果当前通道不可写
+            throw new NonWritableChannelException();
+        if(l < 0L || l1 < 0L)//检查postion和count参数
+            throw new IllegalArgumentException();
+        if(l > size())//位置大于当前文件size，则直接返回
+            return 0L;
+	 //如果源通道为文件通道
+        if(readablebytechannel instanceof FileChannelImpl)
+            return transferFromFileChannel((FileChannelImpl)readablebytechannel, l, l1);
+	//其他可读通道
+        else
+            return transferFromArbitraryChannel(readablebytechannel, l, l1);
+    }
+这个方法我们需要关注2点
+1.
+ //如果源通道为文件通道
+  if(readablebytechannel instanceof FileChannelImpl)
+      return transferFromFileChannel((FileChannelImpl)readablebytechannel, l, l1);
+
+private long transferFromFileChannel(FileChannelImpl filechannelimpl, long l, long l1)
+        throws IOException
+    {
+        if(!filechannelimpl.readable)
+            throw new NonReadableChannelException();
+        Object obj = filechannelimpl.positionLock;
+        JVM INSTR monitorenter ;
+        long l2;
+        long l3;
+        long l4;
+        long l5;
+        l2 = filechannelimpl.position();
+        l3 = Math.min(l1, filechannelimpl.size() - l2);
+        l4 = l3;
+        l5 = l2;
+_L2:
+        MappedByteBuffer mappedbytebuffer;
+        if(l4 <= 0L)
+            break; /* Loop/switch isn't completed */
+        long l6 = Math.min(l4, 8388608L);
+	//将源通道数据映射到内存
+        mappedbytebuffer = filechannelimpl.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, l5, l6);
+	//委托writer方法
+        long l8 = write(mappedbytebuffer, l);
+        if(!$assertionsDisabled && l8 <= 0L)
+            throw new AssertionError();
+        l5 += l8;
+        l += l8;
+        l4 -= l8;
+        unmap(mappedbytebuffer);
+        if(true) goto _L2; else goto _L1
+        IOException ioexception;
+        ioexception;
+        if(l4 == l3)
+            throw ioexception;
+	//读完，则释放通道映射内存
+        unmap(mappedbytebuffer);
+          goto _L1
+        Exception exception;
+        exception;
+        unmap(mappedbytebuffer);
+        throw exception;
+_L1:
+        long l7;
+        l7 = l3 - l4;
+	//未读完移动源通道的position
+        filechannelimpl.position(l2 + l7);
+        return l7;
+        Exception exception1;
+        exception1;
+        throw exception1;
+    }
+再来看
+//委托writer方法
+long l8 = write(mappedbytebuffer, l);
+public int write(ByteBuffer bytebuffer, long l)
+        throws IOException
+    {
+        ...
+	//这段代码又来了，不过此处的nd，为FileDispatcherImpl，与SocketDispatcher没有太多的区别
+	只不过多了几个turncate和force等方法而已
+        do
+            i = IOUtil.write(fd, bytebuffer, l, nd, positionLock);
+        while(i == -3 && isOpen());
+       ...
+    }
+ //IOUtil
+  static int write(FileDescriptor filedescriptor, ByteBuffer bytebuffer, long l, NativeDispatcher nativedispatcher, Object obj)
+        throws IOException
+    {
+        ...
+        int i1 = writeFromNativeBuffer(filedescriptor, bytebuffer1, l, nativedispatcher, obj);
+        ...
+    }
+
+    private static int writeFromNativeBuffer(FileDescriptor filedescriptor, ByteBuffer bytebuffer, long l, NativeDispatcher nativedispatcher, Object obj)
+        throws IOException
+    {
+       ...
+        if(l != -1L)
+            i1 = nativedispatcher.pwrite(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k, l, obj);
+        else
+            i1 = nativedispatcher.write(filedescriptor, ((DirectBuffer)bytebuffer).address() + (long)i, k);
+        if(i1 > 0)
+            bytebuffer.position(i + i1);
+        return i1;
+    }
+//FileDispatcherImpl
+class FileDispatcherImpl extends FileDispatcher
+{
+   ...
+    //这一部分，没有什么好说的，看看就行
+  int write(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return write0(filedescriptor, l, i, append);
+    }
+     static native int write0(FileDescriptor filedescriptor, long l, int i, boolean flag)
+        throws IOException;
+
+    int pwrite(FileDescriptor filedescriptor, long l, int i, long l1, Object obj)
+        throws IOException
+    {
+        Object obj1 = obj;
+        JVM INSTR monitorenter ;
+        return pwrite0(filedescriptor, l, i, l1);
+        Exception exception;
+        exception;
+        throw exception;
+    }
+    static native int pwrite0(FileDescriptor filedescriptor, long l, int i, long l1)
+        throws IOException;
+   ...
+}
+2.其他可读通道
+  else
+      return transferFromArbitraryChannel(readablebytechannel, l, l1);
+ private long transferFromArbitraryChannel(ReadableByteChannel readablebytechannel, long l, long l1)
+        throws IOException
+    {
+        ByteBuffer bytebuffer;
+        long l2;
+        long l3;
+        int i = (int)Math.min(l1, 8192L);
+        bytebuffer = Util.getTemporaryDirectBuffer(i);
+        l2 = 0L;
+        l3 = l;
+        long l4;
+        Util.erase(bytebuffer);
+        do
+        {
+            if(l2 >= l1)
+                break;
+            bytebuffer.limit((int)Math.min(l1 - l2, 8192L));
+	    //从源通道读取数据到临时DirectByteBuffer
+            int j = readablebytechannel.read(bytebuffer);
+            if(j <= 0)
+                break;
+            bytebuffer.flip();
+	    //委托write，写DirectByteBuffer，即由IOUtil协助FileDispatcherImpl完成
+            int k = write(bytebuffer, l3);
+            l2 += k;
+            if(k != j)
+                break;
+            l3 += k;
+            bytebuffer.clear();
+        } while(true);
+        l4 = l2;
+        Util.releaseTemporaryDirectBuffer(bytebuffer);
+        ...
+    }
+从上面可以看出文件通道传输方法transferFrom，确保当前通道可写，打开，源通道可读打开，如果源通道为
+文件通道，将源通道数据映射的内存MappedByteBuffer，然后由IOUtil协助FileDispatcherImpl，将MappedByteBuffer
+写入当前通道，如果源通道非文件通道，则先调用源通道的读操作，从源通道读取数据，写到临时DirectByteBuffer，
+委托write，写DirectByteBuffer到当前通道，即由IOUtil协助FileDispatcherImpl，将DirectByteBuffer
+写入当前通道。
+再来看force操作：
+  public void force(boolean flag)
+        throws IOException
+    {
+       ...
+        do
+            i = nd.force(fd, flag);
+        while(i == -3 && isOpen());
+       ...
+    }
+//FileDispatcherImpl
+ int force(FileDescriptor filedescriptor, boolean flag)
+        throws IOException
+    {
+        return force0(filedescriptor, flag);
+    }
+static native int force0(FileDescriptor filedescriptor, boolean flag)
+        throws IOException;
+再来看truncate方法
+ public FileChannel truncate(long l)
+        throws IOException
+    {
+        ...
+        do
+            i = nd.truncate(fd, l);
+        while(i == -3 && isOpen());
+        ...
+    }
+ //FileDispatcherImpl
+ int truncate(FileDescriptor filedescriptor, long l)
+        throws IOException
+    {
+        return truncate0(filedescriptor, l);
+    }
+static native int truncate0(FileDescriptor filedescriptor, long l)
+        throws IOException;
+再来看其他函数
+//返回通道当前位置
+ public long position()
+        throws IOException
+    {
+        ...
+	//append模式，则为文件尾，否则为文件头
+        do
+            l = append ? nd.size(fd) : position0(fd, -1L);
+        while(l == -3L && isOpen());
+        ...
+    }
+ //定位postion到位置l
+ public FileChannel position(long l)
+        throws IOException
+    {
+       ...
+        do
+            l1 = position0(fd, l);
+        while(l1 == -3L && isOpen());
+        ...
+    }
+private native long position0(FileDescriptor filedescriptor, long l);
+//获取通道当前size
+public long size()
+        throws IOException
+    {
+        ...
+        do
+            l = nd.size(fd);
+        while(l == -3L && isOpen());
+       ...
+    }
+//FileDispatcherImpl
+ long size(FileDescriptor filedescriptor)
+        throws IOException
+    {
+        return size0(filedescriptor);
+    }
+static native long size0(FileDescriptor filedescriptor)
+        throws IOException;
+
+总结：
+    文件通道的构造，主要是初始化通道读写模式，追加模式append及文件分发器，FileDispatcherImpl。
+    文件通道的读写操作的实际操作都是由IOUtil协助FileDispatcherImpl完成，这一点和SocketChannel通道读写思路基本相同。
+    文件通道传输方法transferTo，首先确保当前文件通道是否打开，是否可读，然后检查目的通道是否关闭，是否可写；
+然后先调用文件通道本地方法传输通道的数据到目的通道，如果失败，则将文件通道数据，映射到内存MappedByteBuffer，
+然后调用目的通道的写操作（MappedByteBuffer），如果再失败，则将通道数据，写到DirectByteBuffer中，
+然后在调用目的通道的写操作（DirectByteBuffer）。
+     文件通道传输方法transferFrom，确保当前通道可写，打开，源通道可读打开，如果源通道为
+文件通道，将源通道数据映射的内存MappedByteBuffer，然后由IOUtil协助FileDispatcherImpl，将MappedByteBuffer
+写入当前通道，如果源通道非文件通道，则先调用源通道的读操作，从源通道读取数据，写到临时DirectByteBuffer，
+委托write，写DirectByteBuffer到当前通道，即由IOUtil协助FileDispatcherImpl，将DirectByteBuffer
+写入当前通道。
+
+
+//FileDispatcher
+abstract class FileDispatcher extends NativeDispatcher
+{
+    FileDispatcher()
+    {
+    }
+    abstract int force(FileDescriptor filedescriptor, boolean flag)
+        throws IOException;
+    abstract int truncate(FileDescriptor filedescriptor, long l)
+        throws IOException;
+    abstract long size(FileDescriptor filedescriptor)
+        throws IOException;
+    abstract int lock(FileDescriptor filedescriptor, boolean flag, long l, long l1, boolean flag1)
+        throws IOException;
+    abstract void release(FileDescriptor filedescriptor, long l, long l1)
+        throws IOException;
+    abstract FileDescriptor duplicateForMapping(FileDescriptor filedescriptor)
+        throws IOException;
+    public static final int NO_LOCK = -1;
+    public static final int LOCKED = 0;
+    public static final int RET_EX_LOCK = 1;
+    public static final int INTERRUPTED = 2;
+}
+
+

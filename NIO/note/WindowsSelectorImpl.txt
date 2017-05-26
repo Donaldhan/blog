@@ -1,0 +1,445 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+在上一篇文章中，我们看了SelectorImpl的相关key集合和方法，先来回顾一下：
+     SelectorImpl有4个集合分别为就绪key集合，key集合，key集合的代理publicKeys及就绪key集合的代理publicSelectedKeys；实际是两个集合就绪key集合和key集合，publicSelectedKeys和publicKeys是其他线程访问上述两个集合的代理。
+     SelectorImpl构造的时候，初始化选择器提供者SelectorProvider，创建就绪key集合和key集合，然后初始化就绪key和key集合的代理，初始化过程为，如果nio包的JDK版本存在bug问题，则就绪key和key集合的代理集合直接引用就绪key和key集合。否则将当前key集合包装成不可修改的代理集合publicKes，将就绪key集合包装成容量固定的集合publicSelectedKeys。
+其他线程获取选择器的就绪key和key集合，实际上返回的是key集合的代理publicKeys和就绪key集合的代理publicSelectedKeys。
+     select方法的3中操作形式，实际上委托给为lockAndDoSelect方法，方法实际上是同步的，可安全访问，获取key集合代理publicKeys和就绪key代理集合publicSelectedKeys，然后交给doSelect(long l)方法，这个方法为抽象方法，待子类扩展。实际的关闭选择器操作implCloseSelector方法，首先唤醒等待选择操作的线程，唤醒方法wakeup待实现，同步选择器，就绪key和key集合的代理publicKeys，publicSelectedKeys，调用implClose完成实际的关闭通道工作，待子类实现。
+     可选通道注册方法，首先注册的通道必须是AbstractSelectableChannel类型，并且是SelChImpl实例。更具可选择通道和选择器构造选择key，设置选择key的附加物，同步key集合代理，调用implRegister方法完成实际的注册工作，implRegister方法待子类实现。
+     processDeregisterQueue方法，主要是遍历取消key集合，反注册取消key，实际的反注册工作由implDereg方法，implDereg方法待子类扩展。成功，则从集合中移除。
+今天我们来看的选择器的具体实现WindowsSelectorProvider，在这篇文章中，我们要关注的是这几个方法，
+选择操作中的doSelect(long l)，注册key操作的implRegister方法，处理取消key集合方法中implDereg方法和唤醒方法wakeup。
+我们先从打开选择器开始
+//Selector
+  public static Selector open() throws IOException {
+        return SelectorProvider.provider().openSelector();
+    }
+//SelectorProvider
+    public static SelectorProvider provider() {  
+            synchronized (lock) {  
+                if (provider != null)  
+                    return provider;  
+           //在与当前线程相同访问控制权限的环境中，加载SelectorProvider实例  
+                return AccessController.doPrivileged(  
+                    new PrivilegedAction<SelectorProvider>() {  
+                        public SelectorProvider run() {  
+                                if (loadProviderFromProperty())  
+                        //获取系统配置的SelectorProvider  
+                                    return provider;  
+                                if (loadProviderAsService())  
+                         //获取类加载路径下的SelectorProvider  
+                                    return provider;  
+                        //加载默认的SelectorProvider  
+                                provider = sun.nio.ch.DefaultSelectorProvider.create();  
+                                return provider;  
+                            }  
+                        });  
+            }  
+    }  
+
+来看默认的DefaultSelectorProvider
+//DefaultSelectorProvider
+    package sun.nio.ch;  
+      
+    import java.nio.channels.spi.SelectorProvider;  
+      
+    // Referenced classes of package sun.nio.ch:  
+    //            WindowsSelectorProvider  
+      
+    public class DefaultSelectorProvider  
+    {  
+        private DefaultSelectorProvider()  
+        {  
+        }  
+        public static SelectorProvider create()  
+        {  
+            //默认的WindowsSelectorProvider  
+            return new WindowsSelectorProvider();  
+        }  
+    }  
+从上面了可以看出选择器的默认实现为WindowsSelectorImpl，下面我们来具体看一下，先看一下变量的定义
+，具体每个变量及集合含义我们现在可能不完全解释清楚，一般从字面上可以看出它的意思，对于不能完全
+理解的变量，我们在后面的文章中，再纠正。
+final class WindowsSelectorImpl extends SelectorImpl
+{
+    private final int INIT_CAP = 8;//选择key集合，key包装集合初始化容量
+    private static final int MAX_SELECTABLE_FDS = 1024;//最大选择key数量
+    private SelectionKeyImpl channelArray[];//选择器关联通道集合
+    private PollArrayWrapper pollWrapper;//存放所有文件描述对象（选择key，唤醒管道的源与sink通道）的集合
+    private int totalChannels;//注册到选择的通道数量
+    private int threadsCount;//选择线程数
+    private final List threads = new ArrayList();//选择操作线程集合
+    private final Pipe wakeupPipe = Pipe.open();//唤醒等待选择操操的管道
+    private final int wakeupSourceFd;//唤醒管道源通道文件描述
+    private final int wakeupSinkFd;//唤醒管道sink通道文件描述
+    private Object closeLock;//选择器关闭同步锁
+    private final FdMap fdMap = new FdMap();//存放选择key文件描述与选择key映射关系的Map
+    private final SubSelector subSelector = new SubSelector();//子选择器
+    private long timeout;//超时时间，具体什么意思，现在还没明白，在后面在看
+    private final Object interruptLock = new Object();//中断同步锁，在唤醒选择操作线程时，用于同步
+    private volatile boolean interruptTriggered;//是否唤醒等待选择操的线程
+    private final StartLock startLock = new StartLock();//选择操作开始锁
+    private final FinishLock finishLock = new FinishLock();//选择操作结束锁
+    private long updateCount;//更新数量，具体什么意思，现在还没明白，在后面在看
+    static final boolean $assertionsDisabled = !sun/nio/ch/WindowsSelectorImpl.desiredAssertionStatus();
+    static 
+    {
+        //加载nio，net资源库
+        Util.load();
+    } 
+}
+//Util
+ static void load()
+    {
+label0:
+        {
+            synchronized(sun/nio/ch/Util)
+            {
+                if(!loaded)
+                    break label0;
+            }
+            return;
+        }
+        loaded = true;
+	//在与当前线程相同访问控制权限的情况下，加载net和nio资源库
+        AccessController.doPrivileged(new LoadLibraryAction("net"));
+        AccessController.doPrivileged(new LoadLibraryAction("nio"));
+        IOUtil.initIDs();
+        local;
+        JVM INSTR monitorexit ;
+          goto _L1
+        exception;
+        throw exception;
+_L1:
+    }
+
+//这个我们先放在这里，我们慢慢解开选择的构造
+ WindowsSelectorImpl(SelectorProvider selectorprovider)
+        throws IOException
+    {
+        super(selectorprovider);
+        channelArray = new SelectionKeyImpl[8];
+        totalChannels = 1;
+        threadsCount = 0;
+        closeLock = new Object();
+        interruptTriggered = false;
+        updateCount = 0L;
+        pollWrapper = new PollArrayWrapper(8);
+        wakeupSourceFd = ((SelChImpl)wakeupPipe.source()).getFDVal();
+        SinkChannelImpl sinkchannelimpl = (SinkChannelImpl)wakeupPipe.sink();
+        sinkchannelimpl.sc.socket().setTcpNoDelay(true);
+        wakeupSinkFd = sinkchannelimpl.getFDVal();
+        pollWrapper.addWakeupSocket(wakeupSourceFd, 0);
+    }
+为了更好的理解fdMap和pollWrapper作用我们来看一下这两个集合的定义：
+先看FdMap
+//key与key描述符映射关系Map
+ private static final class FdMap extends HashMap
+    {
+        static final long serialVersionUID = 0L;
+        private FdMap()
+        {
+        }
+	//根据key文件描述id获取key
+        private MapEntry get(int i)
+        {
+            return (MapEntry)get(new Integer(i));
+        }
+	//添加key
+        private MapEntry put(SelectionKeyImpl selectionkeyimpl)
+        {
+            return (MapEntry)put(new Integer(selectionkeyimpl.channel.getFDVal()), new MapEntry(selectionkeyimpl));
+        }
+	//移除选择key
+        private MapEntry remove(SelectionKeyImpl selectionkeyimpl)
+        {
+            Integer integer = new Integer(selectionkeyimpl.channel.getFDVal());
+            MapEntry mapentry = (MapEntry)get(integer);
+            if(mapentry != null && mapentry.ski.channel == selectionkeyimpl.channel)
+                return (MapEntry)remove(integer);
+            else
+                return null;
+        }
+    }
+    
+    private static final class MapEntry
+    {
+        SelectionKeyImpl ski;//选择key
+	//这两个计数器，现在还不知道干什么用的，后备碰到再说
+        long updateCount;//更新计数器
+        long clearedCount;清除计数器
+        MapEntry(SelectionKeyImpl selectionkeyimpl)
+        {
+            updateCount = 0L;
+            clearedCount = 0L;
+            ski = selectionkeyimpl;
+        }
+    }
+从上面可以看出FdMap主要是存储选择key的，FdMap实际上是一个HashMap，key为选择key的文件描述id，value为MapEntry，
+MapEntry为选择key的包装Entry，里面含有更新计数器updateCount和清除计数器clearedCount。
+
+再看PollArrayWrapper,
+PollArrayWrapper，我们可以这么理解为本地内存空间管理器主要是
+将文件描述（选择key，唤醒管道的source和sink通道）信息及相关的兴趣操作事件存储在本地内存空间中。
+PollArrayWrapper是通过AllocatedNativeObject来操作底层存储空间
+//PollArrayWrapper
+ class PollArrayWrapper
+{
+    private AllocatedNativeObject pollArray;//底层内存空间
+    long pollArrayAddress;//内存空间起始位置
+    private static final short FD_OFFSET = 0;文件描述id开始位置
+    private static final short EVENT_OFFSET = 4;//兴趣事件开始位置
+    static short SIZE_POLLFD = 8;//文件描述id的长度int（4）+操作事件长度4
+    //这些事件当前不能明白意思，只是简单的猜测，理解的网友给我留言，谢谢
+    static final short POLLIN = 1;//添加事件
+    static final short POLLOUT = 4;//拉取事件
+    static final short POLLERR = 8;//操作错误
+    static final short POLLHUP = 16;//操作挂起
+    static final short POLLNVAL = 32;
+    static final short POLLREMOVE = 2048;//移除
+    static final short POLLCONN = 2;//
+    private int size;
+    //创建i容量的文件描述管理器
+    PollArrayWrapper(int i)
+    {
+        int j = i * SIZE_POLLFD;
+	//分配内存空间
+        pollArray = new AllocatedNativeObject(j, true);
+	//初始化空间起始地址
+        pollArrayAddress = pollArray.address();
+        size = i;//初始化容量
+    }
+}
+//已分配的本地空间
+class AllocatedNativeObject extends NativeObject
+{
+    AllocatedNativeObject(int i, boolean flag)
+    {
+        super(i, flag);
+    }
+    //释放本地对象空间
+    synchronized void free()
+    {
+        //如果已分配的地址不为0，则释放空间
+        if(allocationAddress != 0L)
+        {
+            unsafe.freeMemory(allocationAddress);
+            allocationAddress = 0L;
+        }
+    }
+}
+
+//NativeObject,本地内存管理对象
+package sun.nio.ch;
+import java.nio.ByteOrder;
+import sun.misc.Unsafe;
+
+class NativeObject
+{
+    protected static final Unsafe unsafe = Unsafe.getUnsafe();
+    protected long allocationAddress;//已分配的地址空间
+    private final long address;//空间起始位置
+    private static ByteOrder byteOrder = null;
+    private static int pageSize = -1;//内存分页大小
+    static final boolean $assertionsDisabled = !sun/nio/ch/NativeObject.desiredAssertionStatus();
+    NativeObject(long l)
+    {
+        allocationAddress = l;
+        address = l;
+    }
+    NativeObject(long l, long l1)
+    {
+        allocationAddress = l;
+        address = l + l1;
+    }
+    //分配i大小的内存空间，flag为是否分配内存页
+    protected NativeObject(int i, boolean flag)
+    {
+        if(!flag)
+        {
+            allocationAddress = unsafe.allocateMemory(i);
+            address = allocationAddress;
+        } else
+        {
+            int j = pageSize();
+            long l = unsafe.allocateMemory(i + j);
+            allocationAddress = l;//已分配内存空间
+            address = (l + (long)j) - (l & (long)(j - 1));//空间起始位置
+        }
+    }
+    //获取内存分页大小
+    static int pageSize()
+    {
+        if(pageSize == -1)
+            pageSize = unsafe.pageSize();
+        return pageSize;
+    }
+}
+//再来看PollArrayWrapper的其他方法
+//添加选择key到文件描述包装集合i索引上
+void addEntry(int i, SelectionKeyImpl selectionkeyimpl)
+{
+   //委托给putDescriptor
+    putDescriptor(i, selectionkeyimpl.channel.getFDVal());
+}
+//将文件描述id-j放在索引i上
+void putDescriptor(int i, int j)
+{
+    //委托给pollArray
+    pollArray.putInt(SIZE_POLLFD * i + 0, j);
+}
+//NativeObject
+//将文件描述id-j，放在地址i上
+final void putInt(int i, int j)
+{
+    unsafe.putInt((long)i + address, j);
+}
+存放索引i文件描述信息的兴趣操作事件
+ void putEventOps(int i, int j)
+    {
+        //委托给pollArray
+        pollArray.putShort(SIZE_POLLFD * i + 4, (short)j);
+    }
+//NativeObject
+//存放文件描述的兴趣操作事件，放在地址i上
+   final void putShort(int i, short word0)
+    {
+        unsafe.putShort((long)i + address, word0);
+    }
+//获取索引i的文件描述id
+int getDescriptor(int i)
+{
+    return pollArray.getInt(SIZE_POLLFD * i + 0);
+}
+//NativeObject
+
+    final short getShort(int i)
+    {
+        return unsafe.getShort((long)i + address);
+    }
+
+//获取索引i的文件描述id关注的兴趣操作事件
+int getEventOps(int i)
+{
+    return pollArray.getShort(SIZE_POLLFD * i + 4);
+}
+//NativeObject
+
+    final short getShort(int i)
+    {
+        return unsafe.getShort((long)i + address);
+    }
+
+从上面可以好像看出一点门道，PollArrayWrapper作用即存放选择key和选择key关注的
+事件，用选择key的文件描述id，表示选择key，文件描述id为int，所以占4个字节，选择key
+的兴趣操作事件也为int，即4个字节，所以SIZE_POLLFD为8，文件描述id开始位置FD_OFFSET为0，
+兴趣事件开始位置EVENT_OFFSET为4；FD_OFFSET和EVENT_OFFSET都是相对于SIZE_POLLFD的。
+
+
+再来看其他操作
+//PollArrayWrapper，替换j索引上的文件描述信息为i索引对应的文件描述信息
+void replaceEntry(PollArrayWrapper pollarraywrapper, int i, PollArrayWrapper pollarraywrapper1, int j)
+{
+    pollarraywrapper1.putDescriptor(j, pollarraywrapper.getDescriptor(i));
+    pollarraywrapper1.putEventOps(j, pollarraywrapper.getEventOps(i));
+}
+添加唤醒管道的source通道文件描述符
+void addWakeupSocket(int i, int j)
+{
+    putDescriptor(j, i);
+    //等待唤醒描述符关注的事件是添加事件POLLIN
+    putEventOps(j, 1);
+}
+我猜测一下这个意思，PollArrayWrapper同时存储唤醒等待选择操作的选择器的通道和唤醒通道关注事件
+即通道注册选择器事件，即添加选择key事件。当有通道注册到选择器，则唤醒通道，唤醒等待选择操作的选择器。
+//PollArrayWrapper
+//释放内存空间
+void free()
+{
+    pollArray.free();
+}
+//AllocatedNativeObject
+synchronized void free()
+{
+    if(allocationAddress != 0L)
+    {
+        unsafe.freeMemory(allocationAddress);
+        allocationAddress = 0L;
+    }
+}
+//PollArrayWrapper
+//增加i个存储文件描述及相应的兴趣操作事件内存块
+void grow(int i)
+{
+    //重新创建文件描述集合
+    PollArrayWrapper pollarraywrapper = new PollArrayWrapper(i);
+    //将原始文件描述及相关兴趣操作事件，移到新的集合中
+    for(int j = 0; j < size; j++)
+        replaceEntry(this, j, pollarraywrapper, j);
+    //释放旧集合的空间
+    pollArray.free();
+    //更新pollArray，容量及起始地址
+    pollArray = pollarraywrapper.pollArray;
+    size = pollarraywrapper.size;
+    pollArrayAddress = pollArray.address();
+}
+看完这两个集合，再来看WindowsSelectorImpl的构造
+WindowsSelectorImpl(SelectorProvider selectorprovider)
+        throws IOException
+    {
+        super(selectorprovider);
+	//创建选择器关联通道数组，实际存的为选择key
+        channelArray = new SelectionKeyImpl[8];
+        totalChannels = 1;
+        threadsCount = 0;
+        closeLock = new Object();//关闭锁
+        interruptTriggered = false;
+        updateCount = 0L;
+        pollWrapper = new PollArrayWrapper(8);
+        wakeupSourceFd = ((SelChImpl)wakeupPipe.source()).getFDVal();//唤醒管道源通道文件描述id
+        SinkChannelImpl sinkchannelimpl = (SinkChannelImpl)wakeupPipe.sink();//唤醒管道sink通道
+        sinkchannelimpl.sc.socket().setTcpNoDelay(true);//设置唤醒管道sink通道的Socket为无延时
+        wakeupSinkFd = sinkchannelimpl.getFDVal();
+	//将唤醒管道的源通道文件描述id添加pollWrapper的索引0位置上
+        pollWrapper.addWakeupSocket(wakeupSourceFd, 0);
+    }
+WindowsSelectorImpl默认加载net和nio资源库；WindowsSelectorImpl内锁4个，分别为关闭锁closeLock，
+中断锁interruptLock，startLock，finishLock后面两个的作用，目前还不清楚，后面再说；
+一个唤醒管道，作用尚不明确；一个注册到选择器的通道计数器totalChannels；
+updateCount计数器作用，尚不明确；通道集合channelArray，存放的元素实际为通道关联的选择key；
+pollWrapper用于存储选择key和相应的兴趣事件，及唤醒管道的源通道，唤醒管道的源通道存放在pollWrapper的索引0位置上。
+
+关于唤醒管道的作用，现在还不是太清楚，在后面的文章中在具体讲解其作用。
+我们要关注的几个方法为
+1.注册key操作的implRegister方法
+2.处理取消key集合方法中implDereg方法
+3.选择操作中的doSelect(long l)
+4.唤醒方法wakeup
+由于篇幅问题，这几个方法，放在下一篇文章中再讲
+
+总结：
+WindowsSelectorImpl默认加载net和nio资源库；WindowsSelectorImpl内锁4个，分别为关闭锁closeLock，
+中断锁interruptLock，startLock，finishLock后面两个的作用，目前还不清楚，后面再说；
+一个唤醒管道，作用尚不明确；一个注册到选择器的通道计数器totalChannels；
+updateCount计数器作用，尚不明确；通道集合channelArray，存放的元素实际为通道关联的选择key；
+pollWrapper用于存储选择key和相应的兴趣事件，及唤醒管道的源通道，唤醒管道的源通道存放在pollWrapper的索引0位置上。
+FdMap主要是存储选择key的，FdMap实际上是一个HashMap，key为选择key的文件描述id，value为MapEntry，
+MapEntry为选择key的包装Entry，里面含有更新计数器updateCount和清除计数器clearedCount。
+PollArrayWrapper存放选择key和通道及其相关的操作事件。
+PollArrayWrapper通过AllocatedNativeObject来存储先关的文件描述及其兴趣事件，AllocatedNativeObject
+为已分配的底层内存空间，AllocatedNativeObject的内存主要NativeObject来分配，NativeObject实际是通过Unsafe
+来分配内存。PollArrayWrapper作用即存放选择key和选择key关注的
+事件，用选择key的文件描述id，表示选择key，文件描述id为int，所以占4个字节，选择key
+的兴趣操作事件也为int，即4个字节，所以SIZE_POLLFD为8，文件描述id开始位置FD_OFFSET为0，
+兴趣事件开始位置EVENT_OFFSET为4；FD_OFFSET和EVENT_OFFSET都是相对于SIZE_POLLFD的。
+PollArrayWrapper同时存储唤醒等待选择操作的选择器的通道和唤醒通道关注事件
+即通道注册选择器事件，即添加选择key事件。当有通道注册到选择器，则唤醒通道，唤醒等待选择操作的选择器。

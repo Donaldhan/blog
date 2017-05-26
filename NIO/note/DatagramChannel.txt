@@ -1,0 +1,595 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelector定义：[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImpl分析 :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImpl解析一（FdMap，PollArrayWrapper）：
+[url]http://donald-draper.iteye.com/blog/2370811[/url]
+WindowsSelectorImpl解析二（选择操作，通道注册，通道反注册，选择器关闭等）：
+[url]http://donald-draper.iteye.com/blog/2370862[/url]
+MembershipKey定义:[url]http://donald-draper.iteye.com/blog/2372947[/url]
+MulticastChanne接口定义：[url]http://donald-draper.iteye.com/blog/2373009[/url]
+
+package java.nio.channels;
+import java.io.IOException;
+import java.net.ProtocolFamily;
+import java.net.DatagramSocket;
+import java.net.SocketOption;
+import java.net.SocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.spi.AbstractSelectableChannel;
+import java.nio.channels.spi.SelectorProvider;
+
+/**
+ * A selectable channel for datagram-oriented sockets.
+ *DatagramChannel是一个面向报文socket的可选择通道。
+ * <p> A datagram channel is created by invoking one of the {@link #open open} methods
+ * of this class. It is not possible to create a channel for an arbitrary,
+ * pre-existing datagram socket. A newly-created datagram channel is open but not
+ * connected. A datagram channel need not be connected in order for the {@link #send
+ * send} and {@link #receive receive} methods to be used.  A datagram channel may be
+ * connected, by invoking its {@link #connect connect} method, in order to
+ * avoid the overhead of the security checks are otherwise performed as part of
+ * every send and receive operation.  A datagram channel must be connected in
+ * order to use the {@link #read(java.nio.ByteBuffer) read} and {@link
+ * #write(java.nio.ByteBuffer) write} methods, since those methods do not
+ * accept or return socket addresses.
+ *DatagramChannel通过#open创建。如果报文通道关联的DatagramSocket已经存在，则
+ 将不能与已经存在的DatagramSocket关联的DatagramChannel。新创建的报文通道是无连接的。
+使用#send和#receive发送和接受报文是不需要建立连接的。如果想要在调用#send和#receive不进行
+安全检查，可以先调用#connect，建立一个处于连接状态的通道。如果报文通道使用#read和#write方法
+接受和发送报文，通道必须建立连接，因为这些方法不能接受和返回socket地址。
+ * <p> Once connected, a datagram channel remains connected until it is
+ * disconnected or closed.  Whether or not a datagram channel is connected may
+ * be determined by invoking its {@link #isConnected isConnected} method.
+ *一旦报文通道连接建立，在断开连接和通道关闭前，报文通道都是可连接。我们可以通过
+#isConnected判断一个报文通道是否处于连接状态。
+ * <p> Socket options are configured using the {@link #setOption(SocketOption,Object)
+ * setOption} method. A datagram channel to an Internet Protocol socket supports
+ * the following options:
+ Socket选项配置使用#setOption方法，报文通道支持如下选项：
+ * <blockquote>
+ * <table border>
+ *   <tr>
+ *     <th>Option Name</th>
+ *     <th>Description</th>
+ *   </tr>
+ *   <tr>发送缓冲区
+ *     <td> {@link java.net.StandardSocketOptions#SO_SNDBUF SO_SNDBUF} </td>
+ *     <td> The size of the socket send buffer </td>
+ *   </tr>
+ *   <tr>接受缓存区
+ *     <td> {@link java.net.StandardSocketOptions#SO_RCVBUF SO_RCVBUF} </td>
+ *     <td> The size of the socket receive buffer </td>
+ *   </tr>
+ *   <tr>地址重用
+ *     <td> {@link java.net.StandardSocketOptions#SO_REUSEADDR SO_REUSEADDR} </td>
+ *     <td> Re-use address </td>
+ *   </tr>
+ *   <tr>是否支持报文广播传输
+ *     <td> {@link java.net.StandardSocketOptions#SO_BROADCAST SO_BROADCAST} </td>
+ *     <td> Allow transmission of broadcast datagrams </td>
+ *   </tr>
+ *   <tr>网络协议服务类型
+ *     <td> {@link java.net.StandardSocketOptions#IP_TOS IP_TOS} </td>
+ *     <td> The Type of Service (ToS) octet in the Internet Protocol (IP) header </td>
+ *   </tr>
+ *   <tr>多播网卡接口
+ *     <td> {@link java.net.StandardSocketOptions#IP_MULTICAST_IF IP_MULTICAST_IF} </td>
+ *     <td> The network interface for Internet Protocol (IP) multicast datagrams </td>
+ *   </tr>
+ *   <tr>
+ *     <td> {@link java.net.StandardSocketOptions#IP_MULTICAST_TTL
+ *       IP_MULTICAST_TTL} </td>多播报文存活时间
+ *     <td> The <em>time-to-live</em> for Internet Protocol (IP) multicast
+ *       datagrams </td>
+ *   </tr>
+ *   <tr>
+ *     <td> {@link java.net.StandardSocketOptions#IP_MULTICAST_LOOP
+ *       IP_MULTICAST_LOOP} </td>是否支持多播环路地址
+ *     <td> Loopback for Internet Protocol (IP) multicast datagrams </td>
+ *   </tr>
+ * </table>
+ * </blockquote>
+ * Additional (implementation specific) options may also be supported.
+ *
+ * <p> Datagram channels are safe for use by multiple concurrent threads.  They
+ * support concurrent reading and writing, though at most one thread may be
+ * reading and at most one thread may be writing at any given time.  </p>
+ *DatagramChannel并发访问时，是线程安全的。尽管最多只支持一个线程进行读写操作，
+ 但DatagramChannel支持并发读写操作。
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class DatagramChannel
+    extends AbstractSelectableChannel
+    implements ByteChannel, ScatteringByteChannel, GatheringByteChannel, MulticastChannel
+{
+ /**
+     * Initializes a new instance of this class.
+     */
+    protected DatagramChannel(SelectorProvider provider) {
+        super(provider);
+    }
+
+    /**
+     * Opens a datagram channel.
+     *打开一个报文通道
+     * <p> The new channel is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openDatagramChannel()
+     * openDatagramChannel} method of the system-wide default {@link
+     * java.nio.channels.spi.SelectorProvider} object.  The channel will not be
+     * connected.
+     *报文通道通过系统默认的SelectorProvider实现创建，新创建的通道是未连接。
+     * <p> The {@link ProtocolFamily ProtocolFamily} of the channel's socket
+     * is platform (and possibly configuration) dependent and therefore unspecified.
+     * The {@link #open(ProtocolFamily) open} allows the protocol family to be
+     * selected when opening a datagram channel, and should be used to open
+     * datagram channels that are intended for Internet Protocol multicasting.
+     *通道socket的协议ProtocolFamily依赖于平台，因此是不确定的。#open(ProtocolFamily方法，
+     打开一个具体协议的通道socket，可以用于多播网络协议。
+     * @return  A new datagram channel
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public static DatagramChannel open() throws IOException {
+        return SelectorProvider.provider().openDatagramChannel();
+    }
+
+    /**
+     * Opens a datagram channel.
+     *
+     * <p> The {@code family} parameter is used to specify the {@link
+     * ProtocolFamily}. If the datagram channel is to be used for IP multicasing
+     * then this should correspond to the address type of the multicast groups
+     * that this channel will join.
+     *如果报文通道用于IP多播，协议ProtocolFamily参数family为通道加入的多播组地址类型。
+     * <p> The new channel is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openDatagramChannel(ProtocolFamily)
+     * openDatagramChannel} method of the system-wide default {@link
+     * java.nio.channels.spi.SelectorProvider} object.  The channel will not be
+     * connected.
+     *报文通道通过系统默认的SelectorProvider实现创建，新创建的通道是未连接。
+     * @param   family
+     *          The protocol family
+     *
+     * @return  A new datagram channel
+     *
+     * @throws  UnsupportedOperationException，系统不支持具体的协议
+     *          If the specified protocol family is not supported. For example,
+     *          suppose the parameter is specified as {@link
+     *          java.net.StandardProtocolFamily#INET6 StandardProtocolFamily.INET6}
+     *          but IPv6 is not enabled on the platform.
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @since   1.7
+     */
+    public static DatagramChannel open(ProtocolFamily family) throws IOException {
+        return SelectorProvider.provider().openDatagramChannel(family);
+    }
+
+    /**
+     * Returns an operation set identifying this channel's supported
+     * operations.
+     *返回通道支持的操作事件集，默认支持读写操作事件
+     * <p> Datagram channels support reading and writing, so this method
+     * returns <tt>(</tt>{@link SelectionKey#OP_READ} <tt>|</tt>&nbsp;{@link
+     * SelectionKey#OP_WRITE}<tt>)</tt>.  </p>
+     *
+     * @return  The valid-operation set
+     */
+    public final int validOps() {
+        return (SelectionKey.OP_READ
+                | SelectionKey.OP_WRITE);
+    }
+
+
+    // -- Socket-specific operations --
+
+    /**
+     * @throws  AlreadyBoundException               {@inheritDoc}
+     * @throws  UnsupportedAddressTypeException     {@inheritDoc}
+     * @throws  ClosedChannelException              {@inheritDoc}
+     * @throws  IOException                         {@inheritDoc}
+     * @throws  SecurityException
+     *          If a security manager has been installed and its {@link
+     *          SecurityManager#checkListen checkListen} method denies the
+     *          operation
+     *绑定SocketAddress地址
+     * @since 1.7
+     */
+    public abstract DatagramChannel bind(SocketAddress local)
+        throws IOException;
+
+    /**
+     * @throws  UnsupportedOperationException           {@inheritDoc}
+     * @throws  IllegalArgumentException                {@inheritDoc}
+     * @throws  ClosedChannelException                  {@inheritDoc}
+     * @throws  IOException                             {@inheritDoc}
+     *配置通道选项
+     * @since 1.7
+     */
+    public abstract <T> DatagramChannel setOption(SocketOption<T> name, T value)
+        throws IOException;
+
+    /**
+     * Retrieves a datagram socket associated with this channel.
+     *获取与通道关联的DatagramSocket
+     * <p> The returned object will not declare any public methods that are not
+     * declared in the {@link java.net.DatagramSocket} class.  </p>
+     *返回的DatagramSocket不能声明任何在java.net.DatagramSocket中没有声明的public方法
+     * @return  A datagram socket associated with this channel
+     */
+    public abstract DatagramSocket socket();
+
+    /**
+     * Tells whether or not this channel's socket is connected.
+     *判断一个通道是否连接
+     * @return  {@code true} if, and only if, this channel's socket
+     *          is {@link #isOpen open} and connected
+     */
+    public abstract boolean isConnected();
+
+    /**
+     * Connects this channel's socket.
+     *连接通道socket
+     * <p> The channel's socket is configured so that it only receives
+     * datagrams from, and sends datagrams to, the given remote <i>peer</i>
+     * address.  Once connected, datagrams may not be received from or sent to
+     * any other address.  A datagram socket remains connected until it is
+     * explicitly disconnected or until it is closed.
+     *配置通道的socket，以便可以从给定的远程peer接受报文，或发送报文给peer。
+     一旦连接，通道不能从其他地址接受报文，或者发送报文给其他地址。在通道显示
+disconnected或关闭之前，DatagramSocket仍处于连接状态。
+     * <p> This method performs exactly the same security checks as the {@link
+     * java.net.DatagramSocket#connect connect} method of the {@link
+     * java.net.DatagramSocket} class.  That is, if a security manager has been
+     * installed then this method verifies that its {@link
+     * java.lang.SecurityManager#checkAccept checkAccept} and {@link
+     * java.lang.SecurityManager#checkConnect checkConnect} methods permit
+     * datagrams to be received from and sent to, respectively, the given
+     * remote address.
+     *此方法执行与DatagramSocket#connect相同的安全检查。如果安全管理器配置，
+     则此方将通过SecurityManager#checkAccept和#checkConnect检查是否允许从远端地址
+     接受报文，或者发送报文到远端地址。
+     * <p> This method may be invoked at any time.  It will not have any effect
+     * on read or write operations that are already in progress at the moment
+     * that it is invoked. If this channel's socket is not bound then this method
+     * will first cause the socket to be bound to an address that is assigned
+     * automatically, as if invoking the {@link #bind bind} method with a
+     * parameter of {@code null}. </p>
+     *此方可以在任何时候调用。在此方法调用的过程中，对读写IO操作没有任何影响。
+     如果通道的socket没有绑定，此方将自动绑定一个地址，仿佛调用#bind（null）方法。
+     * @param  remote
+     *         The remote address to which this channel is to be connected
+     *
+     * @return  This datagram channel
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the connect operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the connect operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed
+     *          and it does not permit access to the given remote address
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract DatagramChannel connect(SocketAddress remote)
+        throws IOException;
+
+    /**
+     * Disconnects this channel's socket.
+     *断开通道的socket连接。
+     * <p> The channel's socket is configured so that it can receive datagrams
+     * from, and sends datagrams to, any remote address so long as the security
+     * manager, if installed, permits it.
+     *配置socket通道，以便可以从任何远端地址接受报文，或发送报文到任何远端地址，
+     只要安全管理器，安装并允许报文通道接受连接和连接，即接受、发送报文权限。
+     * <p> This method may be invoked at any time.  It will not have any effect
+     * on read or write operations that are already in progress at the moment
+     * that it is invoked.
+     *此方法可以在任何时候调用。在此方法调用的过程中，对读写IO操作没有任何影响。
+     * <p> If this channel's socket is not connected, or if the channel is
+     * closed, then invoking this method has no effect.  </p>
+     *如果通道没有连接，或通道已经关闭，调用此方法没有任何影响
+     * @return  This datagram channel
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract DatagramChannel disconnect() throws IOException;
+
+    /**
+     * Returns the remote address to which this channel's socket is connected.
+     *获取通道连接的远端地址，没有连接，则返回null
+     * @return  The remote address; {@code null} if the channel's socket is not
+     *          connected
+     *
+     * @throws  ClosedChannelException
+     *          If the channel is closed
+     * @throws  IOException
+     *          If an I/O error occurs
+     *
+     * @since 1.7
+     */
+    public abstract SocketAddress getRemoteAddress() throws IOException;
+
+    /**
+     * Receives a datagram via this channel.
+     *从通道接受一个报文
+     * <p> If a datagram is immediately available, or if this channel is in
+     * blocking mode and one eventually becomes available, then the datagram is
+     * copied into the given byte buffer and its source address is returned.
+     * If this channel is in non-blocking mode and a datagram is not
+     * immediately available then this method immediately returns
+     * <tt>null</tt>.
+     *如果报文立即可用，或通道为阻塞模式，只要有报文空可用，则将拷贝报文到指定
+     的buffer，并返回报文的源地址。如果通道为非阻塞模式，报文当前不可用，则
+     此方立即返回null。
+     * <p> The datagram is transferred into the given byte buffer starting at
+     * its current position, as if by a regular {@link
+     * ReadableByteChannel#read(java.nio.ByteBuffer) read} operation.  If there
+     * are fewer bytes remaining in the buffer than are required to hold the
+     * datagram then the remainder of the datagram is silently discarded.
+     *如果报文的长度大于buffer的可用空间，则读取buffer的可用空间remaining个字节后，
+     剩余的报文字节将会抛弃，就像执行ReadableByteChannel#read(java.nio.ByteBuffer) 操作。
+     * <p> This method performs exactly the same security checks as the {@link
+     * java.net.DatagramSocket#receive receive} method of the {@link
+     * java.net.DatagramSocket} class.  That is, if the socket is not connected
+     * to a specific remote address and a security manager has been installed
+     * then for each datagram received this method verifies that the source's
+     * address and port number are permitted by the security manager's {@link
+     * java.lang.SecurityManager#checkAccept checkAccept} method.  The overhead
+     * of this security check can be avoided by first connecting the socket via
+     * the {@link #connect connect} method.
+     *此方将会执行与DatagramSocket#receive一样的安全检查。如果DatagramSocket还没有连接，
+     在接受报文时，执行安全检查，将会使用SecurityManager#checkAccept方法，
+     检查是否允许接受源地址和端口连接请求。此安全检查可以通过#connect方法，连接socket避免。
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a read operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. If this channel's socket is not bound then this method will
+     * first cause the socket to be bound to an address that is assigned
+     * automatically, as if invoking the {@link #bind bind} method with a
+     * parameter of {@code null}. </p>
+     *此方可以在任何时候调用，如果在此方法调用之前，已经有线程正在执行读IO操作，
+     则当前线程将阻塞到正在执行读IO操作的线程完毕。如果通道的socket没有绑定地址，
+     此方将自动绑定一个地址，仿佛调用#bind（null）方法。
+     * @param  dst
+     *         The buffer into which the datagram is to be transferred
+     *
+     * @return  The datagram's source address,
+     *          or <tt>null</tt> if this channel is in non-blocking mode
+     *          and no datagram was immediately available
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the read operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the read operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed
+     *          and it does not permit datagrams to be accepted
+     *          from the datagram's sender
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract SocketAddress receive(ByteBuffer dst) throws IOException;
+
+    /**
+     * Sends a datagram via this channel.
+     *通过通道发送一个报文
+     * <p> If this channel is in non-blocking mode and there is sufficient room
+     * in the underlying output buffer, or if this channel is in blocking mode
+     * and sufficient room becomes available, then the remaining bytes in the
+     * given buffer are transmitted as a single datagram to the given target
+     * address.
+     *如果通道为非阻塞模式，底层有足够的发送buffer空间，或通道为阻塞模式，有足够的空间
+     可用，则buffer中数据将作为一个报文发送到远端地址。
+     * <p> The datagram is transferred from the byte buffer as if by a regular
+     * {@link WritableByteChannel#write(java.nio.ByteBuffer) write} operation.
+     *转换buffer数据为报文，就像执行WritableByteChannel#write(java.nio.ByteBuffer)操作。
+     * <p> This method performs exactly the same security checks as the {@link
+     * java.net.DatagramSocket#send send} method of the {@link
+     * java.net.DatagramSocket} class.  That is, if the socket is not connected
+     * to a specific remote address and a security manager has been installed
+     * then for each datagram sent this method verifies that the target address
+     * and port number are permitted by the security manager's {@link
+     * java.lang.SecurityManager#checkConnect checkConnect} method.  The
+     * overhead of this security check can be avoided by first connecting the
+     * socket via the {@link #connect connect} method.
+     *方法中执行与DatagramSocket#send相同的安全检查。如果socket没有连接到远端地址，
+     在每次报文发送时，将会通过SecurityManager#checkConnect检查socket到远端地址和端口
+     的连接权限。此安全检查可以通过#connect方法，连接socket避免。
+     * <p> This method may be invoked at any time.  If another thread has
+     * already initiated a write operation upon this channel, however, then an
+     * invocation of this method will block until the first operation is
+     * complete. If this channel's socket is not bound then this method will
+     * first cause the socket to be bound to an address that is assigned
+     * automatically, as if by invoking the {@link #bind bind} method with a
+     * parameter of {@code null}. </p>
+     *此方法可以在任何时候调用。如果在此方法调用之前，已经有线程正在执行写IO操作，
+     则当前线程将阻塞到正在执行写IO操作的线程完毕。如果通道的socket没有绑定地址，
+     此方将自动绑定一个地址，仿佛调用#bind（null）方法。
+     * @param  src
+     *         The buffer containing the datagram to be sent
+     *
+     * @param  target
+     *         The address to which the datagram is to be sent
+     *
+     * @return   The number of bytes sent, which will be either the number
+     *           of bytes that were remaining in the source buffer when this
+     *           method was invoked or, if this channel is non-blocking, may be
+     *           zero if there was insufficient room for the datagram in the
+     *           underlying output buffer
+     *此方将返回发送的报文字节数，为发送buffer的remaining空间数据，如果通道为
+     非阻塞模式，底层没有足够的空间存放报文，有可能返回0
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the read operation is in progress
+     *
+     * @throws  ClosedByInterruptException
+     *          If another thread interrupts the current thread
+     *          while the read operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  SecurityException
+     *          If a security manager has been installed
+     *          and it does not permit datagrams to be sent
+     *          to the given address
+     *
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    public abstract int send(ByteBuffer src, SocketAddress target)
+        throws IOException;
+
+
+    // -- ByteChannel operations --
+
+    /**
+     * Reads a datagram from this channel.
+     *从通道读取一个报文
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, and it only accepts datagrams from the socket's peer.  If
+     * there are more bytes in the datagram than remain in the given buffer
+     * then the remainder of the datagram is silently discarded.  Otherwise
+     * this method behaves exactly as specified in the {@link
+     * ReadableByteChannel} interface.  </p>
+     *此方法当且仅当通道socket建立连接后，方可调用，并且只接受从socket的peer发来的
+     报文。如果报文的长度大于buffer的可用空间，多余的报文字节将会默认丢弃。读操作在其他方面
+     与ReadableByteChannel的基本相同
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public abstract int read(ByteBuffer dst) throws IOException;
+
+    /**
+     * Reads a datagram from this channel.
+     *从通道读取一个报文
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, and it only accepts datagrams from the socket's peer.  If
+     * there are more bytes in the datagram than remain in the given buffers
+     * then the remainder of the datagram is silently discarded.  Otherwise
+     * this method behaves exactly as specified in the {@link
+     * ScatteringByteChannel} interface.  </p>
+     *方法当且仅当通道socket建立连接后，方可调用，并且只接受从socket的peer发来的
+     报文。如果报文的长度大于buffer组的可用空间，多余的报文字节将会默认丢弃。读操作在其他方面
+     与ScatteringByteChannel相同。
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public abstract long read(ByteBuffer[] dsts, int offset, int length)
+        throws IOException;
+
+    /**
+     * Reads a datagram from this channel.
+     *从通道读取一个报文
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, and it only accepts datagrams from the socket's peer.  If
+     * there are more bytes in the datagram than remain in the given buffers
+     * then the remainder of the datagram is silently discarded.  Otherwise
+     * this method behaves exactly as specified in the {@link
+     * ScatteringByteChannel} interface.  </p>
+     *方法当且仅当通道socket建立连接后，方可调用，并且只接受从socket的peer发来的
+     报文。如果报文的长度大于buffer组的可用空间，多余的报文字节将会默认丢弃。读操作在其他方面
+     与ScatteringByteChannel相同。
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public final long read(ByteBuffer[] dsts) throws IOException {
+        return read(dsts, 0, dsts.length);
+    }
+
+    /**
+     * Writes a datagram to this channel.
+     *写一个报文到通道。
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, in which case it sends datagrams directly to the socket's
+     * peer.  Otherwise it behaves exactly as specified in the {@link
+     * WritableByteChannel} interface.  </p>
+     *方法当且仅当通道socket建立连接后，方可调用，并且只能直接发送报文到socket的peer。
+     在其他方面与WritableByteChannel相同。
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public abstract int write(ByteBuffer src) throws IOException;
+
+    /**
+     * Writes a datagram to this channel.
+     *写一个报文到通道。
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, in which case it sends datagrams directly to the socket's
+     * peer.  Otherwise it behaves exactly as specified in the {@link
+     * GatheringByteChannel} interface.  </p>
+     *方法当且仅当通道socket建立连接后，方可调用，并且只能直接发送报文到socket的peer。
+     在其他方面与GatheringByteChannel相同。
+     * @return   The number of bytes sent, which will be either the number
+     *           of bytes that were remaining in the source buffer when this
+     *           method was invoked or, if this channel is non-blocking, may be
+     *           zero if there was insufficient room for the datagram in the
+     *           underlying output buffer
+     *
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public abstract long write(ByteBuffer[] srcs, int offset, int length)
+        throws IOException;
+
+    /**
+     * Writes a datagram to this channel.
+     *写一个报文到通道。
+     * <p> This method may only be invoked if this channel's socket is
+     * connected, in which case it sends datagrams directly to the socket's
+     * peer.  Otherwise it behaves exactly as specified in the {@link
+     * GatheringByteChannel} interface.  </p>
+     *方法当且仅当通道socket建立连接后，方可调用，并且只能直接发送报文到socket的peer。
+     在其他方面与GatheringByteChannel相同。
+     * @return   The number of bytes sent, which will be either the number
+     *           of bytes that were remaining in the source buffer when this
+     *           method was invoked or, if this channel is non-blocking, may be
+     *           zero if there was insufficient room for the datagram in the
+     *           underlying output buffer
+     *此方将返回发送的报文字节数，为发送buffer组的remaining空间数据之和，如果通道为
+     非阻塞模式，底层没有足够的空间存放报文，有可能返回0
+     * @throws  NotYetConnectedException
+     *          If this channel's socket is not connected
+     */
+    public final long write(ByteBuffer[] srcs) throws IOException {
+        return write(srcs, 0, srcs.length);
+    }
+
+}

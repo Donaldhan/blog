@@ -1,0 +1,18 @@
+如何让一个Table具有动态排序的效果，大多数的情况，我们会将前台排序信息，传到后台去Order；
+那么是否可以不经过后台处理，直接根据已有的数据排序呢？答案是肯定的，今天发现了一个强大
+的Js库可以对table动态排序，使用步骤如下：
+1.下载js库；
+2.再页面头部中引用
+    <script src="sorttable.js"></script>
+3.添加table class
+    <table class="sortable">
+点击表列头，是不是可以了
+
+如果想要控制排序按钮的样式，可以添加如下css样式
+/* Sortable tables */
+table.sortable thead {
+    background-color:#eee;
+    color:#666666;
+    font-weight: bold;
+    cursor: default;
+}

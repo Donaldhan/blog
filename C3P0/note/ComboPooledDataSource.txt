@@ -1,0 +1,895 @@
+C3P0 ComboPooledDataSource初始化
+在我们开发的时候经常会用到数据源，我们从数据源获取连接，今天我们就通过C3P0以探究竟。
+测试主类：
+import org.slf4j.LoggerFactory;
+import com.mchange.v2.c3p0.ComboPooledDataSource;
+public class testC3p0 {
+	private static Logger log = LoggerFactory.getLogger(testC3p0.class);
+	private static ComboPooledDataSource cpDSource =null;
+	public static void main(String[] args){
+		initC3p0DataSource();
+		testC3p0BaseMysql();
+	}
+	private static void initC3p0DataSource(){
+		Properties props = new Properties();
+		InputStream in = Thread.currentThread().getContextClassLoader().getResourceAsStream("c3p0.properties");
+		try {
+			props.load(in);
+			
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		finally{
+			try {
+				in.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		cpDSource = new ComboPooledDataSource();
+		try {
+			cpDSource.setDriverClass(props.getProperty("driver"));
+			log.info("=============driver:"+props.getProperty("driver"));
+			cpDSource.setJdbcUrl(props.getProperty("url"));
+			log.info("=============url:"+props.getProperty("url"));
+			cpDSource.setUser(props.getProperty("user"));
+			log.info("=============user:"+props.getProperty("user"));
+			cpDSource.setPassword(props.getProperty("password"));
+			log.info("=============password:"+props.getProperty("password"));
+			cpDSource.setInitialPoolSize(5);
+			cpDSource.setMaxPoolSize(30);
+			cpDSource.setMinPoolSize(5);
+			/*c3p0全局的PreparedStatements缓存的大小。
+			如果maxStatements与maxStatementsPerConnection均为0，则缓存不生效，
+			只要有一个不为0，则语句的缓存就能生效。如果默认值: 0*/
+			cpDSource.setMaxStatements(100);
+			//最大空闲时间，60秒内未使用则连接被丢弃。若为0则永不丢弃。默认值: 0
+			cpDSource.setIdleConnectionTestPeriod(60);
+			/*如果为false，则获取连接失败将会引起所有等待连接池来获取连接的线程抛出异常，
+			但是数据源仍有效保留，并在下次调用getConnection()的时候继续尝试获取连接。
+			如果设为true，那么在尝试获取连接失败后该数据源将申明已断开并永久关闭。默认: false*/
+			cpDSource.setBreakAfterAcquireFailure(false);
+			//定义在从数据库获取新连接失败后重复尝试的次数。默认值: 30 ；小于等于0表示无限次
+			cpDSource.setAcquireRetryAttempts(30);
+			cpDSource.setTestConnectionOnCheckout(false);
+		} catch (PropertyVetoException e) {
+			e.printStackTrace();
+		}
+		log.info("========Init c3p0DSource end=============");
+	}
+	public static void testC3p0BaseMysql()
+	{
+		
+	    Connection con = null;// 创建一个数据库连接
+	    PreparedStatement pre = null;// 创建预编译语句对象，一般都是用这个而不用Statement
+	    ResultSet result = null;// 创建一个结果集对象
+	    try
+	    {
+	        con = cpDSource.getConnection();
+	        String iSql = "INSERT INTO user(name,age)VALUES(?,?)";
+	        PreparedStatement ps =con.prepareStatement(iSql); 
+	        ps.setString(1, "jack");
+	        ps.setInt(2, 23);
+	        ps.execute();
+	        ps.setString(1, "mark");
+	        ps.setInt(2, 67);
+	        ps.execute();
+	        String uSql = "UPDATE user SET name = ?,age=? WHERE id=?";
+	        ps =  con.prepareStatement(uSql); 
+	        ps.setString(1, "donald");
+	        ps.setInt(2, 28);
+	        ps.setInt(3, 11);
+	        ps.executeUpdate();
+	    }
+	    catch (Exception e)
+	    {
+	    	log.error("============ERROR:"+e.getMessage());
+	    	e.printStackTrace();
+	    }
+	    finally
+	    {
+	        try
+	        {
+	            if (result != null)
+	                result.close();
+	            if (pre != null)
+	                pre.close();
+	            if (con != null)
+	                con.close();
+	        }
+	        catch (Exception e)
+	        {
+	            e.printStackTrace();
+	        }
+	    }
+	}
+}
+我们从这一句来看
+cpDSource = new ComboPooledDataSource();
+
+//ComboPooledDataSource
+public final class ComboPooledDataSource extends AbstractComboPooledDataSource
+    implements Serializable, Referenceable
+{
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 2;
+    public ComboPooledDataSource()
+    {
+    }
+}
+ComboPooledDataSource的构造函数没有做什么事情，查看其父类AbstractComboPooledDataSource
+//AbstractComboPooledDataSource
+public abstract class AbstractComboPooledDataSource extends AbstractPoolBackedDataSource
+    implements PooledDataSource, Serializable, Referenceable
+{
+    static final MLogger logger = MLog.getLogger(com/mchange/v2/c3p0/AbstractComboPooledDataSource);
+    static final Set TO_STRING_IGNORE_PROPS = new HashSet(Arrays.asList(new String[] {
+        "connection", "lastAcquisitionFailureDefaultUser", "lastCheckinFailureDefaultUser", "lastCheckoutFailureDefaultUser", "lastConnectionTestFailureDefaultUser", "lastIdleTestFailureDefaultUser", "logWriter", "loginTimeout", "numBusyConnections", "numBusyConnectionsAllUsers", 
+        "numBusyConnectionsDefaultUser", "numConnections", "numConnectionsAllUsers", "numConnectionsDefaultUser", "numFailedCheckinsDefaultUser", "numFailedCheckoutsDefaultUser", "numFailedIdleTestsDefaultUser", "numIdleConnections", "numIdleConnectionsAllUsers", "numThreadsAwaitingCheckoutDefaultUser", 
+        "numIdleConnectionsDefaultUser", "numUnclosedOrphanedConnections", "numUnclosedOrphanedConnectionsAllUsers", "numUnclosedOrphanedConnectionsDefaultUser", "numUserPools", "effectivePropertyCycleDefaultUser", "parentLogger", "startTimeMillisDefaultUser", "statementCacheNumCheckedOutDefaultUser", "statementCacheNumCheckedOutStatementsAllUsers", 
+        "statementCacheNumConnectionsWithCachedStatementsAllUsers", "statementCacheNumConnectionsWithCachedStatementsDefaultUser", "statementCacheNumStatementsAllUsers", "statementCacheNumStatementsDefaultUser", "statementDestroyerNumConnectionsInUseAllUsers", "statementDestroyerNumConnectionsWithDeferredDestroyStatementsAllUsers", "statementDestroyerNumDeferredDestroyStatementsAllUsers", "statementDestroyerNumConnectionsInUseDefaultUser", "statementDestroyerNumConnectionsWithDeferredDestroyStatementsDefaultUser", "statementDestroyerNumDeferredDestroyStatementsDefaultUser", 
+        "statementDestroyerNumThreads", "statementDestroyerNumActiveThreads", "statementDestroyerNumIdleThreads", "statementDestroyerNumTasksPending", "threadPoolSize", "threadPoolNumActiveThreads", "threadPoolNumIdleThreads", "threadPoolNumTasksPending", "threadPoolStackTraces", "threadPoolStatus", 
+        "overrideDefaultUser", "overrideDefaultPassword", "password", "reference", "upTimeMillisDefaultUser", "user", "userOverridesAsString", "allUsers", "connectionPoolDataSource", "propertyChangeListeners", 
+        "vetoableChangeListeners"
+    }));
+    transient DriverManagerDataSource dmds;
+    transient WrapperConnectionPoolDataSource wcpds;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+    //构造AbstractComboPooledDataSource
+   public AbstractComboPooledDataSource()
+    {
+        this(true);
+    }
+    public AbstractComboPooledDataSource(boolean autoregister)
+    {
+        //
+        super(autoregister);
+	//新建驱动数据源管理器
+        dmds = new DriverManagerDataSource();
+	//新建数据库连接池
+        wcpds = new WrapperConnectionPoolDataSource();
+	//设置数据连接池的数据源驱动管理器
+        wcpds.setNestedDataSource(dmds);
+        try
+        {
+            setConnectionPoolDataSource(wcpds);
+        }
+        catch(PropertyVetoException e)
+        {
+            logger.log(MLevel.WARNING, "Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet!", e);
+            throw new RuntimeException((new StringBuilder()).append("Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet! ").append(e).toString());
+        }
+        setUpPropertyEvents();
+    }
+    //设置数据库连接池
+    public synchronized void setConnectionPoolDataSource(ConnectionPoolDataSource connectionPoolDataSource)
+        throws PropertyVetoException
+    {
+        ConnectionPoolDataSource oldVal = this.connectionPoolDataSource;
+        if(!eqOrBothNull(oldVal, connectionPoolDataSource))
+            vcs.fireVetoableChange("connectionPoolDataSource", oldVal, connectionPoolDataSource);
+	//初始化数据库连接池
+        this.connectionPoolDataSource = connectionPoolDataSource;
+        if(!eqOrBothNull(oldVal, connectionPoolDataSource))
+            pcs.firePropertyChange("connectionPoolDataSource", oldVal, connectionPoolDataSource);
+    }
+}
+从AbstractComboPooledDataSource初始化，我们可以看出，
+初始化就是创建数据源驱动管理器DriverManagerDataSource，
+创建数据库连接池WrapperConnectionPoolDataSource，初始化数据库连接池的数据源驱动管理器，
+然后，初始化AbstractComboPooledDataSource的WrapperConnectionPoolDataSource。
+再来看AbstractPoolBackedDataSource的构造
+public abstract class AbstractPoolBackedDataSource extends PoolBackedDataSourceBase
+    implements PooledDataSource
+{
+
+
+
+    static final MLogger logger = MLog.getLogger(com/mchange/v2/c3p0/impl/AbstractPoolBackedDataSource);
+    static final String NO_CPDS_ERR_MSG = "Attempted to use an uninitialized PoolBackedDataSource. Please call setConnectionPoolDataSource( ... ) to initialize.";
+    //连接池管理器
+    transient C3P0PooledConnectionPoolManager poolManager;
+    transient boolean is_closed;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+    protected AbstractPoolBackedDataSource(boolean autoregister)
+    {
+        super(autoregister);
+        is_closed = false;
+        setUpPropertyEvents();
+    }
+    //添加属性Change监听器
+    private void setUpPropertyEvents()
+    {
+        PropertyChangeListener l = new PropertyChangeListener() {
+
+            public void propertyChange(PropertyChangeEvent evt)
+            {
+                resetPoolManager(false);
+            }
+
+            final AbstractPoolBackedDataSource this$0;
+
+            
+            {
+                this.this$0 = AbstractPoolBackedDataSource.this;
+                super();
+            }
+        };
+        addPropertyChangeListener(l);
+    }
+    //重置连接池管理器
+     public synchronized void resetPoolManager(boolean close_checked_out_connections)
+    {
+        if(poolManager != null)
+        {
+            poolManager.close(close_checked_out_connections);
+            poolManager = null;
+        }
+    }
+    //添加属性Change监听器
+     public void addPropertyChangeListener(PropertyChangeListener pcl)
+    {
+        pcs.addPropertyChangeListener(pcl);
+    }
+        public boolean isWrapperFor(Class iface)
+        throws SQLException
+    {
+        return isWrapperForThis(iface);
+    }
+
+    public Object unwrap(Class iface)
+        throws SQLException
+    {
+        if(isWrapperForThis(iface))
+            return this;
+        else
+            throw new SQLException((new StringBuilder()).append(this).append(" is not a wrapper for or implementation of ").append(iface.getName()).toString());
+    }
+     protected final boolean isWrapperForThis(Class iface)
+    {
+        return iface.isAssignableFrom(getClass());
+    }
+
+    public boolean isWrapperFor(Class iface)
+        throws SQLException
+    {
+        return isWrapperForThis(iface);
+    }
+}
+从AbstractPoolBackedDataSource的构造可以看出主要是添加属性change监听器,当AbstractPoolBackedDataSource的
+属性值有变化时，重置连接池管理器。
+//C3P0PooledConnectionPoolManager
+public final class C3P0PooledConnectionPoolManager
+{
+private static final MLogger logger = MLog.getLogger(com/mchange/v2/c3p0/impl/C3P0PooledConnectionPoolManager);
+    private static final boolean POOL_EVENT_SUPPORT = false;
+    private static final CoalesceChecker COALESCE_CHECKER;
+    static final Coalescer COALESCER;
+    static final int DFLT_NUM_TASK_THREADS_PER_DATA_SOURCE = 3;
+    ThreadPoolAsynchronousRunner taskRunner;
+    ThreadPoolAsynchronousRunner deferredStatementDestroyer;
+    Timer timer;
+    ResourcePoolFactory rpfact;
+    Map authsToPools;
+    //数据源连接池
+    final ConnectionPoolDataSource cpds;
+    final Map propNamesToReadMethods;
+    final Map flatPropertyOverrides;
+    final Map userOverrides;
+    final DbAuth defaultAuth;
+    final String parentDataSourceIdentityToken;
+    final String parentDataSourceName;
+    int num_task_threads;
+    static 
+    {
+        COALESCE_CHECKER = IdentityTokenizedCoalesceChecker.INSTANCE;
+        COALESCER = CoalescerFactory.createCoalescer(COALESCE_CHECKER, true, false);
+    }
+}
+再来看PoolBackedDataSourceBase的构造：
+public class PoolBackedDataSourceBase extends IdentityTokenResolvable
+    implements Referenceable, Serializable
+{
+    //java bean 属性改变事件辅助工具
+    protected PropertyChangeSupport pcs;
+    protected VetoableChangeSupport vcs;
+    //数据库连接池
+    private ConnectionPoolDataSource connectionPoolDataSource;
+    private String dataSourceName;
+    private Map extensions;
+    private String factoryClassLocation;
+    private volatile String identityToken;
+    private int numHelperThreads;
+    private static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+    static final JavaBeanReferenceMaker referenceMaker;
+
+    static 
+    {
+        referenceMaker = new JavaBeanReferenceMaker();
+        referenceMaker.setFactoryClassName("com.mchange.v2.c3p0.impl.C3P0JavaBeanObjectFactory");
+        referenceMaker.addReferenceProperty("connectionPoolDataSource");
+        referenceMaker.addReferenceProperty("dataSourceName");
+        referenceMaker.addReferenceProperty("extensions");
+        referenceMaker.addReferenceProperty("factoryClassLocation");
+        referenceMaker.addReferenceProperty("identityToken");
+        referenceMaker.addReferenceProperty("numHelperThreads");
+    }
+    public PoolBackedDataSourceBase(boolean autoregister)
+    {
+       //初始化属性辅助工具
+        pcs = new PropertyChangeSupport(this);
+        vcs = new VetoableChangeSupport(this);
+	//初始化数据源name
+        dataSourceName = C3P0Config.initializeStringPropertyVar("dataSourceName", C3P0Defaults.dataSourceName());
+        extensions = C3P0Config.initializeExtensions();
+        factoryClassLocation = C3P0Config.initializeStringPropertyVar("factoryClassLocation", C3P0Defaults.factoryClassLocation());
+        numHelperThreads = C3P0Config.initializeIntPropertyVar("numHelperThreads", C3P0Defaults.numHelperThreads());
+        if(autoregister)
+        {
+            identityToken = C3P0ImplUtils.allocateIdentityToken(this);
+            C3P0Registry.reregister(this);
+        }
+    }
+}
+从上面可以看出，PoolBackedDataSourceBase的构造函数中，主要初始化属性辅助工具，初始化数据源name
+
+//C3P0配置项
+public final class C3P0Config
+{
+    static final String PROP_STYLE_NAMED_CFG_PFX = "c3p0.named-configs";
+    static final int PROP_STYLE_NAMED_CFG_PFX_LEN = "c3p0.named-configs".length();
+    static final String PROP_STYLE_USER_OVERRIDES_PART = "user-overrides";
+    static final String PROP_STYLE_USER_OVERRIDES_PFX = "c3p0.user-overrides";
+    static final int PROP_STYLE_USER_OVERRIDES_PFX_LEN = "c3p0.user-overrides".length();
+    static final String PROP_STYLE_EXTENSIONS_PART = "extensions";
+    static final String PROP_STYLE_EXTENSIONS_PFX = "c3p0.extensions";
+    static final int PROP_STYLE_EXTENSIONS_PFX_LEN = "c3p0.extensions".length();
+    public static final String CFG_FINDER_CLASSNAME_KEY = "com.mchange.v2.c3p0.cfg.finder";
+    public static final String DEFAULT_CONFIG_NAME = "default";
+    //配置文件
+    public static final String PROPS_FILE_RSRC_PATH = "/c3p0.properties";
+    static final MLogger logger = MLog.getLogger(com/mchange/v2/c3p0/cfg/C3P0Config);
+    //配置文件属性操作工具
+    private static MultiPropertiesConfig _MPCONFIG;
+    //C3P0配置类
+    private static C3P0Config _MAIN;
+    static final Class SUOAS_ARGS[] = {
+        java/lang/String
+    };
+    static final Collection SKIP_BIND_PROPS = Arrays.asList(new String[] {
+        "loginTimeout", "properties"
+    });
+    NamedScope defaultConfig;//默认配置
+    HashMap configNamesToNamedScopes;//命名空间下的配置名
+
+    static 
+    {
+         //设置配置文件工具类
+        setLibraryMultiPropertiesConfig(findLibraryMultiPropertiesConfig());
+	 //设置C3P0Config
+        setMainConfig(findLibraryC3P0Config(false));
+        warnOnUnknownProperties(MAIN());
+    }
+    //加载配置文件
+     private static MultiPropertiesConfig findLibraryMultiPropertiesConfig()
+    {
+        String defaults[] = {
+            "/mchange-commons.properties", "/mchange-log.properties"
+        };
+        String preempts[] = {
+            "hocon:/reference,/application,/c3p0,/", "/c3p0.properties", "/"
+        };
+        return MConfig.readVmConfig(defaults, preempts);
+    }
+    //设置配置文件工具类
+      private static synchronized void setLibraryMultiPropertiesConfig(MultiPropertiesConfig mpc)
+    {
+        _MPCONFIG = mpc;
+    }
+    //设置C3P0Config
+      public static synchronized void setMainConfig(C3P0Config protoMain)
+    {
+        _MAIN = protoMain;
+    }
+    //初始化propKey对应的值
+     public static String initializeStringPropertyVar(String propKey, String dflt)
+    {
+        String out = getUnspecifiedUserProperty(propKey, null);
+        if(out == null)
+            out = dflt;
+        return out;
+    }
+    //获取propKey对应的属性
+    public static String getUnspecifiedUserProperty(String propKey, String configName)
+    {
+        String out = null;
+        if(configName == null)
+        {
+            out = (String)MAIN().defaultConfig.props.get(propKey);
+        } else
+        {
+            NamedScope named = (NamedScope)MAIN().configNamesToNamedScopes.get(configName);
+            if(named != null)
+                out = (String)named.props.get(propKey);
+            else
+                logger.warning((new StringBuilder()).append("named-config with name '").append(configName).append("' does not exist. Using default-config for property '").append(propKey).append("'.").toString());
+            if(out == null)
+                out = (String)MAIN().defaultConfig.props.get(propKey);
+        }
+        return out;
+    }
+}
+来看C3P0Config的findLibraryC3P0Config函数
+//C3P0Config,初始化C3P0Config
+ private static C3P0Config findLibraryC3P0Config(boolean warn_on_conflicting_overrides)
+    {
+        String cname = MPCONFIG().getProperty("com.mchange.v2.c3p0.cfg.finder");
+        C3P0ConfigFinder cfgFinder = null;
+        try
+        {
+            if(cname != null)
+	        //加载com.mchange.v2.c3p0.cfg.finder类
+                cfgFinder = (C3P0ConfigFinder)Class.forName(cname).newInstance();
+        }
+        catch(Exception e)
+        {
+            if(logger.isLoggable(MLevel.WARNING))
+                logger.log(MLevel.WARNING, (new StringBuilder()).append("Could not load specified C3P0ConfigFinder class'").append(cname).append("'.").toString(), e);
+        }
+        C3P0Config protoMain;
+        try
+        {
+            if(cfgFinder == null)
+            {
+                Class.forName("org.w3c.dom.Node");
+                Class.forName("com.mchange.v2.c3p0.cfg.C3P0ConfigXmlUtils");
+		//如果配置发现类不存在，则创建默认的DefaultC3P0ConfigFinder为cfgFinder
+                cfgFinder = new DefaultC3P0ConfigFinder(warn_on_conflicting_overrides);
+            }
+	    //发现配置文件
+            protoMain = cfgFinder.findConfig();
+        }
+        catch(Exception e)
+        {
+            if(logger.isLoggable(MLevel.WARNING))
+                logger.log(MLevel.WARNING, "XML configuration disabled! Verify that standard XML libs are available.", e);
+            HashMap flatDefaults = C3P0ConfigUtils.extractHardcodedC3P0Defaults();
+            flatDefaults.putAll(C3P0ConfigUtils.extractC3P0PropertiesResources());
+            protoMain = C3P0ConfigUtils.configFromFlatDefaults(flatDefaults);
+        }
+	//获取属性命令空间
+        HashMap propStyleConfigNamesToNamedScopes = findPropStyleNamedScopes();
+        HashMap cfgFoundConfigNamesToNamedScopes = protoMain.configNamesToNamedScopes;
+	//最总的命名空间属性集
+        HashMap mergedConfigNamesToNamedScopes = new HashMap();
+        HashSet allConfigNames = new HashSet(cfgFoundConfigNamesToNamedScopes.keySet());
+        allConfigNames.addAll(propStyleConfigNamesToNamedScopes.keySet());
+        for(Iterator ii = allConfigNames.iterator(); ii.hasNext();)
+        {
+            String cfgName = (String)ii.next();
+	    //将属性添加到对应的NameScope下
+            NamedScope cfgFound = (NamedScope)cfgFoundConfigNamesToNamedScopes.get(cfgName);
+            NamedScope propStyle = (NamedScope)propStyleConfigNamesToNamedScopes.get(cfgName);
+	    //整合命名空间下的值
+            if(cfgFound != null && propStyle != null)
+                mergedConfigNamesToNamedScopes.put(cfgName, cfgFound.mergedOver(propStyle));
+            else
+            if(cfgFound != null && propStyle == null)
+                mergedConfigNamesToNamedScopes.put(cfgName, cfgFound);
+            else
+            if(cfgFound == null && propStyle != null)
+                mergedConfigNamesToNamedScopes.put(cfgName, propStyle);
+            else
+                throw new AssertionError("Huh? allConfigNames is the union, every name should be in one of the two maps.");
+        }
+
+        HashMap propStyleUserOverridesDefaultConfig = findPropStyleUserOverridesDefaultConfig();
+        HashMap propStyleExtensionsDefaultConfig = findPropStyleExtensionsDefaultConfig();
+	//创建命名空间
+        NamedScope mergedDefaultConfig = new NamedScope(protoMain.defaultConfig.props, NamedScope.mergeUserNamesToOverrides(protoMain.defaultConfig.userNamesToOverrides, propStyleUserOverridesDefaultConfig), NamedScope.mergeExtensions(protoMain.defaultConfig.extensions, propStyleExtensionsDefaultConfig));
+        //创建C3P0Config，并返回
+        return new C3P0Config(mergedDefaultConfig, mergedConfigNamesToNamedScopes);
+    }
+来看一下DefaultC3P0ConfigFinder如何获取配置C3P0Config
+//发现配置文件
+protoMain = cfgFinder.findConfig();
+//DefaultC3P0ConfigFinder
+
+ public C3P0Config findConfig()
+        throws Exception
+    {
+        C3P0Config out;
+        HashMap flatDefaults;
+        String cfgFile;
+        InputStream is;
+	//加载c3p0默认配置从硬编码中C3P0Defaults（c3p0默认配置类）
+        flatDefaults = C3P0ConfigUtils.extractHardcodedC3P0Defaults();
+        flatDefaults.putAll(C3P0ConfigUtils.extractC3P0PropertiesResources());
+	//加载xml配置文件
+        cfgFile = C3P0Config.getPropsFileConfigProperty("com.mchange.v2.c3p0.cfg.xml");
+        if(cfgFile == null)
+        {
+	    //从xml文件中，解析配置
+            C3P0Config xmlConfig = C3P0ConfigXmlUtils.extractXmlConfigFromDefaultResource();
+            if(xmlConfig != null)
+            {
+                insertDefaultsUnderNascentConfig(flatDefaults, xmlConfig);
+                out = xmlConfig;
+                mbOverrideWarning("resource", "/c3p0-config.xml");
+            } else
+            {
+                //如果xml文件不存在，则从C3P0Defaults获取默认属性
+                out = C3P0ConfigUtils.configFromFlatDefaults(flatDefaults);
+            }
+            break MISSING_BLOCK_LABEL_286;
+        }
+        java.util.Properties sysPropConfig = C3P0ConfigUtils.findAllC3P0SystemProperties();
+        out.defaultConfig.props.putAll(sysPropConfig);
+        return out;
+    }
+来看这一句
+//如果xml文件不存在，则从C3P0Defaults获取默认属性
+out = C3P0ConfigUtils.configFromFlatDefaults(flatDefaults);
+//C3P0ConfigUtils
+根据C3P0Defaults默认属性，配置C3P0Config
+ public static C3P0Config configFromFlatDefaults(HashMap flatDefaults)
+    {
+        NamedScope defaults = new NamedScope();
+        defaults.props.putAll(flatDefaults);
+        HashMap configNamesToNamedScopes = new HashMap();
+        return new C3P0Config(defaults, configNamesToNamedScopes);
+    }
+至此C3P0Config的初始化告一段落，C3P0Config首先初始化MultiPropertiesConfig，
+再配置C3P0Config，加载com.mchange.v2.c3p0.cfg.finder类，如果没有，则通过
+DefaultC3P0ConfigFinder初始化数据库先关属性，DefaultC3P0ConfigFinder首先加载
+xml文件，如果没有，则从C3P0Defaults通过反射获取属性，构建C3P0Config。
+总结：
+从AbstractComboPooledDataSource初始化，我们可以看出，
+初始化就是创建数据源驱动管理器DriverManagerDataSource，
+创建数据库连接池WrapperConnectionPoolDataSource，初始化数据库连接池的数据源驱动管理器，
+然后，初始化AbstractComboPooledDataSource的WrapperConnectionPoolDataSource。
+从AbstractPoolBackedDataSource的构造可以看出主要是添加属性change监听器,当AbstractPoolBackedDataSource的
+属性值有变化时，重置连接池管理器。
+从PoolBackedDataSourceBase的构造函数中，可以看出，其主要初始化属性辅助工具，初始化数据源name，
+在初始化数据源name是用到了C3P0Config，C3P0Config的初始化，上面已总结。
+
+//NamedScope
+package com.mchange.v2.c3p0.cfg;
+import java.util.*;
+
+class NamedScope
+{
+    
+    HashMap props;//属性集
+    HashMap userNamesToOverrides;
+    HashMap extensions;//扩展
+    NamedScope()
+    {
+        props = new HashMap();
+        userNamesToOverrides = new HashMap();
+        extensions = new HashMap();
+    }
+
+    NamedScope(HashMap props, HashMap userNamesToOverrides, HashMap extensions)
+    {
+        this.props = props;
+        this.userNamesToOverrides = userNamesToOverrides;
+        this.extensions = extensions;
+    }
+    //覆盖原始属性集
+    NamedScope mergedOver(NamedScope underScope)
+    {
+        HashMap mergedProps = (HashMap)underScope.props.clone();
+        mergedProps.putAll(props);
+        HashMap mergedUserNamesToOverrides = mergeUserNamesToOverrides(userNamesToOverrides, underScope.userNamesToOverrides);
+        HashMap mergedExtensions = mergeExtensions(extensions, underScope.extensions);
+        return new NamedScope(mergedProps, mergedUserNamesToOverrides, mergedExtensions);
+    }
+    //覆盖扩展集
+    static HashMap mergeExtensions(HashMap over, HashMap under)
+    {
+        HashMap out = (HashMap)under.clone();
+        out.putAll(over);
+        return out;
+    }
+    
+    static HashMap mergeUserNamesToOverrides(HashMap over, HashMap under)
+    {
+        HashMap out = (HashMap)under.clone();
+        HashSet underUserNames = new HashSet(under.keySet());
+        HashSet overUserNames = new HashSet(over.keySet());
+        HashSet newUserNames = (HashSet)overUserNames.clone();
+        newUserNames.removeAll(underUserNames);
+        String name;
+        for(Iterator ii = newUserNames.iterator(); ii.hasNext(); out.put(name, ((HashMap)over.get(name)).clone()))
+            name = (String)ii.next();
+
+        HashSet mergeUserNames = (HashSet)overUserNames.clone();
+        mergeUserNames.retainAll(underUserNames);
+        String name;
+        for(Iterator ii = mergeUserNames.iterator(); ii.hasNext(); ((HashMap)out.get(name)).putAll((HashMap)over.get(name)))
+            name = (String)ii.next();
+
+        return out;
+    }
+
+}
+
+//MultiPropertiesConfig
+public abstract class MultiPropertiesConfig
+    implements PropertiesConfig
+{
+
+    public MultiPropertiesConfig()
+    {
+    }
+
+    /**
+     * @deprecated Method readVmConfig is deprecated
+     */
+
+    public static MultiPropertiesConfig readVmConfig(String as[], String as1[])
+    {
+        return ConfigUtils.readVmConfig(as, as1);
+    }
+
+    /**
+     * @deprecated Method readVmConfig is deprecated
+     */
+
+    public static MultiPropertiesConfig readVmConfig()
+    {
+        return ConfigUtils.readVmConfig();
+    }
+
+    public static MultiPropertiesConfig fromProperties(String s, Properties properties)
+    {
+        return new BasicMultiPropertiesConfig(s, properties);
+    }
+
+    public static MultiPropertiesConfig fromProperties(Properties properties)
+    {
+        return fromProperties(PROGRAMMATICALLY_SUPPLIED_PROPERTIES, properties);
+    }
+
+    public abstract String[] getPropertiesResourcePaths();
+
+    public abstract Properties getPropertiesByResourcePath(String s);
+
+    public abstract Properties getPropertiesByPrefix(String s);
+
+    public abstract String getProperty(String s);
+
+    public abstract List getDelayedLogItems();
+
+    private static String PROGRAMMATICALLY_SUPPLIED_PROPERTIES = "PROGRAMMATICALLY_SUPPLIED_PROPERTIES";
+
+}
+
+public final class C3P0Defaults
+{
+private static final int MAX_STATEMENTS = 0;
+    private static final int MAX_STATEMENTS_PER_CONNECTION = 0;
+    private static final int INITIAL_POOL_SIZE = 3;
+    private static final int MIN_POOL_SIZE = 3;
+    private static final int MAX_POOL_SIZE = 15;
+    private static final int IDLE_CONNECTION_TEST_PERIOD = 0;
+    private static final int MAX_IDLE_TIME = 0;
+    private static final int PROPERTY_CYCLE = 0;
+    private static final int ACQUIRE_INCREMENT = 3;
+    private static final int ACQUIRE_RETRY_ATTEMPTS = 30;
+    private static final int ACQUIRE_RETRY_DELAY = 1000;
+    private static final int CHECKOUT_TIMEOUT = 0;
+    private static final int MAX_ADMINISTRATIVE_TASK_TIME = 0;
+    private static final int MAX_IDLE_TIME_EXCESS_CONNECTIONS = 0;
+    private static final int MAX_CONNECTION_AGE = 0;
+    private static final int UNRETURNED_CONNECTION_TIMEOUT = 0;
+    private static final int STATEMENT_CACHE_NUM_DEFERRED_CLOSE_THREADS = 0;
+    private static final boolean BREAK_AFTER_ACQUIRE_FAILURE = false;
+    private static final boolean TEST_CONNECTION_ON_CHECKOUT = false;
+    private static final boolean TEST_CONNECTION_ON_CHECKIN = false;
+    private static final boolean AUTO_COMMIT_ON_CLOSE = false;
+    private static final boolean FORCE_IGNORE_UNRESOLVED_TXNS = false;
+    private static final boolean USES_TRADITIONAL_REFLECTIVE_PROXIES = false;
+    private static final boolean DEBUG_UNRETURNED_CONNECTION_STACK_TRACES = false;
+    private static final boolean PRIVILEGE_SPAWNED_THREADS = false;
+    private static final boolean FORCE_USE_NAMED_DRIVER_CLASS = false;
+    private static final boolean FORCE_SYNCHRONOUS_CHECKINS = false;
+    private static final int NUM_HELPER_THREADS = 3;
+    private static final String AUTOMATIC_TEST_TABLE = null;
+    private static final String CONNECTION_CUSTOMIZER_CLASS_NAME = null;
+    private static final String CONNECTION_TESTER_CLASS_NAME = "com.mchange.v2.c3p0.impl.DefaultConnectionTester";
+    private static final String CONTEXT_CLASS_LOADER_SOURCE = "caller";
+    private static final String DRIVER_CLASS = null;
+    private static final String JDBC_URL = null;
+    private static final String OVERRIDE_DEFAULT_USER = null;
+    private static final String OVERRIDE_DEFAULT_PASSWORD = null;
+    private static final String PASSWORD = null;
+    private static final String PREFERRED_TEST_QUERY = null;
+    private static final String FACTORY_CLASS_LOCATION = null;
+    private static final String USER_OVERRIDES_AS_STRING = null;
+    private static final String USER = null;
+    private static final String DATA_SOURCE_NAME = null;
+    private static final Map EXTENSIONS = Collections.emptyMap();
+    private static final Set KNOWN_PROPERTIES;
+
+    static 
+    {
+        Method methods[] = com/mchange/v2/c3p0/impl/C3P0Defaults.getMethods();
+        Set s = new HashSet();
+        int i = 0;
+        for(int len = methods.length; i < len; i++)
+        {
+            Method m = methods[i];
+            if(Modifier.isStatic(m.getModifiers()) && m.getParameterTypes().length == 0)
+                s.add(m.getName());
+        }
+
+        KNOWN_PROPERTIES = Collections.unmodifiableSet(s);
+    }
+}
+
+
+
+
+//PropertyChangeSupport
+package java.beans;
+import java.io.Serializable;
+import java.io.ObjectStreamField;
+import java.io.ObjectOutputStream;
+import java.io.ObjectInputStream;
+import java.io.IOException;
+import java.util.Hashtable;
+import java.util.Map.Entry;
+
+/**
+ * This is a utility class that can be used by beans that support bound
+ * properties.  It manages a list of listeners and dispatches
+ * {@link PropertyChangeEvent}s to them.  You can use an instance of this class
+ * as a member field of your bean and delegate these types of work to it.
+ * The {@link PropertyChangeListener} can be registered for all properties
+ * or for a property specified by name.
+ * <p>
+ * Here is an example of {@code PropertyChangeSupport} usage that follows
+ * the rules and recommendations laid out in the JavaBeans&trade; specification:
+ * <pre>
+ * public class MyBean {
+ *     private final PropertyChangeSupport pcs = new PropertyChangeSupport(this);
+ *
+ *     public void addPropertyChangeListener(PropertyChangeListener listener) {
+ *         this.pcs.addPropertyChangeListener(listener);
+ *     }
+ *
+ *     public void removePropertyChangeListener(PropertyChangeListener listener) {
+ *         this.pcs.removePropertyChangeListener(listener);
+ *     }
+ *
+ *     private String value;
+ *
+ *     public String getValue() {
+ *         return this.value;
+ *     }
+ *
+ *     public void setValue(String newValue) {
+ *         String oldValue = this.value;
+ *         this.value = newValue;
+ *         this.pcs.firePropertyChange("value", oldValue, newValue);
+ *     }
+ *
+ *     [...]
+ * }
+ * </pre>
+ * <p>
+ * A {@code PropertyChangeSupport} instance is thread-safe.
+ * <p>
+ * This class is serializable.  When it is serialized it will save
+ * (and restore) any listeners that are themselves serializable.  Any
+ * non-serializable listeners will be skipped during serialization.
+ *
+ * @see VetoableChangeSupport
+ */
+public class PropertyChangeSupport implements Serializable {
+    private PropertyChangeListenerMap map = new PropertyChangeListenerMap();
+
+    /**
+     * Constructs a <code>PropertyChangeSupport</code> object.
+     *
+     * @param sourceBean  The bean to be given as the source for any events.
+     */
+    public PropertyChangeSupport(Object sourceBean) {
+        if (sourceBean == null) {
+            throw new NullPointerException();
+        }
+        source = sourceBean;
+    }
+
+    /**
+     * Add a PropertyChangeListener to the listener list.
+     * The listener is registered for all properties.
+     * The same listener object may be added more than once, and will be called
+     * as many times as it is added.
+     * If <code>listener</code> is null, no exception is thrown and no action
+     * is taken.
+     *
+     * @param listener  The PropertyChangeListener to be added
+     */
+    public void addPropertyChangeListener(PropertyChangeListener listener) {
+        if (listener == null) {
+            return;
+        }
+        if (listener instanceof PropertyChangeListenerProxy) {
+            PropertyChangeListenerProxy proxy =
+                   (PropertyChangeListenerProxy)listener;
+            // Call two argument add method.
+            addPropertyChangeListener(proxy.getPropertyName(),
+                                      proxy.getListener());
+        } else {
+            this.map.add(null, listener);
+        }
+    }
+}
+//Collections
+    /**
+     * Returns the empty map (immutable).  This map is serializable.
+     *
+     * <p>This example illustrates the type-safe way to obtain an empty set:
+     * <pre>
+     *     Map&lt;String, Date&gt; s = Collections.emptyMap();
+     * </pre>
+     * Implementation note:  Implementations of this method need not
+     * create a separate <tt>Map</tt> object for each call.   Using this
+     * method is likely to have comparable cost to using the like-named
+     * field.  (Unlike this method, the field does not provide type safety.)
+     *
+     * @see #EMPTY_MAP
+     * @since 1.5
+     */
+    @SuppressWarnings("unchecked")
+    public static final <K,V> Map<K,V> emptyMap() {
+        return (Map<K,V>) EMPTY_MAP;
+    }
+     /**
+     * Returns an unmodifiable view of the specified set.  This method allows
+     * modules to provide users with "read-only" access to internal sets.
+     * Query operations on the returned set "read through" to the specified
+     * set, and attempts to modify the returned set, whether direct or via its
+     * iterator, result in an <tt>UnsupportedOperationException</tt>.<p>
+     *
+     * The returned set will be serializable if the specified set
+     * is serializable.
+     *
+     * @param  s the set for which an unmodifiable view is to be returned.
+     * @return an unmodifiable view of the specified set.
+     */
+    public static <T> Set<T> unmodifiableSet(Set<? extends T> s) {
+        return new UnmodifiableSet<>(s);
+    }
+    //Class
+/**
+     * Determines if the class or interface represented by this
+     * {@code Class} object is either the same as, or is a superclass or
+     * superinterface of, the class or interface represented by the specified
+     * {@code Class} parameter. It returns {@code true} if so;
+     * otherwise it returns {@code false}. If this {@code Class}
+     * object represents a primitive type, this method returns
+     * {@code true} if the specified {@code Class} parameter is
+     * exactly this {@code Class} object; otherwise it returns
+     * {@code false}.
+     *
+     * <p> Specifically, this method tests whether the type represented by the
+     * specified {@code Class} parameter can be converted to the type
+     * represented by this {@code Class} object via an identity conversion
+     * or via a widening reference conversion. See <em>The Java Language
+     * Specification</em>, sections 5.1.1 and 5.1.4 , for details.
+     *
+     * @param cls the {@code Class} object to be checked
+     * @return the {@code boolean} value indicating whether objects of the
+     * type {@code cls} can be assigned to objects of this class
+     * @exception NullPointerException if the specified Class parameter is
+     *            null.
+     * @since JDK1.1
+     */
+    public native boolean isAssignableFrom(Class<?> cls);

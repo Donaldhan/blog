@@ -1,0 +1,10 @@
+//初始化数据库元数据信息
+ //private DatabaseMetaData dbmd;
+dbmd = getMetaData(false, false);
+   private DatabaseMetaData getMetaData(boolean checkClosed, boolean checkForInfoSchema)
+        throws SQLException
+    {
+        if(checkClosed)
+            checkClosed();
+        return DatabaseMetaData.getInstance(this, database, checkForInfoSchema);
+    }

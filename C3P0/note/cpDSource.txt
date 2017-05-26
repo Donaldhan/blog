@@ -1,0 +1,1652 @@
+ C3P0 ComboPooledDataSource初始化：[url]http://donald-draper.iteye.com/admin/blogs/2343522[/url]
+ C3P0 DriverManagerDataSource初始化:[url]http://donald-draper.iteye.com/admin/blogs/2343564[/url]
+ WrapperConnectionPoolDataSource初始化:http://donald-draper.iteye.com/admin/blogs/2345008
+在C3p0构建时，有驱动相关信息及数据库连接池相关的属性设置，及连接的获取，今天我们先来看一下，
+驱动相关信息及数据库连接池相关的属性设置，在连接的获取。
+从下面几句开始,
+cpDSource = new ComboPooledDataSource();
+//设置DriverManagerDataSource驱动相关信息
+cpDSource.setDriverClass(props.getProperty("driver"));
+cpDSource.setJdbcUrl(props.getProperty("url"));
+cpDSource.setUser(props.getProperty("user"));
+cpDSource.setPassword(props.getProperty("password"));
+//AbstractComboPooledDataSource的两个关键内部成员DriverManagerDataSource，WrapperConnectionPoolDataSource
+public AbstractComboPooledDataSource(boolean autoregister)
+    {
+        //
+        super(autoregister);
+	//新建驱动数据源管理器
+        dmds = new DriverManagerDataSource();
+	//新建数据库连接池
+        wcpds = new WrapperConnectionPoolDataSource();
+	//设置数据连接池的数据源驱动管理器
+        wcpds.setNestedDataSource(dmds);
+        try
+        {
+            setConnectionPoolDataSource(wcpds);
+        }
+        catch(PropertyVetoException e)
+        {
+            logger.log(MLevel.WARNING, "Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet!", e);
+            throw new RuntimeException((new StringBuilder()).append("Hunh??? This can't happen. We haven't set up any listeners to veto the property change yet! ").append(e).toString());
+        }
+        setUpPropertyEvents();
+    }
+}
+//设置driverClass
+public void setDriverClass(String driverClass)
+        throws PropertyVetoException
+    {
+        dmds.setDriverClass(driverClass);
+    }
+ //设置jdbcUrl
+ public void setJdbcUrl(String jdbcUrl)
+    {
+        if(diff(dmds.getJdbcUrl(), jdbcUrl))
+        {
+            dmds.setJdbcUrl(jdbcUrl);
+            resetPoolManager(false);
+        }
+    }
+   //设置user
+    public void setUser(String user)
+    {
+        if(diff(dmds.getUser(), user))
+        {
+            dmds.setUser(user);
+            resetPoolManager(false);
+        }
+    }
+    //设置password
+    public void setPassword(String password)
+    {
+        if(diff(dmds.getPassword(), password))
+        {
+            dmds.setPassword(password);
+            resetPoolManager(false);
+        }
+    }
+//设置WrapperConnectionPoolDataSource相关属性
+cpDSource.setInitialPoolSize(5);
+cpDSource.setMaxPoolSize(30);
+cpDSource.setMinPoolSize(5);
+cpDSource.setMaxStatements(100);
+cpDSource.setIdleConnectionTestPeriod(60);
+cpDSource.setBreakAfterAcquireFailure(false);
+cpDSource.setAcquireRetryAttempts(30);
+cpDSource.setTestConnectionOnCheckout(false);
+ //设置连接失败尝试连接数
+ public void setAcquireRetryAttempts(int acquireRetryAttempts)
+    {
+        if(diff(wcpds.getAcquireRetryAttempts(), acquireRetryAttempts))
+        {
+            wcpds.setAcquireRetryAttempts(acquireRetryAttempts);
+            resetPoolManager(false);
+        }
+    }
+ 
+    public int getAcquireRetryDelay()
+    {
+        return wcpds.getAcquireRetryDelay();
+    }
+
+    public void setAcquireRetryDelay(int acquireRetryDelay)
+    {
+        if(diff(wcpds.getAcquireRetryDelay(), acquireRetryDelay))
+        {
+            wcpds.setAcquireRetryDelay(acquireRetryDelay);
+            resetPoolManager(false);
+        }
+    }
+
+    public boolean isAutoCommitOnClose()
+    {
+        return wcpds.isAutoCommitOnClose();
+    }
+    //设置是否自动提交
+    public void setAutoCommitOnClose(boolean autoCommitOnClose)
+    {
+        if(diff(wcpds.isAutoCommitOnClose(), autoCommitOnClose))
+        {
+            wcpds.setAutoCommitOnClose(autoCommitOnClose);
+            resetPoolManager(false);
+        }
+    }
+    
+    public int getInitialPoolSize()
+    {
+        return wcpds.getInitialPoolSize();
+    }
+    //连接池初始化大小
+    public void setInitialPoolSize(int initialPoolSize)
+    {
+        if(diff(wcpds.getInitialPoolSize(), initialPoolSize))
+        {
+            wcpds.setInitialPoolSize(initialPoolSize);
+            resetPoolManager(false);
+        }
+    }
+
+    public int getMaxIdleTime()
+    {
+        return wcpds.getMaxIdleTime();
+    }
+   //maxIdleTime
+    public void setMaxIdleTime(int maxIdleTime)
+    {
+        if(diff(wcpds.getMaxIdleTime(), maxIdleTime))
+        {
+            wcpds.setMaxIdleTime(maxIdleTime);
+            resetPoolManager(false);
+        }
+    }
+    //maxPoolSize
+    public void setMaxPoolSize(int maxPoolSize)
+    {
+        if(diff(wcpds.getMaxPoolSize(), maxPoolSize))
+        {
+            wcpds.setMaxPoolSize(maxPoolSize);
+            resetPoolManager(false);
+        }
+    }
+   //maxStatements
+    public void setMaxStatements(int maxStatements)
+    {
+        if(diff(wcpds.getMaxStatements(), maxStatements))
+        {
+            wcpds.setMaxStatements(maxStatements);
+            resetPoolManager(false);
+        }
+    }
+从上面可以看出cpDSource初始化driver相关属性，是初始化数据源驱动管理器DriverManagerDataSource
+的属性；初始化poolConnection相关属性，是初始化数据库连接池包装类WrapperConnectionPoolDataSource的属性。
+
+再看连接的获取，从下面一句开始，
+con = cpDSource.getConnection();
+此方法在ComboPooledDataSource和其父类中都没，追溯到AbstractComboPooledDataSource的
+父类AbstractPoolBackedDataSource
+//AbstractPoolBackedDataSource
+public abstract class AbstractPoolBackedDataSource extends PoolBackedDataSourceBase
+    implements PooledDataSource
+{
+    public Connection getConnection()
+        throws SQLException
+    {
+         //获取数据库连接池管理器
+        PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+	//从数据库连接池，返回数据库连接
+        return pc.getConnection();
+    }
+}
+先看获取数据库连接池管理器
+ //获取数据库连接池管理器
+ PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+    
+    //获取数据库连接池管理器
+    private synchronized C3P0PooledConnectionPoolManager getPoolManager()
+        throws SQLException
+    {
+        if(poolManager == null)
+        {
+	   //获取数据源数据库连接池
+            ConnectionPoolDataSource cpds = assertCpds();
+	    //构建数据库连接池管理器
+            poolManager = new C3P0PooledConnectionPoolManager(cpds, null, null, getNumHelperThreads(), getIdentityToken(), getDataSourceName());
+            if(logger.isLoggable(MLevel.INFO))
+                logger.info((new StringBuilder()).append("Initializing c3p0 pool... ").append(toString(true)).toString());
+        }
+        return poolManager;
+    }
+    //确定数据源数据库连接池
+     private synchronized ConnectionPoolDataSource assertCpds()
+        throws SQLException
+    {
+        if(is_closed)
+            throw new SQLException((new StringBuilder()).append(this).append(" has been closed() -- you can no longer use it.").toString());
+       //获取数据源数据库连接池
+	ConnectionPoolDataSource out = getConnectionPoolDataSource();
+        if(out == null)
+            throw new SQLException("Attempted to use an uninitialized PoolBackedDataSource. Please call setConnectionPoolDataSource( ... ) to initialize.");
+        else
+            return out;
+    }
+//PoolBackedDataSourceBase
+public class PoolBackedDataSourceBase extends IdentityTokenResolvable
+    implements Referenceable, Serializable
+{
+   //获取数据源数据库连接池
+public synchronized ConnectionPoolDataSource getConnectionPoolDataSource()
+    {
+        return connectionPoolDataSource;
+    }
+   
+    public synchronized void setConnectionPoolDataSource(ConnectionPoolDataSource connectionPoolDataSource)
+        throws PropertyVetoException
+    {
+        ConnectionPoolDataSource oldVal = this.connectionPoolDataSource;
+        if(!eqOrBothNull(oldVal, connectionPoolDataSource))
+            vcs.fireVetoableChange("connectionPoolDataSource", oldVal, connectionPoolDataSource);
+        this.connectionPoolDataSource = connectionPoolDataSource;
+        if(!eqOrBothNull(oldVal, connectionPoolDataSource))
+            pcs.firePropertyChange("connectionPoolDataSource", oldVal, connectionPoolDataSource);
+    }
+}
+这个数据源数据连接池是什么呢？还记得我们前面，有讲过AbstractComboPooledDataSource的构造有这么一段
+public AbstractComboPooledDataSource(boolean autoregister)
+    {
+        super(autoregister);
+        dmds = new DriverManagerDataSource();
+        wcpds = new WrapperConnectionPoolDataSource();
+        wcpds.setNestedDataSource(dmds);
+        try
+        {
+	    //设置数据源数据库连接池为WrapperConnectionPoolDataSource
+            setConnectionPoolDataSource(wcpds);
+        }
+    }
+现在回到getPoolManager的构建数据库连接池管理器这一句
+poolManager = new C3P0PooledConnectionPoolManager(cpds, null, null, getNumHelperThreads(), getIdentityToken(), getDataSourceName());
+//C3P0PooledConnectionPoolManager
+public final class C3P0PooledConnectionPoolManager
+{
+    private static final boolean POOL_EVENT_SUPPORT = false;
+    private static final CoalesceChecker COALESCE_CHECKER;
+    static final Coalescer COALESCER;
+    static final int DFLT_NUM_TASK_THREADS_PER_DATA_SOURCE = 3;
+    ThreadPoolAsynchronousRunner taskRunner;//
+    ThreadPoolAsynchronousRunner deferredStatementDestroyer;
+    Timer timer;
+    ResourcePoolFactory rpfact;
+    Map authsToPools;
+    final ConnectionPoolDataSource cpds;
+    final Map propNamesToReadMethods;
+    final Map flatPropertyOverrides;
+    final Map userOverrides;
+    final DbAuth defaultAuth;
+    final String parentDataSourceIdentityToken;
+    final String parentDataSourceName;
+    int num_task_threads;
+    static 
+    {
+        COALESCE_CHECKER = IdentityTokenizedCoalesceChecker.INSTANCE;
+        COALESCER = CoalescerFactory.createCoalescer(COALESCE_CHECKER, true, false);
+    }
+    //初始化C3P0PooledConnectionPoolManager，cpds为WrapperConnectionPoolDataSource
+    public C3P0PooledConnectionPoolManager(ConnectionPoolDataSource cpds, Map flatPropertyOverrides, Map forceUserOverrides, int num_task_threads, String parentDataSourceIdentityToken, String parentDataSourceName)
+        throws SQLException
+    {
+        //任务线程数
+        this.num_task_threads = 3;
+        try
+        {
+            this.cpds = cpds;//初始化数据库连接池
+            this.flatPropertyOverrides = flatPropertyOverrides;
+            this.num_task_threads = num_task_threads;
+            this.parentDataSourceIdentityToken = parentDataSourceIdentityToken;
+            this.parentDataSourceName = parentDataSourceName;
+            DbAuth auth = null;
+            if(flatPropertyOverrides != null)
+            {
+                String overrideUser = (String)flatPropertyOverrides.get("overrideDefaultUser");
+                String overridePassword = (String)flatPropertyOverrides.get("overrideDefaultPassword");
+                if(overrideUser == null)
+                {
+                    overrideUser = (String)flatPropertyOverrides.get("user");
+                    overridePassword = (String)flatPropertyOverrides.get("password");
+                }
+                if(overrideUser != null)
+                    auth = new DbAuth(overrideUser, overridePassword);
+            }
+            if(auth == null)
+	        //初始化数据库验证
+                auth = C3P0ImplUtils.findAuth(cpds);
+            defaultAuth = auth;
+            Map tmp = new HashMap();
+            BeanInfo bi = Introspector.getBeanInfo(cpds.getClass());
+            PropertyDescriptor pds[] = bi.getPropertyDescriptors();
+            PropertyDescriptor pd = null;
+            int i = 0;
+            for(int len = pds.length; i < len; i++)
+            {
+                pd = pds[i];
+                String name = pd.getName();
+                Method m = pd.getReadMethod();
+                if(m != null)
+                    tmp.put(name, m);
+            }
+
+            propNamesToReadMethods = tmp;
+            if(forceUserOverrides == null)
+            {
+                Method uom = (Method)propNamesToReadMethods.get("userOverridesAsString");
+                if(uom != null)
+                {
+                    String uoas = (String)uom.invoke(cpds, (Object[])null);
+                    Map uo = C3P0ImplUtils.parseUserOverridesAsString(uoas);
+                    userOverrides = uo;
+                } else
+                {
+                    userOverrides = Collections.EMPTY_MAP;
+                }
+            } else
+            {
+                userOverrides = forceUserOverrides;
+            }
+
+            poolsInit();
+        }
+        catch(Exception e)
+        {
+            logger.log(MLevel.FINE, null, e);
+            throw SqlUtils.toSQLException(e);
+        }
+    }
+}
+//连接池初始化
+private void poolsInit()
+    {
+        boolean privilege_spawned_threads = getPrivilegeSpawnedThreads();
+        String contextClassLoaderSource = getContextClassLoaderSource();
+        class _cls1ContextClassLoaderPoolsInitThread extends Thread
+        {
+
+            public void run()
+            {
+	        //
+                maybePrivilegedPoolsInit(privilege_spawned_threads);
+            }
+
+            final boolean val$privilege_spawned_threads;
+            final C3P0PooledConnectionPoolManager this$0;
+
+            _cls1ContextClassLoaderPoolsInitThread(boolean flag)
+            {
+                this.this$0 = C3P0PooledConnectionPoolManager.this;
+                privilege_spawned_threads = flag;
+                super();
+                setContextClassLoader(ccl);
+            }
+        }
+
+        try
+        {
+            if("library".equalsIgnoreCase(contextClassLoaderSource))
+            {
+	        //
+                Thread t = new _cls1ContextClassLoaderPoolsInitThread(privilege_spawned_threads);
+                t.start();
+                t.join();
+            } else
+            if("none".equalsIgnoreCase(contextClassLoaderSource))
+            {
+                Thread t = new _cls1ContextClassLoaderPoolsInitThread(privilege_spawned_threads);
+                t.start();
+                t.join();
+            } else
+            {
+                if(logger.isLoggable(MLevel.WARNING) && !"caller".equalsIgnoreCase(contextClassLoaderSource))
+                    logger.log(MLevel.WARNING, (new StringBuilder()).append("Unknown contextClassLoaderSource: ").append(contextClassLoaderSource).append(" -- should be 'caller', 'library', or 'none'. Using default value 'caller'.").toString());
+                maybePrivilegedPoolsInit(privilege_spawned_threads);
+            }
+        }
+    }
+
+ private void maybePrivilegedPoolsInit(boolean privilege_spawned_threads)
+    {
+        if(privilege_spawned_threads)
+        {
+            PrivilegedAction privilegedPoolsInit = new PrivilegedAction() {
+
+                public Void run()
+                {
+		    //委托给_poolsInit
+                    _poolsInit();
+                    return null;
+                }
+
+                public volatile Object run()
+                {
+                    return run();
+                }
+
+                final C3P0PooledConnectionPoolManager this$0;
+
+            
+            {
+                this.this$0 = C3P0PooledConnectionPoolManager.this;
+                super();
+            }
+            };
+            AccessController.doPrivileged(privilegedPoolsInit);
+        } else
+        {
+            _poolsInit();
+        }
+    }
+    //终于找个了poolsInit的关键，初始化定时任务调度器，及死锁检测线程，及延时死锁检测线程
+    private synchronized void _poolsInit()
+    {
+        String idStr = idString();
+        timer = new Timer((new StringBuilder()).append(idStr).append("-AdminTaskTimer").toString(), true);
+        int matt = getMaxAdministrativeTaskTime();
+	//创建任务线程调度器
+        taskRunner = createTaskRunner(num_task_threads, matt, timer, (new StringBuilder()).append(idStr).append("-HelperThread").toString());
+        int num_deferred_close_threads = getStatementCacheNumDeferredCloseThreads();
+        if(num_deferred_close_threads > 0)
+            deferredStatementDestroyer = createTaskRunner(num_deferred_close_threads, matt, timer, (new StringBuilder()).append(idStr).append("-DeferredStatementDestroyerThread").toString());
+        else
+            deferredStatementDestroyer = null;
+        rpfact = BasicResourcePoolFactory.createNoEventSupportInstance(taskRunner, timer);
+        authsToPools = new HashMap();
+    }
+从上面可以看出getPoolManager()实际上，是初始化数据库连接池管理器C3P0PooledConnectionPoolManager，
+初始化C3P0PooledConnectionPoolManager的ConnectionPoolDataSource（WrapperConnectionPoolDataSource）及
+定时任务调度器，及死锁检测线程，及延时死锁检测线程。
+
+回到，获取数据库连接池这一句的第二点getPool()
+PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+从上面可以看到getPoolManager()返回的是C3P0PooledConnectionPoolManager，
+public C3P0PooledConnectionPool getPool()
+        throws SQLException
+    {
+        return getPool(defaultAuth);
+    }
+public synchronized C3P0PooledConnectionPool getPool(DbAuth auth)
+        throws SQLException
+    {
+        //Map authsToPools;Map<DbAuth,C3P0PooledConnectionPool>
+        C3P0PooledConnectionPool out = (C3P0PooledConnectionPool)authsToPools.get(auth);
+        if(out == null)
+        {
+	    //创建数据库连接池
+            out = createPooledConnectionPool(auth);
+            authsToPools.put(auth, out);
+            if(logger.isLoggable(MLevel.FINE))
+                logger.log(MLevel.FINE, (new StringBuilder()).append("Created new pool for auth, username (masked): '").append(auth.getMaskedUserString()).append("'.").toString());
+        }
+        return out;
+    }
+//创建数据库连接池
+ private C3P0PooledConnectionPool createPooledConnectionPool(DbAuth auth)
+        throws SQLException
+    {
+        String userName = auth.getUser();
+        String automaticTestTable = getAutomaticTestTable(userName);
+        String realTestQuery;
+        if(automaticTestTable != null)
+        {
+            realTestQuery = initializeAutomaticTestTable(automaticTestTable, auth);
+            if(getPreferredTestQuery(userName) != null && logger.isLoggable(MLevel.WARNING))
+                logger.logp(MLevel.WARNING, com/mchange/v2/c3p0/impl/C3P0PooledConnectionPoolManager.getName(), "createPooledConnectionPool", "[c3p0] Both automaticTestTable and preferredTestQuery have been set! Using automaticTestTable, and ignoring preferredTestQuery. Real test query is ''{0}''.", realTestQuery);
+        } else
+        {
+            if(!defaultAuth.equals(auth))
+                ensureFirstConnectionAcquisition(auth);
+            realTestQuery = getPreferredTestQuery(userName);
+        }
+	//创建数据库连接池
+        C3P0PooledConnectionPool out = new C3P0PooledConnectionPool(cpds, auth, getMinPoolSize(userName), getMaxPoolSize(userName), getInitialPoolSize(userName), getAcquireIncrement(userName), getAcquireRetryAttempts(userName), getAcquireRetryDelay(userName), getBreakAfterAcquireFailure(userName), getCheckoutTimeout(userName), getIdleConnectionTestPeriod(userName), getMaxIdleTime(userName), getMaxIdleTimeExcessConnections(userName), getMaxConnectionAge(userName), getPropertyCycle(userName), getUnreturnedConnectionTimeout(userName), getDebugUnreturnedConnectionStackTraces(userName), getForceSynchronousCheckins(userName), getTestConnectionOnCheckout(userName), getTestConnectionOnCheckin(userName), getMaxStatements(userName), getMaxStatementsPerConnection(userName), getConnectionTester(userName), getConnectionCustomizer(userName), realTestQuery, rpfact, taskRunner, deferredStatementDestroyer, parentDataSourceIdentityToken);
+        return out;
+    }
+//C3P0PooledConnectionPool
+public final class C3P0PooledConnectionPool
+{
+    final ResourcePool rp;
+    final ConnectionEventListener cl = new ConnectionEventListenerImpl();
+    final ConnectionTester connectionTester;
+    final GooGooStatementCache scache;
+    final boolean c3p0PooledConnections;
+    final boolean effectiveStatementCache;
+    final int checkoutTimeout;
+    final AsynchronousRunner sharedTaskRunner;
+    final AsynchronousRunner deferredStatementDestroyer;
+    final ThrowableHolderPool thp = new ThrowableHolderPool();
+    final InUseLockFetcher inUseLockFetcher;
+    private static InUseLockFetcher RESOURCE_ITSELF_IN_USE_LOCK_FETCHER = new ResourceItselfInUseLockFetcher();
+    private static InUseLockFetcher C3P0_POOLED_CONNECION_NESTED_LOCK_LOCK_FETCHER = new C3P0PooledConnectionNestedLockLockFetcher();
+ 
+    C3P0PooledConnectionPool(final ConnectionPoolDataSource cpds, final DbAuth auth, int min, int max, int start, int inc, int acq_retry_attempts, 
+            int acq_retry_delay, boolean break_after_acq_failure, int checkoutTimeout, int idleConnectionTestPeriod, int maxIdleTime, int maxIdleTimeExcessConnections, int maxConnectionAge, 
+            int propertyCycle, int unreturnedConnectionTimeout, boolean debugUnreturnedConnectionStackTraces, boolean forceSynchronousCheckins, final boolean testConnectionOnCheckout, final boolean testConnectionOnCheckin, int maxStatements, 
+            int maxStatementsPerConnection, final ConnectionTester connectionTester, final ConnectionCustomizer connectionCustomizer, final String testQuery, ResourcePoolFactory fact, ThreadPoolAsynchronousRunner taskRunner, ThreadPoolAsynchronousRunner deferredStatementDestroyer, 
+            final String parentDataSourceIdentityToken)
+        throws SQLException
+    {
+        try
+        {
+            if(maxStatements > 0 && maxStatementsPerConnection > 0)
+                scache = new DoubleMaxStatementCache(taskRunner, deferredStatementDestroyer, maxStatements, maxStatementsPerConnection);
+            else
+            if(maxStatementsPerConnection > 0)
+                scache = new PerConnectionMaxOnlyStatementCache(taskRunner, deferredStatementDestroyer, maxStatementsPerConnection);
+            else
+            if(maxStatements > 0)
+                scache = new GlobalMaxOnlyStatementCache(taskRunner, deferredStatementDestroyer, maxStatements);
+            else
+                scache = null;
+            this.connectionTester = connectionTester;
+            this.checkoutTimeout = checkoutTimeout;
+            sharedTaskRunner = taskRunner;
+            this.deferredStatementDestroyer = deferredStatementDestroyer;
+            c3p0PooledConnections = cpds instanceof WrapperConnectionPoolDataSource;
+            effectiveStatementCache = c3p0PooledConnections && scache != null;
+	     class _cls1PooledConnectionResourcePoolManager
+                implements com.mchange.v2.resourcepool.ResourcePool.Manager
+            {}
+	    com.mchange.v2.resourcepool.ResourcePool.Manager manager = new _cls1PooledConnectionResourcePoolManager();
+            synchronized(fact)
+            {
+                fact.setMin(min);
+                fact.setMax(max);
+                fact.setStart(start);
+                fact.setIncrement(inc);
+                fact.setIdleResourceTestPeriod(idleConnectionTestPeriod * 1000);
+                fact.setResourceMaxIdleTime(maxIdleTime * 1000);
+                fact.setExcessResourceMaxIdleTime(maxIdleTimeExcessConnections * 1000);
+                fact.setResourceMaxAge(maxConnectionAge * 1000);
+                fact.setExpirationEnforcementDelay(propertyCycle * 1000);
+                fact.setDestroyOverdueResourceTime(unreturnedConnectionTimeout * 1000);
+                fact.setDebugStoreCheckoutStackTrace(debugUnreturnedConnectionStackTraces);
+                fact.setForceSynchronousCheckins(forceSynchronousCheckins);
+                fact.setAcquisitionRetryAttempts(acq_retry_attempts);
+                fact.setAcquisitionRetryDelay(acq_retry_delay);
+                fact.setBreakOnAcquisitionFailure(break_after_acq_failure);
+		//BasicResourcePoolFactory创建资源池BasicResourcePool
+                rp = fact.createPool(manager);
+            }
+     }
+}
+public class BasicResourcePoolFactory extends ResourcePoolFactory
+{
+    int start;
+    int min;
+    int max;
+    int inc;
+    int retry_attempts;
+    int retry_delay;
+    long idle_resource_test_period;
+    long max_age;
+    long max_idle_time;
+    long excess_max_idle_time;
+    long destroy_overdue_resc_time;
+    long expiration_enforcement_delay;
+    boolean break_on_acquisition_failure;
+    boolean debug_store_checkout_stacktrace;
+    boolean force_synchronous_checkins;
+    AsynchronousRunner taskRunner;
+    boolean taskRunner_is_external;
+    RunnableQueue asyncEventQueue;
+    boolean asyncEventQueue_is_external;
+    Timer timer;
+    boolean timer_is_external;
+    int default_num_task_threads;
+    Set liveChildren;
+    //创建资源池BasicResourcePool
+ public synchronized ResourcePool createPool(ResourcePool.Manager mgr)
+        throws ResourcePoolException
+    {
+        if(liveChildren == null)
+            createThreadResources();
+        ResourcePool child = new BasicResourcePool(mgr, start, min, max, inc, retry_attempts, retry_delay, idle_resource_test_period, max_age, max_idle_time, excess_max_idle_time, destroy_overdue_resc_time, expiration_enforcement_delay, break_on_acquisition_failure, debug_store_checkout_stacktrace, force_synchronous_checkins, taskRunner, asyncEventQueue, timer, this);
+        liveChildren.add(child);
+        return child;
+    }
+}
+来看BasicResourcePool的构造
+class BasicResourcePool
+    implements ResourcePool
+{
+    final ResourcePool.Manager mgr;
+    final int start;
+    final int min;
+    final int max;
+    final int inc;
+    final int num_acq_attempts;
+    final int acq_attempt_delay;
+    final long check_idle_resources_delay;
+    final long max_resource_age;
+    final long max_idle_time;
+    final long excess_max_idle_time;
+    final long destroy_unreturned_resc_time;
+    final long expiration_enforcement_delay;
+    final boolean break_on_acquisition_failure;
+    final boolean debug_store_checkout_exceptions;
+    final boolean force_synchronous_checkins;
+    final long pool_start_time = System.currentTimeMillis();
+    final BasicResourcePoolFactory factory;//资源池工厂
+    final AsynchronousRunner taskRunner;
+    final RunnableQueue asyncEventQueue;//异步事件定时任务调度器
+    final ResourcePoolEventSupport rpes;
+    Timer cullAndIdleRefurbishTimer;
+    TimerTask cullTask;
+    TimerTask idleRefurbishTask;
+    HashSet acquireWaiters;//获取连接池等待线程
+    HashSet otherWaiters;
+    int pending_acquires;
+    int pending_removes;
+    int target_pool_size;
+    HashMap managed;
+    //数据库连接资源池，初始化时从WrapperConnectionPoolDataSource获取连接，添加到unused
+    //中LinkedList<Connection>
+    LinkedList unused;
+    HashSet excluded;
+    Map formerResources;
+    Set idleCheckResources;
+    boolean force_kill_acquires;
+    boolean broken;
+    long failed_checkins;
+    long failed_checkouts;
+    long failed_idle_tests;
+    Throwable lastCheckinFailure;
+    Throwable lastCheckoutFailure;
+    Throwable lastIdleTestFailure;
+    Throwable lastResourceTestFailure;
+    Throwable lastAcquisitionFailiure;
+    Object exampleResource;
+    private static final int NO_DECREMENT = 0;
+    private static final int DECREMENT_ON_SUCCESS = 1;
+    private static final int DECREMENT_WITH_CERTAINTY = 2;
+   public BasicResourcePool(ResourcePool.Manager mgr, int start, int min, int max, int inc, int num_acq_attempts, int acq_attempt_delay, 
+            long check_idle_resources_delay, long max_resource_age, long max_idle_time, long excess_max_idle_time, long destroy_unreturned_resc_time, long expiration_enforcement_delay, boolean break_on_acquisition_failure, boolean debug_store_checkout_exceptions, 
+            boolean force_synchronous_checkins, AsynchronousRunner taskRunner, RunnableQueue asyncEventQueue, Timer cullAndIdleRefurbishTimer, BasicResourcePoolFactory factory)
+        throws ResourcePoolException
+    {
+        acquireWaiters = new HashSet();
+        otherWaiters = new HashSet();
+        managed = new HashMap();
+        unused = new LinkedList();
+        excluded = new HashSet();
+        formerResources = new WeakHashMap();
+        idleCheckResources = new HashSet();
+        force_kill_acquires = false;
+        broken = false;
+        failed_checkins = 0L;
+        failed_checkouts = 0L;
+        failed_idle_tests = 0L;
+        lastCheckinFailure = null;
+        lastCheckoutFailure = null;
+        lastIdleTestFailure = null;
+        lastResourceTestFailure = null;
+        lastAcquisitionFailiure = null;
+        try
+        {
+            if(min > max)
+            {
+                if(logger.isLoggable(MLevel.WARNING))
+                    logger.log(MLevel.WARNING, (new StringBuilder()).append("Bad pool size config, min ").append(min).append(" > max ").append(max).append(". Using ").append(max).append(" as min.").toString());
+                min = max;
+            }
+            if(start < min)
+            {
+                if(logger.isLoggable(MLevel.WARNING))
+                    logger.log(MLevel.WARNING, (new StringBuilder()).append("Bad pool size config, start ").append(start).append(" < min ").append(min).append(". Using ").append(min).append(" as start.").toString());
+                start = min;
+            }
+            if(start > max)
+            {
+                if(logger.isLoggable(MLevel.WARNING))
+                    logger.log(MLevel.WARNING, (new StringBuilder()).append("Bad pool size config, start ").append(start).append(" > max ").append(max).append(". Using ").append(max).append(" as start.").toString());
+                start = max;
+            }
+            this.mgr = mgr;
+            this.start = start;
+            this.min = min;
+            this.max = max;
+            this.inc = inc;
+            this.num_acq_attempts = num_acq_attempts;
+            this.acq_attempt_delay = acq_attempt_delay;
+            this.check_idle_resources_delay = check_idle_resources_delay;
+            this.max_resource_age = max_resource_age;
+            this.max_idle_time = max_idle_time;
+            this.excess_max_idle_time = excess_max_idle_time;
+            this.destroy_unreturned_resc_time = destroy_unreturned_resc_time;
+            this.break_on_acquisition_failure = break_on_acquisition_failure;
+            this.debug_store_checkout_exceptions = debug_store_checkout_exceptions && destroy_unreturned_resc_time > 0L;
+            this.force_synchronous_checkins = force_synchronous_checkins;
+            this.taskRunner = taskRunner;
+            this.asyncEventQueue = asyncEventQueue;
+            this.cullAndIdleRefurbishTimer = cullAndIdleRefurbishTimer;
+            this.factory = factory;
+            pending_acquires = 0;
+            pending_removes = 0;
+            target_pool_size = this.start;
+            if(asyncEventQueue != null)
+	        //资源库事件辅助工具-针对连接获取事件等
+                rpes = new ResourcePoolEventSupport(this);
+            else
+                rpes = null;
+	    //初始化连接资源
+            ensureStartResources();
+            if(mustEnforceExpiration())
+            {
+                if(expiration_enforcement_delay <= 0L)
+                    this.expiration_enforcement_delay = automaticExpirationEnforcementDelay();
+                else
+                    this.expiration_enforcement_delay = expiration_enforcement_delay;
+                cullTask = new CullTask();
+                cullAndIdleRefurbishTimer.schedule(cullTask, minExpirationTime(), this.expiration_enforcement_delay);
+            } else
+            {
+                this.expiration_enforcement_delay = expiration_enforcement_delay;
+            }
+            if(check_idle_resources_delay > 0L)
+            {
+                idleRefurbishTask = new CheckIdleResourcesTask();
+                cullAndIdleRefurbishTimer.schedule(idleRefurbishTask, check_idle_resources_delay, check_idle_resources_delay);
+            }
+            if(logger.isLoggable(MLevel.FINER))
+                logger.finer((new StringBuilder()).append(this).append(" config: [start -> ").append(this.start).append("; min -> ").append(this.min).append("; max -> ").append(this.max).append("; inc -> ").append(this.inc).append("; num_acq_attempts -> ").append(this.num_acq_attempts).append("; acq_attempt_delay -> ").append(this.acq_attempt_delay).append("; check_idle_resources_delay -> ").append(this.check_idle_resources_delay).append("; max_resource_age -> ").append(this.max_resource_age).append("; max_idle_time -> ").append(this.max_idle_time).append("; excess_max_idle_time -> ").append(this.excess_max_idle_time).append("; destroy_unreturned_resc_time -> ").append(this.destroy_unreturned_resc_time).append("; expiration_enforcement_delay -> ").append(this.expiration_enforcement_delay).append("; break_on_acquisition_failure -> ").append(this.break_on_acquisition_failure).append("; debug_store_checkout_exceptions -> ").append(this.debug_store_checkout_exceptions).append("; force_synchronous_checkins -> ").append(this.force_synchronous_checkins).append("]").toString());
+        }
+        catch(Exception e)
+        {
+            throw ResourcePoolUtils.convertThrowable(e);
+        }
+    }
+ //初始化连接资源
+ensureStartResources();
+ private void ensureStartResources()
+    {
+        recheckResizePool();
+    }
+    //初始化线程池
+     private synchronized void recheckResizePool()
+    {
+        _recheckResizePool();
+    }
+    //填充线程池
+     private void _recheckResizePool()
+    {
+        if(!$assertionsDisabled && !Thread.holdsLock(this))
+            throw new AssertionError();
+        if(!broken)
+        {
+            int msz = managed.size();
+            int shrink_count;
+            int expand_count;
+            if((shrink_count = msz - pending_removes - target_pool_size) > 0)
+                shrinkPool(shrink_count);
+            else
+            if((expand_count = target_pool_size - (msz + pending_acquires)) > 0)
+	        //委托给expandPool
+                expandPool(expand_count);
+        }
+    }
+在来看这个方法expandPool
+    //初始化线程池
+    private void expandPool(int count)
+    {
+        if(!$assertionsDisabled && !Thread.holdsLock(this))
+            throw new AssertionError();
+        if(USE_SCATTERED_ACQUIRE_TASK)
+        {
+            for(int i = 0; i < count; i++)
+                taskRunner.postRunnable(new ScatteredAcquireTask());
+
+        } else
+        {
+            for(int i = 0; i < count; i++)
+	        //新建数据连接池获取线程AcquireTask，并交由taskRunner去调度
+                taskRunner.postRunnable(new AcquireTask());
+
+        }
+    }
+在来看AcquireTask
+//数据库连接获取任务线程
+//AcquireTask
+class AcquireTask
+        implements Runnable
+    {
+
+        public void run()
+        {
+            boolean decremented;
+            boolean recheck;
+            decremented = false;
+            recheck = false;
+            Exception lastException = null;
+            for(int i = 0; shouldTry(i);)
+                try
+                {
+                    if(i > 0)
+                        Thread.sleep(acq_attempt_delay);
+                    if(goodAttemptNumber(i + 1))
+                    {
+		        //关键在这个，获取连接
+                        doAcquireAndDecrementPendingAcquiresWithinLockOnSuccess();
+                        decremented = true;
+                    } else
+                    {
+                        decremented = true;
+                        recheck = true;
+                        doAcquireAndDecrementPendingAcquiresWithinLockAlways();
+                    }
+                    success = true;
+                    continue;
+                }                
+            .....
+            if(!decremented)
+                decrementPendingAcquires();
+        }
+        boolean success;
+        final BasicResourcePool this$0;
+
+        public AcquireTask()
+        {
+            this.this$0 = BasicResourcePool.this;
+            super();
+            success = false;
+            incrementPendingAcquires();
+        }
+}
+//BasicResourcePool
+//关键在这个，获取连接
+doAcquireAndDecrementPendingAcquiresWithinLockOnSuccess();
+ private void doAcquireAndDecrementPendingAcquiresWithinLockOnSuccess()
+        throws Exception
+    {
+        doAcquire(1);
+    }
+
+    private void doAcquireAndDecrementPendingAcquiresWithinLockAlways()
+        throws Exception
+    {
+        doAcquire(2);
+    }
+
+    private void doAcquire(int decrement_policy)
+        throws Exception
+    {
+        Object resc;
+        if(!$assertionsDisabled && Thread.holdsLock(this))
+            throw new AssertionError();
+	//获取连接池，这个有点深，在C3P0PooledConnectionPool的构造方法中，
+	//资源池工厂创建资源池，其中mgr为C3P0PooledConnectionPool构造方法中的
+	//内部类
+        resc = mgr.acquireResource();
+        boolean destroy = false;
+        BasicResourcePool basicresourcepool = this;
+        JVM INSTR monitorenter ;
+        int msz = managed.size();
+        if(!broken && msz < target_pool_size)
+	//将数据库连接资源添加到BasicResourcePool的数据源数据连接池中unused，LinkedList<Connection>
+            assimilateResource(resc);
+        else
+            destroy = true;
+        if(decrement_policy == 1)
+            _decrementPendingAcquires();
+        if(decrement_policy == 2)
+            _decrementPendingAcquires();
+        break MISSING_BLOCK_LABEL_108;
+    }
+我们来看这句
+ resc = mgr.acquireResource();
+
+ class _cls1PooledConnectionResourcePoolManager
+                implements com.mchange.v2.resourcepool.ResourcePool.Manager
+            {
+
+                public Object acquireResource()
+                    throws Exception
+                {
+                    PooledConnection out;
+                    Exception e;
+                    if(connectionCustomizer == null)
+                        out = auth.equals(C3P0ImplUtils.NULL_AUTH) ? cpds.getPooledConnection() : cpds.getPooledConnection(auth.getUser(), auth.getPassword());
+                    else
+                        try
+                        {
+			     //看到这句是不是想到了什么，他妈的终于和WrapperConnectionPoolDataSourceBase
+			     //连接起来了，这是我们前面讲的
+                            WrapperConnectionPoolDataSourceBase wcpds = (WrapperConnectionPoolDataSourceBase)cpds;
+                            //从数据库连接池包装类，获取数据库连接池
+                            out = auth.equals(C3P0ImplUtils.NULL_AUTH) ? wcpds.getPooledConnection(connectionCustomizer, parentDataSourceIdentityToken) : wcpds.getPooledConnection(auth.getUser(), auth.getPassword(), connectionCustomizer, parentDataSourceIdentityToken);
+                        }
+                    Connection con;
+                    if(scache != null)
+                        if(c3p0PooledConnections)
+                            ((AbstractC3P0PooledConnection)out).initStatementCache(scache);
+                        else
+                            C3P0PooledConnectionPool.logger.warning("StatementPooling not implemented for external (non-c3p0) ConnectionPoolDataSources.");
+                    con = null;
+                    waitMarkPooledConnectionInUse(out);
+		    //从连接池获取连接
+                    con = out.getConnection();
+                    ConnectionUtils.attemptClose(con);
+                    unmarkPooledConnectionInUse(out);
+                    PooledConnection pooledconnection = out;
+                    return pooledconnection;
+                }
+}
+在来看WrapperConnectionPoolDataSource
+//WrapperConnectionPoolDataSource
+//获取数据源连接池
+ public PooledConnection getPooledConnection()
+        throws SQLException
+    {
+        return getPooledConnection((ConnectionCustomizer)null, null);
+    }
+    protected PooledConnection getPooledConnection(ConnectionCustomizer cc, String pdsIdt)
+        throws SQLException
+    {
+        DataSource nds;
+        Connection conn;
+	//获取DriverManagerDataSource
+        nds = getNestedDataSource();
+        if(nds == null)
+            throw new SQLException("No standard DataSource has been set beneath this wrapper! [ nestedDataSource == null ]");
+        conn = null;
+	//委托给DriverManagerDataSource
+        conn = nds.getConnection();
+        return new NewPooledConnection(conn, connectionTester, isAutoCommitOnClose(getUser()), isForceIgnoreUnresolvedTransactions(getUser()), getPreferredTestQuery(getUser()), cc, pdsIdt);
+    }
+在来看DriverManagerDataSource
+//DriverManagerDataSource
+//获取连接
+ public Connection getConnection()
+        throws SQLException
+    {
+        ensureDriverLoaded();
+	//从驱动器，获取连接,不同的驱动返回不同的数据库连接实现
+        Connection out = driver().connect(jdbcUrl, properties);
+        if(out == null)
+            throw new SQLException((new StringBuilder()).append("Apparently, jdbc URL '").append(jdbcUrl).append("' is not valid for the underlying ").append("driver [").append(driver()).append("].").toString());
+        else
+            return out;
+    }
+回到BasicResourcePool的数据库连接获取方法doAcquire的这一句
+//将数据库连接资源添加到BasicResourcePool的数据源数据连接池中unused，LinkedList<Connection>
+assimilateResource(resc);
+ private void assimilateResource(Object resc)
+        throws Exception
+    {
+        if(!$assertionsDisabled && !Thread.holdsLock(this))
+            throw new AssertionError();
+        managed.put(resc, new PunchCard());
+	//将获取数据库连接，添加到BasicResourcePool的unused集合中，
+        unused.add(0, resc);
+        asyncFireResourceAcquired(resc, managed.size(), unused.size(), excluded.size());
+        notifyAll();
+        trace();
+        if(exampleResource == null)
+            exampleResource = resc;
+    }
+自此getPool方法的内容讲解完毕，这段内容有点多，脑栈太深，这里我们总结一下：
+所有的这些都是从这句话开始AbstractPoolBackedDataSource的获取getConnection方法的
+PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+getPoolManager()方法，getPoolManager()实际上，是初始化数据库连接池管理器C3P0PooledConnectionPoolManager，
+初始化C3P0PooledConnectionPoolManager的ConnectionPoolDataSource（WrapperConnectionPoolDataSource）及
+定时任务调度器，及死锁检测线程，及延时死锁检测线程。getPool()方法实际上，首先初始化C3P0PooledConnectionPool
+，在初始化C3P0PooledConnectionPool过程中，通过BasicResourcePoolFactory创建资源池，BasicResourcePool；
+在初始化资源资源池时，根据数据库连接池的大小，创建相应的数据库连接获取线程AcquireTask，并将线程添加到
+ThreadPoolAsynchronousRunner的待调度线程队列pendingTasks，LinkedList<Runnable>中；而数据库连接线程获取
+连接是通过C3P0PooledConnectionPool的内部类_cls1PooledConnectionResourcePoolManager的资源获取方法
+acquireResource，acquireResource实际上是从通过WrapperConnectionPoolDataSource获取数据库连接池NewPooledConnection，
+NewPooledConnection的构造中有一个数据库连接Connection，Connection实际上是通过DriverManagerDataSource调用driver的connect方法获取；
+；AcquireTask获取连接之后，添加到BasicResourcePool的unused，LinkList<PooledConnection>集合中。
+
+回到，AbstractPoolBackedDataSource的获取getConnection方法的这句
+PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+看第三点.checkoutPooledConnection()
+PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+
+//C3P0PooledConnectionPool
+
+public PooledConnection checkoutPooledConnection()
+        throws SQLException
+    {
+        PooledConnection pc;
+        pc = (PooledConnection)checkoutAndMarkConnectionInUse();
+        pc.addConnectionEventListener(cl);
+        return pc;
+    }
+      private Object checkoutAndMarkConnectionInUse()
+        throws TimeoutException, CannotAcquireResourceException, ResourcePoolException, InterruptedException
+    {
+        Object out;
+        boolean success;
+        out = null;
+        success = false;
+        if(success)
+            break; /* Loop/switch isn't completed */
+	//从资源池BasicResourcePool中，获取连接，
+        out = rp.checkoutResource(checkoutTimeout);
+        if(out instanceof AbstractC3P0PooledConnection)
+        {
+            AbstractC3P0PooledConnection acpc = (AbstractC3P0PooledConnection)out;
+            Connection physicalConnection = acpc.getPhysicalConnection();
+            success = tryMarkPhysicalConnectionInUse(physicalConnection);
+        } 
+        return out;
+    }
+//
+BasicResourcePool
+//从资源池获取数据库连接池
+ public Object checkoutResource(long timeout)
+        throws TimeoutException, ResourcePoolException, InterruptedException
+    {
+        Object resc;
+	//委托给prelimCheckoutResource，如何资源池中有数据库连接池，直接返回unused.get（0）
+        resc = prelimCheckoutResource(timeout);
+        boolean refurb = attemptRefurbishResourceOnCheckout(resc);
+	synchronized(this)
+        {
+            if(!refurb)
+            {
+                if(logger.isLoggable(MLevel.FINER))
+                    logger.log(MLevel.FINER, (new StringBuilder()).append("Resource [").append(resc).append("] could not be refurbished in preparation for checkout. Will try to find a better resource.").toString());
+                removeResource(resc);
+                ensureMinResources();
+                resc = null;
+            } else
+            {
+	        //如果资源池中有数据库连接池，则委托给asyncFireResourceCheckedOut，
+		//并创建定时任务线程，交由ThreadPoolAsynchronousRunner去调度
+                asyncFireResourceCheckedOut(resc, managed.size(), unused.size(), excluded.size());
+                trace();
+                PunchCard card = (PunchCard)managed.get(resc);
+                if(card == null)
+                {
+                    if(logger.isLoggable(MLevel.FINER))
+                        logger.finer((new StringBuilder()).append("Resource ").append(resc).append(" was removed from the pool while it was being checked out ").append(" or refurbished for checkout. Will try to find a replacement resource.").toString());
+                    resc = null;
+                } else
+                {
+                    card.checkout_time = System.currentTimeMillis();
+                    if(debug_store_checkout_exceptions)
+                        card.checkoutStackTraceException = new Exception("DEBUG STACK TRACE: Overdue resource check-out stack trace.");
+                }
+            }
+        }
+        if(resc == null)
+            return checkoutResource(timeout);
+        return resc;
+    }
+//如何资源池中有数据库连接池，直接返回unused.get（0）
+private synchronized Object prelimCheckoutResource(long timeout)
+        throws TimeoutException, ResourcePoolException, InterruptedException
+    {
+        Object resc;
+        Thread t;
+        ensureNotBroken();
+	//LinkedList unused;
+        int available = unused.size();
+        if(available == 0)
+        {
+	    //
+            int msz = managed.size();
+            if(msz < max)
+            {
+                int desired_target = msz + acquireWaiters.size() + 1;
+                if(logger.isLoggable(MLevel.FINER))
+                    logger.log(MLevel.FINER, (new StringBuilder()).append("acquire test -- pool size: ").append(msz).append("; target_pool_size: ").append(target_pool_size).append("; desired target? ").append(desired_target).toString());
+                if(desired_target >= target_pool_size)
+                {
+                    desired_target = Math.max(desired_target, target_pool_size + inc);
+                    target_pool_size = Math.max(Math.min(max, desired_target), min);
+                    _recheckResizePool();
+                }
+            } else
+            if(logger.isLoggable(MLevel.FINER))
+                logger.log(MLevel.FINER, (new StringBuilder()).append("acquire test -- pool is already maxed out. [managed: ").append(msz).append("; max: ").append(max).append("]").toString());
+            awaitAvailable(timeout);
+        }
+	//这里关键，从BasicResourcePool的资源池unused，LinkedList<PooledConnection>中，获取数据库连接池
+        resc = unused.get(0);
+        if(!idleCheckResources.contains(resc))
+            break MISSING_BLOCK_LABEL_365;
+        t = Thread.currentThread();
+        otherWaiters.add(t);
+        wait(timeout);
+        ensureNotBroken();
+        otherWaiters.remove(t);
+        break MISSING_BLOCK_LABEL_359;
+        otherWaiters.remove(t);
+        removeResource(resc);
+        ensureMinResources();
+        unused.remove(0);
+        return resc;
+    }
+如果资源池中，没有有数据库连接池，创建数据连接池获取线程，并交由
+ThreadPoolAsynchronousRunner去调度。
+private void asyncFireResourceCheckedOut(final Object resc, final int pool_size, final int available_size, final int removed_but_unreturned_size)
+    {
+        if(canFireEvents())
+        {
+            Runnable r = new Runnable() {
+
+                public void run()
+                {
+		    //线程工作委托给ResourcePoolEventSupport的fireResourceCheckedOut方法
+		    //激发数据连接池获取事件，由对应监听器的去处理
+		    //ResourcePoolEventSupport rpes
+                    rpes.fireResourceCheckedOut(resc, pool_size, available_size, removed_but_unreturned_size);
+                }
+
+                final Object val$resc;
+                final int val$pool_size;
+                final int val$available_size;
+                final int val$removed_but_unreturned_size;
+                final BasicResourcePool this$0;
+
+            
+            {
+                this.this$0 = BasicResourcePool.this;
+                resc = obj;
+                pool_size = i;
+                available_size = j;
+                removed_but_unreturned_size = k;
+                super();
+            }
+            };
+	    //关键在这
+            asyncEventQueue.postRunnable(r);
+        }
+    }
+//ThreadPoolAsynchronousRunner
+ public synchronized void postRunnable(Runnable runnable)
+    {
+        try
+        {
+	   //LinkedList pendingTasks;LinkedList<Runnable>;
+	   //如果资源池中，没有有数据库连接池，
+	   //则建立连接获取线程，添加调度器的待调度定时任务pendingTasks列表中
+            pendingTasks.add(runnable);
+            notifyAll();
+            if(logger.isLoggable(MLevel.FINEST))
+                logger.log(MLevel.FINEST, (new StringBuilder()).append(this).append(": Adding task to queue -- ").append(runnable).toString());
+        }
+    }
+再来看
+//线程工作委托给ResourcePoolEventSupport的fireResourceCheckedOut方法
+ //激发获取数据库连接事件，由资源连接池监听器的去处理
+rpes.fireResourceCheckedOut(resc, pool_size, available_size, removed_but_unreturned_size);
+//ResourcePoolEventSupport
+public class ResourcePoolEventSupport
+{
+ public synchronized void fireResourceCheckedOut(Object resc, int pool_size, int available_size, int removed_but_unreturned_size)
+    {
+        if(!mlisteners.isEmpty())
+        {
+            ResourcePoolEvent evt = new ResourcePoolEvent(source, resc, true, pool_size, available_size, removed_but_unreturned_size);
+            ResourcePoolListener rpl;
+	    //遍历资源连接池监听器，获取数据库连接资源
+            for(Iterator i = mlisteners.iterator(); i.hasNext(); rpl.resourceCheckedOut(evt))
+                rpl = (ResourcePoolListener)i.next();
+
+        }
+    }
+}
+从上面一段分析，可以看出checkoutPooledConnection()方法，实际上是从
+BasicResourcePool的资源池unused，LinkedList<PooledConnection>中，获取数据库连接池；
+如果没有，则创建数据库连接池获取事件触发线程，并交由ThreadPoolAsynchronousRunner去调度；
+数据库连接池获取事件触发线程主要是通过ResourcePoolEventSupport触发数据库连接池获取事件，交给相关监听器处理。
+自此下面这句话终于讲完了。
+PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+这里，做个小结：
+getPoolManager()方法，getPoolManager()实际上，是初始化数据库连接池管理器C3P0PooledConnectionPoolManager，
+初始化C3P0PooledConnectionPoolManager的ConnectionPoolDataSource（WrapperConnectionPoolDataSource）及
+定时任务调度器，及死锁检测线程，及延时死锁检测线程。getPool()方法实际上，首先初始化C3P0PooledConnectionPool
+，在初始化C3P0PooledConnectionPool过程中，通过BasicResourcePoolFactory创建资源池，BasicResourcePool；
+在初始化资源资源池时，根据数据库连接池的大小，创建相应的数据库连接获取线程AcquireTask，并将线程添加到
+ThreadPoolAsynchronousRunner（Timer）的待调度线程队列pendingTasks，LinkedList<Runnable>中；而数据库连接线程获取
+连接是通过C3P0PooledConnectionPool的内部类_cls1PooledConnectionResourcePoolManager的资源获取方法
+acquireResource，acquireResource实际上是从通过WrapperConnectionPoolDataSource获取数据库连接池NewPooledConnection，
+NewPooledConnection的构造中有一个数据库连接Connection，Connection实际上是通过DriverManagerDataSource调用driver的connect方法获取；
+；AcquireTask获取连接之后，添加到BasicResourcePool的unused，LinkList<PooledConnection>集合中。
+checkoutPooledConnection()方法，实际上是从
+BasicResourcePool的资源池unused，LinkedList<PooledConnection>中，获取数据库连接池；
+如果没有，则创建数据库连接池获取事件触发线程，并交由ThreadPoolAsynchronousRunner去调度；
+数据库连接池获取事件触发线程主要是通过ResourcePoolEventSupport触发数据库连接池获取事件，交给相关监听器处理。
+
+回到AbstractPoolBackedDataSource的获取连接方法，
+public abstract class AbstractPoolBackedDataSource extends PoolBackedDataSourceBase
+    implements PooledDataSource
+{
+    public Connection getConnection()
+        throws SQLException
+    {
+         //获取数据库连接池,实际为NewPooledConnection
+        PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+	//从数据库连接池，返回数据库连接
+        return pc.getConnection();
+    }
+}
+ PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+ 这句话实际调用的返回的是NewPooledConnection
+//WrapperConnectionPoolDataSource
+protected PooledConnection getPooledConnection(ConnectionCustomizer cc, String pdsIdt)
+        throws SQLException
+    {
+        DataSource nds;
+        Connection conn;
+        nds = getNestedDataSource();
+        conn = null;
+        conn = nds.getConnection();
+        return new NewPooledConnection(conn, connectionTester, isAutoCommitOnClose(getUser()), isForceIgnoreUnresolvedTransactions(getUser()), getPreferredTestQuery(getUser()), cc, pdsIdt);
+    }
+来看这一句
+//从数据库连接池，返回数据库连接
+return pc.getConnection();
+在上面获取数据库连接池中，实际上返回的是NewPooledConnection，我们来看一下NewPooledConnection
+//NewPooledConnection
+
+这一篇，内容讲的有点多，NewPooledConnection我们下一篇在讲
+
+
+
+
+
+//DbAuth
+public final class DbAuth
+    implements Serializable
+{
+
+    public DbAuth(String username, String password)
+    {
+        this.username = username;
+        this.password = password;
+    }
+
+    public String getUser()
+    {
+        return username;
+    }
+
+    public String getPassword()
+    {
+        return password;
+    }
+
+    public String getMaskedUserString()
+    {
+        return getMaskedUserString(2, 8);
+    }
+
+    private String getMaskedUserString(int chars_to_reveal, int total_chars)
+    {
+        if(username == null)
+            return "null";
+        StringBuffer sb = new StringBuffer(32);
+        if(username.length() >= chars_to_reveal)
+        {
+            sb.append(username.substring(0, chars_to_reveal));
+            int i = 0;
+            for(int len = total_chars - chars_to_reveal; i < len; i++)
+                sb.append('*');
+
+        } else
+        {
+            sb.append(username);
+        }
+        return sb.toString();
+    }
+
+    public boolean equals(Object o)
+    {
+        if(this == o)
+            return true;
+        if(o != null && getClass() == o.getClass())
+        {
+            DbAuth other = (DbAuth)o;
+            return ObjectUtils.eqOrBothNull(username, other.username) && ObjectUtils.eqOrBothNull(password, other.password);
+        } else
+        {
+            return false;
+        }
+    }
+
+    public int hashCode()
+    {
+        return ObjectUtils.hashOrZero(username) ^ ObjectUtils.hashOrZero(password);
+    }
+
+    private void writeObject(ObjectOutputStream out)
+        throws IOException
+    {
+        out.writeShort(1);
+        out.writeObject(username);
+        out.writeObject(password);
+    }
+
+    private void readObject(ObjectInputStream in)
+        throws IOException, ClassNotFoundException
+    {
+        short version = in.readShort();
+        switch(version)
+        {
+        case 1: // '\001'
+            username = (String)in.readObject();
+            password = (String)in.readObject();
+            break;
+
+        default:
+            throw new UnsupportedVersionException(this, version);
+        }
+    }
+
+    transient String username;
+    transient String password;
+    static final long serialVersionUID = 1L;
+    private static final short VERSION = 1;
+}
+
+ThreadPoolAsynchronousRunner思想的关键在Timer,TimerTask
+//ThreadPoolAsynchronousRunner
+public final class ThreadPoolAsynchronousRunner
+    implements AsynchronousRunner
+{
+    int deadlock_detector_interval;//死锁检测间隔
+    int interrupt_delay_after_apparent_deadlock;
+    int max_individual_task_time;
+    int num_threads;//线程数
+    boolean daemon;
+    HashSet managed;
+    HashSet available;
+    LinkedList pendingTasks;
+    Random rnd;
+    Timer myTimer;
+    boolean should_cancel_timer;
+    TimerTask deadlockDetector;//死锁检测定时任务
+    TimerTask replacedThreadInterruptor;//线程中断重启定时任务
+    Map stoppedThreadsToStopDates;
+    String threadLabel;
+    private ThreadPoolAsynchronousRunner(int i, boolean flag, int j, int k, int l, Timer timer, boolean flag1, 
+            String s)
+    {
+        rnd = new Random();
+        deadlockDetector = new DeadlockDetector();//死锁检测定时任务
+        replacedThreadInterruptor = null;
+        stoppedThreadsToStopDates = new HashMap();
+        num_threads = i;
+        daemon = flag;
+        max_individual_task_time = j;
+        deadlock_detector_interval = k;
+        interrupt_delay_after_apparent_deadlock = l;
+        myTimer = timer;
+        should_cancel_timer = flag1;
+        threadLabel = s;
+        recreateThreadsAndTasks();
+        timer.schedule(deadlockDetector, k, k);//调度死锁任务
+    }
+    //死锁检测定时任务
+     class DeadlockDetector extends TimerTask
+    {
+
+        public void run()
+        {
+            boolean flag;
+label0:
+            {
+                flag = false;
+                synchronized(ThreadPoolAsynchronousRunner.this)
+                {
+                    if(pendingTasks.size() != 0)
+                        break label0;
+                    last = null;
+                    if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.FINEST))
+                        ThreadPoolAsynchronousRunner.logger.log(MLevel.FINEST, (new StringBuilder()).append(this).append(" -- Running DeadlockDetector[Exiting. No pending tasks.]").toString());
+                }
+                return;
+            }
+            current = (LinkedList)pendingTasks.clone();
+            if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.FINEST))
+                ThreadPoolAsynchronousRunner.logger.log(MLevel.FINEST, (new StringBuilder()).append(this).append(" -- Running DeadlockDetector[last->").append(last).append(",current->").append(current).append(']').toString());
+            if(current.equals(last))
+            {
+                if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.WARNING))
+                {
+                    ThreadPoolAsynchronousRunner.logger.warning((new StringBuilder()).append(this).append(" -- APPARENT DEADLOCK!!! Creating emergency threads for unassigned pending tasks!").toString());
+                    StringWriter stringwriter = new StringWriter(4096);
+                    PrintWriter printwriter = new PrintWriter(stringwriter);
+                    printwriter.print(this);
+                    printwriter.println(" -- APPARENT DEADLOCK!!! Complete Status: ");
+                    printwriter.print(getMultiLineStatusString(1));
+                    printwriter.println("Pool thread stack traces:");
+                    String s = getStackTraces(1);
+                    if(s == null)
+                        printwriter.println("\t[Stack traces of deadlocked task threads not available.]");
+                    else
+                        printwriter.print(s);
+                    printwriter.flush();
+                    ThreadPoolAsynchronousRunner.logger.warning(stringwriter.toString());
+                    printwriter.close();
+                }
+                if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.FINEST))
+                {
+                    StringWriter stringwriter1 = new StringWriter(4096);
+                    PrintWriter printwriter1 = new PrintWriter(stringwriter1);
+                    printwriter1.print(this);
+                    printwriter1.println(" -- APPARENT DEADLOCK extra info, full JVM thread dump: ");
+                    String s1 = getJvmStackTraces(1);
+                    if(s1 == null)
+                        printwriter1.println("\t[Full JVM thread dump not available.]");
+                    else
+                        printwriter1.print(s1);
+                    printwriter1.flush();
+                    ThreadPoolAsynchronousRunner.logger.finest(stringwriter1.toString());
+                    printwriter1.close();
+                }
+                recreateThreadsAndTasks();
+                flag = true;
+            }
+            threadpoolasynchronousrunner;
+            JVM INSTR monitorexit ;
+              goto _L1
+            exception;
+            throw exception;
+_L1:
+            if(flag)
+            {
+                ThreadPerTaskAsynchronousRunner threadpertaskasynchronousrunner = new ThreadPerTaskAsynchronousRunner(10, max_individual_task_time);
+                for(Iterator iterator = current.iterator(); iterator.hasNext(); threadpertaskasynchronousrunner.postRunnable((Runnable)iterator.next()));
+                threadpertaskasynchronousrunner.close(false);
+                last = null;
+            } else
+            {
+                last = current;
+            }
+            current = null;
+            return;
+        }
+
+        LinkedList last;
+        LinkedList current;
+        final ThreadPoolAsynchronousRunner this$0;
+
+        DeadlockDetector()
+        {
+            this$0 = ThreadPoolAsynchronousRunner.this;
+            super();
+            last = null;
+            current = null;
+        }
+    }
+    //线程池
+    class PoolThread extends Thread
+    {
+
+        public int getIndex()
+        {
+            return index;
+        }
+
+        void gentleStop()
+        {
+            should_stop = true;
+        }
+
+        Runnable getCurrentTask()
+        {
+            return currentTask;
+        }
+
+        private void setMaxIndividualTaskTimeEnforcer()
+        {
+	    //
+            maxIndividualTaskTimeEnforcer = new MaxIndividualTaskTimeEnforcer(this);
+            myTimer.schedule(maxIndividualTaskTimeEnforcer, max_individual_task_time);
+        }
+
+        private void cancelMaxIndividualTaskTimeEnforcer()
+        {
+            maxIndividualTaskTimeEnforcer.cancel();
+            maxIndividualTaskTimeEnforcer = null;
+        }
+
+        private void purgeTimer()
+        {
+            myTimer.purge();
+            if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.FINER))
+                ThreadPoolAsynchronousRunner.logger.log(MLevel.FINER, (new StringBuilder()).append(getClass().getName()).append(" -- PURGING TIMER").toString());
+        }
+
+        public void run()
+        {
+            long l = rnd.nextLong();
+_L2:
+            Runnable runnable;
+label0:
+            {
+                synchronized(ThreadPoolAsynchronousRunner.this)
+                {
+                    for(; !should_stop && pendingTasks.size() == 0; wait(5000L));
+                    if(!should_stop)
+                        break label0;
+                }
+                break MISSING_BLOCK_LABEL_562;
+            }
+            if(!available.remove(this))
+                throw new InternalError("An unavailable PoolThread tried to check itself out!!!");
+            runnable = (Runnable)pendingTasks.remove(0);
+            currentTask = runnable;
+            threadpoolasynchronousrunner2;
+            JVM INSTR monitorexit ;
+            break MISSING_BLOCK_LABEL_123;
+            if(max_individual_task_time > 0)
+                setMaxIndividualTaskTimeEnforcer();
+            runnable.run();
+label1:
+            {
+                if(maxIndividualTaskTimeEnforcer != null)
+                {
+                    cancelMaxIndividualTaskTimeEnforcer();
+                    l ^= l << 21;
+                    l ^= l >>> 35;
+                    l ^= l << 4;
+                    if(l % 500L == 0L)
+                        purgeTimer();
+                }
+                synchronized(ThreadPoolAsynchronousRunner.this)
+                {
+                    if(!should_stop)
+                        break label1;
+                }
+                break MISSING_BLOCK_LABEL_562;
+            }
+            if(available != null && !available.add(this))
+                throw new InternalError("An apparently available PoolThread tried to check itself in!!!");
+            currentTask = null;
+            threadpoolasynchronousrunner3;
+            JVM INSTR monitorexit ;
+            continue; /* Loop/switch isn't completed */
+            RuntimeException runtimeexception;
+            runtimeexception;
+            if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.WARNING))
+                ThreadPoolAsynchronousRunner.logger.log(MLevel.WARNING, (new StringBuilder()).append(this).append(" -- caught unexpected Exception while executing posted task.").toString(), runtimeexception);
+label2:
+            {
+                if(maxIndividualTaskTimeEnforcer != null)
+                {
+                    cancelMaxIndividualTaskTimeEnforcer();
+                    l ^= l << 21;
+                    l ^= l >>> 35;
+                    l ^= l << 4;
+                    if(l % 500L == 0L)
+                        purgeTimer();
+                }
+                synchronized(ThreadPoolAsynchronousRunner.this)
+                {
+                    if(!should_stop)
+                        break label2;
+                }
+                break MISSING_BLOCK_LABEL_562;
+            }
+            if(available != null && !available.add(this))
+                throw new InternalError("An apparently available PoolThread tried to check itself in!!!");
+            currentTask = null;
+            threadpoolasynchronousrunner4;
+            JVM INSTR monitorexit ;
+            if(true) goto _L2; else goto _L1
+_L1:
+            Exception exception3;
+            exception3;
+label3:
+            {
+                if(maxIndividualTaskTimeEnforcer != null)
+                {
+                    cancelMaxIndividualTaskTimeEnforcer();
+                    l ^= l << 21;
+                    l ^= l >>> 35;
+                    l ^= l << 4;
+                    if(l % 500L == 0L)
+                        purgeTimer();
+                }
+                synchronized(ThreadPoolAsynchronousRunner.this)
+                {
+                    if(!should_stop)
+                        break label3;
+                }
+                break MISSING_BLOCK_LABEL_562;
+            }
+            if(available != null && !available.add(this))
+                throw new InternalError("An apparently available PoolThread tried to check itself in!!!");
+            currentTask = null;
+            threadpoolasynchronousrunner5;
+            JVM INSTR monitorexit ;
+            throw exception3;
+            synchronized(ThreadPoolAsynchronousRunner.this)
+            {
+                shuttingDown(this);
+            }
+            break MISSING_BLOCK_LABEL_759;
+            Object obj;
+            obj;
+            synchronized(ThreadPoolAsynchronousRunner.this)
+            {
+                shuttingDown(this);
+            }
+            break MISSING_BLOCK_LABEL_759;
+            threadpoolasynchronousrunner1;
+            if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.WARNING))
+                ThreadPoolAsynchronousRunner.logger.log(MLevel.WARNING, (new StringBuilder()).append("An unexpected RuntimException is implicated in the closing of ").append(this).toString(), threadpoolasynchronousrunner1);
+            throw threadpoolasynchronousrunner1;
+            threadpoolasynchronousrunner1;
+            if(ThreadPoolAsynchronousRunner.logger.isLoggable(MLevel.WARNING))
+                ThreadPoolAsynchronousRunner.logger.log(MLevel.WARNING, (new StringBuilder()).append("An Error forced the closing of ").append(this).append(". Will attempt to reconstruct, but this might mean that something bad is happening.").toString(), threadpoolasynchronousrunner1);
+            throw threadpoolasynchronousrunner1;
+            Exception exception7;
+            exception7;
+            synchronized(ThreadPoolAsynchronousRunner.this)
+            {
+                shuttingDown(this);
+            }
+            throw exception7;
+        }
+
+        Runnable currentTask;
+        boolean should_stop;
+        int index;
+        TimerTask maxIndividualTaskTimeEnforcer;
+        final ThreadPoolAsynchronousRunner this$0;
+
+        PoolThread(int i, boolean flag)
+        {
+            this$0 = ThreadPoolAsynchronousRunner.this;
+            super();
+            maxIndividualTaskTimeEnforcer = null;
+            setName((new StringBuilder()).append(threadLabel != null ? threadLabel : getClass().getName()).append("-#").append(i).toString());
+            setDaemon(flag);
+            index = i;
+        }
+    }
+}

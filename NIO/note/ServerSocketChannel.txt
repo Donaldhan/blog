@@ -1,0 +1,285 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+先来回顾一下ServerSocketChannel继承结构树：
+[code="java"]//ServerSocketChannel
+public abstract class ServerSocketChannel
+    extends AbstractSelectableChannel
+    implements NetworkChannel
+
+//AbstractSelectableChannel
+public abstract class AbstractSelectableChannel
+    extends SelectableChannel
+
+//SelectableChannel
+public abstract class SelectableChannel
+    extends AbstractInterruptibleChannel
+    implements Channel[/code]
+今天来看一下ServerSocketChannel的定义
+package java.nio.channels;
+
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.SocketOption;
+import java.net.SocketAddress;
+import java.nio.channels.spi.AbstractSelectableChannel;
+import java.nio.channels.spi.SelectorProvider;
+
+/**
+ * A selectable channel for stream-oriented listening sockets.
+ *面向流监听socket可选择通道。
+ * <p> A server-socket channel is created by invoking the {@link #open() open}
+ * method of this class.  It is not possible to create a channel for an arbitrary,
+ * pre-existing {@link ServerSocket}. A newly-created server-socket channel is
+ * open but not yet bound.  An attempt to invoke the {@link #accept() accept}
+ * method of an unbound server-socket channel will cause a {@link NotYetBoundException}
+ * to be thrown. A server-socket channel can be bound by invoking one of the
+ * {@link #bind(java.net.SocketAddress,int) bind} methods defined by this class.
+ *ServerSocketChannel通过open方法，创建一个ServerSocketChannel通道。如果已经存在一个
+ServerSocket，将不会创建ServerSocketChannel。新创建的ServerSocketChannel是没有绑定地址的。
+调用没有绑定地址的ServerSocketChannel的accept方法，将会抛出NotYetBoundException。
+可以通过bind方法绑定地址。
+ * <p> Socket options are configured using the {@link #setOption(SocketOption,Object)
+ * setOption} method. Server-socket channels support the following options:
+ 可用#setOption方法，配置socket选项，ServerSocketChannel支持的选项配置如下：
+ * <blockquote>
+ * <table border>
+ *   <tr>
+ *     <th>Option Name</th>
+ *     <th>Description</th>
+ *   </tr>
+ *   <tr>接受缓冲区大小
+ *     <td> {@link java.net.StandardSocketOptions#SO_RCVBUF SO_RCVBUF} </td>
+//StandardSocketOptions
+ *     <td> The size of the socket receive buffer </td>
+  public static final SocketOption<Integer> SO_RCVBUF =
+        new StdSocketOption<Integer>("SO_RCVBUF", Integer.class);
+ *   </tr>
+ *   <tr>是否可以重用地址
+ *     <td> {@link java.net.StandardSocketOptions#SO_REUSEADDR SO_REUSEADDR} </td>
+ *     <td> Re-use address </td>
+ //StandardSocketOptions
+ public static final SocketOption<Boolean> SO_REUSEADDR =
+        new StdSocketOption<Boolean>("SO_REUSEADDR", Boolean.class);
+ *   </tr>
+ * </table>
+ * </blockquote>
+ * Additional (implementation specific) options may also be supported.
+ *
+ * <p> Server-socket channels are safe for use by multiple concurrent threads.
+ ServerSocketChannel是线程安全的
+ * </p>
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class ServerSocketChannel
+    extends AbstractSelectableChannel
+    implements NetworkChannel
+{
+
+    /**
+     * Initializes a new instance of this class.
+     */
+    protected ServerSocketChannel(SelectorProvider provider) {
+        super(provider);
+    }
+
+    /**
+     * Opens a server-socket channel.
+     *打开一个ServerSocketChannel
+     * <p> The new channel is created by invoking the {@link
+     * java.nio.channels.spi.SelectorProvider#openServerSocketChannel
+     * openServerSocketChannel} method of the system-wide default {@link
+     * java.nio.channels.spi.SelectorProvider} object.
+     *通过系统默认的SelectorProvider实现创建一个ServerSocketChannel
+     * <p> The new channel's socket is initially unbound; it must be bound to a
+     * specific address via one of its socket's {@link
+     * java.net.ServerSocket#bind(SocketAddress) bind} methods before
+     * connections can be accepted.  </p>
+     *新创建的ServerSocketChannel初始是没有绑定的，在接受连接之前必须绑定一个SocketAddress
+     * @return  A new socket channel
+     *
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public static ServerSocketChannel open() throws IOException {
+        return SelectorProvider.provider().openServerSocketChannel();
+    }
+
+    /**
+     * Returns an operation set identifying this channel's supported
+     * operations.
+     *返回通道支持的操作事件集
+     * <p> Server-socket channels only support the accepting of new
+     * connections, so this method returns {@link SelectionKey#OP_ACCEPT}.
+      ServerSocketChannel只支持接受连接操作事件
+     * </p>
+     *
+     * @return  The valid-operation set
+     */
+    public final int validOps() {
+        return SelectionKey.OP_ACCEPT;
+    }
+
+
+    // -- ServerSocket-specific operations --
+
+    /**
+     * Binds the channel's socket to a local address and configures the socket
+     * to listen for connections.
+     *绑定ServerSocketChannel到本地的socket地址，并配置socket监听连接，
+     具体实现看bind(SocketAddress local, int backlog)方法
+     * <p> An invocation of this method is equivalent to the following:
+     * <blockquote><pre>
+     * bind(local, 0);
+     * </pre></blockquote>
+     *
+     * @param   local
+     *          The local address to bind the socket, or {@code null} to bind
+     *          to an automatically assigned socket address
+     *
+     * @return  This channel
+     *
+     * @throws  AlreadyBoundException               {@inheritDoc}
+     * @throws  UnsupportedAddressTypeException     {@inheritDoc}
+     * @throws  ClosedChannelException              {@inheritDoc}
+     * @throws  IOException                         {@inheritDoc}
+     * @throws  SecurityException
+     *          If a security manager has been installed and its {@link
+     *          SecurityManager#checkListen checkListen} method denies the
+     *          operation
+     *
+     * @since 1.7
+     */
+    public final ServerSocketChannel bind(SocketAddress local)
+        throws IOException
+    {   
+        //委托给bind(SocketAddress local, int backlog)
+        return bind(local, 0);
+    }
+
+    /**
+     * Binds the channel's socket to a local address and configures the socket to
+     * listen for connections.
+     *绑定ServerSocketChannel到本地的socket地址，并配置socket监听连接
+     * <p> This method is used to establish an association between the socket and
+     * a local address. Once an association is established then the socket remains
+     * bound until the channel is closed.
+     *这个方法用于建立socket与本地socket地址的联系。只要联系建立，在通道关闭之前，socket
+     能绑定着地址。
+     * <p> The {@code backlog} parameter is the maximum number of pending
+     * connections on the socket. Its exact semantics are implementation specific.
+     * In particular, an implementation may impose a maximum length or may choose
+     * to ignore the parameter altogther. If the {@code backlog} parameter has
+     * the value {@code 0}, or a negative value, then an implementation specific
+     * default is used.
+     *backlog参数是socket运行接受的最大连接数。具体的含义要根据具体的实现，有的是最大连接数，
+     有的可能忽略这个参数。如果参数为0或者一个负数，将会使用默认的实现机制
+
+     * @param   local 本地socket地址
+     *          The address to bind the socket, or {@code null} to bind to an
+     *          automatically assigned socket address
+     * @param   backlog 最大连接数
+     *          The maximum number of pending connections
+     *
+     * @return  This channel
+     *
+     * @throws  AlreadyBoundException 地址已经绑定
+     *          If the socket is already bound
+     * @throws  UnsupportedAddressTypeException 地址不支持
+     *          If the type of the given address is not supported
+     * @throws  ClosedChannelException 通道关闭
+     *          If this channel is closed
+     * @throws  IOException  IO操作异常
+     *          If some other I/O error occurs
+     * @throws  SecurityException
+     *          If a security manager has been installed and its {@link
+     *          SecurityManager#checkListen checkListen} method denies the
+     *          operation
+     *
+     * @since 1.7
+     */
+    public abstract ServerSocketChannel bind(SocketAddress local, int backlog)
+        throws IOException;
+
+    /**
+     * @throws  UnsupportedOperationException           {@inheritDoc}
+     * @throws  IllegalArgumentException                {@inheritDoc}
+     * @throws  ClosedChannelException                  {@inheritDoc}
+     * @throws  IOException                             {@inheritDoc}
+     *设置选项
+     * @since 1.7
+     */
+    public abstract <T> ServerSocketChannel setOption(SocketOption<T> name, T value)
+        throws IOException;
+
+    /**
+     * Retrieves a server socket associated with this channel.
+     *返回与通道关联的ServerSocket
+     * <p> The returned object will not declare any public methods that are not
+     * declared in the {@link java.net.ServerSocket} class.  </p>
+     *
+     * @return  A server socket associated with this channel
+     */
+    public abstract ServerSocket socket();
+
+    /**
+     * Accepts a connection made to this channel's socket.
+     * 接受一个连接到通道socket的请求。
+     * <p> If this channel is in non-blocking mode then this method will
+     * immediately return <tt>null</tt> if there are no pending connections.
+     * Otherwise it will block indefinitely until a new connection is available
+     * or an I/O error occurs.
+     *如果通道是非阻塞模式，，如果连接已经达到最大数量，则立即返回null；
+     否则不确定地阻塞直到一个新的连接可用或者IO错误发生
+     * <p> The socket channel returned by this method, if any, will be in
+     * blocking mode regardless of the blocking mode of this channel.
+     * 如果通道是阻塞模式，则将返回一个SocketChannle，并忽略阻塞模式
+     * <p> This method performs exactly the same security checks as the {@link
+     * java.net.ServerSocket#accept accept} method of the {@link
+     * java.net.ServerSocket} class.  That is, if a security manager has been
+     * installed then for each new connection this method verifies that the
+     * address and port number of the connection's remote endpoint are
+     * permitted by the security manager's {@link
+     * java.lang.SecurityManager#checkAccept checkAccept} method.  </p>
+     *此方执行精确的安全检查
+     * @return  The socket channel for the new connection,
+     *          or <tt>null</tt> if this channel is in non-blocking mode
+     *          and no connection is available to be accepted
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     *
+     * @throws  AsynchronousCloseException
+     *          If another thread closes this channel
+     *          while the accept operation is in progress
+     *
+     * @throws  ClosedByInterruptException 如果其他线程中断当前线程，则关闭通道，设置当前线程的中断位。
+     *          If another thread interrupts the current thread
+     *          while the accept operation is in progress, thereby
+     *          closing the channel and setting the current thread's
+     *          interrupt status
+     *
+     * @throws  NotYetBoundException 地址没有绑定
+     *          If this channel's socket has not yet been bound
+     *
+     * @throws  SecurityException 安全异常
+     *          If a security manager has been installed
+     *          and it does not permit access to the remote endpoint
+     *          of the new connection
+     *
+     * @throws  IOException IO操作异常
+     *          If some other I/O error occurs
+     */
+    public abstract SocketChannel accept() throws IOException;
+
+}
+从上面可以看出ServerSocketChannel主要是绑定socket地址，监听Socket连接。
+

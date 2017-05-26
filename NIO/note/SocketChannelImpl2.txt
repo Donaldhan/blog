@@ -1,0 +1,396 @@
+SocketChannelImpl 解析一（通道连接，发送数据）：
+http://donald-draper.iteye.com/blog/2372364
+引言：
+上一篇文章我们看了一下SocketChannelImpl的初始化，通道连接（Socket），写操作（write-ByteBuffer）。先回顾一下：
+SocketChannelImpl构造主要是初始化读写及状态锁和通道socket文件描述。
+connect连接方法首先同步读锁和写锁，确保socket通道打开，并没有连接；然后检查socket地址的正确性与合法性，然后检查当前线程是否有Connect方法的访问控制权限，最后尝试连接socket地址。从缓冲区读取字节序列写到通道write（ByteBuffer），首先确保通道打开，且输出流没有关闭，然后委托给IOUtil写字节序列；IOUtil写字节流过程为首先通过Util从当前线程的缓冲区获取可以容下字节序列的临时缓冲区（DirectByteBuffer），如果没有则创建一个DirectByteBuffer，将字节序列写到临时的DirectByteBuffer中，然后将写操作委托给nativedispatcher（SocketDispatcher），将DirectByteBuffer添加到当前线程的缓冲区，
+以便重用，因为DirectByteBuffer实际上是存在物理内存中，频繁的分配将会消耗更多的资源。
+上一篇文章我们看了写一个ByteBuffer，现在来看一下写多个ByteBuffer
+ public long write(ByteBuffer abytebuffer[], int i, int j)
+     throws IOException
+ {
+     //检查offset（i），length（j）的合法性
+     if(i < 0 || j < 0 || i > abytebuffer.length - j)
+         throw new IndexOutOfBoundsException();
+     Object obj = writeLock;//获取写锁
+     JVM INSTR monitorenter ;//进入同步，try
+     long l;
+     //确保通道，输出流打开，连接建立
+     ensureWriteOpen();
+     l = 0L;
+     begin();//与end方法配合，记录中断器，处理中断
+     long l2;
+     synchronized(stateLock)
+     {
+         if(isOpen())
+             break MISSING_BLOCK_LABEL_165;
+         l2 = 0L;
+     }
+     writerCleanup();//清除写线程
+     end(l > 0L || l == -2L);
+     synchronized(stateLock)
+     {
+         if(l <= 0L && !isOutputOpen)
+             throw new AsynchronousCloseException();
+     }
+     if(!$assertionsDisabled && !IOStatus.check(l))
+         throw new AssertionError();
+     return l2;
+     //初始化本地写线程
+     writerThread = NativeThread.current();
+     obj1;
+     JVM INSTR monitorexit ;
+     long l1;
+     do
+         //委托IOUtil写字节数组序列
+         l = IOUtil.write(fd, abytebuffer, i, j, nd);
+     while(l == -3L && isOpen());
+     l1 = IOStatus.normalize(l);
+     writerCleanup();
+     end(l > 0L || l == -2L);
+     synchronized(stateLock)
+     {
+         if(l <= 0L && !isOutputOpen)
+             throw new AsynchronousCloseException();
+     }
+     if(!$assertionsDisabled && !IOStatus.check(l))
+         throw new AssertionError();
+     obj;
+     JVM INSTR monitorexit ;//退出同步
+     return l1;
+     Exception exception3;//有异常则抛出
+     exception3;
+     writerCleanup();
+     end(l > 0L || l == -2L);
+     synchronized(stateLock)
+     {
+         if(l <= 0L && !isOutputOpen)
+             throw new AsynchronousCloseException();
+     }
+     if(!$assertionsDisabled && !IOStatus.check(l))
+         throw new AssertionError();
+     else
+         throw exception3;
+     Exception exception5;
+     exception5;
+     throw exception5;
+ }
+ 由于我们在前面已经讲过写单个ByteBuffer的方法，此方与write（ByteBuffer）
+ 基本相似，我们只需要关注下面这点几个：
+ do
+     //委托IOUtil写字节数组序列
+     l = IOUtil.write(fd, abytebuffer, i, j, nd);
+ while(l == -3L && isOpen());
+ 在看上面这句之前我们先看一下IOVecWrapper
+ //字节序列数组包装类
+class IOVecWrapper
+{
+    private static final int BASE_OFFSET = 0;
+    private static final int LEN_OFFSET;
+    private static final int SIZE_IOVEC;//
+    private final AllocatedNativeObject vecArray;//存放字节数组的地址
+    private final int size;//字节数据大小
+    private final ByteBuffer buf[];//存放字节数组
+    private final int position[];//存放每个字节数组的position
+    private final int remaining[];//存放每个字节数组的字节数量remaining
+    private final ByteBuffer shadow[];//存放字节数组副本
+    final long address;//字节序列数组包装类的起始地址
+    static int addressSize;//操作系统物理地址所占的字节数
+    private static final ThreadLocal cached = new ThreadLocal();//线程本地缓存
+    static 
+    {
+        addressSize = Util.unsafe().addressSize();
+        LEN_OFFSET = addressSize;
+	//为什么要地址长度的2倍，一个存放字节缓冲的地址，一个存字节缓冲区的实际长度。
+        SIZE_IOVEC = (short)(addressSize * 2);//存放字节数组的实际地址
+    }
+}
+来看IOVecWrapper的构造
+ private IOVecWrapper(int i)
+    {
+        size = i;
+        buf = new ByteBuffer[i];
+        position = new int[i];
+        remaining = new int[i];
+        shadow = new ByteBuffer[i];
+	//创建存储字节数组起始地址的内存空间
+        vecArray = new AllocatedNativeObject(i * SIZE_IOVEC, false);
+	//获取字节序列数组包装类起始地址
+        address = vecArray.address();
+    }
+ 构造中我们需要关注以下节点：
+1.创建存储字节数组起始地址的内存空间
+vecArray = new AllocatedNativeObject(i * SIZE_IOVEC, false);
+//AllocatedNativeObject
+class AllocatedNativeObject extends NativeObject
+{
+    AllocatedNativeObject(int i, boolean flag)
+    {
+        super(i, flag);
+    }
+}
+//NativeObject
+ protected NativeObject(int i, boolean flag)
+    {
+        if(!flag)
+        {
+	    //分配可以存i个字节的物理内存
+            allocationAddress = unsafe.allocateMemory(i);
+	    //初始化起始地址
+            address = allocationAddress;
+        } else
+        {
+	   //在分配i个字节的基础上，多分配一页内存，这个我们在前面以说，这里不再说
+            int j = pageSize();
+            long l = unsafe.allocateMemory(i + j);
+            allocationAddress = l;
+            address = (l + (long)j) - (l & (long)(j - 1));
+        }
+    }
+2.获取字节序列数组包装类起始地址
+address = vecArray.address();
+NativeObject
+long address()
+    {
+        return address;
+    }
+从构造可以看出，主要是初始化字节缓冲区包装类的容量，存放字节缓冲区数组，
+存放字节缓冲区position数组，存放字节缓冲区容量数组，字节缓冲区副本数组，
+创建存储字节数组起始地址的内存空间，初始化字节缓冲区包装类起始地址。
+再来看其他方法
+//获取存放i个字节缓冲区的缓冲区包装类
+ static IOVecWrapper get(int i)
+    {
+        //获取线程本地的iovecwrapper
+        IOVecWrapper iovecwrapper = (IOVecWrapper)cached.get();
+        if(iovecwrapper != null && iovecwrapper.size < i)
+        {
+	    //iovecwrapper不为null，且容量小于i，则释放iovecwrapper内存
+            iovecwrapper.vecArray.free();
+            iovecwrapper = null;
+        }
+        if(iovecwrapper == null)
+        {
+	    //创建存放i个字节缓冲区的缓冲区包装类
+            iovecwrapper = new IOVecWrapper(i);
+	    //添加iovecwrapper到引用对象Cleaner
+            Cleaner.create(iovecwrapper, new Deallocator(iovecwrapper.vecArray));
+	    //添加iovecwrapper到线程本地缓存
+            cached.set(iovecwrapper);
+        }
+        return iovecwrapper;
+    }
+上面方法有两点要关注：
+1.
+//iovecwrapper不为null，且容量小于i，则释放iovecwrapper内存
+ iovecwrapper.vecArray.free();
+//AllocatedNativeObject
+synchronized void free()
+    {
+        if(allocationAddress != 0L)
+        {
+	    //释放物理内存
+            unsafe.freeMemory(allocationAddress);
+            allocationAddress = 0L;
+        }
+    }
+2.
+//添加iovecwrapper到引用对象清除器Cleaner
+ Cleaner.create(iovecwrapper, new Deallocator(iovecwrapper.vecArray));
+这一点我们在前面相关文章中有讲，我们简单看一下Deallocator
+//Deallocator,引用对象清除器
+private static class Deallocator
+    implements Runnable
+{
+   //这个方法为清除器，实际执行的操作，即释放分配给iovecwrapper的物理内存
+    public void run()
+    {
+        obj.free();
+    }
+    private final AllocatedNativeObject obj;
+
+    Deallocator(AllocatedNativeObject allocatednativeobject)
+    {
+        obj = allocatednativeobject;
+    }
+}
+从 get(int i)，可以看出实际上，先获取线程本地缓存中的iovecwrapper，如果
+iovecwrapper不为null，且容量小于i，则释放iovecwrapper内存，置空iovecwrapper；
+否则创建容量为i的iovecwrapper，并将iovecwrapper添加的引用对象清除器Cleander，
+并添加到线程本地缓存cache中。
+再来其他方法
+//添加字节数组
+void setBuffer(int i, ByteBuffer bytebuffer, int j, int k)
+ {
+     //添加字节缓冲区到字节缓冲区包装类的字节数组中，并将字节缓冲区的position及
+     容量remaining信息，存放到字节缓冲区包装类相应的数组中
+     buf[i] = bytebuffer;
+     position[i] = j;
+     remaining[i] = k;
+ }
+//将字节缓冲区i的起始地址l写到内存中
+void putBase(int i, long l)
+{
+    int j = SIZE_IOVEC * i + 0;
+    if(addressSize == 4)
+        //地址长度为4个字节
+        vecArray.putInt(j, (int)l);
+    else
+        //地址长度为8个字节
+        vecArray.putLong(j, l);
+}
+//将字节缓冲区i的容量l写到内存中
+void putLen(int i, long l)
+{
+    int j = SIZE_IOVEC * i + LEN_OFFSET;
+    if(addressSize == 4)
+        vecArray.putInt(j, (int)l);
+    else
+        vecArray.putLong(j, l);
+}
+//添加字节缓冲区bytebuffer到字节缓冲区包装类的字节缓冲区副本数组中
+ void setShadow(int i, ByteBuffer bytebuffer)
+ {
+     shadow[i] = bytebuffer;
+ }
+//获取索引i对应的字节缓冲区
+ ByteBuffer getBuffer(int i)
+ {
+     return buf[i];
+ }
+//获取索引i对应的字节缓冲区Position
+ int getPosition(int i)
+ {
+     return position[i];
+ }
+//获取索引i对应的字节缓冲区Remaining
+ int getRemaining(int i)
+ {
+     return remaining[i];
+ }
+//获取索引i对应的字节缓冲区副本
+ ByteBuffer getShadow(int i)
+ {
+     return shadow[i];
+ }
+//清除字节缓冲区包装类的字节缓冲区和相应的副本数组索引i对应的字节缓冲区
+ void clearRefs(int i)
+ {
+     buf[i] = null;
+     shadow[i] = null;
+ }
+小节：
+IOVecWrapper构造，主要是初始化字节缓冲区包装类的容量，存放字节缓冲区数组，
+存放字节缓冲区position数组，存放字节缓冲区容量数组，字节缓冲区副本数组，
+创建存储字节数组起始地址的内存空间，初始化字节缓冲区包装类起始地址。
+ get(int i)方法，先获取线程本地缓存中的iovecwrapper，如果
+iovecwrapper不为null，且容量小于i，则释放iovecwrapper内存，置空iovecwrapper；
+否则创建容量为i的iovecwrapper，并将iovecwrapper添加的引用对象清除器Cleander，
+并添加到线程本地缓存cache中。
+在看完IOVecWrapper后，我们再回到写字节序列数组函数的关键部分：
+ do
+     //委托IOUtil写字节数组序列
+     l = IOUtil.write(fd, abytebuffer, i, j, nd);
+ while(l == -3L && isOpen());
+ //IOUtil
+  static long write(FileDescriptor filedescriptor, ByteBuffer abytebuffer[], int i, int j, NativeDispatcher nativedispatcher)
+        throws IOException
+    {
+        IOVecWrapper iovecwrapper;
+        boolean flag;
+        int k;
+	//获取存放i个字节缓冲区的IOVecWrapper
+        iovecwrapper = IOVecWrapper.get(j);
+        flag = false;
+        k = 0;
+        long l1;
+        int l = i + j;
+        for(int i1 = i; i1 < l && k < IOV_MAX; i1++)
+        {
+            ByteBuffer bytebuffer = abytebuffer[i1];
+            int j1 = bytebuffer.position();
+            int k1 = bytebuffer.limit();
+            if(!$assertionsDisabled && j1 > k1)
+                throw new AssertionError();
+            int j2 = j1 > k1 ? 0 : k1 - j1;
+            if(j2 <= 0)
+                continue;
+	    //将字节缓冲区添加到iovecwrapper的字节缓冲区数组中
+            iovecwrapper.setBuffer(k, bytebuffer, j1, j2);
+            if(!(bytebuffer instanceof DirectBuffer))
+            {
+	       //获取容量为j2临时DirectByteBuffer
+                ByteBuffer bytebuffer2 = Util.getTemporaryDirectBuffer(j2);
+		//将字节序列写到DirectByteBuffer
+                bytebuffer2.put(bytebuffer);
+		//读写转换
+                bytebuffer2.flip();
+                iovecwrapper.setShadow(k, bytebuffer2);
+                bytebuffer.position(j1);
+                bytebuffer = bytebuffer2;
+                j1 = bytebuffer2.position();
+            }
+	    //将字节缓冲区的起始地址写到iovecwrapper
+            iovecwrapper.putBase(k, ((DirectBuffer)bytebuffer).address() + (long)j1);
+	    //将字节缓冲区的实际容量写到iovecwrapper
+            iovecwrapper.putLen(k, j2);
+            k++;
+        }
+
+        if(k != 0)
+            break MISSING_BLOCK_LABEL_267;
+        l1 = 0L;
+        if(!flag)
+        {
+            for(int i2 = 0; i2 < k; i2++)
+            {
+	        //获取iovecwrapper索引i2对应的字节序列副本
+                ByteBuffer bytebuffer1 = iovecwrapper.getShadow(i2);
+                if(bytebuffer1 != null)
+		   //如果字节序列不为空，则添加到当前线程的缓存区中
+                    Util.offerLastTemporaryDirectBuffer(bytebuffer1);
+		 //清除索引i2对应的字节序列在iovecwrapper中的字节序列数组，及相应副本数组的信息
+                iovecwrapper.clearRefs(i2);
+            }
+
+        }
+        return l1;
+        long l4;
+	//委托给nativedispatcher，将iovecwrapper的缓冲区数据，写到filedescriptor对应的输出流中。
+        long l2 = nativedispatcher.writev(filedescriptor, iovecwrapper.address, k);
+	...
+}
+在IOUtil上面的write方法中我们需要关注的是下面这一句
+//委托给nativedispatcher，将iovecwrapper的缓冲区数据，写到filedescriptor对应的输出流中。
+ long l2 = nativedispatcher.writev(filedescriptor, iovecwrapper.address, k);
+ nativedispatcher在SocketChannelImpl中实际为SocketDispatcher
+//SocketDispatcher
+long writev(FileDescriptor filedescriptor, long l, int i)
+        throws IOException
+    {
+        return writev0(filedescriptor, l, i);
+    }
+static native long writev0(FileDescriptor filedescriptor, long l, int i)
+        throws IOException;
+至此我们把SocketChannelImpl写ByteBuffer数组方法看完，首先同步写锁，确保通道，输出流打开，连接建立
+委托给IOUtil，将ByteBuffer数组写到输出流中，这一过程为获取存放i个字节缓冲区的IOVecWrapper，
+遍历ByteBuffer数组m，将字节缓冲区添加到iovecwrapper的字节缓冲区数组中，如果ByteBuffer非Direct类型，
+委托Util从当前线程的缓冲区获取容量为j2临时DirectByteBuffer，并将ByteBuffer写到DirectByteBuffer，
+并将DirectByteBuffer添加到iovecwrapper的字节缓冲区（Shadow-Direct）数组中，
+将字节缓冲区的起始地址写到iovecwrapper，字节缓冲区的实际容量写到iovecwrapper；
+遍历iovecwrapper的字节缓冲区（Shadow-Direct）数组，将Shadow数组中的DirectByteBuffer通过Util添加到
+本地线程的缓存区中，并清除DirectByteBuffer在iovecwrapper的相应数组中的信息；最后通过
+SocketDispatcher，将iovecwrapper的缓冲区数据，写到filedescriptor对应的输出流中。
+
+
+
+总结：
+SocketChannelImpl写ByteBuffer数组方法，首先同步写锁，确保通道，输出流打开，连接建立
+委托给IOUtil，将ByteBuffer数组写到输出流中，这一过程为获取存放i个字节缓冲区的IOVecWrapper，
+遍历ByteBuffer数组m，将字节缓冲区添加到iovecwrapper的字节缓冲区数组中，如果ByteBuffer非Direct类型，
+委托Util从当前线程的缓冲区获取容量为j2临时DirectByteBuffer，并将ByteBuffer写到DirectByteBuffer，
+并将DirectByteBuffer添加到iovecwrapper的字节缓冲区（Shadow-Direct）数组中，
+将字节缓冲区的起始地址写到iovecwrapper，字节缓冲区的实际容量写到iovecwrapper；
+遍历iovecwrapper的字节缓冲区（Shadow-Direct）数组，将Shadow数组中的DirectByteBuffer通过Util添加到
+本地线程的缓存区中，并清除DirectByteBuffer在iovecwrapper的相应数组中的信息；最后通过
+SocketDispatcher，将iovecwrapper的缓冲区数据，写到filedescriptor对应的输出流中。

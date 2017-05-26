@@ -1,0 +1,198 @@
+ReentrantLock 实现了标准的互斥操作，也就是一次只能有一个线程持有锁，
+也即所谓独占锁的概念。前面的章节中一直在强调这个特点。
+显然这个特点在一定程度上面减低了吞吐量，实际上独占锁是一种保守的锁策略，
+在这种情况下任何“读/读”，“写/读”，“写/写”操作都不能同时发生。
+但是同样需要强调的一个概念是，锁是有一定的开销的，当并发比较大的时候，
+锁的开销就比较客观了。所以如果可能的话就尽量少用锁，
+非要用锁的话就尝试看能否改造为读写锁。ReadWriteLock描述的是：
+一个资源能够被多个读线程访问，或者被一个写线程访问，但是不能同时存在读写线程。
+也就是说读写锁使用的场合是一个共享资源被大量读取操作，而只有少量的写操作（修改数据）
+下面我们用一个ReadWriteLock来实现简单的ConcurrentMap
+package juc.latch;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+/**
+ * ReentrantReadWriteLock实现的简单ConcurrentMap
+ * @author donald
+ * 2017年3月6日
+ * 下午9:43:24
+ * @param <K>
+ * @param <V>
+ */
+public class SimpleConcurrentMap<K, V> implements Map<K, V> {
+	final ReadWriteLock lock = new ReentrantReadWriteLock();
+	//读写锁
+	final Lock r = lock.readLock();
+	final Lock w = lock.writeLock();
+	final Map<K, V> map;
+
+	public SimpleConcurrentMap(Map<K, V> map) {
+		this.map = map;
+		if (map == null)
+			throw new NullPointerException();
+	}
+    /**
+     * 
+     */
+	public void clear() {
+		w.lock();
+		try {
+			map.clear();
+		} finally {
+			w.unlock();
+		}
+	}
+    /**
+     * 
+     */
+	public boolean containsKey(Object key) {
+		r.lock();
+		try {
+			return map.containsKey(key);
+		} finally {
+			r.unlock();
+		}
+	}
+    /**
+     * 
+     */
+	public boolean containsValue(Object value) {
+		r.lock();
+		try {
+			return map.containsValue(value);
+		} finally {
+			r.unlock();
+		}
+	}
+
+	public Set<java.util.Map.Entry<K, V>> entrySet() {
+		throw new UnsupportedOperationException();
+	}
+	/**
+	 * 
+	 */
+	public V get(Object key) {
+		r.lock();
+		try {
+			return map.get(key);
+		} finally {
+			r.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public boolean isEmpty() {
+		r.lock();
+		try {
+			return map.isEmpty();
+		} finally {
+			r.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public Set<K> keySet() {
+		r.lock();
+		try {
+			return new HashSet<K>(map.keySet());
+		} finally {
+			r.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public V put(K key, V value) {
+		w.lock();
+		try {
+			return map.put(key, value);
+		} finally {
+			w.unlock();
+		}
+	}
+   /**
+    * 
+    */
+	public void putAll(Map<? extends K, ? extends V> m) {
+		w.lock();
+		try {
+			map.putAll(m);
+		} finally {
+			w.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public V remove(Object key) {
+		w.lock();
+		try {
+			return map.remove(key);
+		} finally {
+			w.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public int size() {
+		r.lock();
+		try {
+			return map.size();
+		} finally {
+			r.unlock();
+		}
+	}
+	/**
+	 * 
+	 */
+	public Collection<V> values() {
+		r.lock();
+		try {
+			return new ArrayList<V>(map.values());
+		} finally {
+			r.unlock();
+		}
+	}
+}
+上面的并发Map我们主要用的读写锁，的读锁和写锁分别控制并发Map的存和取。
+ReadWriteLock需要严格区分读写操作，如果读操作使用了写入锁，那么降低读操作的吞吐量，
+如果写操作使用了读取锁，那么就可能发生数据错误。另外ReentrantReadWriteLock还有以下几个特性：
+• 公平性
+ 非公平锁（默认） 这个和独占锁的非公平性一样，由于读线程之间没有锁竞争，
+   所以读操作没有公平性和非公平性，写操作时，由于写操作可能立即获取到锁，
+   所以会推迟一个或多个读操作或者写操作。因此非公平锁的吞吐量要高于公平锁。
+ 公平锁 利用AQS的CLH队列，释放当前保持的锁（读锁或者写锁）时，
+   优先为等待时间最长的那个写线程分配写入锁，
+   当前前提是写线程的等待时间要比所有读线程的等待时间要长。
+   同样一个线程持有写入锁或者有一个写线程已经在等待了，
+   那么试图获取公平锁的（非重入）所有线程（包括读写线程）都将被阻塞，
+   直到最先的写线程释放锁。如果读线程的等待时间比写线程的等待时间还有长，
+   那么一旦上一个写线程释放锁，这一组读线程将获取锁。
+• 重入性
+ 读写锁允许读线程和写线程按照请求锁的顺序重新获取读取锁或者写入锁。
+   当然了只有写线程释放了锁，读线程才能获取重入锁。
+ 写线程获取写入锁后可以再次获取读取锁，但是读线程获取读取锁后却不能获取写入锁。
+ 另外读写锁最多支持65535个递归写入锁和65535个递归读取锁。
+• 锁降级
+ 写线程获取写入锁后可以获取读取锁，然后释放写入锁，
+   这样就从写入锁变成了读取锁，从而实现锁降级的特性。
+• 锁升级
+ 读取锁是不能直接升级为写入锁的。因为获取一个写入锁需要释放所有读取锁，
+   所以如果有两个读取锁尝试获取写入锁而都不释放读取锁时就会发生死锁。
+• 锁获取中断
+ 读取锁和写入锁都支持获取锁期间被中断。这个和独占锁一致。
+• 条件变量
+ 写入锁提供了条件变量(Condition)的支持，这个和独占锁一致，
+   但是读取锁却不允许获取条件变量，将得到一个UnsupportedOperationException异常。
+• 重入数
+ 读取锁和写入锁的数量最大分别只能是65535（包括重入数）。

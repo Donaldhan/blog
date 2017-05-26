@@ -1,0 +1,85 @@
+tomcat日志及log4j日志乱码：
+Linux系统字符编码:http://www.cnblogs.com/zhzhao/p/4516997.html
+linxu配置文件：http://blog.chinaunix.net/uid-14735472-id-4305151.html
+一般在我们在windows开发程序时用GBK编码格式在windows系统上可以显示，
+但到了Linux环境中就出现乱码，出现这种问题按以下4步检查：
+1.检查日志编码配置
+log4j.appender.A=org.apache.log4j.DailyRollingFileAppender  
+log4j.appender.A.Threshold=INFO
+log4j.appender.A.File=${catalina.home}/logs/test/log
+log4j.appender.A.DatePattern=yyyy-MM-dd'.log'
+log4j.appender.A.layout=org.apache.log4j.PatternLayout  
+log4j.appender.A.Encoding=UTF-8
+log4j.appender.A.layout.ConversionPattern=[FH_sys]  %d{yyyy-MM-dd HH\:mm\:ss} %5p %c{1}\:%L \: %m%n
+
+
+logback.xml
+<appender name="file"
+         class="ch.qos.logback.core.rolling.RollingFileAppender">
+         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+             <FileNamePattern>${catalina.home}/logs/test/%d{yyyy-MM-dd}.log</FileNamePattern>
+             <MaxHistory>30</MaxHistory>
+         </rollingPolicy>
+         <encoder>
+             <pattern>%date [%thread] %-5level %logger{80} - %msg%n</pattern>
+              <charset>UTF-8</charset>
+         </encoder>
+</appender>
+ 
+2.检查tomcat配置
+ server.xml
+ <Connector port="8080" protocol="HTTP/1.1"
+               connectionTimeout="20000"
+               redirectPort="8443" URIEncoding='UTF-8'/>	      
+3.检查服务器编码配置
+donald@192.168.32.126：~> locale
+LANG=zh_CN.GBK
+LC_CTYPE="zh_CN.GBK"
+LC_NUMERIC="zh_CN.GBK"
+LC_TIME="zh_CN.GBK"
+LC_COLLATE="zh_CN.GBK"
+LC_MONETARY="zh_CN.GBK"
+LC_MESSAGES="zh_CN.GBK"
+LC_PAPER="zh_CN.GBK"
+LC_NAME="zh_CN.GBK"
+LC_ADDRESS="zh_CN.GBK"
+LC_TELEPHONE="zh_CN.GBK"
+LC_MEASUREMENT="zh_CN.GBK"
+LC_IDENTIFICATION="zh_CN.GBK"
+LC_ALL=zh_CN.GBK
+
+修改Linux字符集：
+vim /etc/profile
+export LC_ALL=zh_CN.UTF-8
+:wq
+加载新配置：
+source /etc/profile
+donald@192.168.32.126：~> locale
+LANG=zh_CN.UTF-8
+LC_CTYPE="zh_CN.UTF-8"
+LC_NUMERIC="zh_CN.UTF-8"
+LC_TIME="zh_CN.UTF-8"
+LC_COLLATE="zh_CN.UTF-8"
+LC_MONETARY="zh_CN.UTF-8"
+LC_MESSAGES="zh_CN.UTF-8"
+LC_PAPER="zh_CN.UTF-8"
+LC_NAME="zh_CN.UTF-8"
+LC_ADDRESS="zh_CN.UTF-8"
+LC_TELEPHONE="zh_CN.UTF-8"
+LC_MEASUREMENT="zh_CN.UTF-8"
+LC_IDENTIFICATION="zh_CN.UTF-8"
+LC_ALL=zh_CN.UTF-8
+这个时全局的配置编码集，有的时候用户的配置文件中配置LANG或LC_ALL也要进行相应的修改
+这个在家目录的.bashrc和.profile文件即可
+重启服务，即可。
+附：linux配置文件区别
+/etc/profile，/etc/bashrc 是系统全局环境变量设定
+~/.profile，~/.bashrc用户家目录下的私有环境变量设定
+当登入系统时候获得一个shell进程时，其读取环境设定档有三步
+1首先读入的是全局环境变量设定档/etc/profile，然后根据其内容读取额外的设定的文档，如
+/etc/profile.d和/etc/inputrc
+2然后根据不同使用者帐号，去其家目录读取~/.bash_profile，如果这读取不了就读取~/.bash_login，
+这个也读取不了才会读取~/.profile，这三个文档设定基本上是一样的，读取有优先关系
+3然后在根据用户帐号读取~/.bashrc，至于~/.profile与~/.bashrc的不区别，都具有个性化定制功能
+~/.profile可以设定本用户专有的路径，环境变量，等，它只能登入的时候执行一次
+~/.bashrc也是某用户专有设定文档，可以设定路径，命令别名，每次shell script的执行都会使用它一次

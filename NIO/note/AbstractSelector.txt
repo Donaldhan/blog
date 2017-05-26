@@ -1,0 +1,227 @@
+Channel接口定义：[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannel接口定义:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProvider定义：[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannel定义：[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannel定义：[url]http://donald-draper.iteye.com/blog/2369836[/url]
+Selector定义：[url]http://donald-draper.iteye.com/blog/2370015[/url]
+在前一篇我们看了一下Selector的定义，今天来看下选择器的基础实现AbstractSelector。
+package java.nio.channels.spi;
+import java.io.IOException;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.util.HashSet;
+import java.util.Set;
+import sun.nio.ch.Interruptible;
+import java.util.concurrent.atomic.AtomicBoolean;
+/**
+ * Base implementation class for selectors.
+ *AbstractSelector为选择器的基础实现类
+ * <p> This class encapsulates the low-level machinery required to implement
+ * the interruption of selection operations.  A concrete selector class must
+ * invoke the {@link #begin begin} and {@link #end end} methods before and
+ * after, respectively, invoking an I/O operation that might block
+ * indefinitely.  In order to ensure that the {@link #end end} method is always
+ * invoked, these methods should be used within a
+ * <tt>try</tt>&nbsp;...&nbsp;<tt>finally</tt> block: <a name="be">
+ *AbstractSelector封装了系统底层实现选择器中断的操作。在一个可能阻塞的IO操作中，
+ 一个具体的选择器类，必须调用begin在IO操作之前和end方法在IO操作之后，为了确保上述
+ end方法总是调用，begin和end方法，应该在try，finanlly语句块中使用。
+ 具体使用如下：
+ * <blockquote><pre>
+ * try {
+ *     begin();
+ *     // Perform blocking I/O operation here
+ *     ...
+ * } finally {
+ *     end();
+ * }</pre></blockquote>
+ *
+ * <p> This class also defines methods for maintaining a selector's
+ * cancelled-key set and for removing a key from its channel's key set, and
+ * declares the abstract {@link #register register} method that is invoked by a
+ * selectable channel's {@link AbstractSelectableChannel#register register}
+ * method in order to perform the actual work of registering a channel.  </p>
+ *AbstractSelector提供了维护取消key集合和从通道的选择key集合中移除通道注册到选择器的key的方法
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class AbstractSelector
+    extends Selector
+{
+
+    private AtomicBoolean selectorOpen = new AtomicBoolean(true);
+
+    // The provider that created this selector
+    private final SelectorProvider provider;
+
+    /**
+     * Initializes a new instance of this class.  </p>
+     */
+    protected AbstractSelector(SelectorProvider provider) {
+        this.provider = provider;
+    }
+   //取消的选择key集合
+    private final Set<SelectionKey> cancelledKeys = new HashSet<SelectionKey>();
+   //取消选择key
+    void cancel(SelectionKey k) {                       // package-private
+        synchronized (cancelledKeys) {
+            cancelledKeys.add(k);
+        }
+    }
+
+    /**
+     * Closes this selector.
+     *关闭选择器
+     * <p> If the selector has already been closed then this method returns
+     * immediately.  Otherwise it marks the selector as closed and then invokes
+     * the {@link #implCloseSelector implCloseSelector} method in order to
+     * complete the close operation.  </p>
+     *如果选择器已经关闭，则这个方法将立刻返回。否则标记选择器已关闭，同时调用
+     #implCloseSelector完成关闭操作。
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    public final void close() throws IOException {
+        boolean open = selectorOpen.getAndSet(false);
+        if (!open)
+            return;
+        implCloseSelector();
+    }
+
+    /**
+     * Closes this selector.
+     *关闭选择器
+     * <p> This method is invoked by the {@link #close close} method in order
+     * to perform the actual work of closing the selector.  This method is only
+     * invoked if the selector has not yet been closed, and it is never invoked
+     * more than once.
+     *此方法在关闭选择器的方法中，调用完成实际的关闭选择器工作。这个方法在还没有关闭
+     选择器的时候调用，不会被调用一次以上。
+     * <p> An implementation of this method must arrange for any other thread
+     * that is blocked in a selection operation upon this selector to return
+     * immediately as if by invoking the {@link
+     * java.nio.channels.Selector#wakeup wakeup} method. </p>
+     *方法的实现必须安排其他阻塞在选择器的选择操作上的线程立即返回，就像调用选择的
+     唤醒方法一样。
+     * @throws  IOException
+     *          If an I/O error occurs while closing the selector
+     */
+    protected abstract void implCloseSelector() throws IOException;
+    //选择器是否打开
+    public final boolean isOpen() {
+        return selectorOpen.get();
+    }
+
+    /**
+     * Returns the provider that created this channel.
+     *
+     * @return  The provider that created this channel
+     */
+    public final SelectorProvider provider() {
+        return provider;
+    }
+
+    /**
+     * Retrieves this selector's cancelled-key set.
+     *获取取消key集合，使用时必须同步取消key集合
+     * <p> This set should only be used while synchronized upon it.  </p>
+     *
+     * @return  The cancelled-key set
+     */
+    protected final Set<SelectionKey> cancelledKeys() {
+        return cancelledKeys;
+    }
+
+    /**
+     * Registers the given channel with this selector.
+     *注册通道到选择器
+     * <p> This method is invoked by a channel's {@link
+     * AbstractSelectableChannel#register register} method in order to perform
+     * the actual work of registering the channel with this selector.  </p>
+     *这个方法在AbstractSelectableChannel#register的方法中调用完成实际的注册通道
+     到选择器工作。
+     * @param  ch
+     *         The channel to be registered
+     *
+     * @param  ops
+     *         The initial interest set, which must be valid
+     *
+     * @param  att
+     *         The initial attachment for the resulting key
+     *
+     * @return  A new key representing the registration of the given channel
+     *          with this selector
+     */
+    protected abstract SelectionKey register(AbstractSelectableChannel ch,
+                                             int ops, Object att);
+
+    /**
+     * Removes the given key from its channel's key set.
+     *反注册，及将选择key从通道的选择key集合中移除。
+     * <p> This method must be invoked by the selector for each channel that it
+     * deregisters.  </p>
+     *注册到选择器的所有通道，在反注册时，必须调用此方法。
+     * @param  key
+     *         The selection key to be removed
+     */
+    protected final void deregister(AbstractSelectionKey key) {
+        ((AbstractSelectableChannel)key.channel()).removeKey(key);
+    }
+
+
+    // -- Interruption machinery --
+
+    private Interruptible interruptor = null;//中断器
+
+    /**
+     * Marks the beginning of an I/O operation that might block indefinitely.
+     *标记不确定阻塞IO操作的开始。
+     * <p> This method should be invoked in tandem with the {@link #end end}
+     * method, using a <tt>try</tt>&nbsp;...&nbsp;<tt>finally</tt> block as
+     * shown <a href="#be">above</a>, in order to implement interruption for
+     * this selector.
+     *这个方法应配合end方法在try语句块中使用，在finnally语句块中调用end，这个使用方法
+     在类的java Doc有说。
+     * <p> Invoking this method arranges for the selector's {@link
+     * Selector#wakeup wakeup} method to be invoked if a thread's {@link
+     * Thread#interrupt interrupt} method is invoked while the thread is
+     * blocked in an I/O operation upon the selector.  
+     如果线程阻塞在选择器的IO操作上，并且线程中断，调用此方法必须安排选择器
+     wakeup唤醒线程。
+     </p>
+     */
+    protected final void begin() {
+        if (interruptor == null) {
+            interruptor = new Interruptible() {
+                    public void interrupt(Thread ignore) {
+		        //唤醒等待选择操作的线程
+                        AbstractSelector.this.wakeup();
+                    }};
+        }
+        AbstractInterruptibleChannel.blockedOn(interruptor);
+        Thread me = Thread.currentThread();
+        if (me.isInterrupted())
+	    //如果当前线程处于中断状态，则消除中断位
+            interruptor.interrupt(me);
+    }
+
+    /**
+     * Marks the end of an I/O operation that might block indefinitely.
+     *标记不确定阻塞IO操作的结束
+     * <p> This method should be invoked in tandem with the {@link #begin begin}
+     * method, using a <tt>try</tt>&nbsp;...&nbsp;<tt>finally</tt> block as
+     * shown <a href="#be">above</a>, in order to implement interruption for
+     * this selector.  </p>
+     */此方法与begin方法在try，finanlly方法中配合使用，为了实现现在器的中断
+    protected final void end() {
+        AbstractInterruptibleChannel.blockedOn(null);
+    }
+}
+从AbstractSelector的定义可以看出，取消的key放在一个set集合中，对集合进行添加操作时，
+必须同步取消key set集合。反注册选择key完成的实际工作是，将key，从key对应的通道的选择key
+数组（这个我们在选择通道相关文章中有讲）中移除。

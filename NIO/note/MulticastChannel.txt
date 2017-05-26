@@ -1,0 +1,235 @@
+NetworkChannel接口定义：[url]http://donald-draper.iteye.com/blog/2369773[/url]
+MembershipKey定义:[url]http://donald-draper.iteye.com/blog/2372947[/url]
+package java.nio.channels;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.io.IOException;
+import java.net.ProtocolFamily;             // javadoc
+import java.net.StandardProtocolFamily;     // javadoc
+import java.net.StandardSocketOptions;      // javadoc
+
+/**
+ * A network channel that supports Internet Protocol (IP) multicasting.
+ *MulticastChannel是一个支持多播网络IP协议的网络通道
+ * <p> IP multicasting is the transmission of IP datagrams to members of
+ * a <em>group</em> that is zero or more hosts identified by a single destination
+ * address.
+ *IP多播是传输IP报文到多播组目的地址的一个或多个主机。
+ * <p> In the case of a channel to an {@link StandardProtocolFamily#INET IPv4} socket,
+ * the underlying operating system supports <a href="http://www.ietf.org/rfc/rfc2236.txt">
+ * <i>RFC&nbsp;2236: Internet Group Management Protocol, Version 2 (IGMPv2)</i></a>.
+ * It may optionally support source filtering as specified by <a
+ * href="http://www.ietf.org/rfc/rfc3376.txt"> <i>RFC&nbsp;3376: Internet Group
+ * Management Protocol, Version 3 (IGMPv3)</i></a>.
+ * For channels to an {@link StandardProtocolFamily#INET6 IPv6} socket, the equivalent
+ * standards are <a href="http://www.ietf.org/rfc/rfc2710.txt"> <i>RFC&nbsp;2710:
+ * Multicast Listener Discovery (MLD) for IPv6</i></a> and <a
+ * href="http://www.ietf.org/rfc/rfc3810.txt"> <i>RFC&nbsp;3810: Multicast Listener
+ * Discovery Version 2 (MLDv2) for IPv6</i></a>.
+ *
+ 一个ip4的socket网络通道底层支持IGMPv2，可以源地址过滤的IGMPv3。一个IPv6的socket网络通道
+ ，对应的为MLD，MLDv2。
+
+ * <p> The {@link #join(InetAddress,NetworkInterface)} method is used to
+ * join a group and receive all multicast datagrams sent to the group. A channel
+ * may join several multicast groups and may join the same group on several
+ * {@link NetworkInterface interfaces}. Membership is dropped by invoking the {@link
+ * MembershipKey#drop drop} method on the returned {@link MembershipKey}. If the
+ * underlying platform supports source filtering then the {@link MembershipKey#block
+ * block} and {@link MembershipKey#unblock unblock} methods can be used to block or
+ * unblock multicast datagrams from particular source addresses.
+ *join(InetAddress,NetworkInterface)方法加入一个多播组，接受发送到多播组的报文。
+一个多播通道可以加入多个多播分组，或加入多个网卡接口的相同多播分组。调用MembershipKey的
+drop方法，将会丢弃Membership，即MembershipKey无效。如果底层操作系统支持源地址过滤，则
+可以调用MembershipKey#block和#unblock方法，用于阻塞从特殊源地址的报文或解除从特殊源地址的报文阻塞。
+ * <p> The {@link #join(InetAddress,NetworkInterface,InetAddress)} method
+ * is used to begin receiving datagrams sent to a group whose source address matches
+ * a given source address. This method throws {@link UnsupportedOperationException}
+ * if the underlying platform does not support source filtering.  Membership is
+ * <em>cumulative</em> and this method may be invoked again with the same group
+ * and interface to allow receiving datagrams from other source addresses. The
+ * method returns a {@link MembershipKey} that represents membership to receive
+ * datagrams from the given source address. Invoking the key's {@link
+ * MembershipKey#drop drop} method drops membership so that datagrams from the
+ * source address can no longer be received.
+ *#join(InetAddress,NetworkInterface,InetAddress)方法为，加入一个多播组，
+ 开始接受发送到多播组的源地址报文。如果底层平台不支持源地址过滤，则抛出UnsupportedOperationException。
+多播组成员关系是可以累加的，，此方法以相同的多播地址和网络接口参数可以多次调用，
+即允许接受多个源地址发送到多播组的报文。此方法返回一个表示接受指定源地址报文的多播关系key。
+调用MembershipKey#drop方法，将解除多播成员关系，即不在接受源地址发送的多播报文。
+ * <h4>Platform dependencies</h4>
+ *平台依赖性
+ * The multicast implementation is intended to map directly to the native
+ * multicasting facility. Consequently, the following items should be considered
+ * when developing an application that receives IP multicast datagrams:
+ *多播的实现是需要直接映射到本地的多播硬件设备。因此在开发一个接受多播ip的报文时，
+ 需要考虑一下几条：
+ * <ol>
+ *
+ * <li><p> The creation of the channel should specify the {@link ProtocolFamily}
+ * that corresponds to the address type of the multicast groups that the channel
+ * will join. There is no guarantee that a channel to a socket in one protocol
+ * family can join and receive multicast datagrams when the address of the
+ * multicast group corresponds to another protocol family. For example, it is
+ * implementation specific if a channel to an {@link StandardProtocolFamily#INET6 IPv6}
+ * socket can join an {@link StandardProtocolFamily#INET IPv4} multicast group and receive
+ * multicast datagrams sent to the group. </p></li>
+ *通道创建时应该确定通道加入的多播组地址类型的ProtocolFamily。多播通道不能保证，
+ 一个ProtocolFamily类型的socket可以接受另外一个ProtocolFamily类型的多播组报文，或者说
+ 不能保证能加入另外一个ProtocolFamily类型多播组。比如通道的socket的协议组为StandardProtocolFamily#INET6 IPv6
+ ，而加入的多播组为StandardProtocolFamily#INET IPv4。这段话的含义为，通道在创建关联一个
+ 协议ProtocolFamily，具体的协议通道，只能加入相应的多播协议组。及INET6通道只能加入ip6地址多播组，
+INET通道只能加入ip4地址多播组。
+
+//DatagramChannel,打开一个指定协议的报文通道
+public static DatagramChannel open(ProtocolFamily family) throws IOException {
+        return SelectorProvider.provider().openDatagramChannel(family);
+    }
+ * <li><p> The channel's socket should be bound to the {@link
+ * InetAddress#isAnyLocalAddress wildcard} address. If the socket is bound to
+ * a specific address, rather than the wildcard address then it is implementation
+ * specific if multicast datagrams are received by the socket. </p></li>
+ *通道应该绑定一个本地地址。如果绑定为一个特定的地址，而不是本地地址，具体的通道实现
+ 需要确定是否多播报文可以通过socket接受。
+ * <li><p> The {@link StandardSocketOptions#SO_REUSEADDR SO_REUSEADDR} option should be
+ * enabled prior to {@link NetworkChannel#bind binding} the socket. This is
+ * required to allow multiple members of the group to bind to the same
+ * address. </p></li>
+ *StandardSocketOptions#SO_REUSEADDR应该在地址绑定前，配置地址重用选项。
+ 以便多个成员能够绑定同样的地址，加入多播组。
+ * </ol>
+ *
+ * <p> <b>Usage Example:</b>
+ * <pre>使用实例
+ *     // join multicast group on this interface, and also use this
+ *     // interface for outgoing multicast datagrams
+       加入一个指定网卡的多播组，同时用这个网卡发送多播报文
+ *     NetworkInterface ni = NetworkInterface.getByName("hme0");
+ *
+ *     DatagramChannel dc = DatagramChannel.open(StandardProtocolFamily.INET)
+ *         .setOption(StandardSocketOptions.SO_REUSEADDR, true)
+ *         .bind(new InetSocketAddress(5000))
+ *         .setOption(StandardSocketOptions.IP_MULTICAST_IF, ni);
+ *
+ *     InetAddress group = InetAddress.getByName("225.4.5.6");
+ *
+ *     MembershipKey key = dc.join(group, ni);
+ * </pre>
+ *
+ * @since 1.7
+ */
+//多播通道
+public interface MulticastChannel
+    extends NetworkChannel
+{
+    /**
+     * Closes this channel.
+     *关闭通道
+     * <p> If the channel is a member of a multicast group then the membership
+     * is {@link MembershipKey#drop dropped}. Upon return, the {@link
+     * MembershipKey membership-key} will be {@link MembershipKey#isValid
+     * invalid}.
+     *如果通道是一个多播组的成员，在通道关闭时，将会drop相应的MembershipKey。
+     在方法执行后，MembershipKey将会无效
+     * <p> This method otherwise behaves exactly as specified by the {@link
+     * Channel} interface.
+     *此方法在其他方面与通道接口相似。
+     * @throws  IOException
+     *          If an I/O error occurs
+     */
+    @Override void close() throws IOException;
+
+    /**
+     * Joins a multicast group to begin receiving all datagrams sent to the group,
+     * returning a membership key.
+     *加入一个多播组，开始接受发送到多播组的报文，返回MembershipKey。
+     * <p> If this channel is currently a member of the group on the given
+     * interface to receive all datagrams then the membership key, representing
+     * that membership, is returned. Otherwise this channel joins the group and
+     * the resulting new membership key is returned. The resulting membership key
+     * is not {@link MembershipKey#sourceAddress source-specific}.
+     *如果为指定网络接口地址的组成员，正在接受所有报文，将返回表示成员关系的MembershipKey。
+     否则通道加入分组，创建一个新的MembershipKey返回。MembershipKey的源地址是不确定的。
+     * <p> A multicast channel may join several multicast groups, including
+     * the same group on more than one interface. An implementation may impose a
+     * limit on the number of groups that may be joined at the same time.
+     *一个多播通道可以加入多个多播分组，包括在一个或多个网络接口上的相同分组。一个具体
+     的实现也许会限制同一时间加入多播组的数量。
+     * @param   group
+     *          The multicast address to join
+     * @param   interf
+     *          The network interface on which to join the group
+     *
+     * @return  The membership key
+     *
+     * @throws  IllegalArgumentException，多播组地址为非多播地址，或通道不支持多播组地址参数
+     *          If the group parameter is not a {@link InetAddress#isMulticastAddress
+     *          multicast} address, or the group parameter is an address type
+     *          that is not supported by this channel
+     * @throws  IllegalStateException，如果通道已经加入源地址确定的对应的网络接口上的多播组
+     *          If the channel already has source-specific membership of the
+     *          group on the interface
+     * @throws  UnsupportedOperationException 如果通道不是一个网络写socket
+     *          If the channel's socket is not an Internet Protocol socket
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If an I/O error occurs
+     * @throws  SecurityException
+     *          If a security manager is set, and its
+     *          {@link SecurityManager#checkMulticast(InetAddress) checkMulticast}
+     *          method denies access to the multiast group
+     */
+    MembershipKey join(InetAddress group, NetworkInterface interf)
+        throws IOException;
+
+    /**
+     * Joins a multicast group to begin receiving datagrams sent to the group
+     * from a given source address.
+     *加入一个多播组，开始接受发送到多播组的源地址报文，返回MembershipKey。
+     * <p> If this channel is currently a member of the group on the given
+     * interface to receive datagrams from the given source address then the
+     * membership key, representing that membership, is returned. Otherwise this
+     * channel joins the group and the resulting new membership key is returned.
+     * The resulting membership key is {@link MembershipKey#sourceAddress
+     * source-specific}.
+     *如果为指定网络接口地址的组成员，正在接受所有源地址的报文，将返回表示成员关系的MembershipKey。
+     否则通道加入分组，创建一个新的MembershipKey返回。MembershipKey的源地址是确定的。
+     * <p> Membership is <em>cumulative</em> and this method may be invoked
+     * again with the same group and interface to allow receiving datagrams sent
+     * by other source addresses to the group.
+     *多播组成员关系是可以累加的，此方法以相同的多播地址和网络接口参数可以多次调用，
+     即允许从多个源地址发送报文到多播组。
+     * @param   group
+     *          The multicast address to join
+     * @param   interf
+     *          The network interface on which to join the group
+     * @param   source
+     *          The source address
+     *
+     * @return  The membership key
+     *
+     * @throws  IllegalArgumentException
+     *          If the group parameter is not a {@link
+     *          InetAddress#isMulticastAddress multicast} address, the
+     *          source parameter is not a unicast address, the group
+     *          parameter is an address type that is not supported by this channel,
+     *          or the source parameter is not the same address type as the group
+     * @throws  IllegalStateException
+     *          If the channel is currently a member of the group on the given
+     *          interface to receive all datagrams
+     * @throws  UnsupportedOperationException
+     *          If the channel's socket is not an Internet Protocol socket or
+     *          source filtering is not supported
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If an I/O error occurs
+     * @throws  SecurityException
+     *          If a security manager is set, and its
+     *          {@link SecurityManager#checkMulticast(InetAddress) checkMulticast}
+     *          method denies access to the multiast group
+     */
+    MembershipKey join(InetAddress group, NetworkInterface interf, InetAddress source)
+        throws IOException;
+}

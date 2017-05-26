@@ -1,0 +1,608 @@
+上一篇说了数据库连接池的获取，几篇来看一下从连接池，获取连接
+从AbstractPoolBackedDataSource的获取连接方法开始，
+public abstract class AbstractPoolBackedDataSource extends PoolBackedDataSourceBase
+    implements PooledDataSource
+{
+    public Connection getConnection()
+        throws SQLException
+    {
+         //获取数据库连接池,实际为NewPooledConnection，
+        PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+	//从数据库连接池，返回数据库连接
+        return pc.getConnection();
+    }
+}
+ PooledConnection pc = getPoolManager().getPool().checkoutPooledConnection();
+ 这句话实际调用的返回的是NewPooledConnection
+//WrapperConnectionPoolDataSource
+protected PooledConnection getPooledConnection(ConnectionCustomizer cc, String pdsIdt)
+        throws SQLException
+    {
+        DataSource nds;
+        Connection conn;
+        nds = getNestedDataSource();
+        conn = null;
+        conn = nds.getConnection();
+        return new NewPooledConnection(conn, connectionTester, isAutoCommitOnClose(getUser()), isForceIgnoreUnresolvedTransactions(getUser()), getPreferredTestQuery(getUser()), cc, pdsIdt);
+    }
+来看这一句
+//从数据库连接池，返回数据库连接
+return pc.getConnection();
+在上一篇，获取数据库连接池中，讲到getPoolManager().getPool().checkoutPooledConnection()，
+实际上返回的是NewPooledConnection，我们来看一下NewPooledConnection
+//NewPooledConnection
+public final class NewPooledConnection extends AbstractC3P0PooledConnection
+{ 
+    static Set holdabilityBugKeys = null;
+    //数据库连接，从Diver返回的物理数据库连接
+    final Connection physicalConnection;
+    final ConnectionTester connectionTester;
+    final boolean autoCommitOnClose;
+    final boolean forceIgnoreUnresolvedTransactions;
+    final String preferredTestQuery;
+    final boolean supports_setHoldability;
+    final boolean supports_setReadOnly;
+    final boolean supports_setTypeMap;
+    final int dflt_txn_isolation;
+    final String dflt_catalog;
+    final int dflt_holdability;
+    final boolean dflt_readOnly;
+    final Map dflt_typeMap;
+    final ConnectionEventSupport ces = new ConnectionEventSupport(this);
+    final StatementEventSupport ses = new StatementEventSupport(this);
+    GooGooStatementCache scache;
+    Throwable invalidatingException;
+    int connection_status;//连接状态
+    Set uncachedActiveStatements;
+    Map resultSetsForStatements;//结果集
+    Set metaDataResultSets;//元数据结果集
+    Set rawConnectionResultSets;
+    boolean connection_error_signaled;
+    volatile NewProxyConnection exposedProxy;//物理连接代理
+    volatile boolean isolation_lvl_nondefault;
+    volatile boolean catalog_nondefault;
+    volatile boolean holdability_nondefault;
+    volatile boolean readOnly_nondefault;
+    volatile boolean typeMap_nondefault;
+    static final boolean $assertionsDisabled = !com/mchange/v2/c3p0/impl/NewPooledConnection.desiredAssertionStatus();
+     //con为从Diver返回的物理数据库连接，这个在上一篇中，已经讲过，这里不再将
+     public NewPooledConnection(Connection con, ConnectionTester connectionTester, boolean autoCommitOnClose, boolean forceIgnoreUnresolvedTransactions, String preferredTestQuery, ConnectionCustomizer cc, String pdsIdt)
+        throws SQLException
+    {
+        scache = null;
+        invalidatingException = null;
+        connection_status = 0;
+        uncachedActiveStatements = new HashSet();
+        resultSetsForStatements = new HashMap();
+        metaDataResultSets = new HashSet();
+        rawConnectionResultSets = null;
+        connection_error_signaled = false;
+        exposedProxy = null;
+        isolation_lvl_nondefault = false;
+        catalog_nondefault = false;
+        holdability_nondefault = false;
+        readOnly_nondefault = false;
+        typeMap_nondefault = false;
+        try
+        {
+            if(cc != null)
+                cc.onAcquire(con, pdsIdt);
+        }
+        catch(Exception e)
+        {
+            throw SqlUtils.toSQLException(e);
+        }
+	//初始化物理连接
+        physicalConnection = con;
+        this.connectionTester = connectionTester;
+        this.autoCommitOnClose = autoCommitOnClose;
+        this.forceIgnoreUnresolvedTransactions = forceIgnoreUnresolvedTransactions;
+        this.preferredTestQuery = preferredTestQuery;
+        supports_setHoldability = C3P0ImplUtils.supportsMethod(con, "setHoldability", new Class[] {
+            Integer.TYPE
+        });
+        supports_setReadOnly = C3P0ImplUtils.supportsMethod(con, "setReadOnly", new Class[] {
+            Boolean.TYPE
+        });
+        supports_setTypeMap = C3P0ImplUtils.supportsMethod(con, "setTypeMap", new Class[] {
+            java/util/Map
+        });
+        dflt_txn_isolation = con.getTransactionIsolation();
+        dflt_catalog = con.getCatalog();
+        dflt_holdability = supports_setHoldability ? carefulCheckHoldability(con) : 2;
+        dflt_readOnly = supports_setReadOnly ? carefulCheckReadOnly(con) : false;
+        dflt_typeMap = !supports_setTypeMap || carefulCheckTypeMap(con) != null ? Collections.EMPTY_MAP : null;
+    }
+}
+来看NewPooledConnection的后去数据库连接方法
+public synchronized Connection getConnection()
+        throws SQLException
+    {
+        if(exposedProxy == null)
+            exposedProxy = new NewProxyConnection(physicalConnection, this);
+        else
+        if(logger.isLoggable(MLevel.WARNING))
+            logger.log(MLevel.WARNING, "c3p0 -- Uh oh... getConnection() was called on a PooledConnection when it had already provided a client with a Connection that has not yet been closed. This probably indicates a bug in the connection pool!!!");
+        return exposedProxy;
+    }
+从获取连接方法，可以看出，方法返回的是物理连接的代理NewProxyConnection
+//NewProxyConnection
+public final class NewProxyConnection
+    implements Connection, C3P0ProxyConnection
+{
+    protected Connection inner;//数据库物理连接
+    boolean txn_known_resolved;
+    DatabaseMetaData metaData;
+    //数据库连接池
+    volatile NewPooledConnection parentPooledConnection;
+    //创建连接事件监听器
+    ConnectionEventListener cel = new ConnectionEventListener() {
+
+        public void connectionErrorOccurred(ConnectionEvent connectionevent)
+        {
+        }
+
+        public void connectionClosed(ConnectionEvent evt)
+        {
+            detach();
+        }
+
+        final NewProxyConnection this$0;
+
+            
+            {
+                this.this$0 = NewProxyConnection.this;
+                super();
+            }
+    };
+     NewProxyConnection(Connection inner, NewPooledConnection parentPooledConnection)
+    {
+        this(inner);
+        attach(parentPooledConnection);
+    }
+    void attach(NewPooledConnection parentPooledConnection)
+    {
+        this.parentPooledConnection = parentPooledConnection;
+        parentPooledConnection.addConnectionEventListener(cel);
+    }
+}
+我们来看一下NewProxyConnection的预编译Statement方法，
+public synchronized PreparedStatement prepareStatement(String a)
+        throws SQLException
+    {
+        txn_known_resolved = false;
+        if(!parentPooledConnection.isStatementCaching())
+            break MISSING_BLOCK_LABEL_138;
+        PreparedStatement innerStmt;
+        Class argTypes[] = {
+            java/lang/String
+        };
+	//获取Connection的prepareStatement方法
+        Method method = java/sql/Connection.getMethod("prepareStatement", argTypes);
+        Object args[] = {
+            a
+        };
+	//从parentPooledConnection的NewPooledConnection获取PreparedStatement
+        innerStmt = (PreparedStatement)parentPooledConnection.checkoutStatement(method, args);
+	//构建NewProxyPreparedStatement，返回
+        return new NewProxyPreparedStatement(innerStmt, parentPooledConnection, true, this);
+    }
+先看这一句
+//从parentPooledConnection的NewPooledConnection获取PreparedStatement
+innerStmt = (PreparedStatement)parentPooledConnection.checkoutStatement(method, args);
+//NewPooledConnection
+  synchronized Object checkoutStatement(Method stmtProducingMethod, Object args[])
+        throws SQLException
+    {
+        //GooGooStatementCache scache;
+        return scache.checkoutStatement(physicalConnection, stmtProducingMethod, args);
+    }
+来看GooGooStatementCache
+public abstract class GooGooStatementCache
+{
+  private static final int DESTROY_NEVER = 0;
+    private static final int DESTROY_IF_CHECKED_IN = 1;
+    private static final int DESTROY_IF_CHECKED_OUT = 2;
+    private static final int DESTROY_ALWAYS = 3;
+    private static final boolean CULL_ONLY_FROM_UNUSED_CONNECTIONS = false;
+    ConnectionStatementManager cxnStmtMgr;
+    HashMap stmtToKey;
+    HashMap keyToKeyRec;
+    HashSet checkedOut;
+    AsynchronousRunner blockingTaskAsyncRunner;
+    HashSet removalPending;
+    StatementDestructionManager destructo;
+     public GooGooStatementCache(AsynchronousRunner blockingTaskAsyncRunner, AsynchronousRunner deferredStatementDestroyer)
+    {
+        stmtToKey = new HashMap();
+        keyToKeyRec = new HashMap();
+        checkedOut = new HashSet();
+        removalPending = new HashSet();
+        this.blockingTaskAsyncRunner = blockingTaskAsyncRunner;
+        cxnStmtMgr = createConnectionStatementManager();
+        destructo = ((StatementDestructionManager) (deferredStatementDestroyer == null ? ((StatementDestructionManager) (new IncautiousStatementDestructionManager(blockingTaskAsyncRunner))) : ((StatementDestructionManager) (new CautiousStatementDestructionManager(deferredStatementDestroyer)))));
+    }
+    //KeyRec
+    private static class KeyRec
+    {
+
+        HashSet allStmts;
+        LinkedList checkoutQueue;
+
+        private KeyRec()
+        {
+            allStmts = new HashSet();
+            checkoutQueue = new LinkedList();
+        }
+
+    }
+}
+
+//GooGooStatementCache
+ public synchronized Object checkoutStatement(Connection physicalConnection, Method stmtProducingMethod, Object args[])
+        throws SQLException, ResourceClosedException
+    {
+        Object out;
+        out = null;
+	//根据物理连接，Method和args创建StatementCacheKey
+        StatementCacheKey key = StatementCacheKey.find(physicalConnection, stmtProducingMethod, args);
+	 //返回StatementCacheKey对应KeyRec的checkoutQueue，LinkedList
+        LinkedList l = checkoutQueue(key);
+        if(l == null || l.isEmpty())
+        {
+	    //如果checkoutQueue为空，则获取Statement
+            out = acquireStatement(physicalConnection, stmtProducingMethod, args);
+            if(prepareAssimilateNewStatement(physicalConnection))
+                assimilateNewCheckedOutStatement(key, physicalConnection, out);
+        } 
+        return out;
+    }
+    //返回StatementCacheKey对应KeyRec的checkoutQueue，LinkedList
+    private LinkedList checkoutQueue(StatementCacheKey key)
+    {
+        KeyRec rec = keyRec(key);
+        return rec != null ? rec.checkoutQueue : null;
+    }
+    //根据StatementCacheKey，从keyToKeyRec中获取KeyRec
+     private KeyRec keyRec(StatementCacheKey key)
+    {
+        return (KeyRec)keyToKeyRec.get(key);
+    }
+
+    private HashSet keySet(StatementCacheKey key)
+    {
+        KeyRec rec = keyRec(key);
+        return rec != null ? rec.allStmts : null;
+    }
+来看这一句：
+//如果checkoutQueue为空，则获取Statement
+out = acquireStatement(physicalConnection, stmtProducingMethod, args);
+//GooGooStatementCache
+private Object acquireStatement(final Connection pConn, final Method stmtProducingMethod, final Object args[])
+        throws SQLException
+    {
+        Object out;
+        final Object outHolder[] = new Object[1];
+        final Throwable exceptionHolder[] = new Throwable[1];
+        class _cls1StmtAcquireTask
+            implements Runnable
+        {
+
+            public void run()
+            {
+	        //看这句，通过反射，调用数据库物理连接pConn的想应方法
+                outHolder[0] = stmtProducingMethod.invoke(pConn, args);
+                synchronized(GooGooStatementCache.this)
+                {
+                    notifyAll();
+                }
+                exceptionHolder[0] = googoostatementcache1;
+            }
+
+            final Object val$outHolder[];
+            final Method val$stmtProducingMethod;
+            final Connection val$pConn;
+            final Object val$args[];
+            final Throwable val$exceptionHolder[];
+            final GooGooStatementCache this$0;
+
+            _cls1StmtAcquireTask()
+            {
+                this.this$0 = GooGooStatementCache.this;
+                outHolder = aobj;
+                stmtProducingMethod = method;
+                pConn = connection;
+                args = aobj1;
+                exceptionHolder = athrowable;
+                super();
+            }
+        }
+	//创建预编译Statement任务线程
+        Runnable r = new _cls1StmtAcquireTask();
+	//交由blockingTaskAsyncRunner通过Timer去调度
+        blockingTaskAsyncRunner.postRunnable(r);
+        while(outHolder[0] == null && exceptionHolder[0] == null) 
+            wait();
+        out = outHolder[0];
+        return out;
+    }
+从上面可以看出NewPooledConnection的getConnection返回的是，物理数据库连接的代理
+NewProxyConnection，NewProxyConnection预编译Statement，实际上是通过反射调用物理连接的相应方法，
+这个过程在放在线程中，调用blockingTaskAsyncRunner去调度。
+再来看出NewProxyConnection的其他方法
+//设置读写属性
+public synchronized void setReadOnly(boolean a)
+        throws SQLException
+    {
+        try
+        {
+            inner.setReadOnly(a);
+            parentPooledConnection.markNewReadOnly(a);
+    }
+//获取读写属性
+ public synchronized boolean isReadOnly()
+        throws SQLException
+    {
+        txn_known_resolved = false;
+        return inner.isReadOnly();
+    }
+//获取数据库元原素
+public synchronized DatabaseMetaData getMetaData()
+        throws SQLException
+    {
+        txn_known_resolved = false;
+        if(metaData == null)
+        {
+            DatabaseMetaData innerMetaData = inner.getMetaData();
+            metaData = new NewProxyDatabaseMetaData(innerMetaData, parentPooledConnection, this);
+        }
+        return metaData;
+    }
+//设置事务
+ public synchronized void setTransactionIsolation(int a)
+        throws SQLException
+    {
+        try
+        {
+            inner.setTransactionIsolation(a);
+            parentPooledConnection.markNewTxnIsolation(a);
+        }
+    }
+   //提交
+   public synchronized void commit()
+        throws SQLException
+    {
+        try
+        {
+            inner.commit();
+            txn_known_resolved = true;
+        }
+    }
+   //回滚到检查点
+    public synchronized void rollback(Savepoint a)
+        throws SQLException
+    {
+        try
+        {
+            inner.rollback(a);
+            txn_known_resolved = true;
+        }
+    }
+   //回滚
+    public synchronized void rollback()
+        throws SQLException
+    {
+        try
+        {
+            inner.rollback();
+            txn_known_resolved = true;
+        }  
+    }
+//设置提交属性
+    public synchronized void setAutoCommit(boolean a)
+        throws SQLException
+    {
+        try
+        {
+            inner.setAutoCommit(a);
+            txn_known_resolved = true;
+        }
+    }
+从上面可以看出，NewProxyConnection的设置读写属性，提交，回滚，事务；获取数据库元原素，读写属性等，
+都是通过物理连接NewProxyConnection的相应方法。
+
+回到NewProxyConnection预编译Statement方法，看下面一句
+//构建NewProxyPreparedStatement，返回
+return new NewProxyPreparedStatement(innerStmt, parentPooledConnection, true, this);
+//NewProxyPreparedStatement
+public final class NewProxyPreparedStatement
+    implements PreparedStatement, C3P0ProxyStatement, ProxyResultSetDetachable
+{
+   protected PreparedStatement inner;//实际Diver对应的PreparedStatement
+    private static final MLogger logger = MLog.getLogger("com.mchange.v2.c3p0.impl.NewProxyPreparedStatement");
+    volatile NewPooledConnection parentPooledConnection;
+    ConnectionEventListener cel = new ConnectionEventListener() {
+
+        public void connectionErrorOccurred(ConnectionEvent connectionevent)
+        {
+        }
+
+        public void connectionClosed(ConnectionEvent evt)
+        {
+            detach();
+        }
+
+        final NewProxyPreparedStatement this$0;
+
+            
+            {
+                this.this$0 = NewProxyPreparedStatement.this;
+                super();
+            }
+    };
+    boolean is_cached;
+    NewProxyConnection creatorProxy;//物理数据库连接代理
+    HashSet myProxyResultSets;//代理结果集
+    NewProxyPreparedStatement(PreparedStatement inner, NewPooledConnection parentPooledConnection, boolean cached, NewProxyConnection cProxy)
+    {
+        this(inner, parentPooledConnection);
+        is_cached = cached;
+        creatorProxy = cProxy;
+    }
+}
+来看一下NewProxyPreparedStatement的设置参数
+public final void setString(int a, String b)
+        throws SQLException
+    {
+        try
+        {
+            maybeDirtyTransaction();
+	    //调用物理PreparedStatement的相应方法
+            inner.setString(a, b);
+        }
+    }
+//执行查询
+public final ResultSet executeQuery()
+        throws SQLException
+    {
+        ResultSet innerResultSet;
+        maybeDirtyTransaction();
+	//调用物理PreparedStatement的相应方法
+        innerResultSet = inner.executeQuery();
+        if(innerResultSet == null)
+            return null;
+        NewProxyResultSet out;
+        parentPooledConnection.markActiveResultSetForStatement(inner, innerResultSet);
+	//封装结果集NewProxyResultSet
+        out = new NewProxyResultSet(innerResultSet, parentPooledConnection, inner, this);
+        synchronized(myProxyResultSets)
+        {
+            myProxyResultSets.add(out);
+        }
+        return out; 
+    }
+从上面可以看出NewProxyPreparedStatement的设置及查询方法，实际上是调用
+物理PreparedStatement的相应方法。
+来看一下NewProxyResultSet
+public final class NewProxyResultSet
+    implements ResultSet
+{
+
+    protected ResultSet inner;//Driver物理结果集
+    private static final MLogger logger = MLog.getLogger("com.mchange.v2.c3p0.impl.NewProxyResultSet");
+    volatile NewPooledConnection parentPooledConnection;
+    ConnectionEventListener cel = new ConnectionEventListener() {
+
+        public void connectionErrorOccurred(ConnectionEvent connectionevent)
+        {
+        }
+
+        public void connectionClosed(ConnectionEvent evt)
+        {
+            detach();
+        }
+
+        final NewProxyResultSet this$0;
+
+            
+            {
+                this.this$0 = NewProxyResultSet.this;
+                super();
+            }
+    };
+    Object creator;
+    Object creatorProxy;
+    NewProxyConnection proxyConn;
+    NewProxyResultSet(ResultSet inner, NewPooledConnection parentPooledConnection, Object c, Object cProxy)
+    {
+        this(inner, parentPooledConnection);
+        creator = c;
+        creatorProxy = cProxy;
+        if(creatorProxy instanceof NewProxyConnection)
+            proxyConn = (NewProxyConnection)cProxy;
+    }
+}
+来看NewProxyResultSet的获取结果相关属性
+public final Date getDate(int a)
+        throws SQLException
+    {
+        if(proxyConn != null)
+            proxyConn.maybeDirtyTransaction();
+	//调用物理ResultSet的相关方法
+        return inner.getDate(a);
+    }
+//移动游标
+public final boolean next()
+        throws SQLException
+    {
+        if(proxyConn != null)
+            proxyConn.maybeDirtyTransaction();
+        return inner.next();
+    }
+从NewProxyResultSet上面可以看出，NewProxyResultSet的获取结果属性，及移动游标，实际上是，
+调用物理ResultSet的相关方法。
+
+总结：
+NewPooledConnection的getConnection返回的是，物理数据库连接的代理
+NewProxyConnection，NewProxyConnection预编译Statement，实际上是通过反射调用物理连接的相应方法，
+这个过程在放在线程中，调用blockingTaskAsyncRunner去调度。
+NewProxyConnection的设置读写属性，提交，回滚，事务；获取数据库元原素，读写属性等，
+都是通过物理连接NewProxyConnection的相应方法。NewProxyPreparedStatement的设置及查询方法，实际上是调用
+物理PreparedStatement的相应方法。NewProxyResultSet的获取结果属性，及移动游标，实际上是，
+调用物理ResultSet的相关方法。
+
+
+
+
+//StatementCacheKey,Statement Key
+abstract class StatementCacheKey
+{
+    static final int SIMPLE = 0;
+    static final int MEMORY_COALESCED = 1;
+    static final int VALUE_IDENTITY = 2;
+    Connection physicalConnection;
+    String stmtText;
+    boolean is_callable;
+    int result_set_type;
+    int result_set_concurrency;
+    int columnIndexes[];
+    String columnNames[];
+    Integer autogeneratedKeys;
+    Integer resultSetHoldability;
+    //根据物理连接，Method和args创建StatementCacheKey
+    public static synchronized StatementCacheKey find(Connection pcon, Method stmtProducingMethod, Object args[])
+    {
+        switch(2)
+        {
+        case 0: // '\0'
+            return SimpleStatementCacheKey._find(pcon, stmtProducingMethod, args);
+
+        case 1: // '\001'
+            return MemoryCoalescedStatementCacheKey._find(pcon, stmtProducingMethod, args);
+
+        case 2: // '\002'
+            return ValueIdentityStatementCacheKey._find(pcon, stmtProducingMethod, args);
+        }
+        throw new InternalError("StatementCacheKey.find() is misconfigured.");
+    }
+    StatementCacheKey(Connection physicalConnection, String stmtText, boolean is_callable, int result_set_type, int result_set_concurrency, int columnIndexes[], String columnNames[], 
+            Integer autogeneratedKeys, Integer resultSetHoldability)
+    {
+        init(physicalConnection, stmtText, is_callable, result_set_type, result_set_concurrency, columnIndexes, columnNames, autogeneratedKeys, resultSetHoldability);
+    }
+
+    void init(Connection physicalConnection, String stmtText, boolean is_callable, int result_set_type, int result_set_concurrency, int columnIndexes[], String columnNames[], 
+            Integer autogeneratedKeys, Integer resultSetHoldability)
+    {
+        this.physicalConnection = physicalConnection;
+        this.stmtText = stmtText;
+        this.is_callable = is_callable;
+        this.result_set_type = result_set_type;
+        this.result_set_concurrency = result_set_concurrency;
+        this.columnIndexes = columnIndexes;
+        this.columnNames = columnNames;
+        this.autogeneratedKeys = autogeneratedKeys;
+        this.resultSetHoldability = resultSetHoldability;
+    }
+    
+}

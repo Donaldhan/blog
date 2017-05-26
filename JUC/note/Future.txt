@@ -1,0 +1,159 @@
+/*
+ * Written by Doug Lea with assistance from members of JCP JSR-166
+ * Expert Group and released to the public domain, as explained at
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+
+package java.util.concurrent;
+
+/**
+ * A <tt>Future</tt> represents the result of an asynchronous
+ * computation.  Methods are provided to check if the computation is
+ * complete, to wait for its completion, and to retrieve the result of
+ * the computation.  The result can only be retrieved using method
+ * <tt>get</tt> when the computation has completed, blocking if
+ * necessary until it is ready.  Cancellation is performed by the
+ * <tt>cancel</tt> method.  Additional methods are provided to
+ * determine if the task completed normally or was cancelled. Once a
+ * computation has completed, the computation cannot be cancelled.
+ * If you would like to use a <tt>Future</tt> for the sake
+ * of cancellability but not provide a usable result, you can
+ * declare types of the form {@code Future<?>} and
+ * return <tt>null</tt> as a result of the underlying task.
+ *
+Future异步计算任务的结果。方法提供了检查计算任务是否完成，等待计算任务完成时，
+获取计算任务结果。当计算任务完成时，调用get方法可以获取计算任务结果，如果需要
+将阻塞至准备好。我们可以使用cancel取消线程的执行。另外提供了确定任务是否
+正常结束或取消的方法。当任务已经完成时，任务不可被取消。
+如果我们想取消任务，而不需要获取结果，则我们可以声明类型为Future<?>，
+则任务完成返回为null。
+ * <p>
+ 一些示例
+ * <b>Sample Usage</b> (Note that the following classes are all
+ * made-up.) <p>
+ *  <pre> {@code
+ * interface ArchiveSearcher { String search(String target); }
+ * class App {
+ *   ExecutorService executor = ...
+ *   ArchiveSearcher searcher = ...
+ *   void showSearch(final String target)
+ *       throws InterruptedException {
+ *     Future<String> future
+ *       = executor.submit(new Callable<String>() {
+ *         public String call() {
+ *             return searcher.search(target);
+ *         }});
+ *     displayOtherThings(); // do other things while searching
+ *     try {
+ *       displayText(future.get()); // use future
+ *     } catch (ExecutionException ex) { cleanup(); return; }
+ *   }
+ * }}</pre>
+ *
+ * The {@link FutureTask} class is an implementation of <tt>Future</tt> that
+ * implements <tt>Runnable</tt>, and so may be executed by an <tt>Executor</tt>.
+ * For example, the above construction with <tt>submit</tt> could be replaced by:
+FutureTask提供了Future和Runnable的实现，所以也可以用执行器去执行，比如上面submit方法的
+Callable构造，我们可以用FutureTask来代理
+ *  <pre> {@code
+ *     FutureTask<String> future =
+ *       new FutureTask<String>(new Callable<String>() {
+ *         public String call() {
+ *           return searcher.search(target);
+ *       }});
+ *     executor.execute(future);}</pre>
+ *
+ * <p>Memory consistency effects: Actions taken by the asynchronous computation
+ * <a href="package-summary.html#MemoryVisibility"> <i>happen-before</i></a>
+ * actions following the corresponding {@code Future.get()} in another thread.
+ *
+ 内存一直性：任务的执行发生在获取任务执行的结果之前
+ * @see FutureTask
+ * @see Executor
+ * @since 1.5
+ * @author Doug Lea
+ * @param <V> The result type returned by this Future's <tt>get</tt> method
+ */
+public interface Future<V> {
+
+    /**
+     * Attempts to cancel execution of this task.  This attempt will
+     * fail if the task has already completed, has already been cancelled,
+     * or could not be cancelled for some other reason. If successful,
+     * and this task has not started when <tt>cancel</tt> is called,
+     * this task should never run.  If the task has already started,
+     * then the <tt>mayInterruptIfRunning</tt> parameter determines
+     * whether the thread executing this task should be interrupted in
+     * an attempt to stop the task.
+     *
+     尝试取消任务的执行。如果任务已经完成，或已经被取消，或者由于其他原因
+     不能被取消，则尝试失败。如果任务还没有开始，取消方法被调用，则尝试成功，
+     任务绝对不会执行。当任务已经被执行，mayInterruptIfRunning参数可以决定在尝试
+     停止任务时，执行中的任务是否可以被中断。
+     * <p>After this method returns, subsequent calls to {@link #isDone} will
+     * always return <tt>true</tt>.  Subsequent calls to {@link #isCancelled}
+     * will always return <tt>true</tt> if this method returned <tt>true</tt>.
+     *
+     当方法返回时，isDone方法将返回true。如果cancel返回true，则#isCancelled方法返回true
+     * @param mayInterruptIfRunning <tt>true</tt> if the thread executing this
+     * task should be interrupted; otherwise, in-progress tasks are allowed
+     * to complete
+     * @return <tt>false</tt> if the task could not be cancelled,
+     * typically because it has already completed normally;
+     * <tt>true</tt> otherwise
+     */
+    boolean cancel(boolean mayInterruptIfRunning);
+
+    /**
+     * Returns <tt>true</tt> if this task was cancelled before it completed
+     * normally.
+     *
+     在任务正常完成前，如果任务被取消成功，则返回true
+     * @return <tt>true</tt> if this task was cancelled before it completed
+     */
+    boolean isCancelled();
+
+    /**
+     * Returns <tt>true</tt> if this task completed.
+     *
+     如果任务执行完，则返回true
+     * Completion may be due to normal termination, an exception, or
+     * cancellation -- in all of these cases, this method will return
+     * <tt>true</tt>.
+     *
+     由于任务正常结束，异常发生或任务被取消，方法返回true
+     * @return <tt>true</tt> if this task completed
+     */
+    boolean isDone();
+
+    /**
+     * Waits if necessary for the computation to complete, and then
+     * retrieves its result.
+     如果需要，等待计算任务完成，取回任务计算结果
+     * @return the computed result
+     * @throws CancellationException if the computation was cancelled
+     * @throws ExecutionException if the computation threw an
+     * exception
+     * @throws InterruptedException if the current thread was interrupted
+     * while waiting
+     */
+    V get() throws InterruptedException, ExecutionException;
+
+    /**
+     * Waits if necessary for at most the given time for the computation
+     * to complete, and then retrieves its result, if available.
+     *
+     如果需要，超时等待计算任务完成，如果结果可用，取回任务计算结果
+     * @param timeout the maximum time to wait
+     * @param unit the time unit of the timeout argument
+     * @return the computed result
+     * @throws CancellationException if the computation was cancelled
+     * @throws ExecutionException if the computation threw an
+     * exception
+     * @throws InterruptedException if the current thread was interrupted
+     * while waiting
+     * @throws TimeoutException if the wait timed out
+     */
+    V get(long timeout, TimeUnit unit)
+        throws InterruptedException, ExecutionException, TimeoutException;
+}

@@ -1,0 +1,195 @@
+MembershipKey定义:[url]http://donald-draper.iteye.com/blog/2372947[/url]
+MulticastChanne接口定义：[url]http://donald-draper.iteye.com/blog/2373009[/url]
+package sun.nio.ch;
+
+import java.io.IOException;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.nio.channels.MembershipKey;
+import java.nio.channels.MulticastChannel;
+import java.util.HashSet;
+
+// Referenced classes of package sun.nio.ch:
+//            DatagramChannelImpl
+
+class MembershipKeyImpl extends MembershipKey
+{
+    private final MulticastChannel ch;//多播通道
+    private final InetAddress group;//多播分组地址
+    private final NetworkInterface interf;//网络接口
+    private final InetAddress source;//源地址
+    private volatile boolean valid;//是否有效
+    private Object stateLock;//状态锁
+    private HashSet blockedSet;//阻塞地址集
+    //Ip4多播关系key
+    static class Type4 extends MembershipKeyImpl
+    {
+        private final int groupAddress;//多播组地址
+        private final int interfAddress;//网络接口地址
+        private final int sourceAddress;//源地址
+
+        Type4(MulticastChannel multicastchannel, InetAddress inetaddress, NetworkInterface networkinterface, InetAddress inetaddress1, int i, int j, int k)
+        {
+            super(multicastchannel, inetaddress, networkinterface, inetaddress1, null);
+            groupAddress = i;
+            interfAddress = j;
+            sourceAddress = k;
+        }
+        int groupAddress()
+        {
+            return groupAddress;
+        }
+
+        int interfaceAddress()
+        {
+            return interfAddress;
+        }
+
+        int source()
+        {
+            return sourceAddress;
+        }
+
+       
+    }
+    //Ip6多播关系key
+    static class Type6 extends MembershipKeyImpl
+    {
+        private final byte groupAddress[];//多播组地址
+        private final int index;//索引
+        private final byte sourceAddress[];//源地址
+
+        Type6(MulticastChannel multicastchannel, InetAddress inetaddress, NetworkInterface networkinterface, InetAddress inetaddress1, byte abyte0[], int i, byte abyte1[])
+        {
+            super(multicastchannel, inetaddress, networkinterface, inetaddress1, null);
+            groupAddress = abyte0;
+            index = i;
+            sourceAddress = abyte1;
+        }
+        byte[] groupAddress()
+        {
+            return groupAddress;
+        }
+
+        int index()
+        {
+            return index;
+        }
+
+        byte[] source()
+        {
+            return sourceAddress;
+        }
+
+        
+    }
+
+    //根据多播通道，多播组地址，网络接口，源地址信息构造MembershipKeyImpl
+    private MembershipKeyImpl(MulticastChannel multicastchannel, InetAddress inetaddress, NetworkInterface networkinterface, InetAddress inetaddress1)
+    {
+        valid = true;//默认创建后，有效
+        stateLock = new Object();
+        ch = multicastchannel;
+        group = inetaddress;
+        interf = networkinterface;
+        source = inetaddress1;
+    }
+
+    public boolean isValid()
+    {
+        return valid;
+    }
+    //使多播关系key无效
+    void invalidate()
+    {
+        valid = false;
+    }
+   //drop多播关系
+    public void drop()
+    {
+        ((DatagramChannelImpl)ch).drop(this);
+    }
+   //获取多播关系key的多播通道
+    public MulticastChannel channel()
+    {
+        return ch;
+    }
+   //获取多播组地址
+    public InetAddress group()
+    {
+        return group;
+    }
+    //获取网络接口
+    public NetworkInterface networkInterface()
+    {
+        return interf;
+    }
+    //获取源地址
+    public InetAddress sourceAddress()
+    {
+        return source;
+    }
+    //阻塞源地址的报文
+    public MembershipKey block(InetAddress inetaddress)
+        throws IOException
+    {
+        if(source != null)
+            throw new IllegalStateException("key is source-specific");
+        Object obj = stateLock;//同步状态锁
+        JVM INSTR monitorenter ;//进入同步try
+	//已添加阻塞地址集合，则直接返回
+        if(blockedSet != null && blockedSet.contains(inetaddress))
+            return this;
+	 //委托给DatagramChannelImpl的block
+        ((DatagramChannelImpl)ch).block(this, inetaddress);
+        if(blockedSet == null)
+            blockedSet = new HashSet();
+	//添加地址到多播关系key阻塞集
+        blockedSet.add(inetaddress);
+        obj;
+        JVM INSTR monitorexit ;//退try
+          goto _L1
+        Exception exception;//有异常，则抛出
+        exception;
+        throw exception;
+_L1:
+        return this;
+    }
+    //解除源地址的报文
+    public MembershipKey unblock(InetAddress inetaddress)
+    {
+        synchronized(stateLock)
+        {
+            if(blockedSet == null || !blockedSet.contains(inetaddress))
+	        //如果多播关系key的阻塞集合为null或阻塞地址集不包含inetaddress，则抛出IllegalStateException
+                throw new IllegalStateException("not blocked");
+	    //委托给DatagramChannelImpl的unblock
+            ((DatagramChannelImpl)ch).unblock(this, inetaddress);
+	    //从阻塞地址集移除阻塞的源地址
+            blockedSet.remove(inetaddress);
+        }
+        return this;
+    }
+
+    public String toString()
+    {
+        StringBuilder stringbuilder = new StringBuilder(64);
+        stringbuilder.append('<');
+        stringbuilder.append(group.getHostAddress());
+        stringbuilder.append(',');
+        stringbuilder.append(interf.getName());
+        if(source != null)
+        {
+            stringbuilder.append(',');
+            stringbuilder.append(source.getHostAddress());
+        }
+        stringbuilder.append('>');
+        return stringbuilder.toString();
+    }
+}
+总结：
+MembershipKeyImpl内部有一个多播关系key关联的多播通道和多播分组地址，及多播报文源地址，及一个地址阻塞集。
+MembershipKeyImpl主要操作为drop关系key，直接委托个多播通道drop方法；block地址，首先判断多播关系key中的阻塞
+Set中是否包含对应的地址，有，则直接返回，否则委托给DatagramChannelImpl的block方法，完成实际的阻塞工作，然后
+添加地址的多播关系key阻塞set；unblock，首先判断多播关系key中的阻塞Set中是否包含对应的地址，无，则直接返回，
+有则委托给DatagramChannelImpl的unblock方法，完成实际的的解除阻塞工作，并从多播关系key中的阻塞Set移除对应的地址。

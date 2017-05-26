@@ -1,0 +1,1142 @@
+Java Socket通信实例：[url]http://donald-draper.iteye.com/blog/2356695[/url]
+Java Socket读写缓存区Writer和Reader:[url]http://donald-draper.iteye.com/blog/2356885[/url]
+Java序列化与反序列化实例分析：[url]http://donald-draper.iteye.com/blog/2357515[/url]
+FileChannel示例：[url]http://donald-draper.iteye.com/blog/2373661[/url]
+FileChanne定义：[url]http://donald-draper.iteye.com/blog/2374149[/url]
+文件读写方式简单综述:[url]http://donald-draper.iteye.com/blog/2374237[/url]
+在上一篇文章中看了一下文件读写方式，这天来看一下上次所用到File的方法，和涉及到的概念Path，
+FileSystem.
+先看一下File的内部变量定义；
+public class File
+    implements Serializable, Comparable<File>
+{
+
+    /**
+     * The FileSystem object representing the platform's local file system.
+     平台文件系统
+     */
+    static private FileSystem fs = FileSystem.getFileSystem();
+
+    /**
+     * This abstract pathname's normalized pathname string.  A normalized
+     * pathname string uses the default name-separator character and does not
+     * contain any duplicate or redundant separators.
+     *文件标准文件路径字符串。一个标准的路径字符串是用默认的分隔符，不包括
+     冗余的分割符。
+     * @serial
+     */
+    private String path;
+
+    /**
+     * The length of this abstract pathname's prefix, or zero if it has no
+     * prefix.文件前缀长度
+     */
+    private transient int prefixLength;
+    private volatile transient Path filePath;//文件路径Path
+    /**
+     * The system-dependent default name-separator character.  This field is
+     * initialized to contain the first character of the value of the system
+     * property <code>file.separator</code>.  On UNIX systems the value of this
+     * field is <code>'/'</code>; on Microsoft Windows systems it is <code>'\\'</code>.
+     *依赖于平台的默认分隔符。此field初始化为系统属性file.separator。在unix系统中，
+     分割符默认为'/'；在Windows中为'\\'。
+     * @see     java.lang.System#getProperty(java.lang.String)
+     */
+    public static final char separatorChar = fs.getSeparator();
+
+    /**
+     * The system-dependent default name-separator character, represented as a
+     * string for convenience.  This string contains a single character, namely
+     * <code>{@link #separatorChar}</code>.
+     依赖于系统的默认分割符，为了便利用String表示。此字符串包含单个字符，为separatorChar。
+     */
+    public static final String separator = "" + separatorChar;
+
+    /**
+     * The system-dependent path-separator character.  This field is
+     * initialized to contain the first character of the value of the system
+     * property <code>path.separator</code>.  This character is used to
+     * separate filenames in a sequence of files given as a <em>path list</em>.
+     * On UNIX systems, this character is <code>':'</code>; on Microsoft Windows systems it
+     * is <code>';'</code>.
+     *依赖于系统的路径分割符。默认初始化为系统属性path.separator。此字符用于分割
+     在给定path列表中的文件名，在unixt默认为':'，windows中为';'。
+     * @see     java.lang.System#getProperty(java.lang.String)
+     */
+    public static final char pathSeparatorChar = fs.getPathSeparator();
+
+    /**
+     * The system-dependent path-separator character, represented as a string
+     * for convenience.  This string contains a single character, namely
+     * <code>{@link #pathSeparatorChar}</code>.
+     依赖系统的路径分割符，为了便利，用于一个String表示。此字符串只包含一个字符，为pathSeparatorChar
+     */
+    public static final String pathSeparator = "" + pathSeparatorChar;
+}
+我们先来看一下这句话，文件系统
+ static private FileSystem fs = FileSystem.getFileSystem();
+ //FileSystem
+ abstract class FileSystem {
+
+    /**
+     * Return the FileSystem object representing this platform's local
+     * filesystem.
+     */
+    public static native FileSystem getFileSystem();
+    ...
+}
+//Win32FileSystem
+class Win32FileSystem extends FileSystem {
+    private final char slash;//文件分割符
+    private final char altSlash;
+    private final char semicolon;//路径分割符
+
+    public Win32FileSystem() {
+        slash = AccessController.doPrivileged(
+            new GetPropertyAction("file.separator")).charAt(0);
+        semicolon = AccessController.doPrivileged(
+            new GetPropertyAction("path.separator")).charAt(0);
+        altSlash = (this.slash == '\\') ? '/' : '\\';
+    }
+    //获取文件分割符
+    public char getSeparator() {
+        return slash;
+    }
+    //获取路径分割符
+    public char getPathSeparator() {
+        return semicolon;
+    }
+    //获取文件系统跟目录
+    public File[] listRoots() {
+        int ds = listRoots0();
+        int n = 0;
+	//获取文件的目录，Windows为C:，D：，
+	//这个循环是获取根目录的盘符，在unix根目录直接为/
+        for (int i = 0; i < 26; i++) {
+            if (((ds >> i) & 1) != 0) {
+                if (!access((char)('A' + i) + ":" + slash))
+                    ds &= ~(1 << i);
+                else
+                    n++;
+            }
+        }
+	//更具盘符，文件分隔符，路径分隔符，返回根目录
+        File[] fs = new File[n];
+        int j = 0;
+        char slash = this.slash;
+        for (int i = 0; i < 26; i++) {
+            if (((ds >> i) & 1) != 0)
+                fs[j++] = new File((char)('A' + i) + ":" + slash);
+        }
+        return fs;
+    }
+    private static native int listRoots0();
+    ...
+    protected native boolean delete0(File f);
+    public native String[] list(File f);
+    public native boolean createDirectory(File f); 
+    protected native boolean rename0(File f1, File f2);
+    public native boolean setLastModifiedTime(File f, long time);
+    public native boolean setReadOnly(File f);
+    private native long getSpace0(File f, int t);//获取磁盘空间
+    // Caches for canonicalization results to improve startup performance.
+    // The first cache handles repeated canonicalizations of the same path
+    // name. The prefix cache handles repeated canonicalizations within the
+    // same directory, and must not create results differing from the true
+    // canonicalization algorithm in canonicalize_md.c. For this reason the
+    // prefix cache is conservative and is not used for complex path names.
+    //Caches缓存规范化的结果，以便改善启动性能。cache用于处理相同的规范化路径。
+    //prefixCache用于在相同目录下的前缀，不用创建与canonicalize_md.c算法不同的
+    //结果。prefixCache为保守的用于复杂路径名
+    private ExpiringCache cache       = new ExpiringCache();
+    private ExpiringCache prefixCache = new ExpiringCache();
+}
+我们来看File的listFile方法：
+ public File[] listFiles() {
+       //获取当前目录下的文件路径
+        String[] ss = list();
+        if (ss == null) return null;
+        int n = ss.length;
+        File[] fs = new File[n];
+	//根据路径创建文件
+        for (int i = 0; i < n; i++) {
+            fs[i] = new File(ss[i], this);
+        }
+        return fs;
+    }
+需要关注的是这一点
+//获取当前目录下的文件路径
+String[] ss = list();
+//获取文件当前目录下的所有文件路径
+ public String[] list() {
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+	    //检查读取路径权限
+            security.checkRead(path);
+        }
+	//委托给文件系统
+        return fs.list(this);
+    }
+//Win32FileSystem
+public native String[] list(File f);
+
+
+再来看创建临时文件开始：
+ File tfile = File.createTempFile("testFile", ".tmp", new File("E:/file/dir/"));
+    if(tfile.exists()){
+   	 System.out.println("==创建临时文件成功："+tfile.getName());
+    }
+//File
+public static File createTempFile(String prefix, String suffix,
+                                      File directory)
+        throws IOException
+    {
+        //如果前缀小于3，则抛出IllegalArgumentException，文件路径最少为3，（D:/），盘符+文件路径分隔符+文件分隔符
+        if (prefix.length() < 3)
+            throw new IllegalArgumentException("Prefix string too short");
+	//文件后缀默认为".tmp";
+        if (suffix == null)
+            suffix = ".tmp";
+        //如果目录为null，获取系统的临时文件路究竟
+        File tmpdir = (directory != null) ? directory : TempDirectory.location();
+        SecurityManager sm = System.getSecurityManager();
+        File f;
+        do {
+	    //产生临时文件
+            f = TempDirectory.generateFile(prefix, suffix, tmpdir);
+            if (sm != null) {
+                try {
+		    //检查创建文件路径权限
+                    sm.checkWrite(f.getPath());
+                } catch (SecurityException se) {
+                    // don't reveal temporary directory location
+                    if (directory == null)
+                        throw new SecurityException("Unable to create temporary file");
+                    throw se;
+                }
+            }//独占创建文件
+        } while (!fs.createFileExclusively(f.getPath()));
+        return f;
+    }
+来看临时文件的定义
+//TempDirectory
+ private static class TempDirectory {
+        private TempDirectory() { }
+
+        // temporary directory location
+	//文件临时目录为系统的java.io.tmpdir配置
+        private static final File tmpdir = new File(fs.normalize(AccessController
+            .doPrivileged(new GetPropertyAction("java.io.tmpdir"))));
+	//返回临时路径
+        static File location() {
+            return tmpdir;
+        }
+
+        // file name generation,临时文件名产生器
+        private static final SecureRandom random = new SecureRandom();
+	//生成临时文件
+        static File generateFile(String prefix, String suffix, File dir) {
+	    //获取临时文件名
+            long n = random.nextLong();
+            if (n == Long.MIN_VALUE) {
+                n = 0;      // corner case
+            } else {
+                n = Math.abs(n);
+            }
+	    //创建文件
+            return new File(dir, prefix + Long.toString(n) + suffix);
+        }
+    }
+再来看删除文件：
+public boolean delete() {
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+            security.checkDelete(path);
+        }
+	//委托给文件系统fs
+        return fs.delete(this);
+    }
+//Win32FileSystem
+ public boolean delete(File f) {
+        // Keep canonicalization caches in sync after file deletion
+        // and renaming operations. Could be more clever than this
+        // (i.e., only remove/update affected entries) but probably
+        // not worth it since these entries expire after 30 seconds
+        // anyway.
+        cache.clear();
+        prefixCache.clear();
+        return delete0(f);
+    }
+    protected native boolean delete0(File f);
+再来看判断文件是否存在：
+public boolean exists() {
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+            security.checkRead(path);
+        }
+        return ((fs.getBooleanAttributes(this) & FileSystem.BA_EXISTS) != 0);
+    }
+//Win32FileSystem
+public native int getBooleanAttributes(File f);
+再来看创建路径
+ public boolean mkdirs() {
+        //存在，返回false
+        if (exists()) {
+            return false;
+        }
+	//mkdir创建成功返回true
+        if (mkdir()) {
+            return true;
+        }
+        File canonFile = null;
+        try {
+            canonFile = getCanonicalFile();
+        } catch (IOException e) {
+            return false;
+        }
+        //获取文件的标准父路径
+        File parent = canonFile.getParentFile();
+        return (parent != null && (parent.mkdirs() || parent.exists()) &&
+                canonFile.mkdir());
+    }
+ //File
+ public File getCanonicalFile() throws IOException {
+        String canonPath = getCanonicalPath();
+        return new File(canonPath, fs.prefixLength(canonPath));
+    }
+public String getCanonicalPath() throws IOException {
+        return fs.canonicalize(fs.resolve(this));
+    }
+//Win32FileSystem
+public String canonicalize(String path) throws IOException {
+        // If path is a drive letter only then skip canonicalization
+        int len = path.length();
+        if ((len == 2) &&
+            (isLetter(path.charAt(0))) &&
+            (path.charAt(1) == ':')) {
+            char c = path.charAt(0);
+            if ((c >= 'A') && (c <= 'Z'))
+                return path;
+            return "" + ((char) (c-32)) + ':';
+        } else if ((len == 3) &&
+                   (isLetter(path.charAt(0))) &&
+                   (path.charAt(1) == ':') &&
+                   (path.charAt(2) == '\\')) {
+            char c = path.charAt(0);
+            if ((c >= 'A') && (c <= 'Z'))
+                return path;
+            return "" + ((char) (c-32)) + ':' + '\\';
+        }
+        if (!useCanonCaches) {
+            return canonicalize0(path);
+        } else {
+            String res = cache.get(path);
+            if (res == null) {
+                String dir = null;
+                String resDir = null;
+                if (useCanonPrefixCache) {
+                    dir = parentOrNull(path);
+                    if (dir != null) {
+                        resDir = prefixCache.get(dir);
+                        if (resDir != null) {
+                            // Hit only in prefix cache; full path is canonical,
+                            // but we need to get the canonical name of the file
+                            // in this directory to get the appropriate capitalization
+                            String filename = path.substring(1 + dir.length());
+                            res = canonicalizeWithPrefix(resDir, filename);
+                            cache.put(dir + File.separatorChar + filename, res);
+                        }
+                    }
+                }
+                if (res == null) {
+                    res = canonicalize0(path);
+                    cache.put(path, res);
+                    if (useCanonPrefixCache && dir != null) {
+                        resDir = parentOrNull(res);
+                        if (resDir != null) {
+                            File f = new File(res);
+                            if (f.exists() && !f.isDirectory()) {
+                                prefixCache.put(dir, resDir);
+                            }
+                        }
+                    }
+                }
+            }
+            return res;
+        }
+    }
+protected native String canonicalize0(String path)  throws IOException;
+上面这个就不说了，这个不是我们关注的重点；
+我们再来看获取文件Path
+
+/* @since   1.7,此方在JDK1.7中才添加
+ * @see Path#toFile
+ */
+public Path toPath() {
+    Path result = filePath;
+    if (result == null) {
+        synchronized (this) {
+            result = filePath;
+            if (result == null) {
+	        //从文件系统获取文件路径Path
+                result = FileSystems.getDefault().getPath(path);
+                filePath = result;
+            }
+        }
+    }
+    return result;
+}
+来看这一句：
+//从文件系统获取文件路径Path
+result = FileSystems.getDefault().getPath(path);
+//FileSystems
+public static FileSystem getDefault() {
+    return DefaultFileSystemHolder.defaultFileSystem;
+}
+// lazy initialization of default file system
+   private static class DefaultFileSystemHolder {
+       static final FileSystem defaultFileSystem = defaultFileSystem();
+
+       // returns default file system
+       private static FileSystem defaultFileSystem() {
+           // load default provider
+	   //获取文件系统默认的提供者
+           FileSystemProvider provider = AccessController
+               .doPrivileged(new PrivilegedAction<FileSystemProvider>() {
+                   public FileSystemProvider run() {
+                       return getDefaultProvider();
+                   }
+               });
+
+           // return file system
+           return provider.getFileSystem(URI.create("file:///"));
+       }
+
+       // returns default provider，返回默认文件系统提供者
+       private static FileSystemProvider getDefaultProvider() {
+           //默认文件系统提供者，创建FileSystemProvider
+           FileSystemProvider provider = sun.nio.fs.DefaultFileSystemProvider.create();
+
+           // if the property java.nio.file.spi.DefaultFileSystemProvider is
+           // set then its value is the name of the default provider (or a list)
+	   //获取系统默认文件提供者配置
+           String propValue = System
+               .getProperty("java.nio.file.spi.DefaultFileSystemProvider");
+           if (propValue != null) {
+               for (String cn: propValue.split(",")) {
+                   try {
+		       //系统类加载器，加载文件提供者
+                       Class<?> c = Class
+                           .forName(cn, true, ClassLoader.getSystemClassLoader());
+		       //获取文件系统类构造方法
+                       Constructor<?> ctor = c
+                           .getDeclaredConstructor(FileSystemProvider.class);
+		       //创建FileSystemProvider
+                       provider = (FileSystemProvider)ctor.newInstance(provider);
+
+                       // must be "file"
+                       if (!provider.getScheme().equals("file"))
+                           throw new Error("Default provider must use scheme 'file'");
+
+                   } catch (Exception x) {
+                       throw new Error(x);
+                   }
+               }
+           }
+           return provider;
+       }
+   }
+我们来看这一句：
+//默认文件系统提供者，创建FileSystemProvider
+FileSystemProvider provider = sun.nio.fs.DefaultFileSystemProvider.create();
+//DefaultFileSystemProvider
+public class DefaultFileSystemProvider
+{
+    private DefaultFileSystemProvider()
+    {
+    }
+    public static FileSystemProvider create()
+    {
+        return new WindowsFileSystemProvider();
+    }
+}
+默认文件系统提供者为WindowsFileSystemProvider
+返回获取文件路径方法
+/* @since   1.7,此方在JDK1.7中才添加
+ * @see Path#toFile
+ */
+public Path toPath() {
+    Path result = filePath;
+    if (result == null) {
+        synchronized (this) {
+            result = filePath;
+            if (result == null) {
+	        //从文件系统获取文件路径Path
+                result = FileSystems.getDefault().getPath(path);
+                filePath = result;
+            }
+        }
+    }
+    return result;
+}
+//WindowsFileSystemProvider
+public class WindowsFileSystemProvider extends AbstractFileSystemProvider
+{
+    private static final Unsafe unsafe = Unsafe.getUnsafe();
+    private static final String USER_DIR = "user.dir";//用户目录
+    private final WindowsFileSystem theFileSystem = new WindowsFileSystem(this, System.getProperty("user.dir"));
+    static final boolean $assertionsDisabled = !sun/nio/fs/WindowsFileSystemProvider.desiredAssertionStatus();
+    public WindowsFileSystemProvider()
+    {
+    }
+    public String getScheme()
+    {
+        return "file";
+    }
+    public Path getPath(URI uri)
+    {
+        return WindowsUriSupport.fromUri(theFileSystem, uri);
+    }
+ }
+ //WindowsUriSupport
+ static WindowsPath fromUri(WindowsFileSystem windowsfilesystem, URI uri)
+    {
+        static WindowsPath fromUri(WindowsFileSystem windowsfilesystem, URI uri)
+    {
+        if(!uri.isAbsolute())
+            throw new IllegalArgumentException("URI is not absolute");
+        if(uri.isOpaque())
+            throw new IllegalArgumentException("URI is not hierarchical");
+        String s = uri.getScheme();
+        if(s == null || !s.equalsIgnoreCase("file"))
+            throw new IllegalArgumentException("URI scheme is not \"file\"");
+        if(uri.getFragment() != null)
+            throw new IllegalArgumentException("URI has a fragment component");
+        if(uri.getQuery() != null)
+            throw new IllegalArgumentException("URI has a query component");
+        String s1 = uri.getPath();
+        if(s1.equals(""))
+            throw new IllegalArgumentException("URI path component is empty");
+        String s2 = uri.getAuthority();
+        if(s2 != null && !s2.equals(""))
+        {
+            String s3 = uri.getHost();
+            if(s3 == null)
+                throw new IllegalArgumentException("URI authority component has undefined host");
+            if(uri.getUserInfo() != null)
+                throw new IllegalArgumentException("URI authority component has user-info");
+            if(uri.getPort() != -1)
+                throw new IllegalArgumentException("URI authority component has port number");
+            if(s3.startsWith("["))
+            {
+                s3 = s3.substring(1, s3.length() - 1).replace(':', '-').replace('%', 's');
+                s3 = (new StringBuilder()).append(s3).append(".ipv6-literal.net").toString();
+            }
+            s1 = (new StringBuilder()).append("\\\\").append(s3).append(s1).toString();
+        } else
+        if(s1.length() > 2 && s1.charAt(2) == ':')
+            s1 = s1.substring(1);
+	//我们需要关注的是这一句
+        return WindowsPath.parse(windowsfilesystem, s1);
+    }
+由于这篇文章是为上一篇文章的后续，这里我们再来看一下字节流和字符流的构造，只是简单列举，
+不打算深入：
+//FileOutputStream
+//根据文件名创建FileOutputStream
+public FileOutputStream(String name) throws FileNotFoundException {
+        this(name != null ? new File(name) : null, false);
+    }
+//根据文件创建FileOutputStream
+ public FileOutputStream(File file) throws FileNotFoundException {
+        this(file, false);
+    }
+ public FileOutputStream(String name, boolean append)
+        throws FileNotFoundException
+    {
+        this(name != null ? new File(name) : null, append);
+    }
+ //append为是否为追加文件模式
+ public FileOutputStream(File file, boolean append)
+        throws FileNotFoundException
+    {
+        String name = (file != null ? file.getPath() : null);
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+	    //检查写文件权限
+            security.checkWrite(name);
+        }
+        if (name == null) {
+            throw new NullPointerException();
+        }
+        this.fd = new FileDescriptor();
+        this.append = append;
+        //系统文件描述符计数器自增
+        fd.incrementAndGetUseCount();
+        open(name, append);
+    }
+//FileInputStream
+//根据文件名构造FileInputStream
+ public FileInputStream(String name) throws FileNotFoundException {
+        this(name != null ? new File(name) : null);
+    }
+ public FileInputStream(File file) throws FileNotFoundException {
+        String name = (file != null ? file.getPath() : null);
+        SecurityManager security = System.getSecurityManager();
+        if (security != null) {
+	    //检查读权限
+            security.checkRead(name);
+        }
+        if (name == null) {
+            throw new NullPointerException();
+        }
+        fd = new FileDescriptor();
+	//系统文件描述符计数器自增
+        fd.incrementAndGetUseCount();
+        open(name);
+    }
+//BufferedOutputStream
+ /**
+     * Creates a new buffered output stream to write data to the
+     * specified underlying output stream.
+     *
+     * @param   out   the underlying output stream.
+     */
+    public BufferedOutputStream(OutputStream out) {
+        this(out, 8192);
+    }
+
+    /**
+     * Creates a new buffered output stream to write data to the
+     * specified underlying output stream with the specified buffer
+     * size.
+     *
+     * @param   out    the underlying output stream.
+     * @param   size   the buffer size.//缓冲区size
+     * @exception IllegalArgumentException if size &lt;= 0.
+     */
+    public BufferedOutputStream(OutputStream out, int size) {
+        super(out);
+        if (size <= 0) {
+            throw new IllegalArgumentException("Buffer size <= 0");
+        }
+        buf = new byte[size];
+    }
+//BufferedInputStream
+public
+class BufferedInputStream extends FilterInputStream {
+
+    private static int defaultBufferSize = 8192;
+ /**
+     * Creates a <code>BufferedInputStream</code>
+     * and saves its  argument, the input stream
+     * <code>in</code>, for later use. An internal
+     * buffer array is created and  stored in <code>buf</code>.
+     *
+     * @param   in   the underlying input stream.
+     */
+    public BufferedInputStream(InputStream in) {
+        this(in, defaultBufferSize);
+    }
+
+    /**
+     * Creates a <code>BufferedInputStream</code>
+     * with the specified buffer size,
+     * and saves its  argument, the input stream
+     * <code>in</code>, for later use.  An internal
+     * buffer array of length  <code>size</code>
+     * is created and stored in <code>buf</code>.
+     *
+     * @param   in     the underlying input stream.
+     * @param   size   the buffer size.
+     * @exception IllegalArgumentException if size <= 0.
+     */
+    public BufferedInputStream(InputStream in, int size) {
+        super(in);
+        if (size <= 0) {
+            throw new IllegalArgumentException("Buffer size <= 0");
+        }
+        buf = new byte[size];
+    }
+}
+//DataOutputStream
+ public DataOutputStream(OutputStream out) {
+        super(out);
+    }
+//DataInputStream
+public DataInputStream(InputStream in) {
+        super(in);
+    }
+//ObjectOutputStream
+public ObjectOutputStream(OutputStream out) throws IOException {
+...
+}
+//ObjectInputStream
+ public ObjectInputStream(InputStream in) throws IOException {
+...
+}
+//FileWriter，构造很简单，看一下就明白，不细说了
+public class FileWriter extends OutputStreamWriter {
+
+    /**
+     * Constructs a FileWriter object given a file name.
+     *
+     * @param fileName  String The system-dependent filename.
+     * @throws IOException  if the named file exists but is a directory rather
+     *                  than a regular file, does not exist but cannot be
+     *                  created, or cannot be opened for any other reason
+     */
+    public FileWriter(String fileName) throws IOException {
+        super(new FileOutputStream(fileName));
+    }
+
+    /**
+     * Constructs a FileWriter object given a file name with a boolean
+     * indicating whether or not to append the data written.
+     *
+     * @param fileName  String The system-dependent filename.
+     * @param append    boolean if <code>true</code>, then data will be written
+     *                  to the end of the file rather than the beginning.
+     * @throws IOException  if the named file exists but is a directory rather
+     *                  than a regular file, does not exist but cannot be
+     *                  created, or cannot be opened for any other reason
+     */
+    public FileWriter(String fileName, boolean append) throws IOException {
+        super(new FileOutputStream(fileName, append));
+    }
+
+    /**
+     * Constructs a FileWriter object given a File object.
+     *
+     * @param file  a File object to write to.
+     * @throws IOException  if the file exists but is a directory rather than
+     *                  a regular file, does not exist but cannot be created,
+     *                  or cannot be opened for any other reason
+     */
+    public FileWriter(File file) throws IOException {
+        super(new FileOutputStream(file));
+    }
+
+    /**
+     * Constructs a FileWriter object given a File object. If the second
+     * argument is <code>true</code>, then bytes will be written to the end
+     * of the file rather than the beginning.
+     *
+     * @param file  a File object to write to
+     * @param     append    if <code>true</code>, then bytes will be written
+     *                      to the end of the file rather than the beginning
+     * @throws IOException  if the file exists but is a directory rather than
+     *                  a regular file, does not exist but cannot be created,
+     *                  or cannot be opened for any other reason
+     * @since 1.4
+     */
+    public FileWriter(File file, boolean append) throws IOException {
+        super(new FileOutputStream(file, append));
+    }
+
+    /**
+     * Constructs a FileWriter object associated with a file descriptor.
+     *
+     * @param fd  FileDescriptor object to write to.
+     */
+    public FileWriter(FileDescriptor fd) {
+        super(new FileOutputStream(fd));
+    }
+}
+//FileReader
+public class FileReader extends InputStreamReader {
+
+   /**
+    * Creates a new <tt>FileReader</tt>, given the name of the
+    * file to read from.
+    *
+    * @param fileName the name of the file to read from
+    * @exception  FileNotFoundException  if the named file does not exist,
+    *                   is a directory rather than a regular file,
+    *                   or for some other reason cannot be opened for
+    *                   reading.
+    */
+    public FileReader(String fileName) throws FileNotFoundException {
+        super(new FileInputStream(fileName));
+    }
+
+   /**
+    * Creates a new <tt>FileReader</tt>, given the <tt>File</tt>
+    * to read from.
+    *
+    * @param file the <tt>File</tt> to read from
+    * @exception  FileNotFoundException  if the file does not exist,
+    *                   is a directory rather than a regular file,
+    *                   or for some other reason cannot be opened for
+    *                   reading.
+    */
+    public FileReader(File file) throws FileNotFoundException {
+        super(new FileInputStream(file));
+    }
+
+   /**
+    * Creates a new <tt>FileReader</tt>, given the
+    * <tt>FileDescriptor</tt> to read from.
+    *
+    * @param fd the FileDescriptor to read from
+    */
+    public FileReader(FileDescriptor fd) {
+        super(new FileInputStream(fd));
+    }
+}
+//BufferedWriter
+public class BufferedWriter extends Writer {
+
+    private Writer out;
+
+    private char cb[];
+    private int nChars, nextChar;
+
+    private static int defaultCharBufferSize = 8192;
+    /**
+     * Creates a buffered character-output stream that uses a default-sized
+     * output buffer.
+     *
+     * @param  out  A Writer
+     */
+    public BufferedWriter(Writer out) {
+        this(out, defaultCharBufferSize);
+    }
+
+    /**
+     * Creates a new buffered character-output stream that uses an output
+     * buffer of the given size.
+     *
+     * @param  out  A Writer
+     * @param  sz   Output-buffer size, a positive integer
+     *
+     * @exception  IllegalArgumentException  If sz is <= 0
+     */
+    public BufferedWriter(Writer out, int sz) {
+    ...
+    }
+    ...
+}
+//BufferedReader
+public class BufferedReader extends Reader {
+
+    private Reader in;
+
+    private char cb[];
+    private int nChars, nextChar;
+
+    private static final int INVALIDATED = -2;
+    private static final int UNMARKED = -1;
+    private int markedChar = UNMARKED;
+    private int readAheadLimit = 0; /* Valid only when markedChar > 0 */
+
+    /** If the next character is a line feed, skip it */
+    private boolean skipLF = false;
+
+    /** The skipLF flag when the mark was set */
+    private boolean markedSkipLF = false;
+
+    private static int defaultCharBufferSize = 8192;
+    private static int defaultExpectedLineLength = 80;
+     /**
+     * Creates a buffering character-input stream that uses a default-sized
+     * input buffer.
+     *
+     * @param  in   A Reader
+     */
+    public BufferedReader(Reader in) {
+        this(in, defaultCharBufferSize);
+    }
+    /**
+     * Creates a buffering character-input stream that uses an input buffer of
+     * the specified size.
+     *
+     * @param  in   A Reader
+     * @param  sz   Input-buffer size
+     *
+     * @exception  IllegalArgumentException  If sz is <= 0
+     */
+    public BufferedReader(Reader in, int sz) {
+        super(in);
+        if (sz <= 0)
+            throw new IllegalArgumentException("Buffer size <= 0");
+        this.in = in;
+        cb = new char[sz];
+        nextChar = nChars = 0;
+    }
+    ...
+}
+字节流和字符流的构造看完，我们来看一下从文件输入输出流，即随机访问文件获取文件通道：
+//FileOutputStream
+ public FileChannel getChannel() {
+        synchronized (this) {
+            if (channel == null) {
+	        //可写不可读
+                channel = FileChannelImpl.open(fd, false, true, append, this);
+
+                /*
+                 * Increment fd's use count. Invoking the channel's close()
+                 * method will result in decrementing the use count set for
+                 * the channel.
+                 */
+                fd.incrementAndGetUseCount();
+            }
+            return channel;
+        }
+    }
+//FileInputStream
+public FileChannel getChannel() {
+        synchronized (this) {
+            if (channel == null) {
+	        //可读不可写
+                channel = FileChannelImpl.open(fd, true, false, this);
+
+                /*
+                 * Increment fd's use count. Invoking the channel's close()
+                 * method will result in decrementing the use count set for
+                 * the channel.
+                 */
+                fd.incrementAndGetUseCount();
+            }
+            return channel;
+        }
+    }
+//RandomAccessFile
+public class RandomAccessFile implements DataOutput, DataInput, Closeable {
+
+    private FileDescriptor fd;
+    private FileChannel channel = null;
+    private boolean rw;//是否读写
+
+    private Object closeLock = new Object();
+    private volatile boolean closed = false;
+
+    private static final int O_RDONLY = 1;
+    private static final int O_RDWR =   2;
+    private static final int O_SYNC =   4;
+    private static final int O_DSYNC =  8;
+ /* @since 1.4
+  * @spec JSR-51
+  */
+ public final FileChannel getChannel() {
+     synchronized (this) {
+         if (channel == null) {
+	     //默认可读，在根据rw判断是否可写
+             channel = FileChannelImpl.open(fd, true, rw, this);
+
+             /*
+              * FileDescriptor could be shared by FileInputStream or
+              * FileOutputStream.
+              * Ensure that FD is GC'ed only when all the streams/channels
+              * are done using it.
+              * Increment fd's use count. Invoking the channel's close()
+              * method will result in decrementing the use count set for
+              * the channel.
+              */
+             fd.incrementAndGetUseCount();
+         }
+         return channel;
+     }
+ }
+ ...
+ }
+//FileChannelImpl
+    public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, false, obj);
+    }
+    public static FileChannel open(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        return new FileChannelImpl(filedescriptor, flag, flag1, flag2, obj);
+    }
+    private FileChannelImpl(FileDescriptor filedescriptor, boolean flag, boolean flag1, boolean flag2, Object obj)
+    {
+        fd = filedescriptor;
+        readable = flag;//可读标志
+        writable = flag1;//可写标志
+        append = flag2;//是否尾部追加文件，默认为fasle
+	//创建文件通道的对象，为FileInput/OutputStream，
+	//RandomAccessFile获取FileSystemProvider(WindowsFileSystemProvider)
+        parent = obj;
+        nd = new FileDispatcherImpl(flag2);
+    }
+FileChannelImpl的读写方法我们在下一篇文件中再说。
+
+总结：
+file内部关联一个文件系统FileSystem，用于操作底层的系统，file的文件分隔符和路径分隔符都是从
+FileSystem获取，windows（\\,;）和unix(\,:)有所不同，FileSystem根据底层操作获取不同文件系统实现，
+windows默认为Win32FileSystem。file的创建，删除，list当前目录文件等待操作，实际是委托给Win32FileSystem。
+获取文件Path，首先获取文件的默认文件系统提供者，默认为WindowsFileSystemProvider，WindowsFileSystemProvider通过
+文件path（URI），创建文件Path（WindowsPath），这个主要用于创建文件通达需要。
+//WindowsFileSystemProvider
+
+
+
+//
+
+
+//File
+
+
+
+
+//ExpiringCache
+package java.io;
+
+import java.util.Iterator;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Set;
+
+class ExpiringCache {
+    private long millisUntilExpiration;
+    private Map  map;
+    // Clear out old entries every few queries
+    private int queryCount;
+    private int queryOverflow = 300;
+    private int MAX_ENTRIES = 200;
+
+    static class Entry {
+        private long   timestamp;
+        private String val;
+
+        Entry(long timestamp, String val) {
+            this.timestamp = timestamp;
+            this.val = val;
+        }
+
+        long   timestamp()                  { return timestamp;           }
+        void   setTimestamp(long timestamp) { this.timestamp = timestamp; }
+
+        String val()                        { return val;                 }
+        void   setVal(String val)           { this.val = val;             }
+    }
+
+    ExpiringCache() {
+        this(30000);
+    }
+
+    ExpiringCache(long millisUntilExpiration) {
+        this.millisUntilExpiration = millisUntilExpiration;
+        map = new LinkedHashMap() {
+            protected boolean removeEldestEntry(Map.Entry eldest) {
+              return size() > MAX_ENTRIES;
+            }
+          };
+    }
+
+    synchronized String get(String key) {
+        if (++queryCount >= queryOverflow) {
+            cleanup();
+        }
+        Entry entry = entryFor(key);
+        if (entry != null) {
+            return entry.val();
+        }
+        return null;
+    }
+
+    synchronized void put(String key, String val) {
+        if (++queryCount >= queryOverflow) {
+            cleanup();
+        }
+        Entry entry = entryFor(key);
+        if (entry != null) {
+            entry.setTimestamp(System.currentTimeMillis());
+            entry.setVal(val);
+        } else {
+            map.put(key, new Entry(System.currentTimeMillis(), val));
+        }
+    }
+
+    synchronized void clear() {
+        map.clear();
+    }
+
+    private Entry entryFor(String key) {
+        Entry entry = (Entry) map.get(key);
+        if (entry != null) {
+            long delta = System.currentTimeMillis() - entry.timestamp();
+            if (delta < 0 || delta >= millisUntilExpiration) {
+                map.remove(key);
+                entry = null;
+            }
+        }
+        return entry;
+    }
+
+    private void cleanup() {
+        Set keySet = map.keySet();
+        // Avoid ConcurrentModificationExceptions
+        String[] keys = new String[keySet.size()];
+        int i = 0;
+        for (Iterator iter = keySet.iterator(); iter.hasNext(); ) {
+            String key = (String) iter.next();
+            keys[i++] = key;
+        }
+        for (int j = 0; j < keys.length; j++) {
+            entryFor(keys[j]);
+        }
+        queryCount = 0;
+    }
+}
+
+//WindowsFileSystemProvider
+
+
+
+//WindowsPath
+class WindowsPath extends AbstractPath{
+ private static final int MAX_PATH = 247;
+    private static final int MAX_LONG_PATH = 32000;
+    private final WindowsFileSystem fs;
+    private final WindowsPathType type;
+    private final String root;
+    private final String path;
+    private volatile WeakReference pathForWin32Calls;
+    private volatile Integer offsets[];
+    private int hash;
+}
+
+
+//URI
+public final class URI
+    implements Comparable<URI>, Serializable
+{
+
+    // Note: Comments containing the word "ASSERT" indicate places where a
+    // throw of an InternalError should be replaced by an appropriate assertion
+    // statement once asserts are enabled in the build.
+
+    static final long serialVersionUID = -6052424284110960213L;
+
+
+    // -- Properties and components of this instance --
+
+    // Components of all URIs: [<scheme>:]<scheme-specific-part>[#<fragment>]
+    private transient String scheme;            // null ==> relative URI ,http,file,https,ftp
+    private transient String fragment;
+
+    // Hierarchical URI components: [//<authority>]<path>[?<query>]
+    private transient String authority;         // Registry or server
+
+    // Server-based authority: [<userInfo>@]<host>[:<port>]
+    private transient String userInfo;
+    private transient String host;              // null ==> registry-based
+    private transient int port = -1;            // -1 ==> undefined
+
+    // Remaining components of hierarchical URIs
+    private transient String path;              // null ==> opaque
+    private transient String query;
+
+    // The remaining fields may be computed on demand
+
+    private volatile transient String schemeSpecificPart;
+    private volatile transient int hash;        // Zero ==> undefined
+
+    private volatile transient String decodedUserInfo = null;
+    private volatile transient String decodedAuthority = null;
+    private volatile transient String decodedPath = null;
+    private volatile transient String decodedQuery = null;
+    private volatile transient String decodedFragment = null;
+    private volatile transient String decodedSchemeSpecificPart = null;
+}

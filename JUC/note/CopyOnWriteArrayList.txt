@@ -1,0 +1,694 @@
+Queue接口定义：[url]http://donald-draper.iteye.com/blog/2363491[/url]
+AbstractQueue简介：[url]http://donald-draper.iteye.com/blog/2363608[/url]
+ConcurrentLinkedQueue解析：[url]http://donald-draper.iteye.com/blog/2363874[/url]
+BlockingQueue接口的定义：[url]http://donald-draper.iteye.com/blog/2363942[/url]
+LinkedBlockingQueue解析：[url]http://donald-draper.iteye.com/blog/2364007[/url]
+ArrayBlockingQueue解析：[url]http://donald-draper.iteye.com/blog/2364034[/url]
+PriorityBlockingQueue解析：[url]http://donald-draper.iteye.com/blog/2364100[/url]
+SynchronousQueue解析上-TransferStack：[url]http://donald-draper.iteye.com/blog/2364622[/url]
+SynchronousQueue解析下-TransferQueue：[url]http://donald-draper.iteye.com/blog/2364842[/url]
+DelayQueue解析：[url]http://donald-draper.iteye.com/blog/2364978[/url]
+前面的文章，我们简单介绍java并发包的队列，再来看并发包的List和Set实现，有了前面的基础，
+这个就简单多了，我们简单看一下好了：
+ /* <p>This class is a member of the
+ * <a href="{@docRoot}/../technotes/guides/collections/index.html">
+ * Java Collections Framework</a>.
+ *
+ * @since 1.5
+ * @author Doug Lea
+ * @param <E> the type of elements held in this collection
+ */
+public class CopyOnWriteArrayList<E>
+    implements List<E>, RandomAccess, Cloneable, java.io.Serializable {
+    private static final long serialVersionUID = 8673264195747942595L;
+
+    /** The lock protecting all mutators 锁保证所有改变的集合的操作*/
+    transient final ReentrantLock lock = new ReentrantLock();
+
+    /** The array, accessed only via getArray/setArray. 存储元素的数组*/
+    private volatile transient Object[] array;
+}
+CopyOnWriteArrayList为jdk1.5后的List线程安全版本，一个ReentrantLock，用于
+保证所有改变的集合的操作，一个内存可见的数组用于保证元素。
+来简单看几个方法：
+/**
+     * Appends the specified element to the end of this list.
+     *
+     * @param e element to be appended to this list
+     * @return <tt>true</tt> (as specified by {@link Collection#add})
+     */
+    public boolean add(E e) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            Object[] elements = getArray();
+            int len = elements.length;
+	    //将原始数组拷贝的新数组中，赋给内部数组
+            Object[] newElements = Arrays.copyOf(elements, len + 1);
+            newElements[len] = e;
+            setArray(newElements);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+ /**
+     * Sets the array.
+     */
+    final void setArray(Object[] a) {
+        array = a;
+    }
+
+再看移除操作：
+/**
+     * Removes the element at the specified position in this list.
+     * Shifts any subsequent elements to the left (subtracts one from their
+     * indices).  Returns the element that was removed from the list.
+     *
+     移除数组中索引对应的元素
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public E remove(int index) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            Object[] elements = getArray();
+            int len = elements.length;
+            E oldValue = get(elements, index);
+            int numMoved = len - index - 1;
+            if (numMoved == 0)
+                setArray(Arrays.copyOf(elements, len - 1));
+            else {
+                Object[] newElements = new Object[len - 1];
+                System.arraycopy(elements, 0, newElements, 0, index);
+                System.arraycopy(elements, index + 1, newElements, index,
+                                 numMoved);
+                setArray(newElements);
+            }
+            return oldValue;
+        } finally {
+            lock.unlock();
+        }
+    }
+再看另一个移除版本：
+/**
+     * Removes the first occurrence of the specified element from this list,
+     * if it is present.  If this list does not contain the element, it is
+     * unchanged.  More formally, removes the element with the lowest index
+     * <tt>i</tt> such that
+     * <tt>(o==null&nbsp;?&nbsp;get(i)==null&nbsp;:&nbsp;o.equals(get(i)))</tt>
+     * (if such an element exists).  Returns <tt>true</tt> if this list
+     * contained the specified element (or equivalently, if this list
+     * changed as a result of the call).
+     *
+     移除数组中第一个与object相等的元素
+     * @param o element to be removed from this list, if present
+     * @return <tt>true</tt> if this list contained the specified element
+     */
+    public boolean remove(Object o) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            Object[] elements = getArray();
+            int len = elements.length;
+            if (len != 0) {
+                // Copy while searching for element to remove
+                // This wins in the normal case of element being present
+                int newlen = len - 1;
+                Object[] newElements = new Object[newlen];
+
+                for (int i = 0; i < newlen; ++i) {
+                    if (eq(o, elements[i])) {
+                        // found one;  copy remaining and exit
+                        for (int k = i + 1; k < len; ++k)
+                            newElements[k-1] = elements[k];
+                        setArray(newElements);
+                        return true;
+                    } else
+                        newElements[i] = elements[i];
+                }
+
+                // special handling for last cell
+                if (eq(o, elements[newlen])) {
+                    setArray(newElements);
+                    return true;
+                }
+            }
+            return false;
+        } finally {
+            lock.unlock();
+        }
+    }
+再看get操作：
+  /**
+     * {@inheritDoc}
+     *
+     * @throws IndexOutOfBoundsException {@inheritDoc}
+     */
+    public E get(int index) {
+        return get(getArray(), index);
+    }
+    // Positional Access Operations
+    @SuppressWarnings("unchecked")
+    private E get(Object[] a, int index) {
+        return (E) a[index];
+    }
+ CopyOnWriteArrayList主要使用可重入锁ReentrantLock保证线程安全，在add和remove操作中有加锁，
+ 而get没有，即读写分离。
+CopyOnWriteArrayList看完，再看CopyOnWriteArraySet
+/*
+ * @see CopyOnWriteArrayList
+ * @since 1.5
+ * @author Doug Lea
+ * @param <E> the type of elements held in this collection
+ */
+public class CopyOnWriteArraySet<E> extends AbstractSet<E>
+        implements java.io.Serializable {
+    private static final long serialVersionUID = 5457747651344034263L;
+
+    private final CopyOnWriteArrayList<E> al
+}
+从CopyOnWriteArraySet的定义可以看出， CopyOnWriteArraySet是基于
+CopyOnWriteArrayList实现的，
+再看相关操作,
+add操作：
+/**
+     * Adds the specified element to this set if it is not already present.
+     * More formally, adds the specified element <tt>e</tt> to this set if
+     * the set contains no element <tt>e2</tt> such that
+     * <tt>(e==null&nbsp;?&nbsp;e2==null&nbsp;:&nbsp;e.equals(e2))</tt>.
+     * If this set already contains the element, the call leaves the set
+     * unchanged and returns <tt>false</tt>.
+     *
+     如果不存在，则添加元素，存在，则不做任何操作，返回false
+     * @param e element to be added to this set
+     * @return <tt>true</tt> if this set did not already contain the specified
+     *         element
+     */
+    public boolean add(E e) {
+        return al.addIfAbsent(e);
+    }
+来看CopyOnWriteArrayList的addIfAbsent
+//CopyOnWriteArrayList
+
+/**
+     * Append the element if not present.
+     *
+     * @param e element to be added to this list, if absent
+     * @return <tt>true</tt> if the element was added
+     */
+    public boolean addIfAbsent(E e) {
+        final ReentrantLock lock = this.lock;
+        lock.lock();
+        try {
+            // Copy while checking if already present.
+            // This wins in the most common case where it is not present
+            Object[] elements = getArray();
+            int len = elements.length;
+            Object[] newElements = new Object[len + 1];
+            for (int i = 0; i < len; ++i) {
+                if (eq(e, elements[i]))
+		    //存在则返回false，不存在则添加到数组
+                    return false; // exit, throwing away copy
+                else
+                    newElements[i] = elements[i];
+            }
+            newElements[len] = e;
+            setArray(newElements);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+再看removet操作：
+     * Removes the specified element from this set if it is present.
+     * More formally, removes an element <tt>e</tt> such that
+     * <tt>(o==null&nbsp;?&nbsp;e==null&nbsp;:&nbsp;o.equals(e))</tt>,
+     * if this set contains such an element.  Returns <tt>true</tt> if
+     * this set contained the element (or equivalently, if this set
+     * changed as a result of the call).  (This set will not contain the
+     * element once the call returns.)
+     *
+     * @param o object to be removed from this set, if present
+     * @return <tt>true</tt> if this set contained the specified element
+     */
+    public boolean remove(Object o) {
+        return al.remove(o);
+    }
+在jdk1.5之前和jdk1.2之后的List和Set的线程安全版本的使用方式如下:
+Set<Person> set = null;
+List<Person> list = null;
+Set<Person> synchronizedSet = Collections.synchronizedSet(set);
+List<Person> synchronizedList = Collections.synchronizedList(list);
+下图为Collections的相关方法，有兴趣的可以看一下源码：
+/*
+ * @author  Josh Bloch
+ * @author  Neal Gafter
+ * @see     Collection
+ * @see     Set
+ * @see     List
+ * @see     Map
+ * @since   1.2
+ */
+
+public class Collections {}
+
+
+来看一个不可修改的Set
+//UnmodifiableSet
+ static class UnmodifiableSet<E> extends UnmodifiableCollection<E>
+                                 implements Set<E>, Serializable {
+        private static final long serialVersionUID = -9215047833775013803L;
+
+        UnmodifiableSet(Set<? extends E> s)     {super(s);}
+        public boolean equals(Object o) {return o == this || c.equals(o);}
+        public int hashCode()           {return c.hashCode();}
+    }
+
+//UnmodifiableCollection
+static class UnmodifiableCollection<E> implements Collection<E>, Serializable {
+        private static final long serialVersionUID = 1820017752578914078L;
+   
+        final Collection<? extends E> c;
+
+        UnmodifiableCollection(Collection<? extends E> c) {
+            if (c==null)
+                throw new NullPointerException();
+            this.c = c;
+        }
+
+        public int size()                   {return c.size();}
+        public boolean isEmpty()            {return c.isEmpty();}
+        public boolean contains(Object o)   {return c.contains(o);}
+        public Object[] toArray()           {return c.toArray();}
+        public <T> T[] toArray(T[] a)       {return c.toArray(a);}
+        public String toString()            {return c.toString();}
+}
+UnmodifiableCollection主要是通过final修饰集合类。
+其他UnmodifiableList/Map思路基本相同。
+
+线程安全的synchronizedSet
+/**
+     * Returns a synchronized (thread-safe) set backed by the specified
+     * set.  In order to guarantee serial access, it is critical that
+     * <strong>all</strong> access to the backing set is accomplished
+     * through the returned set.<p>
+     *
+     * It is imperative that the user manually synchronize on the returned
+     * set when iterating over it:
+     * <pre>
+     *  Set s = Collections.synchronizedSet(new HashSet());
+     *      ...
+     *  synchronized (s) {
+     *      Iterator i = s.iterator(); // Must be in the synchronized block
+     *      while (i.hasNext())
+     *          foo(i.next());
+     *  }
+     * </pre>
+     * Failure to follow this advice may result in non-deterministic behavior.
+     *
+     * <p>The returned set will be serializable if the specified set is
+     * serializable.
+     *
+     * @param  s the set to be "wrapped" in a synchronized set.
+     * @return a synchronized view of the specified set.
+     */
+    public static <T> Set<T> synchronizedSet(Set<T> s) {
+        return new SynchronizedSet<>(s);
+    }
+再来看SynchronizedSet的定义
+//SynchronizedSet
+ /**
+     * @serial include
+     */
+    static class SynchronizedSet<E>
+          extends SynchronizedCollection<E>
+          implements Set<E> {
+        private static final long serialVersionUID = 487447009682186044L;
+
+        SynchronizedSet(Set<E> s) {
+            super(s);
+        }
+        SynchronizedSet(Set<E> s, Object mutex) {
+            super(s, mutex);
+        }
+
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            synchronized (mutex) {return c.equals(o);}
+        }
+        public int hashCode() {
+            synchronized (mutex) {return c.hashCode();}
+        }
+    }
+再来看父类SynchronizedCollection
+ /**
+     * @serial include
+     */
+    static class SynchronizedCollection<E> implements Collection<E>, Serializable {
+        private static final long serialVersionUID = 3053995032091335093L;
+
+        final Collection<E> c;  // Backing Collection
+        final Object mutex;     // Object on which to synchronize
+
+        SynchronizedCollection(Collection<E> c) {
+            if (c==null)
+                throw new NullPointerException();
+            this.c = c;
+            mutex = this;
+        }
+        SynchronizedCollection(Collection<E> c, Object mutex) {
+            this.c = c;
+            this.mutex = mutex;
+        }
+
+        public int size() {
+            synchronized (mutex) {return c.size();}
+        }
+        public boolean isEmpty() {
+            synchronized (mutex) {return c.isEmpty();}
+        }
+        public boolean contains(Object o) {
+            synchronized (mutex) {return c.contains(o);}
+        }
+        public Object[] toArray() {
+            synchronized (mutex) {return c.toArray();}
+        }
+        public <T> T[] toArray(T[] a) {
+            synchronized (mutex) {return c.toArray(a);}
+        }
+
+        public Iterator<E> iterator() {
+            return c.iterator(); // Must be manually synched by user!
+        }
+
+        public boolean add(E e) {
+            synchronized (mutex) {return c.add(e);}
+        }
+        public boolean remove(Object o) {
+            synchronized (mutex) {return c.remove(o);}
+        }
+
+        public boolean containsAll(Collection<?> coll) {
+            synchronized (mutex) {return c.containsAll(coll);}
+        }
+        public boolean addAll(Collection<? extends E> coll) {
+            synchronized (mutex) {return c.addAll(coll);}
+        }
+        public boolean removeAll(Collection<?> coll) {
+            synchronized (mutex) {return c.removeAll(coll);}
+        }
+        public boolean retainAll(Collection<?> coll) {
+            synchronized (mutex) {return c.retainAll(coll);}
+        }
+        public void clear() {
+            synchronized (mutex) {c.clear();}
+        }
+        public String toString() {
+            synchronized (mutex) {return c.toString();}
+        }
+        private void writeObject(ObjectOutputStream s) throws IOException {
+            synchronized (mutex) {s.defaultWriteObject();}
+        }
+    }
+SynchronizedCollection主要通过内置的同步对象（final Object mutex）实现线程安全。
+其他SynchronizedList，Map思路基本一致，没有什么多说的。
+
+单例List：
+/**
+     * Returns an immutable list containing only the specified object.
+     * The returned list is serializable.
+     *
+     * @param o the sole object to be stored in the returned list.
+     * @return an immutable list containing only the specified object.
+     * @since 1.3
+     */
+    public static <T> List<T> singletonList(T o) {
+        return new SingletonList<>(o);
+    }
+
+    /**
+     * @serial include
+     */
+    private static class SingletonList<E>
+        extends AbstractList<E>
+        implements RandomAccess, Serializable {
+
+        private static final long serialVersionUID = 3093736618740652951L;
+
+        private final E element;
+
+        SingletonList(E obj)                {element = obj;}
+
+        public Iterator<E> iterator() {
+            return singletonIterator(element);
+        }
+
+        public int size()                   {return 1;}
+
+        public boolean contains(Object obj) {return eq(obj, element);}
+
+        public E get(int index) {
+            if (index != 0)
+              throw new IndexOutOfBoundsException("Index: "+index+", Size: 1");
+            return element;
+        }
+    }
+空List：
+/**
+     * The empty list (immutable).  This list is serializable.
+     *
+     * @see #emptyList()
+     */
+    @SuppressWarnings("unchecked")
+    public static final List EMPTY_LIST = new EmptyList<>();
+
+    /**
+     * Returns the empty list (immutable).  This list is serializable.
+     *
+     * <p>This example illustrates the type-safe way to obtain an empty list:
+     * <pre>
+     *     List&lt;String&gt; s = Collections.emptyList();
+     * </pre>
+     * Implementation note:  Implementations of this method need not
+     * create a separate <tt>List</tt> object for each call.   Using this
+     * method is likely to have comparable cost to using the like-named
+     * field.  (Unlike this method, the field does not provide type safety.)
+     *
+     * @see #EMPTY_LIST
+     * @since 1.5
+     */
+    @SuppressWarnings("unchecked")
+    public static final <T> List<T> emptyList() {
+        return (List<T>) EMPTY_LIST;
+    }
+
+    /**
+     * @serial include
+     */
+    private static class EmptyList<E>
+        extends AbstractList<E>
+        implements RandomAccess, Serializable {
+        private static final long serialVersionUID = 8842843931221139166L;
+
+        public Iterator<E> iterator() {
+            return emptyIterator();
+        }
+        public ListIterator<E> listIterator() {
+            return emptyListIterator();
+        }
+
+        public int size() {return 0;}
+        public boolean isEmpty() {return true;}
+
+        public boolean contains(Object obj) {return false;}
+        public boolean containsAll(Collection<?> c) { return c.isEmpty(); }
+
+        public Object[] toArray() { return new Object[0]; }
+
+        public <T> T[] toArray(T[] a) {
+            if (a.length > 0)
+                a[0] = null;
+            return a;
+        }
+
+        public E get(int index) {
+            throw new IndexOutOfBoundsException("Index: "+index);
+        }
+
+        public boolean equals(Object o) {
+            return (o instanceof List) && ((List<?>)o).isEmpty();
+        }
+
+        public int hashCode() { return 1; }
+
+        // Preserves singleton property
+        private Object readResolve() {
+            return EMPTY_LIST;
+        }
+    }
+空Set，Map思路基本一致。
+再来看一下Vector：
+ /* @author  Lee Boynton
+ * @author  Jonathan Payne
+ * @see Collection
+ * @see LinkedList
+ * @since   JDK1.0
+ */
+public class Vector<E>
+    extends AbstractList<E>
+    implements List<E>, RandomAccess, Cloneable, java.io.Serializable
+{
+    /**
+     * The array buffer into which the components of the vector are
+     * stored. The capacity of the vector is the length of this array buffer,
+     * and is at least large enough to contain all the vector's elements.
+     *
+     * <p>Any array elements following the last element in the Vector are null.
+     *
+     * @serial
+     */
+    protected Object[] elementData;
+
+    /**
+     * The number of valid components in this {@code Vector} object.
+     * Components {@code elementData[0]} through
+     * {@code elementData[elementCount-1]} are the actual items.
+     *
+     * @serial
+     */
+    protected int elementCount;
+
+    /**
+     * The amount by which the capacity of the vector is automatically
+     * incremented when its size becomes greater than its capacity.  If
+     * the capacity increment is less than or equal to zero, the capacity
+     * of the vector is doubled each time it needs to grow.
+     *
+     * @serial
+     */
+    protected int capacityIncrement;
+}
+看一个add操作：
+ /**
+     * Appends the specified element to the end of this Vector.
+     *
+     * @param e element to be appended to this Vector
+     * @return {@code true} (as specified by {@link Collection#add})
+     * @since 1.2
+     */
+    public synchronized boolean add(E e) {
+        modCount++;
+        ensureCapacityHelper(elementCount + 1);
+        elementData[elementCount++] = e;
+        return true;
+    }
+使用synchronized修饰方法保证线程安全。
+再看get操作：
+  /**
+     * Removes the first occurrence of the specified element in this Vector
+     * If the Vector does not contain the element, it is unchanged.  More
+     * formally, removes the element with the lowest index i such that
+     * {@code (o==null ? get(i)==null : o.equals(get(i)))} (if such
+     * an element exists).
+     *
+     * @param o element to be removed from this Vector, if present
+     * @return true if the Vector contained the specified element
+     * @since 1.2
+     */
+    public boolean remove(Object o) {
+        return removeElement(o);
+    }
+
+     /**
+     * Removes the first (lowest-indexed) occurrence of the argument
+     * from this vector. If the object is found in this vector, each
+     * component in the vector with an index greater or equal to the
+     * object's index is shifted downward to have an index one smaller
+     * than the value it had previously.
+     *
+     * <p>This method is identical in functionality to the
+     * {@link #remove(Object)} method (which is part of the
+     * {@link List} interface).
+     *
+     * @param   obj   the component to be removed
+     * @return  {@code true} if the argument was a component of this
+     *          vector; {@code false} otherwise.
+     */
+    public synchronized boolean removeElement(Object obj) {
+        modCount++;
+        int i = indexOf(obj);
+        if (i >= 0) {
+            removeElementAt(i);
+            return true;
+        }
+        return false;
+    }
+再看get操作；
+    /**
+     * Returns the element at the specified position in this Vector.
+     *
+     * @param index index of the element to return
+     * @return object at the specified index
+     * @throws ArrayIndexOutOfBoundsException if the index is out of range
+     *            ({@code index < 0 || index >= size()})
+     * @since 1.2
+     */
+    public synchronized E get(int index) {
+        if (index >= elementCount)
+            throw new ArrayIndexOutOfBoundsException(index);
+
+        return elementData(index);
+    }
+
+Vector是jdk1.0的list的线程安全版本，主要通synchronized修饰方法保证线程安全。
+最后来看一下HashSet：
+ /*
+ * @author  Josh Bloch
+ * @author  Neal Gafter
+ * @see     Collection
+ * @see     Set
+ * @see     TreeSet
+ * @see     HashMap
+ * @since   1.2
+ */
+
+public class HashSet<E>
+    extends AbstractSet<E>
+    implements Set<E>, Cloneable, java.io.Serializable
+{
+    static final long serialVersionUID = -5024744406713321676L;
+
+    private transient HashMap<E,Object> map;
+
+    // Dummy value to associate with an Object in the backing Map
+    private static final Object PRESENT = new Object();
+}
+从上可以看出，HashSet是基于HashMap的实现。
+再看一个add操作，   
+   /**
+     * Adds the specified element to this set if it is not already present.
+     * More formally, adds the specified element <tt>e</tt> to this set if
+     * this set contains no element <tt>e2</tt> such that
+     * <tt>(e==null&nbsp;?&nbsp;e2==null&nbsp;:&nbsp;e.equals(e2))</tt>.
+     * If this set already contains the element, the call leaves the set
+     * unchanged and returns <tt>false</tt>.
+     *
+     * @param e element to be added to this set
+     * @return <tt>true</tt> if this set did not already contain the specified
+     * element
+     */
+    public boolean add(E e) {
+        //委托给Map
+        return map.put(e, PRESENT)==null;
+    }
+总结：
+CopyOnWriteArrayList主要使用可重入锁ReentrantLock保证线程安全，在add和remove操作中有加锁，
+而get没有，即读写分离；用volatile保证数组元素的可见性。 CopyOnWriteArraySet是基于
+CopyOnWriteArrayList实现的。 CopyOnWriteArraySet/List是jdk1.5以后的线程安全的List
+与Set的实现。UnmodifiableSet不可变集合的实现是通过委托UnmodifiableCollectionfinal修饰集合类保证不可变性。
+SynchronizedSet等线程安全的集合类是SynchronizedCollection的内置同步对象（final Object mutex）
+实现线程安全。SynchronizedSet/List/Map是jdk1.2之后，jdk1.5之前的线程安全集合的实现
+Vector是jdk1.0的list的线程安全版本，主要通synchronized修饰方法保证线程安全。

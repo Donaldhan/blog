@@ -1,0 +1,603 @@
+Java NIO ByteBuffer详解：[url]http://donald-draper.iteye.com/blog/2357084[/url]
+MappedByteBuffer定义:[url]http://donald-draper.iteye.com/blog/2371594[/url]
+整理 Java 引用（Reference）的概念 ：[url]https://www.oschina.net/question/12_8662[/url]
+Java 中的 Reference：[url]http://www.cnblogs.com/newcj/archive/2011/05/15/2046882.html[/url]
+引言：
+这一篇文章，我们没有打算深入研究java的Reference的机制和及各种类型引用与垃圾回收器的关系，我们
+仅仅看一下Reference的定义，由于本人的能力有限，现在还不能够完全理解Reference，我们仅仅窥探一下内部
+的结构，在简单看一下PhantomReference，Cleaner。
+{
+//Reference
+package java.lang.ref;
+import sun.misc.Cleaner;
+/**
+ * Abstract base class for reference objects.  This class defines the
+ * operations common to all reference objects.  Because reference objects are
+ * implemented in close cooperation with the garbage collector, this class may
+ * not be subclassed directly.
+ *Reference为引用对象的抽象基础类。Reference定义了所有引用对象的一般操作。Reference用于垃圾
+ 回收器先关操作中，Reference不能够直接subclassed。
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+
+public abstract class Reference<T> {
+
+    /* A Reference instance is in one of four possible internal states:
+     *一个引用实例可能有以下四种内部状态
+     *     Active: Subject to special treatment by the garbage collector.  Some
+     *     time after the collector detects that the reachability of the
+     *     referent has changed to the appropriate state, it changes the
+     *     instance's state to either Pending or Inactive, depending upon
+     *     whether or not the instance was registered with a queue when it was
+     *     created.  In the former case it also adds the instance to the
+     *     pending-Reference list.  Newly-created instances are Active.
+     *     Active：被垃圾回收器对待为一个Subject，如果垃圾回收器探测到引用的可达性
+     达到一个适当状态，将改变实例的状态为Pending or Inactive，这个依赖于，在实例创建时，
+     实例是否注册到队列。Pending状态，一个实例将会添加到pending-Reference集合。新创建的
+     实例处于Active状态。
+    
+     *     Pending: An element of the pending-Reference list, waiting to be
+     *     enqueued by the Reference-handler thread.  Unregistered instances
+     *     are never in this state.
+     *     Pending:pending-Reference集合中的元素，等待通过 Reference-handler线程入队列。
+     已经反注册的实例不会处于此状态。
+     *     Enqueued: An element of the queue with which the instance was
+     *     registered when it was created.  When an instance is removed from
+     *     its ReferenceQueue, it is made Inactive.  Unregistered instances are
+     *     never in this state.
+     *     Enqueued:实例创建时注册到队列。当实例从ReferenceQueue中移除，则为Inactive。
+      已经反注册的实例不会处于此状态。
+     *     Inactive: Nothing more to do.  Once an instance becomes Inactive its
+     *     state will never change again.
+     *     Inactive:一单一个实例处理此状态，就不会在改变。
+     * The state is encoded in the queue and next fields as follows:
+     *各状态在队列中的编码和next指针如下：
+     *     Active: queue = ReferenceQueue with which instance is registered, or
+     *     ReferenceQueue.NULL if it was not registered with a queue; next =
+     *     null.
+     *     Active：queue为注册实例的ReferenceQueue或者ReferenceQueue.NULL（还没有注册到队列），
+     next指针为null
+     *     Pending: queue = ReferenceQueue with which instance is registered;
+     *     next = Following instance in queue, or this if at end of list.
+     *      Pending:queue为实例注册到的队列ReferenceQueue，next执行队列中的紧跟着的元素，
+     在队列尾部，next为this。
+     *     Enqueued: queue = ReferenceQueue.ENQUEUED; next = Following instance
+     *     in queue, or this if at end of list.
+     *      Enqueued:queue 为ReferenceQueue.ENQUEUED;next执行队列中的紧跟着的元素，
+     在队列尾部，next为this。
+     *     Inactive: queue = ReferenceQueue.NULL; next = this.
+     *      Inactive: queue为ReferenceQueue.NULL，next = this.
+     * With this scheme the collector need only examine the next field in order
+     * to determine whether a Reference instance requires special treatment: If
+     * the next field is null then the instance is active; if it is non-null,
+     * then the collector should treat the instance normally.
+     *使用此状态和队列机制，垃圾回收器仅仅需要检查next，就可以确定一个引用的实例对象是否
+     需要特殊对待：若果next为null，实例处于存活状态，如果非空，则正常对待为一个实例。
+     * To ensure that concurrent collector can discover active Reference
+     * objects without interfering with application threads that may apply
+     * the enqueue() method to those objects, collectors should link
+     * discovered objects through the discovered field.
+     为确保并发垃圾回收器在没有其他应用线程对这些对象调用enqueue的情况下，发现
+     active引用对象，垃圾回收应该通过discovered连接到需要发现或查找的对象。
+     */
+
+    private T referent;         /* Treated specially by GC */
+
+    ReferenceQueue<? super T> queue;//对象的引用队列
+
+    Reference next;//下一个引用对象
+    transient private Reference<T> discovered;  /* used by VM */
+
+
+    /* Object used to synchronize with the garbage collector.  The collector
+     * must acquire this lock at the beginning of each collection cycle.  It is
+     * therefore critical that any code holding this lock complete as quickly
+     * as possible, allocate no new objects, and avoid calling user code.
+     lock用于垃圾回收器同步。在每次回收垃圾的开始时，必须获取此锁。因此任何拥有此锁的
+     代码必须尽可能快的完成， allocate no new objects, and avoid calling user code.
+     */
+    static private class Lock { };
+    private static Lock lock = new Lock();
+
+
+    /* List of References waiting to be enqueued.  The collector adds
+     * References to this list, while the Reference-handler thread removes
+     * them.  This list is protected by the above lock object.
+     等待入队列的引用集合。当引用被 Reference-handler线程移除时，垃圾回收器将会添加
+     引用到pending集合。集合使用lock对象保护。
+     */
+    private static Reference pending = null;
+
+    /* High-priority thread to enqueue pending References
+    高优先级pending References入队列线程
+     */
+    private static class ReferenceHandler extends Thread {
+
+        ReferenceHandler(ThreadGroup g, String name) {
+            super(g, name);
+        }
+
+        public void run() {
+            for (;;) {
+
+                Reference r;
+                synchronized (lock) {
+                    if (pending != null) {
+                        r = pending;
+                        Reference rn = r.next;
+			//引用指向自己则为null，否则为pending的next
+                        pending = (rn == r) ? null : rn;
+                        r.next = r;
+                    } else {
+                        try {
+			    //否则等待
+                            lock.wait();
+                        } catch (InterruptedException x) { }
+                        continue;
+                    }
+                }
+                // Fast path for cleaners
+                if (r instanceof Cleaner) {
+		    //如果pending为Cleaner，则clean，这个我们在后面在讲
+                    ((Cleaner)r).clean();
+                    continue;
+                }
+                
+                ReferenceQueue q = r.queue;
+		//如果引用队列不为空，则入队列
+                if (q != ReferenceQueue.NULL) q.enqueue(r);
+            }
+        }
+    }
+
+    static {
+        ThreadGroup tg = Thread.currentThread().getThreadGroup();
+	//获取当前现成的顶级父线程组
+        for (ThreadGroup tgn = tg;
+             tgn != null;
+             tg = tgn, tgn = tg.getParent());
+        Thread handler = new ReferenceHandler(tg, "Reference Handler");
+        /* If there were a special system-only priority greater than
+         * MAX_PRIORITY, it would be used here
+         */
+        handler.setPriority(Thread.MAX_PRIORITY);
+        handler.setDaemon(true);
+	//启动pending集合处理线程
+        handler.start();
+    }
+
+
+    /* -- Referent accessor and setters -- */
+
+    /**
+     * Returns this reference object's referent.  If this reference object has
+     * been cleared, either by the program or by the garbage collector, then
+     * this method returns <code>null</code>.
+     *返回对象的引用者。如果这个引用对象被应用或者来及回收器清除，将会返回null。
+     * @return   The object to which this reference refers, or
+     *           <code>null</code> if this reference object has been cleared
+     */
+    public T get() {
+        return this.referent;
+    }
+
+    /**
+     * Clears this reference object.  Invoking this method will not cause this
+     * object to be enqueued.
+     *清除引用对象，调用此方不会引起对象入队列。
+     * <p> This method is invoked only by Java code; when the garbage collector
+     * clears references it does so directly, without invoking this method.
+     此方法通过Java代码调用，垃圾回收器直接清除引用，不会调用此方法
+     */
+    public void clear() {
+        this.referent = null;
+    }
+
+
+    /* -- Queue operations -- */
+
+    /**
+     * Tells whether or not this reference object has been enqueued, either by
+     * the program or by the garbage collector.  If this reference object was
+     * not registered with a queue when it was created, then this method will
+     * always return <code>false</code>.
+     *判断一个引用对象是否通过程序或垃圾回收器入队列，如果引用对象在创建时没有注册
+     到队列，则此方返回fasle。
+     * @return   <code>true</code> if and only if this reference object has
+     *           been enqueued
+     */
+    public boolean isEnqueued() {
+        /* In terms of the internal states, this predicate actually tests
+           whether the instance is either Pending or Enqueued */
+        //如果引用队列不为空，则next不为null
+        synchronized (this) {
+            return (this.queue != ReferenceQueue.NULL) && (this.next != null);
+        }
+    }
+
+    /**
+     * Adds this reference object to the queue with which it is registered,
+     * if any.
+     *引用对象注册时添加到队列
+     * <p> This method is invoked only by Java code; when the garbage collector
+     * enqueues references it does so directly, without invoking this method.
+     *此方通过java代码调用，垃圾回收器直接入队列引用，不会调用此方法
+     * @return   <code>true</code> if this reference object was successfully
+     *           enqueued; <code>false</code> if it was already enqueued or if
+     *           it was not registered with a queue when it was created
+     */
+    public boolean enqueue() {
+        return this.queue.enqueue(this);
+    }
+    /* -- Constructors -- */
+
+    Reference(T referent) {
+        this(referent, null);
+    }
+    Reference(T referent, ReferenceQueue<? super T> queue) {
+        this.referent = referent;
+        this.queue = (queue == null) ? ReferenceQueue.NULL : queue;
+    }
+}
+再来看ReferenceQueue
+package java.lang.ref;
+
+/**
+ * Reference queues, to which registered reference objects are appended by the
+ * garbage collector after the appropriate reachability changes are detected.
+ *在引用对象路径可达状态改变被垃圾回收器探测到时，垃圾回收器注册引用对象到引用队列。
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+
+public class ReferenceQueue<T> {
+
+    /**
+     * Constructs a new reference-object queue.
+     */
+    public ReferenceQueue() { }
+
+    private static class Null extends ReferenceQueue {
+        boolean enqueue(Reference r) {
+            return false;
+        }
+    }
+    //NULL引用队列
+    static ReferenceQueue NULL = new Null();
+    //已经入队列的引用
+    static ReferenceQueue ENQUEUED = new Null();
+
+    static private class Lock { };
+    private Lock lock = new Lock();//同步锁
+    private volatile Reference<? extends T> head = null;//队列头部
+    private long queueLength = 0;//队列长度
+    //将引用添加到引用队列头部
+    boolean enqueue(Reference<? extends T> r) { /* Called only by Reference class */
+        synchronized (r) {
+	    //如果已经入队列则返回false
+            if (r.queue == ENQUEUED) return false;
+            synchronized (lock) {
+                r.queue = ENQUEUED;
+		//获取队列头部
+                r.next = (head == null) ? r : head;
+                head = r;
+                queueLength++;//队列长度自增
+                if (r instanceof FinalReference) {
+		    //如果引用为FinalReference，则虚拟机不可变引用计数器+1
+                    sun.misc.VM.addFinalRefCount(1);
+                }
+		//唤醒所有等待lock的操作
+                lock.notifyAll();
+                return true;
+            }
+        }
+    }
+    //从引用队列取出一个引用对象
+    private Reference<? extends T> reallyPoll() {       /* Must hold lock */
+        if (head != null) {
+            Reference<? extends T> r = head;
+            head = (r.next == r) ? null : r.next;
+	    //重置引用对象的引用队列为NUll
+            r.queue = NULL;
+            r.next = r;
+            queueLength--;
+            if (r instanceof FinalReference) {
+	    //如果引用为FinalReference，则虚拟机不可变引用计数器-1
+                sun.misc.VM.addFinalRefCount(-1);
+            }
+            return r;
+        }
+        return null;
+    }
+
+    /**
+     * Polls this queue to see if a reference object is available.  If one is
+     * available without further delay then it is removed from the queue and
+     * returned.  Otherwise this method immediately returns <tt>null</tt>.
+     *从引用队列取一个引用对象，查看引用对象是否可用。如果可用，则从引用队列移除，
+     否则返回null
+     * @return  A reference object, if one was immediately available,
+     *          otherwise <code>null</code>
+     */
+    public Reference<? extends T> poll() {
+        if (head == null)
+            return null;
+        synchronized (lock) {
+            return reallyPoll();
+        }
+    }
+
+    /**
+     * Removes the next reference object in this queue, blocking until either
+     * one becomes available or the given timeout period expires.
+     *移除队列的下一个引用对象，阻塞到对象可用，或者超时
+     * <p> This method does not offer real-time guarantees: It schedules the
+     * timeout as if by invoking the {@link Object#wait(long)} method.
+     *此方法不能保证超时时间的准确性。通过Object#wait(long)方法调度时间。
+     * @param  timeout  If positive, block for up to <code>timeout</code>
+     *                  milliseconds while waiting for a reference to be
+     *                  added to this queue.  If zero, block indefinitely.
+     *
+     * @return  A reference object, if one was available within the specified
+     *          timeout period, otherwise <code>null</code>
+     *
+     * @throws  IllegalArgumentException
+     *          If the value of the timeout argument is negative
+     *
+     * @throws  InterruptedException
+     *          If the timeout wait is interrupted
+     */
+    public Reference<? extends T> remove(long timeout)
+        throws IllegalArgumentException, InterruptedException
+    {
+        if (timeout < 0) {
+            throw new IllegalArgumentException("Negative timeout value");
+        }
+        synchronized (lock) {
+            Reference<? extends T> r = reallyPoll();
+	    //如果对象可用，理解返回
+            if (r != null) return r;
+            for (;;) {
+	        //否则自旋超时等地下一个引用对象可用。
+                lock.wait(timeout);
+                r = reallyPoll();
+                if (r != null) return r;
+                if (timeout != 0) return null;
+            }
+        }
+    }
+
+    /**
+     * Removes the next reference object in this queue, blocking until one
+     * becomes available.
+     *移除队列的下一个引用对象，阻塞到引用对象可用
+     * @return A reference object, blocking until one becomes available
+     * @throws  InterruptedException  If the wait is interrupted
+     */
+    public Reference<? extends T> remove() throws InterruptedException {
+        return remove(0);
+    }
+
+}
+
+在Reference的pending集合处理线程ReferenceHandler中，入队列后，
+如果引用对象为Cleaner，则Clean，下面我们来看clean操作做了什么
+// Fast path for cleaners
+   if (r instanceof Cleaner) {
+    //如果pending为Cleaner，则clean，这个我们在后面在讲
+       ((Cleaner)r).clean();
+       continue;
+   }
+//Reference-ReferenceHandler
+ private static class ReferenceHandler extends Thread {
+
+        ReferenceHandler(ThreadGroup g, String name) {
+            super(g, name);
+        }
+
+        public void run() {
+            for (;;) {
+
+                Reference r;
+                synchronized (lock) {
+                    if (pending != null) {
+                        r = pending;
+                        Reference rn = r.next;
+			//引用指向自己则为null，否则为pending的next
+                        pending = (rn == r) ? null : rn;
+                        r.next = r;
+                    } else {
+                        try {
+			    //否则等待
+                            lock.wait();
+                        } catch (InterruptedException x) { }
+                        continue;
+                    }
+                }
+                // Fast path for cleaners
+                if (r instanceof Cleaner) {
+		    //如果pending为Cleaner，则clean，这个我们在后面在讲
+                    ((Cleaner)r).clean();
+                    continue;
+                }
+                
+                ReferenceQueue q = r.queue;
+		//如果引用队列不为空，则入队列
+                if (q != ReferenceQueue.NULL) q.enqueue(r);
+            }
+        }
+//Cleaner
+package sun.misc;
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+
+public class Cleaner extends PhantomReference
+{
+再看Cleaner的clean操作之前，我们先来看一下PhantomReference
+//PhantomReference
+package java.lang.ref;
+/**
+ * Phantom reference objects, which are enqueued after the collector
+ * determines that their referents may otherwise be reclaimed.  Phantom
+ * references are most often used for scheduling pre-mortem cleanup actions in
+ * a more flexible way than is possible with the Java finalization mechanism.
+ *
+ * <p> If the garbage collector determines at a certain point in time that the
+ * referent of a phantom reference is <a
+ * href="package-summary.html#reachability">phantom reachable</a>, then at that
+ * time or at some later time it will enqueue the reference.
+ *
+ * <p> In order to ensure that a reclaimable object remains so, the referent of
+ * a phantom reference may not be retrieved: The <code>get</code> method of a
+ * phantom reference always returns <code>null</code>.
+ *
+ * <p> Unlike soft and weak references, phantom references are not
+ * automatically cleared by the garbage collector as they are enqueued.  An
+ * object that is reachable via phantom references will remain so until all
+ * such references are cleared or themselves become unreachable.
+ *
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+public class PhantomReference<T> extends Reference<T> {
+
+    /**
+     * Returns this reference object's referent.  Because the referent of a
+     * phantom reference is always inaccessible, this method always returns
+     * <code>null</code>.
+     *返回引用对象的引用者。由于PhantomReference总是不可访问的，所以总是返回null。
+     * @return  <code>null</code>
+     */
+    public T get() {
+        return null;
+    }
+    /**
+     * Creates a new phantom reference that refers to the given object and
+     * is registered with the given queue.
+     *创建一个PhantomReference引用注册到指定队列的指定对象。
+     * <p> It is possible to create a phantom reference with a <tt>null</tt>
+     * queue, but such a reference is completely useless: Its <tt>get</tt>
+     * method will always return null and, since it does not have a queue, it
+     * will never be enqueued.
+     *有可能创建一个PhantomReference，它的引用队列为null，此引用完全无用，
+     由于没有入引用队列，所以get方法总是返回null
+     * @param referent the object the new phantom reference will refer to
+     * @param q the queue with which the reference is to be registered,
+     *          or <tt>null</tt> if registration is not required
+     */
+    public PhantomReference(T referent, ReferenceQueue<? super T> q) {
+        super(referent, q);
+    }
+}
+当GC一但发现了虚引用对象，将会将PhantomReference对象插入ReferenceQueue队列，
+而此时PhantomReference所指向的对象并没有被GC回收，而是要等到ReferenceQueue被你真正的处理后才会被回收。
+
+回到Cleaner，我们来看他的clear操作：
+package sun.misc;
+
+import java.lang.ref.PhantomReference;
+import java.lang.ref.ReferenceQueue;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+
+public class Cleaner extends PhantomReference
+{
+    private static final ReferenceQueue dummyQueue = new ReferenceQueue();//引用队列
+    private static Cleaner first = null;//头部
+    private Cleaner next;//后继
+    private Cleaner prev;//先驱
+    private final Runnable thunk;
+    //构造Cleaner
+      private Cleaner(Object obj, Runnable runnable)
+    {
+        super(obj, dummyQueue);
+        next = null;
+        prev = null;
+        thunk = runnable;
+    }
+    //根据给定的obj和线程创建Cleaner，并添加到Cleaner链表中
+     public static Cleaner create(Object obj, Runnable runnable)
+    {
+        if(runnable == null)
+            return null;
+        else
+            return add(new Cleaner(obj, runnable));
+    }
+    //添加Cleaner到Cleaner链表中
+     private static synchronized Cleaner add(Cleaner cleaner)
+    {
+        if(first != null)
+        {
+            cleaner.next = first;
+            first.prev = cleaner;
+        }
+        first = cleaner;
+        return cleaner;
+    }
+    从Cleaner的链表中移除cleaner
+    private static synchronized boolean remove(Cleaner cleaner)
+    {
+        if(cleaner.next == cleaner)
+            return false;
+        if(first == cleaner)
+            if(cleaner.next != null)
+                first = cleaner.next;
+            else
+                first = cleaner.prev;
+        if(cleaner.next != null)
+            cleaner.next.prev = cleaner.prev;
+        if(cleaner.prev != null)
+            cleaner.prev.next = cleaner.next;
+        cleaner.next = cleaner;
+        cleaner.prev = cleaner;
+        return true;
+    }
+    //清除操作
+    public void clean()
+    {
+        //如果移除clear失败，则直接返回
+        if(!remove(this))
+            return;
+        try
+        {    //运行清除线程
+            thunk.run();
+        }
+        catch(final Throwable x)
+        {
+            AccessController.doPrivileged(new PrivilegedAction() {
+
+                public Void run()
+                {
+		    //如果清除异常，则抛出错误
+                    if(System.err != null)
+                        (new Error("Cleaner terminated abnormally", x)).printStackTrace();
+                    System.exit(1);
+                    return null;
+                }
+
+                public volatile Object run()
+                {
+                    return run();
+                }
+
+                final Throwable val$x;
+                final Cleaner this$0;
+
+            
+            {
+                this$0 = Cleaner.this;
+                x = throwable;
+                super();
+            }
+            });
+        }
+    }
+}
+总结：
+Cleaner关联一个清除线程thunk和cleaner，在手动clean一个引用对象cleaner（PhantomReference）时，
+首先从引用对应队列ReferenceQueue移除引用对象，再执行清除线程thunk，完成实际的清除工作。
+了解Cleaner才是我们写这篇文章的目的，这个会在DirectByteBuffer中用到，我们在后面的文章会在讲，
+以便更深刻的理解Cleaner的作用。

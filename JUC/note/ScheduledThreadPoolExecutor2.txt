@@ -1,0 +1,485 @@
+ScheduledThreadPoolExecutor解析一（调度任务，任务队列）：http://donald-draper.iteye.com/blog/2367332
+前一篇文章我们看了一下调度线程池执行器的调度任务，任务队列，先来回顾一下
+ScheduledFutureTask用一个序列号标识延时任务的执行编号，以保证任务的调度按照FIFO的顺序，用time记录任务执行的系统时间，period是任务执行间隔时间，
+用于计算下一次任务执行系统时间，outerTask为实际的调度任务，heapIndex为任务在队列的索引。调度线程池执行器用DelayedWorkQueue来存储调度任务，DelayedWorkQueue与
+延时队列DelayedQueue有点像，一个可重入锁控制队列的并发访问，一个available条件控制队列中是否有任务可用，leader为当前正在等待队列头任务可用（队列不为空，队列头任务过期）的线程，当队列不为空或leader被释放，才会触发available条件。DelayedWorkQueue是特为存放ScheduledFutureTask调度任务而定制的。
+ 今天来看一下任务的调度，先来看一调度线程池执行器的构造
+ /**
+ * Creates a new {@code ScheduledThreadPoolExecutor} with the
+ * given core pool size.
+ *
+ 根据指定的核心线程池数量创建调度线程池执行器，默认最大线程池数量为 Integer.MAX_VALUE，
+ 保活时间为0，即不存在空闲的任务线程，任务队列为DelayedWorkQueue
+ * @param corePoolSize the number of threads to keep in the pool, even
+ *        if they are idle, unless {@code allowCoreThreadTimeOut} is set
+ * @throws IllegalArgumentException if {@code corePoolSize < 0}
+ */
+public ScheduledThreadPoolExecutor(int corePoolSize) {
+    super(corePoolSize, Integer.MAX_VALUE, 0, TimeUnit.NANOSECONDS,
+          new DelayedWorkQueue());
+}
+
+/**
+ * Creates a new {@code ScheduledThreadPoolExecutor} with the
+ * given initial parameters.
+ *
+ 根据指定的核心线程池数量和线程工厂创建调度线程池执行器，默认最大线程池数量为 Integer.MAX_VALUE，
+ 保活时间为0，即不存在空闲的任务线程，任务队列为DelayedWorkQueue
+ * @param corePoolSize the number of threads to keep in the pool, even
+ *        if they are idle, unless {@code allowCoreThreadTimeOut} is set
+ * @param threadFactory the factory to use when the executor
+ *        creates a new thread
+ * @throws IllegalArgumentException if {@code corePoolSize < 0}
+ * @throws NullPointerException if {@code threadFactory} is null
+ */
+public ScheduledThreadPoolExecutor(int corePoolSize,
+                                   ThreadFactory threadFactory) {
+    super(corePoolSize, Integer.MAX_VALUE, 0, TimeUnit.NANOSECONDS,
+          new DelayedWorkQueue(), threadFactory);
+}
+
+/**
+ * Creates a new ScheduledThreadPoolExecutor with the given
+ * initial parameters.
+ *
+  根据指定的核心线程池数量和拒绝策略创建调度线程池执行器，默认最大线程池数量为 Integer.MAX_VALUE，
+ 保活时间为0，即不存在空闲的任务线程，任务队列为DelayedWorkQueue
+ * @param corePoolSize the number of threads to keep in the pool, even
+ *        if they are idle, unless {@code allowCoreThreadTimeOut} is set
+ * @param handler the handler to use when execution is blocked
+ *        because the thread bounds and queue capacities are reached
+ * @throws IllegalArgumentException if {@code corePoolSize < 0}
+ * @throws NullPointerException if {@code handler} is null
+ */
+public ScheduledThreadPoolExecutor(int corePoolSize,
+                                   RejectedExecutionHandler handler) {
+    super(corePoolSize, Integer.MAX_VALUE, 0, TimeUnit.NANOSECONDS,
+          new DelayedWorkQueue(), handler);
+}
+
+/**
+ * Creates a new ScheduledThreadPoolExecutor with the given
+ * initial parameters.
+ *
+ 根据指定的核心线程池数量，线程工厂和拒绝策略创建调度线程池执行器，默认最大线程池数量为 Integer.MAX_VALUE，
+ 保活时间为0，即不存在空闲的任务线程，任务队列为DelayedWorkQueue
+ * @param corePoolSize the number of threads to keep in the pool, even
+ *        if they are idle, unless {@code allowCoreThreadTimeOut} is set
+ * @param threadFactory the factory to use when the executor
+ *        creates a new thread
+ * @param handler the handler to use when execution is blocked
+ *        because the thread bounds and queue capacities are reached
+ * @throws IllegalArgumentException if {@code corePoolSize < 0}
+ * @throws NullPointerException if {@code threadFactory} or
+ *         {@code handler} is null
+ */
+public ScheduledThreadPoolExecutor(int corePoolSize,
+                                   ThreadFactory threadFactory,
+                                   RejectedExecutionHandler handler) {
+    super(corePoolSize, Integer.MAX_VALUE, 0, TimeUnit.NANOSECONDS,
+          new DelayedWorkQueue(), threadFactory, handler);
+}
+从调度线程池执行器的构造来看，核心线程池数量是必须设置的，线程工厂和拒绝策略可选，
+默认最大线程池数量为 Integer.MAX_VALUE，保活时间为0，即不存在空闲的任务线程，
+任务队列为DelayedWorkQueue。
+下面我们来看两种任务调度方式scheduleAtFixedRate和scheduleWithFixedDelay；
+先看scheduleAtFixedRate
+/**
+ * @throws RejectedExecutionException {@inheritDoc}
+ * @throws NullPointerException       {@inheritDoc}
+ * @throws IllegalArgumentException   {@inheritDoc}
+ */
+public ScheduledFuture<?> scheduleAtFixedRate(Runnable command,
+                                              long initialDelay,
+                                              long period,
+                                              TimeUnit unit) {
+    if (command == null || unit == null)
+        throw new NullPointerException();
+    if (period <= 0)
+        throw new IllegalArgumentException();
+    //根据任务command和任务执行系统时间triggerTime(initialDelay, unit)，
+    //及任务间隔时间period，构造调度任务
+    ScheduledFutureTask<Void> sft =
+        new ScheduledFutureTask<Void>(command,
+                                      null,
+                                      triggerTime(initialDelay, unit),
+                                      unit.toNanos(period));
+    //简单包装调度任务task			 
+    RunnableScheduledFuture<Void> t = decorateTask(command, sft);
+    //将包装后的实际入队列的调度任务，设为调度任务的outerTask
+    sft.outerTask = t;
+    //延时执行调度任务
+    delayedExecute(t);
+    return t;
+}
+方法中有三个点要关注，为
+1.
+ //根据任务command和任务执行系统时间triggerTime(initialDelay, unit)，
+ //及任务间隔时间period，构造调度任务
+ ScheduledFutureTask<Void> sft =
+     new ScheduledFutureTask<Void>(command,
+                                   null,
+                                   triggerTime(initialDelay, unit),
+                                   unit.toNanos(period));
+2.
+ //简单包装调度任务task			 
+ RunnableScheduledFuture<Void> t = decorateTask(command, sft);
+
+ 3.
+ //延时执行调度任务
+ delayedExecute(t);
+ 
+
+下面分别来看没一点
+1.
+ //根据任务command和任务执行系统时间triggerTime(initialDelay, unit)，
+ //及任务间隔时间period，构造调度任务
+ ScheduledFutureTask<Void> sft =
+     new ScheduledFutureTask<Void>(command,
+                                   null,
+                                   triggerTime(initialDelay, unit),
+                                   unit.toNanos(period));
+这里面要关注的点为计算任务执行的系统时间，这个在前面有说，就不在说了
+ /**
+     * Returns the trigger time of a delayed action.
+     */
+    private long triggerTime(long delay, TimeUnit unit) {
+        return triggerTime(unit.toNanos((delay < 0) ? 0 : delay));
+    }
+
+    /**
+     * Returns the trigger time of a delayed action.
+     */
+    long triggerTime(long delay) {
+        return now() +
+            ((delay < (Long.MAX_VALUE >> 1)) ? delay : overflowFree(delay));
+    }
+2.
+ //简单包装调度任务task		 
+ RunnableScheduledFuture<Void> t = decorateTask(command, sft);
+ /**
+     * Modifies or replaces the task used to execute a runnable.
+     * This method can be used to override the concrete
+     * class used for managing internal tasks.
+     * The default implementation simply returns the given task.
+     *
+     修改或用于个runnable替代调度任务。这个方法可以简单的重写，用于管理
+     内部任务。此方仅简单的返回task。
+     * @param runnable the submitted Runnable
+     * @param task the task created to execute the runnable
+     * @return a task that can execute the runnable
+     * @since 1.6
+     */
+    protected <V> RunnableScheduledFuture<V> decorateTask(
+        Runnable runnable, RunnableScheduledFuture<V> task) {
+        return task;
+    }
+这个方法，子类可以扩展用于管理内部任务，在调度线程池执行器中，仅仅返回调度任务task
+ 3.
+ //延时执行调度任务
+ delayedExecute(t);
+  /**
+     * Main execution method for delayed or periodic tasks.  If pool
+     * is shut down, rejects the task. Otherwise adds task to queue
+     * and starts a thread, if necessary, to run it.  (We cannot
+     * prestart the thread to run the task because the task (probably)
+     * shouldn't be run yet,) If the pool is shut down while the task
+     * is being added, cancel and remove it if required by state and
+     * run-after-shutdown parameters.
+     *
+     * @param task the task
+     */
+    private void delayedExecute(RunnableScheduledFuture<?> task) {
+        if (isShutdown())
+	    //如果线程池关闭，则拒绝任务
+            reject(task);
+        else {
+	    //将任务添加到任务队列
+            super.getQueue().add(task);
+            if (isShutdown() &&
+                !canRunInCurrentRunState(task.isPeriodic()) &&
+                remove(task))
+		//如果线程池关闭，且可以执行间歇性任务，从队列移除任务，
+		//继续以不可中断方式执行正在执行的调度任务
+                task.cancel(false);
+            else
+	        //添加一个空闲工作线程，
+                ensurePrestart();
+        }
+    }
+延时方法有两点需要关注：
+A.
+if (isShutdown() &&
+    !canRunInCurrentRunState(task.isPeriodic()) &&
+    remove(task))
+	//如果线程池关闭，且可以执行间歇性任务，从队列移除任务，
+	//继续以不可中断方式执行正在执行的调度任务
+    task.cancel(false);
+这里需要关注的就是canRunInCurrentRunState(task.isPeriodic())
+ /**
+ * Returns true if can run a task given current run state
+ * and run-after-shutdown parameters.
+ *
+ 此方法的目的是，判断是否可以，在线程池关闭的状态下，继续执行任务；
+continueExistingPeriodicTasksAfterShutdown用于间歇性任务（true，可以继续执行正在执行的调度任务），
+executeExistingDelayedTasksAfterShutdown用于延时任务（true，可以继续执行正在执行的延时任务）
+ * @param periodic true if this task periodic, false if delayed
+ */
+boolean canRunInCurrentRunState(boolean periodic) {
+    return isRunningOrShutdown(periodic ?
+                               continueExistingPeriodicTasksAfterShutdown :
+                               executeExistingDelayedTasksAfterShutdown);
+}
+B.
+else
+    //添加一个空任务工作线程，
+    ensurePrestart();
+//ThreadPoolExecutor
+//添加一个空任务工作线程
+/**
+     * Same as prestartCoreThread except arranges that at least one
+     * thread is started even if corePoolSize is 0.
+     */
+    void ensurePrestart() {
+        int wc = workerCountOf(ctl.get());
+        if (wc < corePoolSize)
+	    //添加一个空任务工作线程
+            addWorker(null, true);
+        else if (wc == 0)
+            addWorker(null, false);
+    }
+关键在这
+ //添加一个空任务工作线程
+addWorker(null, true);
+//ThreadPoolExecutor的
+addWorker方法中有这么一段：
+ private boolean addWorker(Runnable firstTask, boolean core) {
+	 ...
+	 if (workerAdded) {
+	       t.start();//执行工作线程
+	       workerStarted = true;
+	 }
+	...
+}
+在工作线程中，执行方法为
+private final class Worker
+        extends AbstractQueuedSynchronizer
+        implements Runnable
+    {
+    ...
+     /** Delegates main run loop to outer runWorker  */
+        public void run() {
+            runWorker(this);
+        }
+    ...
+    }
+再看runWorker
+final void runWorker(Worker w) {
+    //如果工作线程的任务为空，则从任务队列取任务
+ while (task != null || (task = getTask()) != null) {
+         ...
+	 try {
+                task.run();
+         } 
+	 ...
+ }
+ //从队列取任务
+  private Runnable getTask() {
+	try {
+	     Runnable r = timed ?
+		     workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
+		     workQueue.take();
+         }
+  }
+从队列取任务，这个就是我们要找到，在延时执行调度任务时，添加任务到延时DelayedWorkQueue，
+同时添加一个空任务工作线程，空任务工作线程执行时，如果任务为null，则从任务队列中取任务。
+再来看ScheduledFutureTask的run方法
+//ScheduledFutureTask
+ /**
+  * Overrides FutureTask version so as to reset/requeue if periodic.
+  */
+ public void run() {
+     boolean periodic = isPeriodic();
+     if (!canRunInCurrentRunState(periodic))
+         cancel(false);
+     else if (!periodic)
+         ScheduledFutureTask.super.run();
+     //如果任务为ScheduledFutureTask，则重置任务线程状态为READY
+     else if (ScheduledFutureTask.super.runAndReset()) {
+         //设置下一次执行的系统时间
+         setNextRunTime();
+	 //任务重新入队列
+         reExecutePeriodic(outerTask);
+     }
+ }
+/**
+ * Requeues a periodic task unless current run state precludes it.
+ * Same idea as delayedExecute except drops task rather than rejecting.
+ *
+ * @param task the task
+ */
+void reExecutePeriodic(RunnableScheduledFuture<?> task) {
+    if (canRunInCurrentRunState(true)) {
+        //重新添加任务到队列
+        super.getQueue().add(task);
+        if (!canRunInCurrentRunState(true) && remove(task))
+            task.cancel(false);
+        else
+            ensurePrestart();
+    }
+}
+自此scheduleAtFixedRate方法，看完我们来小节一下：
+首先根据任务command和任务执行系统时间，及任务间隔时间period，构造调度任务
+，简单包装调度任务，延时执行调度任务，延时执行调度任务。在延时执行调度任务时，
+添加任务到延时DelayedWorkQueue，同时添加一个空任务工作线程，空任务工作线程执行时，
+如果任务为null，则从任务队列中取任务。调度任务的执行，如果任务为ScheduledFutureTask，
+在运行的时候，从新计算任务下一次执行的系统时间，重置任务线程状态为READY，添加任务到队列。
+
+
+
+再看scheduleWithFixedDelay
+
+ /**
+  * @throws RejectedExecutionException {@inheritDoc}
+  * @throws NullPointerException       {@inheritDoc}
+  * @throws IllegalArgumentException   {@inheritDoc}
+  */
+ public ScheduledFuture<?> scheduleWithFixedDelay(Runnable command,
+                                                  long initialDelay,
+                                                  long delay,
+                                                  TimeUnit unit) {
+     if (command == null || unit == null)
+         throw new NullPointerException();
+     if (delay <= 0)
+         throw new IllegalArgumentException();
+     //任务command和任务执行系统时间，及任务间隔时间period，构造调度任务
+     ScheduledFutureTask<Void> sft =
+         new ScheduledFutureTask<Void>(command,
+                                       null,
+                                       triggerTime(initialDelay, unit),
+                                       unit.toNanos(-delay));
+     //包装任务
+     RunnableScheduledFuture<Void> t = decorateTask(command, sft);
+     sft.outerTask = t;
+     //延时执行
+     delayedExecute(t);
+     return t;
+ }
+scheduleWithFixedDelay与scheduleAtFixedRate不同点在构造ScheduledFutureTask时间间隔为-delay
+我们先来看
+unit.toNanos(-delay)
+public enum TimeUnit {
+    NANOSECONDS {
+        public long toNanos(long d)   { return d; }
+        public long toMicros(long d)  { return d/(C1/C0); }
+        public long toMillis(long d)  { return d/(C2/C0); }
+        public long toSeconds(long d) { return d/(C3/C0); }
+        public long toMinutes(long d) { return d/(C4/C0); }
+        public long toHours(long d)   { return d/(C5/C0); }
+        public long toDays(long d)    { return d/(C6/C0); }
+        public long convert(long d, TimeUnit u) { return u.toNanos(d); }
+        int excessNanos(long d, long m) { return (int)(d - (m*C2)); }
+    },MICROSECONDS{...}，MILLISECONDS{...},...
+
+来看ScheduledFutureTask的run方法
+//ScheduledFutureTask
+ /**
+  * Overrides FutureTask version so as to reset/requeue if periodic.
+  */
+ public void run() {
+     boolean periodic = isPeriodic();
+     if (!canRunInCurrentRunState(periodic))
+         cancel(false);
+     else if (!periodic)
+         ScheduledFutureTask.super.run();
+     //如果任务为ScheduledFutureTask，则重置任务线程状态为READY
+     else if (ScheduledFutureTask.super.runAndReset()) {
+         //设置下一次执行的系统时间
+         setNextRunTime();
+	 //任务重新入队列
+         reExecutePeriodic(outerTask);
+     }
+ }
+再看设置下一次执行的系统时间
+ /**
+  * Sets the next time to run for a periodic task.
+  设置间歇性调度任务下一次执行的时间
+  */
+ private void setNextRunTime() {
+     long p = period;
+      //以固定的频率调度任务即scheduleAtFixedRate，
+      //每隔p时间执行一次任务无论，上一次任务是否执行完
+     if (p > 0)
+         time += p;
+     else
+     //以固定的间隔时间调度任务，即scheduleWithFixedDelay，
+     //当前任务执行完后，等待p时间，再执行下一个任务
+         time = triggerTime(-p);
+ }
+计算固定间隔调度任务下一次触发的时间
+ /**
+  * Returns the trigger time of a delayed action.
+  */
+ long triggerTime(long delay) {
+     return now() +
+         ((delay < (Long.MAX_VALUE >> 1)) ? delay : overflowFree(delay));
+ }
+从上面来看delay为负，那个now() + delay小于当前时间；
+再看调度任务ScheduledFutureTask的getDelay
+ public long getDelay(TimeUnit unit) {
+            //调度系统时间-当前系统时间
+            return unit.convert(time - now(), TimeUnit.NANOSECONDS);
+}
+从上面来看getDelay为<0,这个我有点纳闷，getDelay为负的，即在任务队列中延时已经过期，
+调度线程池又是如何保证当前任务结束和下一次任务开始的间隔时间为p呢？？？？？我很疑问，如果有网友
+知道的话，可以在评论里告诉我，感激不尽。
+//调度一个延时的Runnable任务
+ /**
+     * @throws RejectedExecutionException {@inheritDoc}
+     * @throws NullPointerException       {@inheritDoc}
+     */
+    public ScheduledFuture<?> schedule(Runnable command,
+                                       long delay,
+                                       TimeUnit unit) {
+        if (command == null || unit == null)
+            throw new NullPointerException();
+        RunnableScheduledFuture<?> t = decorateTask(command,
+            new ScheduledFutureTask<Void>(command, null,
+                                          triggerTime(delay, unit)));
+        delayedExecute(t);
+        return t;
+    }
+//调度一个延时的Callable任务
+    /**
+     * @throws RejectedExecutionException {@inheritDoc}
+     * @throws NullPointerException       {@inheritDoc}
+     */
+    public <V> ScheduledFuture<V> schedule(Callable<V> callable,
+                                           long delay,
+                                           TimeUnit unit) {
+        if (callable == null || unit == null)
+            throw new NullPointerException();
+        RunnableScheduledFuture<V> t = decorateTask(callable,
+            new ScheduledFutureTask<V>(callable,
+                                       triggerTime(delay, unit)));
+        delayedExecute(t);
+        return t;
+    }
+看过scheduleAtFixedRate的执行过程，这两个延时调度任务应该不是什么难题了。
+总结：
+
+从调度线程池执行器的构造来看，核心线程池数量是必须设置的，线程工厂和拒绝策略可选，
+默认最大线程池数量为 Integer.MAX_VALUE，保活时间为0，即不存在空闲的任务线程，
+任务队列为DelayedWorkQueue。
+
+scheduleAtFixedRate方法首先根据任务command和任务执行系统时间，
+及任务间隔时间period，构造调度任务，简单包装调度任务，延时执行调度任务，
+延时执行调度任务。在延时执行调度任务时，
+添加任务到延时DelayedWorkQueue，同时添加一个空任务工作线程，空任务工作线程执行时，
+如果任务为null，则从任务队列中取任务。调度任务的执行，如果任务为ScheduledFutureTask，
+在运行的时候，从新计算任务下一次执行的系统时间，重置任务线程状态为READY，添加任务到队列。
+scheduleWithFixedDelay与scheduleAtFixedRate不同点在构造ScheduledFutureTask时间间隔为-delay。
+时间间隔p为正，以固定的频率调度任务即scheduleAtFixedRate，每隔p时间执行一次任务，无论上一次任务是否执行完，
+具体任务能否执行，调度线程池无法保证，这要看是否有工作线程可用；
+当时间间隔p为负，以固定的间隔时间调度任务，即scheduleWithFixedDelay，
+当前任务执行完后，等待p时间，再执行下一个任务。

@@ -1,0 +1,284 @@
+Java NIO ByteBuffer详解：[url]http://donald-draper.iteye.com/blog/2357084[/url]
+在上一篇文章中我们看了HeapByteBuffer，今天来看另外一个DirectByteBuffer。在看DirectByteBuffer
+之前我们先来看一下DirectByteBuffer的父类MappedByteBuffer。
+//DirectByteBuffer
+package java.nio;
+import java.io.FileDescriptor;
+import sun.misc.Cleaner;
+import sun.misc.Unsafe;
+import sun.misc.VM;
+import sun.nio.ch.DirectBuffer;
+class DirectByteBuffer
+    extends MappedByteBuffer
+    implements DirectBuffer
+{
+下面来看MappedByteBuffer
+package java.nio;
+import java.io.FileDescriptor;
+import sun.misc.Unsafe;
+
+/**
+ * A direct byte buffer whose content is a memory-mapped region of a file.
+ *MappedByteBuffer的内容为文件的内存映射region。
+ * <p> Mapped byte buffers are created via the {@link
+ * java.nio.channels.FileChannel#map FileChannel.map} method.  This class
+ * extends the {@link ByteBuffer} class with operations that are specific to
+ * memory-mapped file regions.
+ *MappedByteBuffer通过java.nio.channels.FileChannel#map方法创建。MappedByteBuffer
+ 拓展的ByteBuffer，添加了内存映射文件regions的相关操作。
+ * <p> A mapped byte buffer and the file mapping that it represents remain
+ * valid until the buffer itself is garbage-collected.
+ *在缓存被被垃圾回收器，回收之前，MappedByteBuffer和文件的映射都是有效的。
+ * <p> The content of a mapped byte buffer can change at any time, for example
+ * if the content of the corresponding region of the mapped file is changed by
+ * this program or another.  Whether or not such changes occur, and when they
+ * occur, is operating-system dependent and therefore unspecified.
+ *MappedByteBuffer的内容可以在任何时候修改，比如映射文件相关的region内容可以被
+ 应用或其他应用修改。修改是否起作用，依赖于具体的操作系统，因此是不确定的。
+ * <a name="inaccess"><p> All or part of a mapped byte buffer may become
+ * inaccessible at any time, for example if the mapped file is truncated.  An
+ * attempt to access an inaccessible region of a mapped byte buffer will not
+ * change the buffer's content and will cause an unspecified exception to be
+ * thrown either at the time of the access or at some later time.  It is
+ * therefore strongly recommended that appropriate precautions be taken to
+ * avoid the manipulation of a mapped file by this program, or by a
+ * concurrently running program, except to read or write the file's content.
+ *如果映射文件被删除，MappedByteBuffer的所有parts都是不可访问的。尝试访问
+ 不会改变buffer的内容，无论在访问的时间，还是访问后，将会引起一个不确定的异常抛出。
+所以强烈建议不要通过应用或并发应用程序直接操作一个映射文件，除了读写文件内容之外。
+ * <p> Mapped byte buffers otherwise behave no differently than ordinary direct
+ * byte buffers. </p>
+ *除了上述的可读文件内容，应用不可直接操作文件映射这个不同之外，MappedByteBuffer
+ 与一般的DirectByteBuffer没有什么不同。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public abstract class MappedByteBuffer
+    extends ByteBuffer
+{
+
+    // This is a little bit backwards: By rights MappedByteBuffer should be a
+    // subclass of DirectByteBuffer, but to keep the spec clear and simple, and
+    // for optimization purposes, it's easier to do it the other way around.
+    // This works because DirectByteBuffer is a package-private class.
+    //如果想要使用MappedByteBuffer，应该是DirectByteBuffer的子类，为了保证干净简单和
+    //最优化的目的，我们应该可以很容易地实现一个继承DirectByteBuffer的子类。
+    为什么是DirectByteBuffer的子类呢，这是由于DirectByteBuffer是包私有的类。
+     
+    // For mapped buffers, a FileDescriptor that may be used for mapping
+    // operations if valid; null if the buffer is not mapped.
+    //在映射缓存中，如果文件描述符有效，文件描述可以用于映射操作。为null，则
+    //缓存不能映射
+    private final FileDescriptor fd;
+
+    // This should only be invoked by the DirectByteBuffer constructors
+    //此方法通过DirectByteBuffer的构造方法调用
+    MappedByteBuffer(int mark, int pos, int lim, int cap, // package-private
+                     FileDescriptor fd)
+    {
+        super(mark, pos, lim, cap);
+        this.fd = fd;
+    }
+
+    MappedByteBuffer(int mark, int pos, int lim, int cap) { // package-private
+        super(mark, pos, lim, cap);
+        this.fd = null;
+    }
+   //检查文件描述符是否为null
+    private void checkMapped() {
+        if (fd == null)
+            // Can only happen if a luser explicitly casts a direct byte buffer
+            throw new UnsupportedOperationException();
+    }
+
+    // Returns the distance (in bytes) of the buffer from the page aligned address
+    // of the mapping. Computed each time to avoid storing in every direct buffer.
+    //获取起始地址
+    private long mappingOffset() {
+        int ps = Bits.pageSize();
+        long offset = address % ps;
+        return (offset >= 0) ? offset : (ps + offset);
+    }
+    //获取实际的起始地址
+    private long mappingAddress(long mappingOffset) {
+        return address - mappingOffset;
+    }
+   //返回映射地址长度
+    private long mappingLength(long mappingOffset) {
+        return (long)capacity() + mappingOffset;
+    }
+
+    // not used, but a potential target for a store, see load() for details.
+    private static byte unused;//记录，not used
+
+    /**
+     * Loads this buffer's content into physical memory.
+     *
+     * <p> This method makes a best effort to ensure that, when it returns,
+     * this buffer's content is resident in physical memory.  Invoking this
+     * method may cause some number of page faults and I/O operations to
+     * occur. </p>
+     *
+     * @return  This buffer
+     */
+    public final MappedByteBuffer load() {
+        checkMapped(); //检查文件描述是否为null
+        if ((address == 0) || (capacity() == 0))//如果地址或容量为0，返回true
+            return this;
+        long offset = mappingOffset();//起始地址
+        long length = mappingLength(offset);//计算需要的地址长度，用于分配内存
+        load0(mappingAddress(offset), length);
+
+        // Read a byte from each page to bring it into memory. A checksum
+        // is computed as we go along to prevent the compiler from otherwise
+        // considering the loop as dead code.
+        Unsafe unsafe = Unsafe.getUnsafe();
+        int ps = Bits.pageSize();//获取分页大小
+        int count = Bits.pageCount(length);//获取分页数量
+        long a = mappingAddress(offset);
+        byte x = 0;
+	//将物理内存地址与MappedByteBuffer建立映射
+        for (int i=0; i<count; i++) {
+            x ^= unsafe.getByte(a);
+            a += ps;
+        }
+        if (unused != 0)
+            unused = x;
+
+        return this;
+    }
+     private native void load0(long address, long length);
+     /**
+     * Tells whether or not this buffer's content is resident in physical
+     * memory.
+     *判断缓存的内容是否存在与实际的物理内存中
+     * <p> A return value of <tt>true</tt> implies that it is highly likely
+     * that all of the data in this buffer is resident in physical memory and
+     * may therefore be accessed without incurring any virtual-memory page
+     * faults or I/O operations.  A return value of <tt>false</tt> does not
+     * necessarily imply that the buffer's content is not resident in physical
+     * memory.
+     *当返回值为true时，缓存中数据存在物理内存中，因此访问数据不会引起虚拟机分页
+     或IO操作错误。false，即不在物理内存中
+     * <p> The returned value is a hint, rather than a guarantee, because the
+     * underlying operating system may have paged out some of the buffer's data
+     * by the time that an invocation of this method returns.  </p>
+     *返回的结果是不能保证却对的正确，因为在方法调用的时候，底层的操作系统可能会
+     分页取出缓存中的数据。
+     * @return  <tt>true</tt> if it is likely that this buffer's content
+     *          is resident in physical memory
+     */
+    public final boolean isLoaded() {
+        //检查文件描述是否为null
+        checkMapped();
+	//如果地址或容量为0，返回true
+        if ((address == 0) || (capacity() == 0))
+            return true;
+	//起始地址
+        long offset = mappingOffset();
+	//长度
+        long length = mappingLength(offset);
+        return isLoaded0(mappingAddress(offset), length, Bits.pageCount(length));
+    }
+    private native boolean isLoaded0(long address, long length, int pageCount);
+
+    /**
+     * Forces any changes made to this buffer's content to be written to the
+     * storage device containing the mapped file.
+     *强制将缓冲区的数据改变和映射文件，写到存储设备上。
+     * <p> If the file mapped into this buffer resides on a local storage
+     * device then when this method returns it is guaranteed that all changes
+     * made to the buffer since it was created, or since this method was last
+     * invoked, will have been written to that device.
+     *如果缓存的文件映射已经存储在本地设备上，调用此方法可以保证从MappedByteBuffer创建，
+     到当前时间，缓存的所有数据变化，写到设备上。
+     * <p> If the file does not reside on a local device then no such guarantee
+     * is made.
+     *如果文件 不存在本地设备上，则方法不能保证
+     * <p> If this buffer was not mapped in read/write mode ({@link
+     * java.nio.channels.FileChannel.MapMode#READ_WRITE}) then invoking this
+     * method has no effect. </p>
+     *如果缓存没有映射为java.nio.channels.FileChannel.MapMode#READ_WRITE模式，则调用方法无效
+     * @return  This buffer
+     */
+    public final MappedByteBuffer force() {
+        checkMapped();
+        if ((address != 0) && (capacity() != 0)) {
+            long offset = mappingOffset();
+            force0(fd, mappingAddress(offset), mappingLength(offset));
+        }
+        return this;
+    }
+   
+    private native void force0(FileDescriptor fd, long address, long length);
+}
+来看这个方法中的地址address从何而来
+//获取实际的起始地址
+ private long mappingAddress(long mappingOffset) {
+     return address - mappingOffset;
+ }
+ //Buffer
+ public abstract class Buffer {
+
+    // Invariants: mark <= position <= limit <= capacity
+    private int mark = -1;
+    private int position = 0;
+    private int limit;
+    private int capacity;
+
+    // Used only by direct buffers
+    // NOTE: hoisted here for speed in JNI GetDirectBufferAddress
+    //Direct buffer的物理地址
+    long address;
+}
+
+再来建立MappedByteBuffer与物理内存文件映射方法load中的Bits.pageCount，Bits.pageSize()
+ public final MappedByteBuffer load() {
+        checkMapped(); //检查文件描述是否为null
+        if ((address == 0) || (capacity() == 0))//如果地址或容量为0，返回true
+            return this;
+        long offset = mappingOffset();//起始地址
+        long length = mappingLength(offset);//计算需要的地址长度，用于分配内存
+        load0(mappingAddress(offset), length);
+
+        // Read a byte from each page to bring it into memory. A checksum
+        // is computed as we go along to prevent the compiler from otherwise
+        // considering the loop as dead code.
+        Unsafe unsafe = Unsafe.getUnsafe();
+        int ps = Bits.pageSize();//获取分页大小
+        int count = Bits.pageCount(length);//获取分页数量
+        long a = mappingAddress(offset);
+        byte x = 0;
+	//将物理内存地址与MappedByteBuffer建立映射
+        for (int i=0; i<count; i++) {
+            x ^= unsafe.getByte(a);
+            a += ps;
+        }
+        if (unused != 0)
+            unused = x;
+
+        return this;
+    }
+//Bits
+  private static final Unsafe unsafe = Unsafe.getUnsafe();
+    static int pageCount(long size) {
+        return (int)(size + (long)pageSize() - 1L) / pageSize();
+    }
+    private static int pageSize = -1;
+    static int pageSize() {
+        if (pageSize == -1)
+            pageSize = unsafe().pageSize();
+        return pageSize;
+    }
+  static Unsafe unsafe() {
+        return unsafe;
+    }
+//Unsafe
+public native int pageSize();
+
+总结：
+MappedByteBuffer将缓存区数据分页存放到实际的物理内存中，并建立映射。我们一般不直接使用MappedByteBuffer
+，而是使用MappedByteBuffer的子类DirectByteBuffer。在后面的java.nio.channels.FileChannel相关文章中，我们回再次提到MappedByteBuffer。

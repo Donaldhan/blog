@@ -1,0 +1,159 @@
+ByteChannel，分散聚集通道接口的定义（SocketChannel）:[url]http://donald-draper.iteye.com/blog/2371065[/url]
+package java.nio.channels;
+
+import java.nio.ByteBuffer;
+import java.io.IOException;
+
+/**
+ * A byte channel that maintains a current <i>position</i> and allows the
+ * position to be changed.
+ *SeekableByteChannel维护是一个当前position，运行修改position。
+ * <p> A seekable byte channel is connected to an entity, typically a file,
+ * that contains a variable-length sequence of bytes that can be read and
+ * written. The current position can be {@link #position() <i>queried</i>} and
+ * {@link #position(long) <i>modified</i>}. The channel also provides access to
+ * the current <i>size</i> of the entity to which the channel is connected. The
+ * size increases when bytes are written beyond its current size; the size
+ * decreases when it is {@link #truncate <i>truncated</i>}.
+ *SeekableByteChannel连接一个实体，典型为一个包含可变长度的字节序列文件，可以读取
+ 和写。可通过#position方法获取当前位置，通过#position(long)修改当前position。通道
+ 提供了访问通道连接实体的当前size。当字节序列被写到实体时，实体size增加；当压缩时，
+ 实体size减少。
+ * <p> The {@link #position(long) position} and {@link #truncate truncate} methods
+ * which do not otherwise have a value to return are specified to return the
+ * channel upon which they are invoked. This allows method invocations to be
+ * chained. Implementations of this interface should specialize the return type
+ * so that method invocations on the implementation class can be chained.
+ *#position(long)和#truncate方法，在调用时，返回的值是不确定。这些方法可以链式调用。
+ 接口的实现，将该使这些方法返回一个精确的子，以便链式调用。
+ * @since 1.7
+ * @see java.nio.file.Files#newByteChannel
+ */
+
+public interface SeekableByteChannel
+    extends ByteChannel
+{
+    /**
+     * Reads a sequence of bytes from this channel into the given buffer.
+     *从通道读取字节序列，写到buffer中
+     * <p> Bytes are read starting at this channel's current position, and
+     * then the position is updated with the number of bytes actually read.
+     * Otherwise this method behaves exactly as specified in the {@link
+     * ReadableByteChannel} interface.
+     从当前通道的postion位置开始读取字节，当实际字节被读取时，则更细positon。其他
+     的和ReadableByteChannel接口相同
+     */
+    @Override
+    int read(ByteBuffer dst) throws IOException;
+
+    /**
+     * Writes a sequence of bytes to this channel from the given buffer.
+     *从给定的buffer，读取字节序列写到通道中
+     * <p> Bytes are written starting at this channel's current position, unless
+     * the channel is connected to an entity such as a file that is opened with
+     * the {@link java.nio.file.StandardOpenOption#APPEND APPEND} option, in
+     * which case the position is first advanced to the end. The entity to which
+     * the channel is connected is grown, if necessary, to accommodate the
+     * written bytes, and then the position is updated with the number of bytes
+     * actually written. Otherwise this method behaves exactly as specified by
+     * the {@link WritableByteChannel} interface.
+     从通道当前的位置写字节序列，除非通道连接一个实体，比如以StandardOpenOption#APPEND
+     配置选项打开的文件，在这种情况下，position首先定位到文件的尾部。通道连接的实际将会
+     增加，如果需要，计算写的字节数，更新position。其他方法与WritableByteChannel相同。
+     */
+    @Override
+    int write(ByteBuffer src) throws IOException;
+
+    /**
+     * Returns this channel's position.
+     *返回当前通道的位置
+     * @return  This channel's position,
+     *          a non-negative integer counting the number of bytes
+     *          from the beginning of the entity to the current position
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    long position() throws IOException;
+
+    /**
+     * Sets this channel's position.
+     *设置通道的位置
+     * <p> Setting the position to a value that is greater than the current size
+     * is legal but does not change the size of the entity.  A later attempt to
+     * read bytes at such a position will immediately return an end-of-file
+     * indication.  A later attempt to write bytes at such a position will cause
+     * the entity to grow to accommodate the new bytes; the values of any bytes
+     * between the previous end-of-file and the newly-written bytes are
+     * unspecified.
+     *如果设置position大于当前实体size，是合法的，不会改变实体的size。尝试从设置后的
+     position位置读取字节，position将会立即定位到文件的末端。此时尝试写字节序列，
+     将会引起实体的增加。
+     * <p> Setting the channel's position is not recommended when connected to
+     * an entity, typically a file, that is opened with the {@link
+     * java.nio.file.StandardOpenOption#APPEND APPEND} option. When opened for
+     * append, the position is first advanced to the end before writing.
+     *当通道连接一个实体时，不建议设置通道的position，特别是一个以StandardOpenOption#APPEND
+     配置选项打开的文件，在这种情况下，在写之前，首先定位position的位置到文件的末尾。
+     * @param  newPosition
+     *         The new position, a non-negative integer counting
+     *         the number of bytes from the beginning of the entity
+     *
+     * @return  This channel
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IllegalArgumentException
+     *          If the new position is negative
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    SeekableByteChannel position(long newPosition) throws IOException;
+
+    /**
+     * Returns the current size of entity to which this channel is connected.
+     *返回通道连接实体的size
+     * @return  The current size, measured in bytes
+     *
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    long size() throws IOException;
+
+    /**
+     * Truncates the entity, to which this channel is connected, to the given
+     * size.
+     *压缩通道连接的实体到指定的size
+     * <p> If the given size is less than the current size then the entity is
+     * truncated, discarding any bytes beyond the new end. If the given size is
+     * greater than or equal to the current size then the entity is not modified.
+     * In either case, if the current position is greater than the given size
+     * then it is set to that size.
+     *如果给定的size小于实体当前的size，将会压缩实体，丢弃超过新末端的字节。如果
+     给定的size大于或等于当前size，实际将不会修改。在其他一些情况下，如果当前的position
+     大于给定的size，那么将会设置position。
+     * <p> An implementation of this interface may prohibit truncation when
+     * connected to an entity, typically a file, opened with the {@link
+     * java.nio.file.StandardOpenOption#APPEND APPEND} option.
+     *当连接一个实体时，具体接口的实现也许会禁止压缩实体，比如以StandardOpenOption#APPEND
+     配置选项打开的文件。
+     * @param  size
+     *         The new size, a non-negative byte count
+     *
+     * @return  This channel
+     *
+     * @throws  NonWritableChannelException
+     *          If this channel was not opened for writing
+     * @throws  ClosedChannelException
+     *          If this channel is closed
+     * @throws  IllegalArgumentException
+     *          If the new size is negative
+     * @throws  IOException
+     *          If some other I/O error occurs
+     */
+    SeekableByteChannel truncate(long size) throws IOException;
+}

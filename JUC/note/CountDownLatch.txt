@@ -1,0 +1,535 @@
+AtomicInteger解析：[url]http://donald-draper.iteye.com/blog/2359555[/url]
+锁持有者管理器AbstractOwnableSynchronizer：[url]http://donald-draper.iteye.com/blog[/url]/2360109
+AQS线程挂起辅助类LockSupport：[url]http://donald-draper.iteye.com/blog/2360206[/url]
+AQS详解-CLH队列，线程等待状态：[url]http://donald-draper.iteye.com/blog/2360256[/url]
+AQS-Condition详解：[url]http://donald-draper.iteye.com/blog/2360381[/url]
+可重入锁ReentrantLock详解：http://donald-draper.iteye.com/blog/2360411
+CountDownLatch使用场景：http://donald-draper.iteye.com/blog/2348106
+/*
+ * ORACLE PROPRIETARY/CONFIDENTIAL. Use is subject to license terms.
+ * Written by Doug Lea with assistance from members of JCP JSR-166
+ * Expert Group and released to the public domain, as explained at
+ * http://creativecommons.org/publicdomain/zero/1.0/
+ */
+
+package java.util.concurrent;
+import java.util.concurrent.locks.*;
+import java.util.concurrent.atomic.*;
+
+/**
+ * A synchronization aid that allows one or more threads to wait until
+ * a set of operations being performed in other threads completes.
+ *
+ 一个同步的辅助，允许一个或多个线程等待，直到一个集合操作或任务，
+ 在其他线程中被执行完，
+ * <p>A {@code CountDownLatch} is initialized with a given <em>count</em>.
+ * The {@link #await await} methods block until the current count reaches
+ * zero due to invocations of the {@link #countDown} method, after which
+ * all waiting threads are released and any subsequent invocations of
+ * {@link #await await} return immediately.  This is a one-shot phenomenon
+ * -- the count cannot be reset.  If you need a version that resets the
+ * count, consider using a {@link CyclicBarrier}.
+CountDownLatch被初始化为一个给定的数量count。await方法阻塞，直到其他线程或自己，
+调用#countDown方法，使count达到零为止；当count达到0时，所有await的线程，将被立刻
+released唤醒。CountDownLatch是一次性的，不能被复位。如果需要将count，重置为初始值，
+可以考虑用CyclicBarrier。
+
+ *
+ * <p>A {@code CountDownLatch} is a versatile synchronization tool
+ * and can be used for a number of purposes.  A
+ * {@code CountDownLatch} initialized with a count of one serves as a
+ * simple on/off latch, or gate: all threads invoking {@link #await await}
+ * wait at the gate until it is opened by a thread invoking {@link
+ * #countDown}.  A {@code CountDownLatch} initialized to <em>N</em>
+ * can be used to make one thread wait until <em>N</em> threads have
+ * completed some action, or some action has been completed N times.
+ *
+CountDownLatch是一个多功能的同步工具，可用被用于很多场景。当count初始化为1时，
+CountDownLatch可以作为一个简单的on/off闭锁，或者可以理解为一扇门：所有调用await
+的线程，等待这扇门被线程调用countDown打开。CountDownLatch初始化为N时，这种情况，
+可以用作一下场景：1.一个线程等待，直到N个线程完成工作或任务；2.一个任务被完成N次。
+
+ * <p>A useful property of a {@code CountDownLatch} is that it
+ * doesn't require that threads calling {@code countDown} wait for
+ * the count to reach zero before proceeding, it simply prevents any
+ * thread from proceeding past an {@link #await await} until all
+ * threads could pass.
+ *
+CountDownLatch一个很重要的属性是，它不需要关心，那些线程调用了countDown，
+使count达到0，只需要阻止线程通过闭锁门，直到所有线程任务完成。
+
+
+ * <p><b>Sample usage:</b> Here is a pair of classes in which a group
+ * of worker threads use two countdown latches:
+ 这是一个用两个闭锁完成工作线程任务的实例
+ * <ul>
+ * <li>The first is a start signal that prevents any worker from proceeding
+ * until the driver is ready for them to proceed;
+ * <li>The second is a completion signal that allows the driver to wait
+ * until all workers have completed.
+ * </ul>
+ *
+ 开始闭锁，用于阻止所有线程开始工作，直到线程准备好；第二个闭锁用于等待所有的
+ 工作线程完成任务
+ * <pre>
+ * class Driver { // ...
+ *   void main() throws InterruptedException {
+ *     CountDownLatch startSignal = new CountDownLatch(1);
+ *     CountDownLatch doneSignal = new CountDownLatch(N);
+ *
+ *     for (int i = 0; i < N; ++i) // create and start threads
+ *       new Thread(new Worker(startSignal, doneSignal)).start();
+ *
+ *     doSomethingElse();            // don't let run yet
+ *     startSignal.countDown();      // let all threads proceed
+ *     doSomethingElse();
+ *     doneSignal.await();           // wait for all to finish
+ *   }
+ * }
+ *
+ * class Worker implements Runnable {
+ *   private final CountDownLatch startSignal;
+ *   private final CountDownLatch doneSignal;
+ *   Worker(CountDownLatch startSignal, CountDownLatch doneSignal) {
+ *      this.startSignal = startSignal;
+ *      this.doneSignal = doneSignal;
+ *   }
+ *   public void run() {
+ *      try {
+ *        startSignal.await();
+ *        doWork();
+ *        doneSignal.countDown();
+ *      } catch (InterruptedException ex) {} // return;
+ *   }
+ *
+ *   void doWork() { ... }
+ * }
+ *
+ * </pre>
+ *
+ * <p>Another typical usage would be to divide a problem into N parts,
+ * describe each part with a Runnable that executes that portion and
+ * counts down on the latch, and queue all the Runnables to an
+ * Executor.  When all sub-parts are complete, the coordinating thread
+ * will be able to pass through await. (When threads must repeatedly
+ * count down in this way, instead use a {@link CyclicBarrier}.)
+ *
+ 另一个典型的应用场景，是将一个问题分成N部分，每个部分用一个线程去执行，
+ 执行完后，countdown，用线程池执行线程队列。当所有的分部分任务执行完，
+ 协调线程可以pass await。若果想重复countdown，可以用CyclicBarrier
+ * <pre>
+ * class Driver2 { // ...
+ *   void main() throws InterruptedException {
+ *     CountDownLatch doneSignal = new CountDownLatch(N);
+ *     Executor e = ...
+ *
+ *     for (int i = 0; i < N; ++i) // create and start threads
+ *       e.execute(new WorkerRunnable(doneSignal, i));
+ *
+ *     doneSignal.await();           // wait for all to finish
+ *   }
+ * }
+ *
+ * class WorkerRunnable implements Runnable {
+ *   private final CountDownLatch doneSignal;
+ *   private final int i;
+ *   WorkerRunnable(CountDownLatch doneSignal, int i) {
+ *      this.doneSignal = doneSignal;
+ *      this.i = i;
+ *   }
+ *   public void run() {
+ *      try {
+ *        doWork(i);
+ *        doneSignal.countDown();
+ *      } catch (InterruptedException ex) {} // return;
+ *   }
+ *
+ *   void doWork() { ... }
+ * }
+ *
+ * </pre>
+ *这个不翻译了：翻译过后，没有原始的味道。
+ * <p>Memory consistency effects: Until the count reaches
+ * zero, actions in a thread prior to calling
+ * {@code countDown()}
+ * <a href="package-summary.html#MemoryVisibility"><i>happen-before</i></a>
+ * actions following a successful return from a corresponding
+ * {@code await()} in another thread.
+ *
+ * @since 1.5
+ * @author Doug Lea
+ */
+public class CountDownLatch {
+    /**
+     * Synchronization control For CountDownLatch.
+     * Uses AQS state to represent count.
+     */
+     //基于AQS的内部同步器Sync
+    private static final class Sync extends AbstractQueuedSynchronizer {
+        private static final long serialVersionUID = 4982264981922014374L;
+        //构造同步器，设置状态为count
+        Sync(int count) {
+            setState(count);
+        }
+        //获取锁状态
+        int getCount() {
+            return getState();
+        }
+        //尝试以公平的方式，获取锁，当锁状态为0，则返回1，否则为-1
+        protected int tryAcquireShared(int acquires) {
+            return (getState() == 0) ? 1 : -1;
+        }
+        //尝试释放共享锁
+        protected boolean tryReleaseShared(int releases) {
+            // Decrement count; signal when transition to zero
+            for (;;) {
+	        //自旋尝试释放共享锁
+                int c = getState();
+                if (c == 0)
+		    //如果锁状态为0，则释放失败
+                    return false;
+                int nextc = c-1;
+		//以CAS方式，修改锁状态，减1
+                if (compareAndSetState(c, nextc))
+                    return nextc == 0;
+            }
+        }
+    }
+    //内部锁
+    private final Sync sync;
+
+    /**
+     * Constructs a {@code CountDownLatch} initialized with the given count.
+     *
+     * @param count the number of times {@link #countDown} must be invoked
+     *        before threads can pass through {@link #await}
+     * @throws IllegalArgumentException if {@code count} is negative
+     //构造CountDownLatch
+     */
+    public CountDownLatch(int count) {
+        if (count < 0) throw new IllegalArgumentException("count < 0");
+        this.sync = new Sync(count);
+    }
+     /**
+     * Causes the current thread to wait until the latch has counted down to
+     * zero, unless the thread is {@linkplain Thread#interrupt interrupted}.
+     *阻塞当前线程，直到锁count为零，或者线程被中断。
+     * <p>If the current count is zero then this method returns immediately.
+     *count为0，则方法以及返回
+     * <p>If the current count is greater than zero then the current
+     * thread becomes disabled for thread scheduling purposes and lies
+     * dormant until one of two things happen:
+     如果count大于零，当前线程，自旋获取锁，直到获取锁，或线程中断
+     * <ul>
+     * <li>The count reaches zero due to invocations of the
+     * {@link #countDown} method; or
+     * <li>Some other thread {@linkplain Thread#interrupt interrupts}
+     * the current thread.
+     * </ul>
+     *
+     * <p>If the current thread:
+     * <ul>
+     * <li>has its interrupted status set on entry to this method; or
+     * <li>is {@linkplain Thread#interrupt interrupted} while waiting,
+     * </ul>
+     * then {@link InterruptedException} is thrown and the current thread's
+     * interrupted status is cleared.
+     *当线程等待时，被中断；当抛出异常时，中断位将被清除。
+     * @throws InterruptedException if the current thread is interrupted
+     *         while waiting
+     */
+     public void await() throws InterruptedException {
+        sync.acquireSharedInterruptibly(1);
+    }
+    /**
+     * Causes the current thread to wait until the latch has counted down to
+     * zero, unless the thread is {@linkplain Thread#interrupt interrupted},
+     * or the specified waiting time elapses.
+     * 如果count大于零，当前线程，自旋获取锁，直到获取锁，或线程中断，或时间超时
+     * <p>If the current count is zero then this method returns immediately
+     * with the value {@code true}.
+     *
+     * <p>If the current count is greater than zero then the current
+     * thread becomes disabled for thread scheduling purposes and lies
+     * dormant until one of three things happen:
+     * <ul>
+     * <li>The count reaches zero due to invocations of the
+     * {@link #countDown} method; or
+     * <li>Some other thread {@linkplain Thread#interrupt interrupts}
+     * the current thread; or
+     * <li>The specified waiting time elapses.
+     * </ul>
+     *
+     * <p>If the count reaches zero then the method returns with the
+     * value {@code true}.
+     *
+     * <p>If the current thread:
+     * <ul>
+     * <li>has its interrupted status set on entry to this method; or
+     * <li>is {@linkplain Thread#interrupt interrupted} while waiting,
+     * </ul>
+     * then {@link InterruptedException} is thrown and the current thread's
+     * interrupted status is cleared.
+     *
+     * <p>If the specified waiting time elapses then the value {@code false}
+     * is returned.  If the time is less than or equal to zero, the method
+     * will not wait at all.
+     *
+     * @param timeout the maximum time to wait
+     * @param unit the time unit of the {@code timeout} argument
+     * @return {@code true} if the count reached zero and {@code false}
+     *         if the waiting time elapsed before the count reached zero
+     * @throws InterruptedException if the current thread is interrupted
+     *         while waiting
+     */
+     public boolean await(long timeout, TimeUnit unit)
+        throws InterruptedException {
+        return sync.tryAcquireSharedNanos(1, unit.toNanos(timeout));
+    }
+
+    /**
+     * Decrements the count of the latch, releasing all waiting threads if
+     * the count reaches zero.
+     *释放共享锁
+     * <p>If the current count is greater than zero then it is decremented.
+     * If the new count is zero then all waiting threads are re-enabled for
+     * thread scheduling purposes.
+     *
+     * <p>If the current count equals zero then nothing happens.
+     */
+    public void countDown() {
+        sync.releaseShared(1);
+    }
+
+    /**
+     * Returns the current count.返回当前锁状态
+     * <p>This method is typically used for debugging and testing purposes.
+     * @return the current count
+     */
+    public long getCount() {
+        return sync.getCount();
+    }
+
+ }
+ 下面我么来单独看一下，await和countDown，先看await
+ public void await() throws InterruptedException {
+        sync.acquireSharedInterruptibly(1);
+    }
+
+//AQS
+**
+     * Acquires in shared mode, aborting if interrupted.  Implemented
+     * by first checking interrupt status, then invoking at least once
+     * {@link #tryAcquireShared}, returning on success.  Otherwise the
+     * thread is queued, possibly repeatedly blocking and unblocking,
+     * invoking {@link #tryAcquireShared} until success or the thread
+     * is interrupted.
+     获取共享模式锁，如果中断，则aborting，首先检查中断状态，然后自旋，
+     尝试获取共享锁，直到成功。如果线程由于未获取锁，进入队列，可能需要
+     重复blocking and unblocking，尝试获取共享锁，直到成功，或线程中断。
+     * @param arg the acquire argument
+     * This value is conveyed to {@link #tryAcquireShared} but is
+     * otherwise uninterpreted and can represent anything
+     * you like.
+     * @throws InterruptedException if the current thread is interrupted
+     */
+    public final void acquireSharedInterruptibly(int arg)
+            throws InterruptedException {
+        if (Thread.interrupted())
+	    //如果线程中断，则抛出中断异常
+            throw new InterruptedException();
+	    尝试获取锁，如果失败doAcquireSharedInterruptibly
+        if (tryAcquireShared(arg) < 0)
+            doAcquireSharedInterruptibly(arg);
+    }
+    //待父类扩展
+ protected int tryAcquireShared(int arg) {
+        throw new UnsupportedOperationException();
+    }
+
+来看CountDownLatch-内部同步器SYNC的tryAcquireShared实现
+//尝试以公平的方式，获取锁，当锁状态为0，则返回1，获取成功，否则为-1，失败
+        protected int tryAcquireShared(int acquires) {
+            return (getState() == 0) ? 1 : -1;
+        }
+再看第二步
+doAcquireSharedInterruptibly(arg);
+//AQS
+    /**
+     * Acquires in shared interruptible mode.
+     * @param arg the acquire argument
+     */
+    //以共享可中断方式，获取锁
+    private void doAcquireSharedInterruptibly(int arg)
+        throws InterruptedException {
+	//添加共享节点到同步等待队列
+        final Node node = addWaiter(Node.SHARED);
+        boolean failed = true;
+        try {
+	    //自旋，尝试获取锁，成功则返回
+            for (;;) {
+                final Node p = node.predecessor();
+		/*如果节点的前驱是头节点，当前节点为第一个有效节点，
+		则尝试获取锁，如果获取成功*/
+                if (p == head) {
+                    int r = tryAcquireShared(arg);
+                    if (r >= 0) {
+		        /*设置当前节点为头结点，如果需要唤醒后继节点线程，则unpark
+			后继节点线程，如果状态为0，则是指状态为PROPAGATE，通知后继节点
+			锁已释放。*/
+                        setHeadAndPropagate(node, r);
+                        p.next = null; // help GC
+                        failed = false;
+                        return;
+                    }
+                }
+		/*如果前驱不是头结点，则判断尝试获取失败，是否应该park，
+		如果是，则park，检查是否应该中断，当前线程，如果是，则中断
+		当前线程。*/
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())
+                    throw new InterruptedException();
+            }
+        } finally {
+            if (failed)
+	       //获取锁过程，失败则，移除线程节点
+                cancelAcquire(node);
+        }
+    }
+我们再来看一下
+setHeadAndPropagate(node, r);
+这一句是什么意思？
+    /**
+     * Sets head of queue, and checks if successor may be waiting
+     * in shared mode, if so propagating if either propagate > 0 or
+     * PROPAGATE status was set.
+     *设置队列的头结点，检查后继节点是否在等待共享锁，成功回去则返回1，
+     所以这里propagate==1
+     * @param node the node
+     * @param propagate the return value from a tryAcquireShared
+     */
+    private void setHeadAndPropagate(Node node, int propagate) {
+        Node h = head; // Record old head for check below
+	//当节点获取锁，成功则设置为头结点
+        setHead(node);
+        /*
+         * Try to signal next queued node if:
+         *   Propagation was indicated by caller,
+         *     or was recorded (as h.waitStatus) by a previous operation
+         *     (note: this uses sign-check of waitStatus because
+         *      PROPAGATE status may transition to SIGNAL.)
+	 唤醒后继节点
+         * and
+         *   The next node is waiting in shared mode,
+         *     or we don't know, because it appears null
+         *
+         * The conservatism in both of these checks may cause
+         * unnecessary wake-ups, but only when there are multiple
+         * racing acquires/releases, so most need signals now or soon
+         * anyway.
+         */
+        if (propagate > 0 || h == null || h.waitStatus < 0) {
+            Node s = node.next;
+            if (s == null || s.isShared())
+                doReleaseShared();
+        }
+    }
+
+
+     /**
+     * Release action for shared mode -- signal successor and ensure
+     * propagation. (Note: For exclusive mode, release just amounts
+     * to calling unparkSuccessor of head if it needs signal.)
+     */
+     释放共享模式锁，唤醒后继，确保后继获取锁
+    private void doReleaseShared() {
+        /*
+         * Ensure that a release propagates, even if there are other
+         * in-progress acquires/releases.  This proceeds in the usual
+         * way of trying to unparkSuccessor of head if it needs
+         * signal. But if it does not, status is set to PROPAGATE to
+         * ensure that upon release, propagation continues.
+         * Additionally, we must loop in case a new node is added
+         * while we are doing this. Also, unlike other uses of
+         * unparkSuccessor, we need to know if CAS to reset status
+         * fails, if so rechecking.
+	 确保释放锁信号，传递，即使与其他线程在尝试获取或释放锁。如果头结点的
+	 后继需要唤醒，则需要unpark后继节点。如果不需要，则设置状态为PROPAGATE
+	 ，确保等待线程知道，锁已经释放，继续传播锁释放信号。
+         */
+	
+        for (;;) {
+            Node h = head;
+            if (h != null && h != tail) {
+                int ws = h.waitStatus;
+                if (ws == Node.SIGNAL) {
+		    //如果头结点，需要唤醒后继节点线程，则以CAS方式，
+		    //设置节点头结点状态为初始化锁状态0
+                    if (!compareAndSetWaitStatus(h, Node.SIGNAL, 0))
+                        continue;            // loop to recheck cases
+		    //unpark 头结点后继节点
+                    unparkSuccessor(h);
+                }
+                else if (ws == 0 &&
+		        //如果状态为0，则需要设置节点状态为PROPAGATE，通知后继节点，锁已释放
+                         !compareAndSetWaitStatus(h, 0, Node.PROPAGATE))
+                    continue;                // loop on failed CAS
+            }
+            if (h == head)                   // loop if head changed
+                break;
+        }
+    }
+
+
+//释放锁
+ public void countDown() {
+        sync.releaseShared(1);
+    }
+
+    /**
+     * Releases in shared mode.  Implemented by unblocking one or more
+     * threads if {@link #tryReleaseShared} returns true.
+     *释放共享模式锁
+     * @param arg the release argument.  This value is conveyed to
+     *        {@link #tryReleaseShared} but is otherwise uninterpreted
+     *        and can represent anything you like.
+     * @return the value returned from {@link #tryReleaseShared}
+     */
+    public final boolean releaseShared(int arg) {
+        //CountDownLatch-内部同步器SYNC的tryReleaseShared实现
+        if (tryReleaseShared(arg)) {
+	    //这个在前面以说过
+            doReleaseShared();
+            return true;
+        }
+        return false;
+    }
+待子类扩展
+ protected boolean tryReleaseShared(int arg) {
+        throw new UnsupportedOperationException();
+    }
+//CountDownLatch-内部同步器SYNC的tryReleaseShared实现
+
+//尝试释放共享锁
+        protected boolean tryReleaseShared(int releases) {
+            // Decrement count; signal when transition to zero
+            for (;;) {
+	        //自旋尝试释放共享锁
+                int c = getState();
+                if (c == 0)
+		    //如果锁状态为0，则释放失败
+                    return false;
+                int nextc = c-1;
+		//以CAS方式，修改锁状态，减1
+                if (compareAndSetState(c, nextc))
+                    return nextc == 0;
+            }
+        }
+CountDownLatch本质上是一个共享锁，是一个多功能的同步工具，
+可用被用于很多场景。当count初始化为1时，CountDownLatch可以作为一个简单的on/off闭锁，
+或者可以理解为一扇门：所有调用await的线程，等待这扇门被线程调用countDown打开。
+CountDownLatch初始化为N时，这种情况，可以用作一下场景：1.一个线程等待，
+直到N个线程完成工作或任务；2.一个任务被完成N次。CountDownLatch内部有一个基于AQS实现的共享
+锁，用SYNC的状态status，来表示，锁可以被多少个线程所共享，当锁被所有的线程打开countDown，
+则其他线程可以获取锁。在锁没有被完全打开之前，其他线程，自旋，尝试获取共享锁，在这个过程中
+，线程可能被park，或者中断。

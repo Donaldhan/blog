@@ -1,0 +1,133 @@
+Condition
+条件变量很大一个程度上是为了解决Object.wait/notify/notifyAll难以使用的问题。
+条件（也称为条件队列或条件变量）为线程提供了一个含义，
+以便在某个状态条件现在可能为true 的另一个线程通知它之前，一直挂起该线程（即让其“等待”）。
+因为访问此共享状态信息发生在不同的线程中，所以它必须受保护，因此要将某种形式的锁与该条件相关联。
+等待提供一个条件的主要属性是：以原子方式释放相关的锁，并挂起当前线程，就像Object.wait 做的那样。
+上述API说明表明条件变量需要与锁绑定，而且多个Condition需要绑定到同一锁上。
+前面的Lock中提到，获取一个条件变量的方法是Lock.newCondition()。
+void await() throws InterruptedException; 
+void awaitUninterruptibly(); 
+long awaitNanos(long nanosTimeout) throws InterruptedException; 
+boolean await(long time, TimeUnit unit) throws InterruptedException; 
+boolean awaitUntil(Date deadline) throws InterruptedException; 
+void signal(); 
+void signalAll();
+以上是Condition接口定义的方法，await*对应于Object.wait，signal对应于Object.notify，
+signalAll对应于Object.notifyAll。特别说明的是Condition的接口改变名称就是为了避免
+与Object中的wait/notify/notifyAll的语义和使用上混淆，因为Condition同样有wait/notify/notifyAll方法。
+每一个Lock可以有任意数据的Condition对象，Condition是与Lock绑定的，
+所以就有Lock的公平性特性：如果是公平锁，线程为按照FIFO的顺序从Condition.await中释放，
+如果是非公平锁，那么后续的锁竞争就不保证FIFO顺序了。一个使用Condition实现生产者消费者的模型例子如下：
+package juc;
+
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * Condition实现的生产者，消费者模型
+ * 
+ * @author donald 2017年3月2日 下午7:02:17
+ * @param <T>
+ */
+public class ProductQueue<T> {
+	private final T[] items;
+	private final Lock lock = new ReentrantLock();
+	private Condition notFull = lock.newCondition();// 队列非满条件
+	private Condition notEmpty = lock.newCondition();// 队列非空条件
+	//队列头，尾，当前容量
+	private int head, tail, count;
+    /**
+     * 
+     * @param maxSize
+     */
+	@SuppressWarnings("unchecked")
+	public ProductQueue(int maxSize) {
+		items = (T[]) new Object[maxSize];
+	}
+
+	public ProductQueue() {
+		this(10);
+	}
+    /**
+     * 生产
+     * @param t
+     * @throws InterruptedException
+     */
+	public void put(T t) throws InterruptedException {
+		lock.lock();
+		try {
+			while (count == getCapacity()) {
+				// ReentrantLock is oweself, await for realse the lock and put up
+				// the thread
+				// when the condition is satsfy ,the get the lock and run
+				//如果当前队列已满，则等待不满条件
+				notFull.await();
+			}
+			//添加到队列尾部
+			items[tail] = t;
+			if (++tail == getCapacity()) {
+				//如果队列满，则将队列尾，执行队列，第一个槽
+				tail = 0;
+			}
+			//增加队列元素个数
+			++count;
+			//释放非空信号，通知所有持有当前锁lock，并等待消费的线程
+			notEmpty.signalAll();
+		} finally {
+			lock.unlock();
+		}
+	}
+   /**
+    * 消费
+    * @return
+    * @throws InterruptedException
+    */
+	public T take() throws InterruptedException {
+		lock.lock();
+		try {
+			while (count == 0) {
+				//如果队列为空，则等待非空条件
+				notEmpty.await();
+			}
+			T ret = items[head];
+			//取走队列头元素，并清空
+			items[head] = null;// help GC
+			//队列元素被取万，则head指向队列头
+			if (++head == getCapacity()) {
+				head = 0;
+			}
+			//减少队列元素数量
+			--count;
+			//释放非满信号，通知所有持有当前锁lock，并等待生产的线程
+			notFull.signalAll();
+			return ret;
+		} finally {
+			lock.unlock();
+		}
+	}
+	/**
+	 * 
+	 * @return
+	 */
+	public int getCapacity() {
+		return items.length;
+	}
+   /**
+    * 
+    * @return
+    */
+	public int size() {
+		lock.lock();
+		try {
+			return count;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+}
+
+在这个例子中消费take()需要队列不为空，如果为空就挂起（await()），
+直到收到notEmpty的信号；生产put()需要队列不满，如果满了就挂起（await()），直到收到notFull的信号。

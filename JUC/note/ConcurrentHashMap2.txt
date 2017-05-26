@@ -1,0 +1,649 @@
+HashMap详解：[url]http://donald-draper.iteye.com/blog/2361702[/url]
+ConcurrentMap介绍：[url]http://donald-draper.iteye.com/blog/2361719[/url]
+ConcurrentHashMap解析-Segment：http://donald-draper.iteye.com/blog/2363200
+ConcurrentHashMap是线程安全的，可并发访问，不允许key或value的值为null，
+默认的容量为16，负载因子为0.75，并发访问量为16。ConcurrentHashMap中有一个Segment数组，
+默认数组大小为16，Segment中有一个HashEntry数组类似于HashMap中的table，Segment继承了可重入锁ReentrantLock，
+Segment的修改其hash table的操作都要使用lock。Segment的put操作，首先尝试获取锁，如果获取锁失败，
+则Key在片段hash table中的索引，遍历索引对应的Hash Entry链，如找不到key对应HashEntry,则创建一个HashEntry，
+这都是在尝试次数小于最大尝试次数MAX_SCAN_RETRIES情况下，MAX_SCAN_RETRIES默认为2。
+这样做的目的是为确保，进行put操作时，仍持有锁。然后定位key在片段table中的索引，并放在链头，
+如果实际size达到临界条件，则重新hash，创建2倍原始容量的hash table，重新建立hash table。
+Segment的remove操作，首先尝试获取锁失败，则继续尝试获取锁，在获取锁的过程中，
+定位key在片段table的HashEntry链表索引，遍历链表，如果找到对应HashEntry，则移除，
+如果尝试次数超过最大尝试次数，则lock，则遍历链表，找到对应的HashEntry，则移除。
+replace与remove的基本思路相同，唯一的区别是，当替换值时，修改计数要自增1。
+put，remove和replace操作是锁住片段table中，key对应的索引HashEntry链表，
+而Clear为锁住整个table。ConcurrentHashMap通过将所有HashEntry分散在不同的Segment，
+及锁机制实现了并发访问。
+来看HashMap的put操作
+  /**
+     * Maps the specified key to the specified value in this table.
+     * Neither the key nor the value can be null.
+     *
+     * <p> The value can be retrieved by calling the <tt>get</tt> method
+     * with a key that is equal to the original key.
+     *
+     * @param key key with which the specified value is to be associated
+     * @param value value to be associated with the specified key
+     * @return the previous value associated with <tt>key</tt>, or
+     *         <tt>null</tt> if there was no mapping for <tt>key</tt>
+     * @throws NullPointerException if the specified key or value is null
+     */
+    @SuppressWarnings("unchecked")
+    public V put(K key, V value) {
+        Segment<K,V> s;
+        if (value == null)
+            throw new NullPointerException();
+	//获取key的hash值，定位Segment，
+        int hash = hash(key);
+        int j = (hash >>> segmentShift) & segmentMask;
+        if ((s = (Segment<K,V>)UNSAFE.getObject          // nonvolatile; recheck
+             (segments, (j << SSHIFT) + SBASE)) == null) //  in ensureSegment
+	    //确保片段索引对应的Segment存在，不存在则创建
+            s = ensureSegment(j);
+	//调用Segment的put操作，onlyIfAbsent为false，存在，则替换
+        return s.put(key, hash, value, false);
+    }
+
+   /**
+     * Returns the segment for the given index, creating it and
+     * recording in segment table (via CAS) if not already present.
+     *
+     * @param k the index
+     * @return the segment
+     */
+     //返回数组segment，指定索引的segment，如果不存在，则创建一个
+    @SuppressWarnings("unchecked")
+    private Segment<K,V> ensureSegment(int k) {
+        final Segment<K,V>[] ss = this.segments;
+        long u = (k << SSHIFT) + SBASE; // raw offset
+        Segment<K,V> seg;
+        if ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u)) == null) {
+            Segment<K,V> proto = ss[0]; // use segment 0 as prototype
+            int cap = proto.table.length;
+            float lf = proto.loadFactor;
+            int threshold = (int)(cap * lf);
+            HashEntry<K,V>[] tab = (HashEntry<K,V>[])new HashEntry[cap];
+            if ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u))
+                == null) { // recheck
+                Segment<K,V> s = new Segment<K,V>(lf, threshold, tab);
+                while ((seg = (Segment<K,V>)UNSAFE.getObjectVolatile(ss, u))
+                       == null) {
+                    if (UNSAFE.compareAndSwapObject(ss, u, null, seg = s))
+                        break;
+                }
+            }
+        }
+        return seg;
+    }
+/**
+     * {@inheritDoc}
+     *
+     * @return the previous value associated with the specified key,
+     *         or <tt>null</tt> if there was no mapping for the key
+     * @throws NullPointerException if the specified key or value is null
+     */
+     如果Map不包含对应的Key则，执行put的操作，否则返回旧值 
+    @SuppressWarnings("unchecked")
+    public V putIfAbsent(K key, V value) {
+        Segment<K,V> s;
+        if (value == null)
+            throw new NullPointerException();
+        int hash = hash(key);
+        int j = (hash >>> segmentShift) & segmentMask;
+        if ((s = (Segment<K,V>)UNSAFE.getObject
+             (segments, (j << SSHIFT) + SBASE)) == null)
+            s = ensureSegment(j);
+        return s.put(key, hash, value, true);
+    }
+putIfAbsent与put操作的区别为onlyIfAbsent为true，存在返回旧值，否则放到对应
+的Segment的hash table中。
+
+ /**
+     * Creates a new map with the same mappings as the given map.
+     * The map is created with a capacity of 1.5 times the number
+     * of mappings in the given map or 16 (whichever is greater),
+     * and a default load factor (0.75) and concurrencyLevel (16).
+     *
+     * @param m the map
+     */
+     创建一个与参数Map相同HashEntry的Map
+    public ConcurrentHashMap(Map<? extends K, ? extends V> m) {
+        this(Math.max((int) (m.size() / DEFAULT_LOAD_FACTOR) + 1,
+                      DEFAULT_INITIAL_CAPACITY),
+             DEFAULT_LOAD_FACTOR, DEFAULT_CONCURRENCY_LEVEL);
+	 //委托给putAll
+        putAll(m);
+    }
+
+    /**
+     * Copies all of the mappings from the specified map to this one.
+     * These mappings replace any mappings that this map had for any of the
+     * keys currently in the specified map.
+     *
+     * @param m mappings to be stored in this map
+     */
+    public void putAll(Map<? extends K, ? extends V> m) {
+        遍历HashEntry，放到新的Map中
+        for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+            put(e.getKey(), e.getValue());
+    }
+
+Remove操作：
+/**
+     * Removes the key (and its corresponding value) from this map.
+     * This method does nothing if the key is not in the map.
+     *
+     * @param  key the key that needs to be removed
+     * @return the previous value associated with <tt>key</tt>, or
+     *         <tt>null</tt> if there was no mapping for <tt>key</tt>
+     * @throws NullPointerException if the specified key is null
+     */
+    public V remove(Object key) {
+        int hash = hash(key);
+	//定位片段
+        Segment<K,V> s = segmentForHash(hash);
+        //委托给Segment的remove操作
+        return s == null ? null : s.remove(key, hash, null);
+    }
+
+    /**
+     * Get the segment for the given hash
+     */
+     //根据hash值定位片段Segment
+    @SuppressWarnings("unchecked")
+    private Segment<K,V> segmentForHash(int h) {
+        long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+        return (Segment<K,V>) UNSAFE.getObjectVolatile(segments, u);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @throws NullPointerException if the specified key is null
+     */
+    public boolean remove(Object key, Object value) {
+        int hash = hash(key);
+        Segment<K,V> s;
+        return value != null && (s = segmentForHash(hash)) != null &&
+            s.remove(key, hash, value) != null;
+    }
+再看repalce
+}
+
+    /**
+     * {@inheritDoc}
+     *
+     * @throws NullPointerException if any of the arguments are null
+     */
+    public boolean replace(K key, V oldValue, V newValue) {
+        int hash = hash(key);
+        if (oldValue == null || newValue == null)
+            throw new NullPointerException();
+        Segment<K,V> s = segmentForHash(hash);
+        return s != null && s.replace(key, hash, oldValue, newValue);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the previous value associated with the specified key,
+     *         or <tt>null</tt> if there was no mapping for the key
+     * @throws NullPointerException if the specified key or value is null
+     */
+    public V replace(K key, V value) {
+        int hash = hash(key);
+        if (value == null)
+            throw new NullPointerException();
+	//定位Segment，委托给Segment
+        Segment<K,V> s = segmentForHash(hash);
+        return s == null ? null : s.replace(key, hash, value);
+    }
+从上面分析的put，remove，replace操作来看，基本思路相同，先定位定位Segment，
+再将操作委托给Segment相应的操作。
+再看get操作
+ public V get(Object key) {
+        Segment<K,V> s; // manually integrate access methods to reduce overhead
+        HashEntry<K,V>[] tab;
+        int h = hash(key);
+	//定位Segment
+        long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+        if ((s = (Segment<K,V>)UNSAFE.getObjectVolatile(segments, u)) != null &&
+            (tab = s.table) != null) {
+	    //遍历key对应的HashEntry链表，找到，则返回值
+            for (HashEntry<K,V> e = (HashEntry<K,V>) UNSAFE.getObjectVolatile
+                     (tab, ((long)(((tab.length - 1) & h)) << TSHIFT) + TBASE);
+                 e != null; e = e.next) {
+                K k;
+                if ((k = e.key) == key || (e.hash == h && key.equals(k)))
+                    return e.value;
+            }
+        }
+        return null;
+    }
+
+//再看判断是包含key
+  public boolean containsKey(Object key) {
+        Segment<K,V> s; // same as get() except no need for volatile value read
+        HashEntry<K,V>[] tab;
+        int h = hash(key);
+        long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+        if ((s = (Segment<K,V>)UNSAFE.getObjectVolatile(segments, u)) != null &&
+            (tab = s.table) != null) {
+            for (HashEntry<K,V> e = (HashEntry<K,V>) UNSAFE.getObjectVolatile
+                     (tab, ((long)(((tab.length - 1) & h)) << TSHIFT) + TBASE);
+                 e != null; e = e.next) {
+                K k;
+                if ((k = e.key) == key || (e.hash == h && key.equals(k)))
+                    return true;
+            }
+        }
+        return false;
+    }
+思路与get操作类似；
+  public boolean contains(Object value) {
+        //委托给containsValue
+        return containsValue(value);
+    }
+/**
+     * Returns <tt>true</tt> if this map maps one or more keys to the
+     * specified value. Note: This method requires a full internal
+     * traversal of the hash table, and so is much slower than
+     * method <tt>containsKey</tt>.
+     *
+     containsValue需要遍历内部的所有片段的Hash table，所以速度是非常慢的
+     * @param value value whose presence in this map is to be tested
+     * @return <tt>true</tt> if this map maps one or more keys to the
+     *         specified value
+     * @throws NullPointerException if the specified value is null
+     */
+    public boolean containsValue(Object value) {
+        // Same idea as size()
+        if (value == null)
+            throw new NullPointerException();
+        final Segment<K,V>[] segments = this.segments;
+        boolean found = false;
+        long last = 0;
+        int retries = -1;
+        try {
+            outer: for (;;) {
+                if (retries++ == RETRIES_BEFORE_LOCK) {
+                    for (int j = 0; j < segments.length; ++j)
+		        //如果尝试次数为RETRIES_BEFORE_LOCK，则锁住所有片段
+                        ensureSegment(j).lock(); // force creation
+                }
+                long hashSum = 0L;
+                int sum = 0;
+		//遍历所有片段的hash table的Hash Entry链表
+                for (int j = 0; j < segments.length; ++j) {
+                    HashEntry<K,V>[] tab;
+                    Segment<K,V> seg = segmentAt(segments, j);
+                    if (seg != null && (tab = seg.table) != null) {
+                        for (int i = 0 ; i < tab.length; i++) {
+                            HashEntry<K,V> e;
+                            for (e = entryAt(tab, i); e != null; e = e.next) {
+                                V v = e.value;
+                                if (v != null && value.equals(v)) {
+                                    found = true;
+                                    break outer;
+                                }
+                            }
+                        }
+                        sum += seg.modCount;
+                    }
+                }
+                if (retries > 0 && sum == last)
+                    break;
+                last = sum;
+            }
+        } finally {
+            if (retries > RETRIES_BEFORE_LOCK) {
+                for (int j = 0; j < segments.length; ++j)
+                    segmentAt(segments, j).unlock();
+            }
+        }
+        return found;
+    }
+
+判断是否为空
+    /**
+     * Returns <tt>true</tt> if this map contains no key-value mappings.
+     *
+     * @return <tt>true</tt> if this map contains no key-value mappings
+     */
+    public boolean isEmpty() {
+        /*
+         * Sum per-segment modCounts to avoid mis-reporting when
+         * elements are concurrently added and removed in one segment
+         * while checking another, in which case the table was never
+         * actually empty at any point. (The sum ensures accuracy up
+         * through at least 1<<31 per-segment modifications before
+         * recheck.)  Methods size() and containsValue() use similar
+         * constructions for stability checks.
+         */
+        long sum = 0L;
+        final Segment<K,V>[] segments = this.segments;
+	//遍历判断，如果片段的size，不为null，则返回false
+        for (int j = 0; j < segments.length; ++j) {
+            Segment<K,V> seg = segmentAt(segments, j);
+            if (seg != null) {
+                if (seg.count != 0)
+                    return false;
+                sum += seg.modCount;
+            }
+        }
+	//利用Segment的modCount重新检查，以防遍历片段的时候，有修改操作
+        if (sum != 0L) { // recheck unless no modifications
+            for (int j = 0; j < segments.length; ++j) {
+                Segment<K,V> seg = segmentAt(segments, j);
+                if (seg != null) {
+                    if (seg.count != 0)
+                        return false;
+                    sum -= seg.modCount;
+                }
+            }
+            if (sum != 0L)
+                return false;
+        }
+        return true;
+    }
+获取size
+
+  /**
+     * Returns the number of key-value mappings in this map.  If the
+     * map contains more than <tt>Integer.MAX_VALUE</tt> elements, returns
+     * <tt>Integer.MAX_VALUE</tt>.
+     *
+     * @return the number of key-value mappings in this map
+     */
+    public int size() {
+        // Try a few times to get accurate count. On failure due to
+        // continuous async changes in table, resort to locking.
+        final Segment<K,V>[] segments = this.segments;
+        int size;
+        boolean overflow; // true if size overflows 32 bits
+        long sum;         // sum of modCounts
+        long last = 0L;   // previous sum
+        int retries = -1; // first iteration isn't retry
+        try {
+            for (;;) {
+                if (retries++ == RETRIES_BEFORE_LOCK) {
+                    for (int j = 0; j < segments.length; ++j)
+                        ensureSegment(j).lock(); // force creation
+                }
+                sum = 0L;
+                size = 0;
+                overflow = false;
+		//遍历片段，获取片段size之和，如果超过Integer.MAX_VALUE，则返回最大值。
+                for (int j = 0; j < segments.length; ++j) {
+                    Segment<K,V> seg = segmentAt(segments, j);
+                    if (seg != null) {
+                        sum += seg.modCount;
+                        int c = seg.count;
+                        if (c < 0 || (size += c) < 0)
+                            overflow = true;
+                    }
+                }
+                if (sum == last)
+                    break;
+                last = sum;
+            }
+        } finally {
+            if (retries > RETRIES_BEFORE_LOCK) {
+                for (int j = 0; j < segments.length; ++j)
+                    segmentAt(segments, j).unlock();
+            }
+        }
+        return overflow ? Integer.MAX_VALUE : size;
+    }
+
+
+clear操作
+
+ /**
+     * Removes all of the mappings from this map.
+     */
+    public void clear() {
+        final Segment<K,V>[] segments = this.segments;
+	//遍历片段，clear所有片段
+        for (int j = 0; j < segments.length; ++j) {
+            Segment<K,V> s = segmentAt(segments, j);
+            if (s != null)
+                s.clear();
+        }
+    }
+
+ConCurrentHashMap实现ConCurrentMap和HashMap方法基本看完，我们再来看key，value，entrySet
+视图。
+//EntrySet视图
+public Set<Map.Entry<K,V>> entrySet() {
+        Set<Map.Entry<K,V>> es = entrySet;
+        return (es != null) ? es : (entrySet = new EntrySet());
+    }
+//HashEntry Set集合类
+final class EntrySet extends AbstractSet<Map.Entry<K,V>> {
+        public Iterator<Map.Entry<K,V>> iterator() {
+            return new EntryIterator();
+        }
+        public boolean contains(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            V v = ConcurrentHashMap.this.get(e.getKey());
+            return v != null && v.equals(e.getValue());
+        }
+        public boolean remove(Object o) {
+            if (!(o instanceof Map.Entry))
+                return false;
+            Map.Entry<?,?> e = (Map.Entry<?,?>)o;
+            return ConcurrentHashMap.this.remove(e.getKey(), e.getValue());
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+从EntrySet的所有操作依附于ConcurrentHashMap
+再来看EntryIterator
+final class EntryIterator
+        extends HashIterator
+        implements Iterator<Entry<K,V>>
+    {
+        public Map.Entry<K,V> next() {
+            HashEntry<K,V> e = super.nextEntry();
+	    //next返回WriteThroughEntry
+            return new WriteThroughEntry(e.key, e.value);
+        }
+    }
+
+    /**
+     * Custom Entry class used by EntryIterator.next(), that relays
+     * setValue changes to the underlying map.
+     */
+    包装EntryIterator的next元素为可修改值的WriteThroughEntry
+    final class WriteThroughEntry
+        extends AbstractMap.SimpleEntry<K,V>
+    {
+        WriteThroughEntry(K k, V v) {
+            super(k,v);
+        }
+
+        /**
+         * Set our entry's value and write through to the map. The
+         * value to return is somewhat arbitrary here. Since a
+         * WriteThroughEntry does not necessarily track asynchronous
+         * changes, the most recent "previous" value could be
+         * different from what we return (or could even have been
+         * removed in which case the put will re-establish). We do not
+         * and cannot guarantee more.
+         */
+        public V setValue(V value) {
+            if (value == null) throw new NullPointerException();
+            V v = super.setValue(value);
+            ConcurrentHashMap.this.put(getKey(), value);
+            return v;
+        }
+    }
+再来看
+HashIterator
+
+//HashIterator
+abstract class HashIterator {
+        int nextSegmentIndex;//next片段索引
+        int nextTableIndex;//next片段table索引
+        HashEntry<K,V>[] currentTable;当前片段
+        HashEntry<K, V> nextEntry;//链表HashEntry
+        HashEntry<K, V> lastReturned;
+
+        HashIterator() {
+            nextSegmentIndex = segments.length - 1;
+            nextTableIndex = -1;
+            advance();
+        }
+
+        /**
+         * Set nextEntry to first node of next non-empty table
+         * (in backwards order, to simplify checks).
+         */
+	 //循环遍历片段及片段table，返回不为null的hash table的hashEntry的第一个Node为nextEntry
+        final void advance() {
+            for (;;) {
+                if (nextTableIndex >= 0) {
+		    //如果hash table的索引大于0，则定位当前table，索引对应的HashEntry链表
+                    if ((nextEntry = entryAt(currentTable,
+                                             nextTableIndex--)) != null)
+                        break;
+                }
+                else if (nextSegmentIndex >= 0) {
+		    //定位片段
+                    Segment<K,V> seg = segmentAt(segments, nextSegmentIndex--);
+		    //获取当前片段的hash table
+                    if (seg != null && (currentTable = seg.table) != null)
+                        nextTableIndex = currentTable.length - 1;
+                }
+                else
+                    break;
+            }
+        }
+
+        final HashEntry<K,V> nextEntry() {
+            HashEntry<K,V> e = nextEntry;
+            if (e == null)
+                throw new NoSuchElementException();
+            lastReturned = e; // cannot assign until after null check
+            if ((nextEntry = e.next) == null)
+                advance();
+            return e;
+        }
+
+        public final boolean hasNext() { return nextEntry != null; }
+        public final boolean hasMoreElements() { return nextEntry != null; }
+        //移除操作
+        public final void remove() {
+            if (lastReturned == null)
+                throw new IllegalStateException();
+            ConcurrentHashMap.this.remove(lastReturned.key);
+            lastReturned = null;
+        }
+    }
+    //KeyIterator
+ final class KeyIterator
+        extends HashIterator
+        implements Iterator<K>, Enumeration<K>
+    {
+        public final K next()        { return super.nextEntry().key; }
+        public final K nextElement() { return super.nextEntry().key; }
+    }
+   //ValueIterator
+    final class ValueIterator
+        extends HashIterator
+        implements Iterator<V>, Enumeration<V>
+    {
+        public final V next()        { return super.nextEntry().value; }
+        public final V nextElement() { return super.nextEntry().value; }
+    }
+
+//KeySet
+ final class KeySet extends AbstractSet<K> {
+        public Iterator<K> iterator() {
+            return new KeyIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsKey(o);
+        }
+        public boolean remove(Object o) {
+            return ConcurrentHashMap.this.remove(o) != null;
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+//Key视图
+ public Set<K> keySet() {
+        Set<K> ks = keySet;
+        return (ks != null) ? ks : (keySet = new KeySet());
+    }
+
+
+//Values
+    final class Values extends AbstractCollection<V> {
+        public Iterator<V> iterator() {
+            return new ValueIterator();
+        }
+        public int size() {
+            return ConcurrentHashMap.this.size();
+        }
+        public boolean isEmpty() {
+            return ConcurrentHashMap.this.isEmpty();
+        }
+        public boolean contains(Object o) {
+            return ConcurrentHashMap.this.containsValue(o);
+        }
+        public void clear() {
+            ConcurrentHashMap.this.clear();
+        }
+    }
+ //value视图
+ public Collection<V> values() {
+        Collection<V> vs = values;
+        return (vs != null) ? vs : (values = new Values());
+    }
+
+   /**
+     * Returns an enumeration of the keys in this table.
+     *
+     * @return an enumeration of the keys in this table
+     * @see #keySet()
+     */
+    public Enumeration<K> keys() {
+        return new KeyIterator();
+    }
+
+    /**
+     * Returns an enumeration of the values in this table.
+     *
+     * @return an enumeration of the values in this table
+     * @see #values()
+     */
+    public Enumeration<V> elements() {
+        return new ValueIterator();
+    }
+总结：
+put，remove，replace操作来看，基本思路相同，先定位定位Segment，
+再将操作委托给Segment相应的操作。get操作是先定位定位Segment，再遍历key对应的HashEntry链表，
+找到，则返回值。视图基本思路为定位片段，在定位片段的hash table的Hash Entry链，遍历完当前片段，
+再遍历下一个片段的Hash table。
+
+ConcurrentHashMap解析后续：http://donald-draper.iteye.com/blog/2363201

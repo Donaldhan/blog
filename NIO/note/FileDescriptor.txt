@@ -1,0 +1,172 @@
+SelectionKey定义：[url]http://donald-draper.iteye.com/blog/2369499[/url]
+在上面一篇文章中，我们看了SelectionKey，AbstractSelectionKey及SelectionKeyImpl的定义
+在SelectionKeyImpl的实现中，我们看到key关联的通道实际为SelChImpl，而SelChImpl定义中
+有一个getFD方法，返回的是FileDescriptor，今天我们就来看一下FileDescriptor
+package java.io;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Instances of the file descriptor class serve as an opaque handle
+ * to the underlying machine-specific structure representing an
+ * open file, an open socket, or another source or sink of bytes.
+ * The main practical use for a file descriptor is to create a
+ * {@link FileInputStream} or {@link FileOutputStream} to contain it.
+ *一个FileDescriptor用于描述系统底层的特殊的结构句柄，这种底层特殊结构，
+ 如果一个打开的文件，一个打开的socket，或字节的源和sink。实际上主要用于描述
+ 文件描述符，创建一个FileInputStream和FileOutputStream时，一般包括文件描述符。
+ * <p>Applications should not create their own file descriptors.
+ *应用不应该创建自己的文件描述符。
+ * @author  Pavani Diwanji
+ * @since   JDK1.0
+ */
+public final class FileDescriptor {
+
+    private int fd;//文件描述值
+    private long handle;//初始化文件描述句柄
+
+    /**
+     * A use counter for tracking the FIS/FOS/RAF instances that
+     * use this FileDescriptor. The FIS/FOS.finalize() will not release
+     * the FileDescriptor if it is still under use by any stream.
+     记录FileDescriptor的文件输入流，文件输出流和随机访问文件的实例。
+     如果文件描述符仍在被其他流所用，调用FIS/FOS.finalize的方法，不会释放FileDescriptor
+     */
+    private AtomicInteger useCount;
+
+    /**
+     * Constructs an (invalid) FileDescriptor
+     * object.
+     */
+    public /**/ FileDescriptor() {
+        fd = -1;
+        handle = -1;
+        useCount = new AtomicInteger();
+    }
+
+    // Set up JavaIOFileDescriptorAccess in SharedSecrets
+    static {
+        sun.misc.SharedSecrets.setJavaIOFileDescriptorAccess(
+            new sun.misc.JavaIOFileDescriptorAccess() {
+                public void set(FileDescriptor obj, int fd) {
+                    obj.fd = fd;
+                }
+
+                public int get(FileDescriptor obj) {
+                    return obj.fd;
+                }
+
+                public void setHandle(FileDescriptor obj, long handle) {
+                    obj.handle = handle;
+                }
+
+                public long getHandle(FileDescriptor obj) {
+                    return obj.handle;
+                }
+            }
+        );
+    }
+     static {
+        initIDs();
+    }
+    /* This routine initializes JNI field offsets for the class 
+    初始化FileDescriptor的JNI的field offsets
+    */
+    private static native void initIDs();
+
+    /**
+     * A handle to the standard input stream. Usually, this file
+     * descriptor is not used directly, but rather via the input stream
+     * known as {@code System.in}.
+     * 标准输入流的句柄，通常这个文件描述不直接使用，而是通过输入流，比如
+      System.in
+     * @see     java.lang.System#in
+     */
+    public static final FileDescriptor in = standardStream(0);
+
+    /**
+     * A handle to the standard output stream. Usually, this file
+     * descriptor is not used directly, but rather via the output stream
+     * known as {@code System.out}.
+     标准输出流的句柄，通常这个文件描述不直接使用，而是通过输出流，比如System.out
+     * @see     java.lang.System#out
+     */
+    public static final FileDescriptor out = standardStream(1);
+
+    /**
+     * A handle to the standard error stream. Usually, this file
+     * descriptor is not used directly, but rather via the output stream
+     * known as {@code System.err}.
+     *标准错误流的句柄，通常这个文件描述不直接使用，而是通过输出流，比如System.err
+     * @see     java.lang.System#err
+     */
+    public static final FileDescriptor err = standardStream(2);
+
+    /**
+     * Tests if this file descriptor object is valid.
+     *判断一个文件描述符是否有效，如果handle和fd不为-1，即为有效
+     * @return  {@code true} if the file descriptor object represents a
+     *          valid, open file, socket, or other active I/O connection;
+     *          {@code false} otherwise.
+     返回true表示，文件描述对象是一个打开的文件，socket，或者其他激活的IO连接。
+     */
+    public boolean valid() {
+        return ((handle != -1) || (fd != -1));
+    }
+
+    /**
+     * Force all system buffers to synchronize with the underlying
+     * device.  This method returns after all modified data and
+     * attributes of this FileDescriptor have been written to the
+     * relevant device(s).  In particular, if this FileDescriptor
+     * refers to a physical storage medium, such as a file in a file
+     * system, sync will not return until all in-memory modified copies
+     * of buffers associated with this FileDesecriptor have been
+     * written to the physical medium.
+     *强制所有的系统缓存与底层设备同步。方法在文件描述句柄将修改的数据或属性
+     写到相关设备中时，返回。在一个特殊情况下，如果一个文件描述参考了一个物理存储
+     介质，比如文件系统的文件，同步直到与文件描述符相关联的所有缓存的内存修改copy已经
+     写到物理介质中。
+     * sync is meant to be used by code that requires physical
+     * storage (such as a file) to be in a known state  For
+     * example, a class that provided a simple transaction facility
+     * might use sync to ensure that all changes to a file caused
+     * by a given transaction were recorded on a storage medium.
+     *需要物理存储（文件）处于一个状态，可以使用同步。比如一个类用同步实现
+     简单的事务以保证处于指定事务的文件的改变，记录在存储介质上。
+     * sync only affects buffers downstream of this FileDescriptor.  If
+     * any in-memory buffering is being done by the application (for
+     * example, by a BufferedOutputStream object), those buffers must
+     * be flushed into the FileDescriptor (for example, by invoking
+     * OutputStream.flush) before that data will be affected by sync.
+     *同步会影响文件描述的缓存中已经存在的数据流。如果缓存的内存已经被应用(BufferedOutputStream)
+     用完,在数据被同步影响之前，缓存数据必须通过调用输出流的flush，将数据写入到文件描述中。
+     * @exception SyncFailedException
+     *        Thrown when the buffers cannot be flushed,
+     *        or because the system cannot guarantee that all the
+     *        buffers have been synchronized with physical media.
+     当缓存不能flush或者所有缓存不能同步到物理介质中，则抛出SyncFailedException
+     * @since     JDK1.1
+     */
+    public native void sync() throws SyncFailedException;
+
+    
+    
+    //根据文件描述符值，初始化文件描述句柄
+    private static FileDescriptor standardStream(int fd) {
+        FileDescriptor desc = new FileDescriptor();
+        desc.handle = set(fd);
+        return desc;
+    }
+    private static native long set(int d);
+
+    // package private methods used by FIS, FOS and RAF.
+
+    int incrementAndGetUseCount() {
+        return useCount.incrementAndGet();
+    }
+
+    int decrementAndGetUseCount() {
+        return useCount.decrementAndGet();
+    }
+}

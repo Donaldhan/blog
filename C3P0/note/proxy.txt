@@ -1,0 +1,243 @@
+深入浅析Spring 的aop实现原理：http://www.jb51.net/article/81788.htm
+
+Java动态代理机制详解(JDK 和CGLIB,Javassist,ASM) (清晰,浅显)：http://www.360doc.com/content/14/0801/14/1073512_398598312.shtml
+在用Spring AOP的时候，始终不明白，其中的原理，今天一探究竟，其实Spring AOP用的就是java动态代理，
+今天我们来看一下java动态代理，首先看一下静态代理
+静态代理
+定义接口：
+package proxy;
+
+public interface IHello {
+	/**
+	* 业务方法
+	* @param str
+	*/
+	void sayHello(String str);
+}
+
+定义接口实现类：
+package proxy;
+
+public class Hello implements IHello {
+	@Override
+	public void sayHello(String str) {
+		System.out.println("hello "+str);
+		}
+}
+
+定义静态代理类：
+package proxy;
+
+public class ProxyHello implements IHello {
+
+	private IHello hello; 
+	public ProxyHello(IHello hello) {
+	super();
+	this.hello = hello;
+	}
+	@Override
+	public void sayHello(String str) {
+	Logger.start();//添加特定的方法
+	hello.sayHello(str);
+	Logger.end();
+	}
+
+}
+
+静态代理测试主类：
+package proxy;
+
+import java.util.Date;
+
+public class Logger {
+	public static void start(){
+		System.out.println(new Date()+ " say hello start...");
+		}
+		public static void end(){
+		System.out.println(new Date()+ " say hello end");
+		}
+}
+
+
+package proxy;
+
+public class testProxy {
+	public static void main(String[] args) {
+		IHello hello = new ProxyHello(new Hello());//如果我们需要日志功能，则使用代理类
+		//IHello hello = new Hello();//如果我们不需要日志功能则使用目标类
+		hello.sayHello("明天"); 
+	}
+}
+控制台输出：
+
+Thu Dec 01 09:46:35 CST 2016 say hello start...
+hello 明天
+Thu Dec 01 09:46:35 CST 2016 say hello end
+从上面可以看出，静态代理类实现了代理接口，同时在其内部，有一个需要代理的接口句柄，通过静态代理构造方法传入；
+在实现接口方法中，在调用接口句柄的指定方法前，做一下Before操作，之后，做一些After操作。
+
+下面我们来看一下动态代理：
+
+动态代理类：
+package proxy;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
+public class DynaProxyHello implements InvocationHandler {
+
+	private Object target;// 目标对象
+
+	/**
+	 * 通过反射来实例化目标对象
+	 * 
+	 * @param object
+	 * @return
+	 */
+	public Object bind(Object object) {
+		this.target = object;
+		return Proxy.newProxyInstance(this.target.getClass().getClassLoader(),
+				this.target.getClass().getInterfaces(), this);
+	}
+
+	@Override
+	public Object invoke(Object proxy, Method method, Object[] args)
+			throws Throwable {
+		Object result = null;
+		Logger.start();// 添加额外的方法
+		// 通过反射机制来运行目标对象的方法
+		result = method.invoke(this.target, args);
+		Logger.end();
+		return result;
+	}
+}
+测试主类:
+package proxy;
+
+public class testDynamicProxy {
+	public static void main(String[] args) {
+		IHello hello = (IHello) new DynaProxyHello().bind(new Hello());//如果我们需要日志功能，则使用代理类
+		//IHello hello = new Hello();//如果我们不需要日志功能则使用目标类
+		hello.sayHello("今天");
+	}
+	
+}
+控制台输出：
+Thu Dec 01 09:59:01 CST 2016 say hello start...
+hello 今天
+Thu Dec 01 09:59:01 CST 2016 say hello end
+从上面可以看出，java动态代理类需要实现InvocationHandler，重写invoke(Object proxy, Method method, Object[] args)方法，
+并通过 Proxy.newProxyInstance产生对应的代理类$Proxy0；当我们调用代理类时，实际调用的是动态代理代理类的invoke(Object proxy, Method method, Object[] args)
+proxy为代理产生的代理类，method为对应方法，args为参数；Proxy.newProxyInstance产生对应的代理类。
+
+
+上面我们在测试代理的时候，用到一个Logger日志，这是我们在模拟Spring AOP的before与after增强，
+其实日志功能我们也可接口化,以实现不同的日志需求:
+日志接口：
+
+package proxy;
+
+import java.lang.reflect.Method;
+
+public interface ILogger {
+	void start(Class clazz);
+	void end(Method method);
+}
+
+
+日志接口实现：
+package proxy;
+
+import java.lang.reflect.Method;
+import java.util.Date;
+
+public class DLogger implements ILogger {
+
+	@Override
+	public void start(Class clazz) {
+	System.out.println(new Date()+" Class:"+ clazz.getName() +":"+ " say hello start...");
+	}
+	@Override
+	public void end(Method method) {
+	System.out.println(new Date()+" method:"+ method.getName() +":"+ " say hello end");
+	}
+
+}
+
+动态代理类：
+package proxy;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
+public class DynamicProxyHello implements InvocationHandler {
+	// 调用对象
+	private Object proxy;
+	// 目标对象
+	private Object target;
+
+	public Object bind(Object target, Object proxy) {
+		this.target = target;
+		this.proxy = proxy;
+		return Proxy.newProxyInstance(this.target.getClass().getClassLoader(),
+				this.target.getClass().getInterfaces(), this);
+	}
+
+	@SuppressWarnings({ "rawtypes", "unchecked" })
+	@Override
+	public Object invoke(Object proxy, Method method, Object[] args)
+			throws Throwable {
+		Object result = null;
+		// 反射得到操作者的实例
+		Class clazz = this.proxy.getClass();
+		// 反射得到操作者的Start方法
+		Method start = clazz.getDeclaredMethod("start",
+				new Class[] { Class.class });
+		// 反射执行start方法
+		start.invoke(this.proxy, new Object[] {clazz});
+		// 执行要处理对象的原本方法
+		method.invoke(this.target, args);
+		// 反射得到操作者的end方法
+		Method end = clazz.getDeclaredMethod("end",
+				new Class[] { Method.class });
+		// 反射执行end方法
+		end.invoke(this.proxy, new Object[] { method });
+		return result;
+	}
+}
+
+测试主类：
+package proxy;
+
+public class testDynamicProxy {
+	public static void main(String[] args) {
+//		IHello hello = (IHello) new DynaProxyHello().bind(new Hello());//如果我们需要日志功能，则使用代理类
+//		IHello hello = new Hello();//如果我们不需要日志功能则使用目标类
+//		hello.sayHello("今天");
+		IHello hellox = (IHello) new DynamicProxyHello().bind(new Hello(),new DLogger());
+		hellox.sayHello("明天");
+	}
+	
+}
+控制台输出：
+Thu Dec 01 10:19:50 CST 2016 Class:proxy.DLogger: say hello start...
+hello 明天
+Thu Dec 01 10:19:50 CST 2016 method:sayHello: say hello end
+
+其实java还有一些动态代理机制CGLIB，ASM等，有兴趣的可以搜一下。
+总结：
+
+静态代理类实现了代理接口，同时在其内部，有一个需要代理的接口句柄，通过静态代理构造方法传入；
+在实现接口方法中，在调用接口句柄的指定方法前，做一下Before操作，之后，做一些After操作。
+java动态代理类需要实现InvocationHandler，重写invoke(Object proxy, Method method, Object[] args)方法，
+并通过 Proxy.newProxyInstance产生对应的代理类$Proxy0；当我们调用代理类时，
+实际调用的是动态代理代理类的invoke(Object proxy, Method method, Object[] args)
+proxy为代理产生的代理类，method为对应方法，args为参数；Proxy.newProxyInstance产生对应的代理类。
+
+
+
+
+
+

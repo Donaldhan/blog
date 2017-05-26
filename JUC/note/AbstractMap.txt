@@ -1,0 +1,401 @@
+
+package java.util;
+import java.util.Map.Entry;
+
+/**
+ * This class provides a skeletal implementation of the <tt>Map</tt>
+ * interface, to minimize the effort required to implement this interface.
+ *
+ AbstractMap提供了Map实现的一个基础框架，实现需要的最小功能。
+ * <p>To implement an unmodifiable map, the programmer needs only to extend this
+ * class and provide an implementation for the <tt>entrySet</tt> method, which
+ * returns a set-view of the map's mappings.  Typically, the returned set
+ * will, in turn, be implemented atop <tt>AbstractSet</tt>.  This set should
+ * not support the <tt>add</tt> or <tt>remove</tt> methods, and its iterator
+ * should not support the <tt>remove</tt> method.
+ *
+ 为了提供一个unmodifiable map，编程者需要继承这个类，提供entrySet方法的实现，
+ entrySet为提供一个Entry的视图set。set实现AbstractSet，这个不提供add和remove方法，
+ 同时iterator不支持iterator。
+
+ * <p>To implement a modifiable map, the programmer must additionally override
+ * this class's <tt>put</tt> method (which otherwise throws an
+ * <tt>UnsupportedOperationException</tt>), and the iterator returned by
+ * <tt>entrySet().iterator()</tt> must additionally implement its
+ * <tt>remove</tt> method.
+ *
+ 为了提供一个可修改的Map，开发者必须重写put方法，iterator返回通过entrySet().iterator()，
+ 同时实现iterator的remove方法，
+ * <p>The programmer should generally provide a void (no argument) and map
+ * constructor, as per the recommendation in the <tt>Map</tt> interface
+ * specification.
+ *
+ 建议开发者必须提供一个无参的构造函数
+ * <p>The documentation for each non-abstract method in this class describes its
+ * implementation in detail.  Each of these methods may be overridden if the
+ * map being implemented admits a more efficient implementation.
+ *
+ * <p>This class is a member of the
+ * <a href="{@docRoot}/../technotes/guides/collections/index.html">
+ * Java Collections Framework</a>.
+ *
+ * @param <K> the type of keys maintained by this map
+ * @param <V> the type of mapped values
+ *
+ * @author  Josh Bloch
+ * @author  Neal Gafter
+ * @see Map
+ * @see Collection
+ * @since 1.2
+ */
+
+public abstract class AbstractMap<K,V> implements Map<K,V> {
+ /**
+     * Sole constructor.  (For invocation by subclass constructors, typically
+     * implicit.)
+     */
+    protected AbstractMap() {
+    }
+    //待子类扩展
+    public V put(K key, V value) {
+        throw new UnsupportedOperationException();
+    }
+    // Views
+
+    /**
+     * Each of these fields are initialized to contain an instance of the
+     * appropriate view the first time this view is requested.  The views are
+     * stateless, so there's no reason to create more than one of each.
+     K，V视图集
+     */
+    transient volatile Set<K>        keySet = null;
+    transient volatile Collection<V> values = null;
+    //待子类扩展
+    public abstract Set<Entry<K,V>> entrySet();
+}
+再来看Entry两个实现
+public static class SimpleEntry<K,V>
+        implements Entry<K,V>, java.io.Serializable
+    {
+        private static final long serialVersionUID = -8499721149061103585L;
+
+        private final K key;//Final,不可变
+        private V value;
+
+        /**
+         * Creates an entry representing a mapping from the specified
+         * key to the specified value.
+         *
+         * @param key the key represented by this entry
+         * @param value the value represented by this entry
+         */
+        public SimpleEntry(K key, V value) {
+            this.key   = key;
+            this.value = value;
+        }
+
+        /**
+         * Creates an entry representing the same mapping as the
+         * specified entry.
+         *
+         * @param entry the entry to copy
+         */
+        public SimpleEntry(Entry<? extends K, ? extends V> entry) {
+            this.key   = entry.getKey();
+            this.value = entry.getValue();
+        }
+	//设置新值，返回旧值
+	 public V setValue(V value) {
+            V oldValue = this.value;
+            this.value = value;
+            return oldValue;
+        }
+}
+不可变的K-V对Entry
+ /**
+     * An Entry maintaining an immutable key and value.  This class
+     * does not support method <tt>setValue</tt>.  This class may be
+     * convenient in methods that return thread-safe snapshots of
+     * key-value mappings.
+     *
+     * @since 1.6
+     */
+    public static class SimpleImmutableEntry<K,V>
+        implements Entry<K,V>, java.io.Serializable
+    {
+        private static final long serialVersionUID = 7138329143949025153L;
+
+        private final K key;//final
+        private final V value;//final
+
+        /**
+         * Creates an entry representing a mapping from the specified
+         * key to the specified value.
+         *
+         * @param key the key represented by this entry
+         * @param value the value represented by this entry
+         */
+        public SimpleImmutableEntry(K key, V value) {
+            this.key   = key;
+            this.value = value;
+        }
+
+        /**
+         * Creates an entry representing the same mapping as the
+         * specified entry.
+         *
+         * @param entry the entry to copy
+         */
+        public SimpleImmutableEntry(Entry<? extends K, ? extends V> entry) {
+            this.key   = entry.getKey();
+            this.value = entry.getValue();
+        }
+	public V setValue(V value) {
+            throw new UnsupportedOperationException();
+        }
+}
+不可变SimpleImmutableEntry，与一般的SimpleEntry的区别是Value为Final修饰，同时SetValue方法不可用。
+由于put方法和k-v Entry Set的方法是待子类扩展的，我们来看看其他方法，get，remove，获取key和value的
+视图集等；
+//Map大小
+ public int size() {
+        return entrySet().size();
+    }
+//是否为null
+ public boolean isEmpty() {
+        return size() == 0;
+    }
+//是否包含value，遍历Entry，寻找值相等的
+public boolean containsValue(Object value) {
+        Iterator<Entry<K,V>> i = entrySet().iterator();
+        if (value==null) {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (e.getValue()==null)
+                    return true;
+            }
+        } else {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (value.equals(e.getValue()))
+                    return true;
+            }
+        }
+        return false;
+    }
+//是否包含key，遍历Entry，寻找key相等的
+ public boolean containsKey(Object key) {
+        Iterator<Map.Entry<K,V>> i = entrySet().iterator();
+        if (key==null) {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (e.getKey()==null)
+                    return true;
+            }
+        } else {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (key.equals(e.getKey()))
+                    return true;
+            }
+        }
+        return false;
+    }
+//遍历Entry，寻找key对应的值
+ public V get(Object key) {
+        Iterator<Entry<K,V>> i = entrySet().iterator();
+        if (key==null) {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (e.getKey()==null)
+                    return e.getValue();
+            }
+        } else {
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (key.equals(e.getKey()))
+                    return e.getValue();
+            }
+        }
+        return null;
+    }
+//遍历Entry，寻找key对应的值，移除对应的k-v，Entry，返回值value
+ public V remove(Object key) {
+        Iterator<Entry<K,V>> i = entrySet().iterator();
+        Entry<K,V> correctEntry = null;
+        if (key==null) {
+            while (correctEntry==null && i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (e.getKey()==null)
+                    correctEntry = e;
+            }
+        } else {
+            while (correctEntry==null && i.hasNext()) {
+                Entry<K,V> e = i.next();
+                if (key.equals(e.getKey()))
+                    correctEntry = e;
+            }
+        }
+
+        V oldValue = null;
+        if (correctEntry !=null) {
+            oldValue = correctEntry.getValue();
+            i.remove();
+        }
+        return oldValue;
+    }
+//遍历Entry，将Map的Entry，放入到当前Map中
+ public void putAll(Map<? extends K, ? extends V> m) {
+        for (Map.Entry<? extends K, ? extends V> e : m.entrySet())
+            put(e.getKey(), e.getValue());
+    }
+//清空Map
+ public void clear() {
+        entrySet().clear();
+    }
+//返回Key视图set,遍历Entry，将Map的Entry的Key放入到Set中
+ public Set<K> keySet() {
+        if (keySet == null) {
+            keySet = new AbstractSet<K>() {
+                public Iterator<K> iterator() {
+                    return new Iterator<K>() {
+                        private Iterator<Entry<K,V>> i = entrySet().iterator();
+
+                        public boolean hasNext() {
+                            return i.hasNext();
+                        }
+
+                        public K next() {
+                            return i.next().getKey();
+                        }
+
+                        public void remove() {
+			   //与AbstractMap相关联,从Map移除Entry
+                            i.remove();
+                        }
+                    };
+                }
+
+                public int size() {
+		//与AbstractMap相关联
+                    return AbstractMap.this.size();
+                }
+
+                public boolean isEmpty() {
+		//与AbstractMap相关联
+                    return AbstractMap.this.isEmpty();
+                }
+
+                public void clear() {
+		//与AbstractMap相关联
+                    AbstractMap.this.clear();
+                }
+
+                public boolean contains(Object k) {
+                    return AbstractMap.this.containsKey(k);
+                }
+            };
+        }
+        return keySet;
+    }
+从上面可以看出Key视图set的所有操作都是与AbstractMap相关联，可以理解，
+直接是AbstractMap的操作。
+//获取values的视图Collection
+public Collection<V> values() {
+        if (values == null) {
+            values = new AbstractCollection<V>() {
+                public Iterator<V> iterator() {
+                    return new Iterator<V>() {
+                        private Iterator<Entry<K,V>> i = entrySet().iterator();
+
+                        public boolean hasNext() {
+                            return i.hasNext();
+                        }
+
+                        public V next() {
+                            return i.next().getValue();
+                        }
+
+                        public void remove() {
+                            i.remove();
+                        }
+                    };
+                }
+
+                public int size() {
+                    return AbstractMap.this.size();
+                }
+
+                public boolean isEmpty() {
+                    return AbstractMap.this.isEmpty();
+                }
+
+                public void clear() {
+                    AbstractMap.this.clear();
+                }
+
+                public boolean contains(Object v) {
+                    return AbstractMap.this.containsValue(v);
+                }
+            };
+        }
+        return values;
+    }
+这个与Key视图Set类似，不再讲。
+//判断与Object是否相等，首先判断是否为Map，再判断Size是否相等，
+再遍历Entry，对的Key是否存在，Value是否相等。
+public boolean equals(Object o) {
+        if (o == this)
+            return true;
+
+        if (!(o instanceof Map))
+            return false;
+        Map<K,V> m = (Map<K,V>) o;
+        if (m.size() != size())
+            return false;
+
+        try {
+            Iterator<Entry<K,V>> i = entrySet().iterator();
+            while (i.hasNext()) {
+                Entry<K,V> e = i.next();
+                K key = e.getKey();
+                V value = e.getValue();
+                if (value == null) {
+                    if (!(m.get(key)==null && m.containsKey(key)))
+                        return false;
+                } else {
+                    if (!value.equals(m.get(key)))
+                        return false;
+                }
+            }
+        } catch (ClassCastException unused) {
+            return false;
+        } catch (NullPointerException unused) {
+            return false;
+        }
+
+        return true;
+    }
+ //所有Entry的Hash值和
+ public int hashCode() {
+        int h = 0;
+        Iterator<Entry<K,V>> i = entrySet().iterator();
+        while (i.hasNext())
+            h += i.next().hashCode();
+        return h;
+    }
+//克隆，调用的是父类的clone，克隆后key，value为null
+    protected Object clone() throws CloneNotSupportedException {
+        AbstractMap<K,V> result = (AbstractMap<K,V>)super.clone();
+        result.keySet = null;
+        result.values = null;
+        return result;
+    }
+ private static boolean eq(Object o1, Object o2) {
+        return o1 == null ? o2 == null : o1.equals(o2);
+    }
+总结：
+AbstractMap提供了一个Map的简单实现，不过没有提供put的entrySet方法，这个待
+子类扩展。Key视图set的所有操作都是与AbstractMap相关联，可以理解，
+直接是AbstractMap的操作；Value的视图Collection，同样。
+不可变SimpleImmutableEntry，与一般的SimpleEntry的区别是Value为Final修饰，同时SetValue方法不可用。

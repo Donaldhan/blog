@@ -1,0 +1,238 @@
+Java Nio系列教程；http://www.iteye.com/magazines/132-Java-NIO
+Java Nio从JDK1.4之后，才加入到JDK中，在JDK1.1之后，1.4之前，网络编程一般用阻塞BIO，
+NIO为非阻的IO，NIO主要包括Selector，Channel，Buffer，SelectionKey等，相关的概念在网上
+有很多这里就不说了，今天文章我们用NIO写一个基于TCP的简单Server和Client。TCP在NIO主要
+基于ServerSocketChannel和serverChannel，下面来看实例。
+服务端：
+package nio.simplesocket;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+
+/**
+ * Sever
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:03
+ */
+public class NIOServer {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Server
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		NIOServer server = new NIOServer();
+		server.initServer("192.168.32.126", 10000);
+		server.listen();
+	}
+	/**
+	 * get the ServerSocket and finish some initial work
+	 * @param port
+	 * @throws IOException
+	 */
+	public void initServer(String host, int port) throws IOException{
+		//get the ServerSocket
+		ServerSocketChannel serverChannel = ServerSocketChannel.open();
+		// set no blocking mode
+		serverChannel.configureBlocking(false);
+		//bind the port
+		serverChannel.socket().bind(new InetSocketAddress(host, port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		serverChannel.register(selector,SelectionKey.OP_ACCEPT);
+		}
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("=========The Server is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if(key.isAcceptable()){
+					ServerSocketChannel server = (ServerSocketChannel)key.channel();
+					SocketChannel channel = server.accept();
+					channel.configureBlocking(false);
+					channel.write(ByteBuffer.wrap(new String("Hello client!").getBytes()));
+					channel.register(this.selector, SelectionKey.OP_READ);
+				}
+				else if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the client
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		SocketChannel channel = (SocketChannel) key.channel();
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		channel.read(buf);
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from client:"+msg);
+	}
+	
+}
+客户端：
+package nio.simplesocket;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.SocketChannel;
+import java.util.Iterator;
+
+/**
+ * Client
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:09
+ */
+public class NIOClient {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Client
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		NIOClient client = new NIOClient();
+		client.initClient("192.168.32.126",10000);
+		client.listen();
+	}
+	/**
+	 * get the Socket and finish some initial work
+	 * @param ip Server ip
+	 * @param port connect Server port
+	 * @throws IOException
+	 */
+	public void initClient(String ip,int port) throws IOException{
+		//get the Socket
+		SocketChannel channel = SocketChannel.open();
+		// set no blocking mode
+		channel.configureBlocking(false);
+		//connect the Server
+		channel.connect(new InetSocketAddress(ip,port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		channel.register(selector,SelectionKey.OP_CONNECT);
+		}
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("===========The Client is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if(key.isConnectable()){
+					SocketChannel channel = (SocketChannel)key.channel();
+                    //during connecting, finish the connect
+                    if(channel.isConnectionPending()){
+                    	channel.finishConnect();
+                    }
+					channel.configureBlocking(false);
+					channel.write(ByteBuffer.wrap(new String("Hello Server!").getBytes()));
+					channel.register(this.selector, SelectionKey.OP_READ);
+				}
+				else if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the server
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		SocketChannel channel = (SocketChannel) key.channel();
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		channel.read(buf);
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from server:"+msg);
+	}	
+}
+先启动NIOServer，在启动NIOClient，控制台输出：
+NIOServer：
+=========The Server is start!===========
+message come from client:Hello Server!
+
+NIOClient：
+===========The Client is start!===========
+message come from server:Hello client!
+
+附：测试Buffer
+package nio;
+
+import java.io.UnsupportedEncodingException;
+import java.nio.ByteBuffer;
+/**
+ * 协议测试
+ * @author donald
+ * 2017年4月10日
+ * 下午9:26:57
+ */
+public class testByteBuffer {
+	public static void main(String[] args) {
+		ByteBuffer[] proctols = null;//
+		proctols = new ByteBuffer[2];
+		ByteBuffer protocolBuffer = null;//协议编码
+		protocolBuffer = ByteBuffer.allocate(6);
+		try {
+			System.out.println("ProtocolCode String length："+new String("300000").getBytes("UTF-8").length);
+			protocolBuffer.put(new String("300000").getBytes("UTF-8"));
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+		System.out.println("ProtocolCode length："+protocolBuffer.position());
+		proctols[0] = protocolBuffer;
+		ByteBuffer dataBuffer = null;//操作数
+		dataBuffer = ByteBuffer.allocate(8);
+		dataBuffer.putInt(15);
+		dataBuffer.putInt(6);
+		System.out.println("data length："+dataBuffer.position());
+		proctols[1] = dataBuffer;
+//		protocolBuffer.compact();//针对数据太大，缓冲区一次装不完的情况
+		protocolBuffer.clear();
+		try {
+			protocolBuffer.put(new String("300100").getBytes("UTF-8"));
+			System.out.println("ProtocolCode length："+protocolBuffer.position());
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+//		dataBuffer.compact();
+		dataBuffer.clear();
+		dataBuffer.putInt(17);
+		dataBuffer.putInt(8);
+		System.out.println("data length："+dataBuffer.position());
+	}
+}

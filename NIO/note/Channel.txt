@@ -1,0 +1,165 @@
+NIO-TCP通信实例：http://donald-draper.iteye.com/blog/2369052
+在前面一节中我们写了一通信实例，包括多线程和单线程版本，接下来我们讲从源码来看一下
+ServerSocketChannel，SocketChannel，Select相关方法，我们先来看一下Channel的定义。
+
+package java.nio.channels;
+
+import java.io.IOException;
+import java.io.Closeable;
+
+
+/**
+ * A nexus for I/O operations.
+ *
+ Channel为IO操作服务的。
+ * <p> A channel represents an open connection to an entity such as a hardware
+ * device, a file, a network socket, or a program component that is capable of
+ * performing one or more distinct I/O operations, for example reading or
+ * writing.
+ *
+ 一个通道表示对一个实体的打开连接，比如硬件设备，文件，网络socket，或者一个应用组件
+ 可能执行一个或多个不同的IO操作，比如读写。
+ * <p> A channel is either open or closed.  A channel is open upon creation,
+ * and once closed it remains closed.  Once a channel is closed, any attempt to
+ * invoke an I/O operation upon it will cause a {@link ClosedChannelException}
+ * to be thrown.  Whether or not a channel is open may be tested by invoking
+ * its {@link #isOpen isOpen} method.
+ *
+ 通道有两个状态一个打开，一个关闭。通道在创建时打开，一旦关闭将会关闭。如果通道已经关闭，
+ 尝试执行IO操作，将会引起ClosedChannelException异常。判断一个通道是否打开，可以用isOpen方法。
+ * <p> Channels are, in general, intended to be safe for multithreaded access
+ * as described in the specifications of the interfaces and classes that extend
+ * and implement this interface.
+ *
+ 一般情况下，在实现Channel的具体接口和类中，必须保证多线程安全访问。
+ *
+ * @author Mark Reinhold
+ * @author JSR-51 Expert Group
+ * @since 1.4
+ */
+
+public interface Channel extends Closeable {
+
+    /**
+     * Tells whether or not this channel is open.  </p>
+     *
+     判断通道是否打开，打开返回true
+     * @return <tt>true</tt> if, and only if, this channel is open
+     */
+    public boolean isOpen();
+
+    /**
+     * Closes this channel.
+     *
+     * <p> After a channel is closed, any further attempt to invoke I/O
+     * operations upon it will cause a {@link ClosedChannelException} to be
+     * thrown.
+     *如果通道已经关闭， 尝试执行IO操作，将会引起ClosedChannelException异常。
+     * <p> If this channel is already closed then invoking this method has no
+     * effect.
+     如果通道已经关闭，再次调用，则方法不起作用
+     * <p> This method may be invoked at any time.  If some other thread has
+     * already invoked it, however, then another invocation will block until
+     * the first invocation is complete, after which it will return without
+     * effect. </p>
+     *
+     如果当前线程close时，其他线程已将调用close，则当前线程阻塞，直至先前线程完成close。
+     当前线程的close将无效。
+     * @throws  IOException  If an I/O error occurs
+     */
+    public void close() throws IOException;
+
+}
+//Closeable
+package java.io;
+
+import java.io.IOException;
+
+/**
+ * A {@code Closeable} is a source or destination of data that can be closed.
+ * The close method is invoked to release resources that the object is
+ * holding (such as open files).
+ *
+ Closeable表示一个数据源或目的可以被关闭，当资源被某个对象持有时（比如打开文件），可以调用
+ close关闭资源。
+ * @since 1.5
+ */
+
+public interface Closeable extends AutoCloseable {
+
+    /**
+     * Closes this stream and releases any system resources associated
+     * with it. If the stream is already closed then invoking this
+     * method has no effect.
+     *
+     关闭流或释放关联的系统资源。如果流已经关闭，再次调用，则方法不起作用
+     * @throws IOException if an I/O error occurs
+     */
+    public void close() throws IOException;
+}
+
+//AutoCloseable
+package java.lang;
+
+/**
+ * A resource that must be closed when it is no longer needed.
+ *
+ 当一个资源不在需要时，将会关闭，从命名来看自动关闭
+ * @author Josh Bloch
+ * @since 1.7
+ */
+public interface AutoCloseable {
+    /**
+     * Closes this resource, relinquishing any underlying resources.
+     * This method is invoked automatically on objects managed by the
+     * {@code try}-with-resources statement.
+     *
+     关闭资源，忽略资源下的所有子资源。资源持有者对象将会在try语句中，自动调用此方法
+     * <p>While this interface method is declared to throw {@code
+     * Exception}, implementers are <em>strongly</em> encouraged to
+     * declare concrete implementations of the {@code close} method to
+     * throw more specific exceptions, or to throw no exception at all
+     * if the close operation cannot fail.
+     *
+     这个接口中声明抛出异常，强烈建议实现close方法，如果关闭资源失败，抛出具体的异常
+     * <p><em>Implementers of this interface are also strongly advised
+     * to not have the {@code close} method throw {@link
+     * InterruptedException}.</em>
+     *
+     接口的实现者，强烈建议不要抛出InterruptedException异常
+     * This exception interacts with a thread's interrupted status,
+     * and runtime misbehavior is likely to occur if an {@code
+     * InterruptedException} is {@linkplain Throwable#addSuppressed
+     * suppressed}.
+     InterruptedException表示一个线程的中断状态和运行时misbehavior，
+     如果一个InterruptedException被Throwable#addSuppressed方法suppressed，
+     可能抛出异常。
+     * More generally, if it would cause problems for an
+     * exception to be suppressed, the {@code AutoCloseable.close}
+     * method should not throw it.
+     *  
+     一般情况下，如果一个异常可以被suppressed，close方法不应该被抛出异常。
+     * <p>Note that unlike the {@link java.io.Closeable#close close}
+     * method of {@link java.io.Closeable}, this {@code close} method
+     * is <em>not</em> required to be idempotent.  In other words,
+     * calling this {@code close} method more than once may have some
+     * visible side effect, unlike {@code Closeable.close} which is
+     * required to have no effect if called more than once.
+     *
+     不像Closeable的从close方法，如果调用一次，后面的将会任何影响。而本方法，
+     调用多次会有不同的可见效果。
+     * However, implementers of this interface are strongly encouraged
+     * to make their {@code close} methods idempotent.
+     *
+     强烈建议实现方法，已经close一次的情况，再次调用无效
+     * @throws Exception if this resource cannot be closed
+     */
+    void close() throws Exception;
+}
+小节：
+一个通道表示对一个实体的打开连接，比如硬件设备，文件，网络socket，或者一个应用组件
+可能执行一个或多个不同的IO操作，比如读写。通道有两个状态一个打开，一个关闭。通道在创建时打开，
+一旦关闭将会关闭。如果通道已经关闭，尝试执行IO操作，将会引起ClosedChannelException异常。
+判断一个通道是否打开，可以用isOpen方法。一般情况下，在实现Channel的具体接口和类中，必须保证多线程安全访问。
+如果当前线程close时，其他线程已将调用close，则当前线程阻塞，直至先前线程完成close。
+当前线程的close将无效。

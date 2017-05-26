@@ -1,0 +1,419 @@
+Java动态代理：http://www.cnblogs.com/xiaoluo501395377/p/3383130.html
+JDBC驱动初始化-Mysql:http://donald-draper.iteye.com/admin/blogs/2342010
+JDBC连接的获取：http://donald-draper.iteye.com/blog/2342011
+前面我们讲过单机Server数据库连接的获取，今天来说一下，负载均衡集群下，连接的获取
+url为jdbc:mysql:loadbalance://的数据库连接获取方法
+if(StringUtils.startsWithIgnoreCase(url, "jdbc:mysql:loadbalance://"))
+       return connectLoadBalanced(url, info);
+//NonRegisteringDriver
+//负载均衡连接获取方法
+private Connection connectLoadBalanced(String url, Properties info)
+        throws SQLException
+    {
+        //解析url
+        Properties parsedProps = parseURL(url, info);
+        parsedProps.remove("roundRobinLoadBalance");
+        if(parsedProps == null)
+            return null;
+        String hostValues = parsedProps.getProperty("HOST");
+        List hostList = null;
+        if(hostValues != null)
+            hostList = StringUtils.split(hostValues, ",", true);
+        if(hostList == null)
+        {
+            hostList = new ArrayList();
+            hostList.add("localhost:3306");
+        }
+	//构造负载均衡连接代理
+        LoadBalancingConnectionProxy proxyBal = new LoadBalancingConnectionProxy(hostList, parsedProps);
+	//通过代理新建代理实例Connection
+        return (Connection)Proxy.newProxyInstance(getClass().getClassLoader(), new Class[] {
+            java.sql.Connection.class
+        }, proxyBal);
+    }
+//LoadBalancingConnectionProxy
+public class LoadBalancingConnectionProxy
+    implements InvocationHandler, PingTarget
+{
+    private static Method getLocalTimeMethod;
+    public static final String BLACKLIST_TIMEOUT_PROPERTY_KEY = "loadBalanceBlacklistTimeout";
+    private Connection currentConn;
+    private List hostList;
+    private Map liveConnections;
+    private Map connectionsToHostsMap;
+    private long responseTimes[];
+    private Map hostsToListIndexMap;
+    private boolean inTransaction;
+    private long transactionStartTime;
+    private Properties localProps;
+    private boolean isClosed;
+    private BalanceStrategy balancer;//负载均衡策略
+    private int retriesAllDown;
+    private static Map globalBlacklist = new HashMap();
+    private int globalBlacklistTimeout;
+
+    static 
+    {
+        try
+        {
+            getLocalTimeMethod = (java.lang.System.class).getMethod("nanoTime", new Class[0]);
+        }
+        catch(SecurityException e) { }
+        catch(NoSuchMethodException e) { }
+    }
+    LoadBalancingConnectionProxy(List hosts, Properties props)
+        throws SQLException
+    {
+        inTransaction = false;
+        transactionStartTime = 0L;
+        isClosed = false;
+        globalBlacklistTimeout = 0;
+        hostList = hosts;
+        int numHosts = hostList.size();
+	//存活连接
+        liveConnections = new HashMap(numHosts);
+        connectionsToHostsMap = new HashMap(numHosts);
+	//Host连接的相应时间
+        responseTimes = new long[numHosts];
+        hostsToListIndexMap = new HashMap(numHosts);
+        for(int i = 0; i < numHosts; i++)
+            hostsToListIndexMap.put(hostList.get(i), new Integer(i));
+
+        localProps = (Properties)props.clone();
+        localProps.remove("HOST");
+        localProps.remove("PORT");
+        localProps.setProperty("useLocalSessionState", "true");
+        String strategy = localProps.getProperty("loadBalanceStrategy", "random");
+        String retriesAllDownAsString = localProps.getProperty("retriesAllDown", "120");
+        try
+        {
+            retriesAllDown = Integer.parseInt(retriesAllDownAsString);
+        }
+        catch(NumberFormatException nfe)
+        {
+            throw SQLError.createSQLException(Messages.getString("LoadBalancingConnectionProxy.badValueForRetriesAllDown", new Object[] {
+                retriesAllDownAsString
+            }), "S1009", null);
+        }
+        String blacklistTimeoutAsString = localProps.getProperty("loadBalanceBlacklistTimeout", "0");
+        try
+        {
+            globalBlacklistTimeout = Integer.parseInt(blacklistTimeoutAsString);
+        }
+        catch(NumberFormatException nfe)
+        {
+            throw SQLError.createSQLException(Messages.getString("LoadBalancingConnectionProxy.badValueForLoadBalanceBlacklistTimeout", new Object[] {
+                retriesAllDownAsString
+            }), "S1009", null);
+        }
+	//构建负载均衡策略
+        if("random".equals(strategy))
+            balancer = (BalanceStrategy)Util.loadExtensions(null, props, "com.mysql.jdbc.RandomBalanceStrategy", "InvalidLoadBalanceStrategy", null).get(0);
+        else
+        if("bestResponseTime".equals(strategy))
+            balancer = (BalanceStrategy)Util.loadExtensions(null, props, "com.mysql.jdbc.BestResponseTimeBalanceStrategy", "InvalidLoadBalanceStrategy", null).get(0);
+        else
+            balancer = (BalanceStrategy)Util.loadExtensions(null, props, strategy, "InvalidLoadBalanceStrategy", null).get(0);
+        //初始化负载均衡器
+	balancer.init(null, props);
+	//从负载均衡器获取连接
+        pickNewConnection();
+    }
+}
+下面分三步来看LoadBalancingConnectionProxy的构建
+//构建负载均衡策略
+//Util
+public static List loadExtensions(Connection conn, Properties props, String extensionClassNames, String errorMessageKey, ExceptionInterceptor exceptionInterceptor)
+        throws SQLException
+    {
+        List extensionList = new LinkedList();
+        List interceptorsToCreate = StringUtils.split(extensionClassNames, ",", true);
+        Iterator iter = interceptorsToCreate.iterator();
+        String className = null;
+        try
+        {
+            Extension extensionInstance;
+            for(; iter.hasNext(); extensionList.add(extensionInstance))
+            {
+                className = iter.next().toString();
+		//加载className
+                extensionInstance = (Extension)Class.forName(className).newInstance();
+		//初始化class
+                extensionInstance.init(conn, props);
+            }
+
+        }
+        catch(Throwable t)
+        {
+            SQLException sqlEx = SQLError.createSQLException(Messages.getString(errorMessageKey, new Object[] {
+                className
+            }), exceptionInterceptor);
+            sqlEx.initCause(t);
+            throw sqlEx;
+        }
+        return extensionList;
+    }
+再看负载均衡器的初始化，这里我们以BestResponseTimeBalanceStrategy为例：
+public class BestResponseTimeBalanceStrategy
+    implements BalanceStrategy
+{
+   public void init(Connection connection, Properties properties)
+        throws SQLException
+    {
+      //初始化为空，待扩展
+    }
+}
+
+回到LoadBalancingConnectionProxy的构造方法，从负载均衡器获取连接
+private synchronized void pickNewConnection()
+        throws SQLException
+    {
+        if(currentConn == null)
+        {
+            currentConn = balancer.pickConnection(this, Collections.unmodifiableList(hostList), Collections.unmodifiableMap(liveConnections), (long[])responseTimes.clone(), retriesAllDown);
+            return;
+        } else
+        {
+            Connection newConn = balancer.pickConnection(this, Collections.unmodifiableList(hostList), Collections.unmodifiableMap(liveConnections), (long[])responseTimes.clone(), retriesAllDown);
+            newConn.setTransactionIsolation(currentConn.getTransactionIsolation());
+            newConn.setAutoCommit(currentConn.getAutoCommit());
+            currentConn = newConn;
+            return;
+        }
+    }
+查看BestResponseTimeBalanceStrategy的pickConnection方法
+//BestResponseTimeBalanceStrategy
+  public Connection pickConnection(LoadBalancingConnectionProxy proxy, List configuredHosts, Map liveConnections, long responseTimes[], int numRetries)
+        throws SQLException
+    {
+        SQLException ex;
+label0:
+        {
+            Map blackList = proxy.getGlobalBlacklist();
+            ex = null;
+            int attempts = 0;
+            Connection conn;
+            do
+            {
+                if(attempts >= numRetries)
+                    break label0;
+                long minResponseTime = 9223372036854775807L;
+                int bestHostIndex = 0;
+		//获取代理host黑名单
+                if(blackList.size() == configuredHosts.size())
+                    blackList = proxy.getGlobalBlacklist();
+		//从responseTimes筛选出相应时间最小的host索引index
+                for(int i = 0; i < responseTimes.length; i++)
+                {
+                    long candidateResponseTime = responseTimes[i];
+                    if(candidateResponseTime >= minResponseTime || blackList.containsKey(configuredHosts.get(i)))
+                        continue;
+                    if(candidateResponseTime == 0L)
+                    {
+                        bestHostIndex = i;
+                        break;
+                    }
+                    bestHostIndex = i;
+                    minResponseTime = candidateResponseTime;
+                }
+                //从configuredHosts获取host
+                String bestHost = (String)configuredHosts.get(bestHostIndex);
+		//从liveConnections获取连接
+                conn = (Connection)liveConnections.get(bestHost);
+                if(conn != null)
+                    break;
+                try
+                {
+		    //如果liveConnections不存在host对应的连接，则通过代理去创建一个连接
+                    conn = proxy.createConnectionForHost(bestHost);
+                    break;
+                }
+                catch(SQLException sqlEx)
+                {
+                    ex = sqlEx;
+                    if((sqlEx instanceof CommunicationsException) || "08S01".equals(sqlEx.getSQLState()))
+                    {
+		        //如果创建连接异常，则加入黑名单
+                        proxy.addToGlobalBlacklist(bestHost);
+                        blackList.put(bestHost, null);
+                        if(blackList.size() == configuredHosts.size())
+                        {
+                            attempts++;
+                            try
+                            {
+                                Thread.sleep(250L);
+                            }
+                            catch(InterruptedException e) { }
+                            blackList = proxy.getGlobalBlacklist();
+                        }
+                    } else
+                    {
+                        throw sqlEx;
+                    }
+                }
+            } while(true);
+            return conn;
+        }
+        if(ex != null)
+            throw ex;
+        else
+            return null;
+    }
+来看LoadBalancingConnectionProxy创建连接：
+public synchronized Connection createConnectionForHost(String hostPortSpec)
+        throws SQLException
+    {
+        Properties connProps = (Properties)localProps.clone();
+        String hostPortPair[] = NonRegisteringDriver.parseHostPortPair(hostPortSpec);
+        if(hostPortPair[1] == null)
+            hostPortPair[1] = "3306";
+        connProps.setProperty("HOST", hostPortSpec);
+        connProps.setProperty("PORT", hostPortPair[1]);
+	//返回的实际为ConnectionImpl
+        Connection conn = ConnectionImpl.getInstance(hostPortSpec, Integer.parseInt(hostPortPair[1]), connProps, connProps.getProperty("DBNAME"), "jdbc:mysql://" + hostPortPair[0] + ":" + hostPortPair[1] + "/");
+        liveConnections.put(hostPortSpec, conn);
+        connectionsToHostsMap.put(conn, hostPortSpec);
+        return conn;
+    }
+在回到connectLoadBalanced函数：
+//通过代理新建代理实例Connection
+ return (Connection)Proxy.newProxyInstance(getClass().getClassLoader(), new Class[] {
+           java.sql.Connection.class
+        }, proxyBal);
+
+//Proxy
+public static Object newProxyInstance(ClassLoader loader,
+					  Class<?>[] interfaces,
+					  InvocationHandler h)
+	throws IllegalArgumentException
+    {
+	if (h == null) {
+	    throw new NullPointerException();
+	}
+
+	/*
+	 * Look up or generate the designated proxy class.
+	 */
+        Class<?> cl = getProxyClass0(loader, interfaces); // stack walk magic: do not refactor
+
+	/*
+	 * Invoke its constructor with the designated invocation handler.
+	 */
+	try {
+            final Constructor<?> cons = cl.getConstructor(constructorParams);
+            final InvocationHandler ih = h;
+            SecurityManager sm = System.getSecurityManager();
+            if (sm != null && ProxyAccessHelper.needsNewInstanceCheck(cl)) {
+                // create proxy instance with doPrivilege as the proxy class may
+                // implement non-public interfaces that requires a special permission
+                return AccessController.doPrivileged(new PrivilegedAction<Object>() {
+                    public Object run() {
+		        //创建实例
+                        return newInstance(cons, ih);
+                    }
+                });
+            } else {
+                return newInstance(cons, ih);
+            }
+	} catch (NoSuchMethodException e) {
+	    throw new InternalError(e.toString());
+	} 
+    }
+//创建实例
+private static Object newInstance(Constructor<?> cons, InvocationHandler h) {
+        try {
+            return cons.newInstance(new Object[] {h} );
+        } catch (IllegalAccessException e) {
+            throw new InternalError(e.toString());
+        } catch (InstantiationException e) {
+            throw new InternalError(e.toString());
+        } catch (InvocationTargetException e) {
+            Throwable t = e.getCause();
+            if (t instanceof RuntimeException) {
+                throw (RuntimeException) t;
+            } else {
+                throw new InternalError(t.toString());
+            }
+        }
+    }
+回到LoadBalancingConnectionProxy
+ public Object invoke(Object proxy, Method method, Object args[])
+        throws Throwable
+    {
+        String methodName = method.getName();
+        if("equals".equals(methodName) && args.length == 1)
+            if(args[0] instanceof Proxy)
+                return Boolean.valueOf(((Proxy)args[0]).equals(this));
+            else
+                return Boolean.valueOf(equals(args[0]));
+        if("close".equals(methodName))
+        {
+            synchronized(this)
+            {
+                for(Iterator allConnections = liveConnections.values().iterator(); allConnections.hasNext(); ((Connection)allConnections.next()).close());
+                if(!isClosed)
+                    balancer.destroy();
+                liveConnections.clear();
+                connectionsToHostsMap.clear();
+            }
+            return null;
+        }
+        if("isClosed".equals(methodName))
+            return Boolean.valueOf(isClosed);
+        if(isClosed)
+            throw SQLError.createSQLException("No operations allowed after connection closed.", "08003", null);
+        if(!inTransaction)
+        {
+            inTransaction = true;
+            transactionStartTime = getLocalTimeBestResolution();
+        }
+        Object result = null;
+        try
+        {
+	    //关键在这里，当调用Connection的方法是，实际上调用的currentConn的对应方法
+	    //这个currentConn我们前面有说
+            result = method.invoke(currentConn, args);
+            if(result != null)
+            {
+                if(result instanceof Statement)
+                    ((Statement)result).setPingTarget(this);
+                result = proxyIfInterfaceIsJdbc(result, result.getClass());
+            }
+        }
+        catch(InvocationTargetException e)
+        {
+            dealWithInvocationException(e);
+        }
+        finally
+        {
+            if("commit".equals(methodName) || "rollback".equals(methodName))
+            {
+                inTransaction = false;
+                String host = (String)connectionsToHostsMap.get(currentConn);
+                if(host != null)
+                {
+                    int hostIndex = ((Integer)hostsToListIndexMap.get(host)).intValue();
+                    synchronized(responseTimes)
+                    {
+                        responseTimes[hostIndex] = getLocalTimeBestResolution() - transactionStartTime;
+                    }
+                }
+                pickNewConnection();
+            }
+        }
+        return result;
+    }
+这里我们总结一下：
+NonRegisteringDriver的负载均衡连接获取方法connectLoadBalanced，首先
+构造负载均衡连接代理LoadBalancingConnectionProxy，再通过java动态代理Proxy
+产生新建代理实例Connection，当我们调用Connection的prepareStatement等方法时，
+实际上通过LoadBalancingConnectionProxy的currentConn（ConnectionImpl）调用其相应的方法。
+在构建LoadBalancingConnectionProxy的过程中，首先，初始化存活连接liveConnections，Host连接的相应时间responseTimes，
+构建负载均衡策略BestResponseTimeBalanceStrategy，RandomBalanceStrategy或InvalidLoadBalanceStrategy，然后初始化负载均衡策略，
+最后从负载均衡器获取连接，BestResponseTimeBalanceStrategy实际上是从liveConnections获取除host黑名单以外，相应时间最小的Connection，
+如果没有，则创建连接。
+	
+
+
+
+

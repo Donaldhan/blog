@@ -1,0 +1,382 @@
+前面讲过nio tcp通信，今天来看一下udp；
+Server-peer
+package nio.datagramchannel;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.util.Iterator;
+
+/**
+ * Sever
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:03
+ */
+public class DatagramChannelServer {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Server
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		DatagramChannelServer server = new DatagramChannelServer();
+		server.initServer("192.168.31.153", 10000);
+		server.listen();
+	}
+	/**
+	 * get the ServerSocket and finish some initial work
+	 * @param port
+	 * @throws IOException
+	 */
+	public void initServer(String host, int port) throws IOException{
+		//get the ServerSocket
+		DatagramChannel serverChannel = DatagramChannel.open();
+		// set no blocking mode
+		serverChannel.configureBlocking(false);
+		//bind the port
+		serverChannel.socket().bind(new InetSocketAddress(host, port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		serverChannel.register(selector,SelectionKey.OP_READ);
+		}
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("=========The Server is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the client
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		DatagramChannel channel = (DatagramChannel) key.channel();
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		//用receive读取数据，如果用read，必须使用connect方法连接Server，并确保建立连接，write一样
+		InetSocketAddress socketAddress = (InetSocketAddress) channel.receive(buf); 
+		System.out.println("client ip and port:"+socketAddress.getHostString()+","+socketAddress.getPort());
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from client:"+msg);
+		channel.send(ByteBuffer.wrap(new String("Hello client!").getBytes()),socketAddress);
+		channel.close();
+	}	
+}
+Client-peer
+package nio.datagramchannel;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.util.Iterator;
+
+/**
+ * Client
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:09
+ */
+public class DatagramChannelClient {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Client
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		DatagramChannelClient client = new DatagramChannelClient();
+		client.initClient("192.168.31.153",10001);
+		client.listen();
+	}
+	/**
+	 * get the Socket and finish some initial work
+	 * @param ip Server ip
+	 * @param port connect Server port
+	 * @throws IOException
+	 */
+	public void initClient(String ip,int port) throws IOException{
+		//get the Socket
+		DatagramChannel channel = DatagramChannel.open();
+		// set no blocking mode
+		channel.configureBlocking(false);
+		channel.socket().bind(new InetSocketAddress(ip,port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		channel.register(selector,SelectionKey.OP_READ);
+		//发送数据到Server
+		channel.send(ByteBuffer.wrap(new String("Hello Server!").getBytes()),new InetSocketAddress("192.168.31.153", 10000));
+		}
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("===========The Client is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the server
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		DatagramChannel channel = (DatagramChannel) key.channel();
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		//用receive读取数据，如果用read，必须使用connect方法连接Server，并确保建立连接，write一样
+		InetSocketAddress socketAddress = (InetSocketAddress) channel.receive(buf); 
+		System.out.println("server ip and port:"+socketAddress.getHostString()+","+socketAddress.getPort());
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from server:"+msg);
+		channel.close();
+	}
+	
+}
+先启动Server-peer，后启动Client-peer，控制太输出：
+Server-peer：
+=========The Server is start!===========
+client ip and port:192.168.31.153,10001
+message come from client:Hello Server!
+
+Client-peer：
+===========The Client is start!===========
+server ip and port:192.168.31.153,10000
+message come from server:Hello client!
+上面的报文通道使用实例用的是send和receive方法发送和接收报文，是不需要提前建立连接的。
+我们看用read和write方法发送和接收报文
+Server-peer：
+package nio.datagramchannel;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.util.Iterator;
+
+/**
+ * Sever
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:03
+ */
+public class UdpServer {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Server
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		UdpServer server = new UdpServer();
+		server.initServer("192.168.31.153", 10000);
+		server.listen();
+	}
+	/**
+	 * get the ServerSocket and finish some initial work
+	 * @param port
+	 * @throws IOException
+	 */
+	public void initServer(String host, int port) throws IOException{
+		//get the ServerSocket
+		DatagramChannel serverChannel = DatagramChannel.open();
+		// set no blocking mode
+		serverChannel.configureBlocking(false);
+		//bind the port
+		serverChannel.socket().bind(new InetSocketAddress(host, port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		serverChannel.register(selector,SelectionKey.OP_READ);
+		serverChannel.connect(new InetSocketAddress("192.168.31.153", 10001));
+		while(!serverChannel.isConnected()){
+			//空转等待连接
+		}
+	}
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("=========The Server is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the client
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		DatagramChannel channel = (DatagramChannel) key.channel();
+		System.out.println("is Connected："+channel.isConnected());
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		InetSocketAddress socketAddress = (InetSocketAddress) channel.getRemoteAddress(); 
+		System.out.println("client ip and port:"+socketAddress.getHostString()+","+socketAddress.getPort());
+		channel.read(buf);
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from client:"+msg);
+		channel.write(ByteBuffer.wrap(new String("Hello client!").getBytes()));
+		channel.close();
+	}
+	
+}
+
+
+Client-peer：
+package nio.datagramchannel;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.util.Iterator;
+
+/**
+ * Client
+ * @author donald
+ * 2017年4月11日
+ * 下午9:24:09
+ */
+public class UdpClient {
+	//manager the channel
+	private Selector selector;
+	/**
+	 * stat Client
+	 * @param args
+	 * @throws IOException
+	 */
+	public static void main(String[] args) throws IOException{
+		UdpClient client = new UdpClient();
+		client.initClient("192.168.31.153",10001);
+		client.listen();
+	}
+	/**
+	 * get the Socket and finish some initial work
+	 * @param ip Server ip
+	 * @param port connect Server port
+	 * @throws IOException
+	 */
+	public void initClient(String ip,int port) throws IOException{
+		//get the Socket
+		DatagramChannel channel = DatagramChannel.open();
+		// set no blocking mode
+		channel.configureBlocking(false);
+		channel.socket().bind(new InetSocketAddress(ip,port));
+		//get the channel manager
+		this.selector = Selector.open();
+		//Register the channel to manager and bind the event
+		channel.register(selector,SelectionKey.OP_READ);
+		channel.connect(new InetSocketAddress("192.168.31.153", 10000));
+		while(!channel.isConnected()){
+			//空转等待连接
+		}
+		channel.write(ByteBuffer.wrap(new String("Hello Server!").getBytes()));
+		System.out.println("client send message to server is done!");
+    }
+	/**
+	 * use asking mode to listen the event of selector
+	 * @throws IOException 
+	 */
+	@SuppressWarnings("rawtypes")
+	public void listen() throws IOException{
+		System.out.println("===========The Client is start!===========");
+		while(true){
+			selector.select();
+			Iterator ite =  this.selector.selectedKeys().iterator();
+			while(ite.hasNext()){
+				SelectionKey key = (SelectionKey)ite.next();
+				ite.remove();
+				if (key.isReadable()) read(key);
+			}
+			
+		}
+	}
+	/**
+	 * deal with the message come from the server
+	 * @param key
+	 * @throws IOException 
+	 */
+	public void read(SelectionKey key) throws IOException{
+		DatagramChannel channel = (DatagramChannel) key.channel();
+		System.out.println("is Connected："+channel.isConnected());
+		ByteBuffer buf = ByteBuffer.allocate(100);
+		InetSocketAddress socketAddress = (InetSocketAddress) channel.getRemoteAddress(); 
+		System.out.println("server ip and port:"+socketAddress.getHostString()+","+socketAddress.getPort());
+		channel.read(buf); 
+		byte[] data = buf.array();
+		String msg = new String(data).trim();
+		System.out.println("message come from server:"+msg);
+		channel.close();
+	}
+	
+}
+
+
+
+先启动Server-peer，后启动Client-peer，控制太输出：
+Server-peer：
+=========The Server is start!===========
+is Connected：true
+client ip and port:192.168.31.153,10001
+message come from client:Hello Server!
+
+
+Client-peer：
+client send message to server is done!
+===========The Client is start!===========
+is Connected：true
+server ip and port:192.168.31.153,10000
+message come from server:Hello client!
+总结：
+send和receive方法发送和接收报文，是不需要提前建立连接的，而read和write方法，
+是要建立连接的与SocketChannel相同。建议用send和receive方法发送和接收报文。
