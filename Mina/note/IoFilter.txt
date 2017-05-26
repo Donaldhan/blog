@@ -1,0 +1,573 @@
+MINA TCP简单通信实例：[url]http://donald-draper.iteye.com/blog/2375297[/url]
+Mina 过滤链默认构建器：[url]http://donald-draper.iteye.com/blog/2375985[/url]
+在TCP简单通信实例这篇文章中我们测试了一下LoggerFilter，同时我们也实现了一个Filter，今天我们来看一下过滤器IoFilter
+的定义。
+package org.apache.mina.common;
+import java.net.SocketAddress;
+import org.apache.mina.filter.ReferenceCountingIoFilter;
+/**
+ * A filter which intercepts {@link IoHandler} events like Servlet
+ * filters.  Filters can be used for these purposes:
+ 过滤器可以拦截IoHandler的相关事件，与Servlet过滤器相似。过滤器可以用于以下目的：
+ * <ul>
+ *   <li>Event logging,</li>事件日志
+ *   <li>Performance measurement,</li>性能测试
+ *   <li>Authorization,</li>认证
+ *   <li>Overload control,</li>负载控制
+ *   <li>Message transformation (e.g. encryption and decryption, ...),</li>消息传输（加密解密）
+ *   <li>and many more.</li>
+ * </ul>
+ * <p>
+ * <strong>Please NEVER implement your filters to wrap
+ * {@link IoSession}s.</strong> Users can cache the reference to the
+ * session, which might malfunction if any filters are added or removed later.
+ * 坚决不要在实现过滤器时，wrap会话。用户可以缓存会话的引用，如果过滤器添加或移除过后，
+ 可能会导致故障。
+ * <h3>The Life Cycle</h3>声明周期
+ * {@link IoFilter}s are activated only when they are inside {@link IoFilterChain}.
+ * <p>当过滤器添加到过滤链上，过滤器被激活
+ * When you add an {@link IoFilter} to an {@link IoFilterChain}:
+ * <ol>当添加一个过滤器到过滤链上时：
+ *   <li>{@link #init()} is invoked by {@link ReferenceCountingIoFilter} if
+ *       the filter is added at the first time.</li>
+ 首先通过ReferenceCountingIoFilter调用init方法
+ *   <li>{@link #onPreAdd(IoFilterChain, String, NextFilter)} is invoked to notify
+ *       that the filter will be added to the chain.</li>
+ 然后#onPreAdd方法将会被调用，用于通知过滤器将要被添加到过滤链上
+ *   <li>The filter is added to the chain, and all events and I/O requests
+ *       pass through the filter from now.</li>
+ 过滤器添加到过滤链上，所有IoHandler事件和IO请求，将会被过滤器拦截
+ *   <li>{@link #onPostAdd(IoFilterChain, String, NextFilter)} is invoked to notify
+ *       that the filter is added to the chain.</li>
+在调用#onPostAdd，用于通知过滤器已经添加到过滤连上
+ *   <li>The filter is removed from the chain if {@link #onPostAdd(IoFilterChain, String, org.apache.mina.common.IoFilter.NextFilter)}
+ *       threw an exception.  {@link #destroy()} is also invoked by
+ *       {@link ReferenceCountingIoFilter} if the filter is the last filter which
+ *       was added to {@link IoFilterChain}s.</li>
+ 如果#onPostAdd方法抛出异常，过滤器将会从过滤链上移除。如果过滤器在过滤链的链尾，
+ReferenceCountingIoFilter将调用#destroy方法释放共享资源
+ * </ol>
+ * <p>
+ * When you remove an {@link IoFilter} from an {@link IoFilterChain}:
+ 当从过滤链上移除一个过滤器时：
+ * <ol>
+ *   <li>{@link #onPreRemove(IoFilterChain, String, NextFilter)} is invoked to
+ *       notify that the filter will be removed from the chain.</li>
+#onPreRemove被调用，用于通知过滤器将从过滤链上移除
+ *   <li>The filter is removed from the chain, and any events and I/O requests
+ *       don't pass through the filter from now.</li>
+ 如果过滤器从过滤链上移除，所有IoHandler事件和IO请求，过滤器不再拦截
+ *   <li>{@link #onPostRemove(IoFilterChain, String, NextFilter)} is invoked to
+ *       notify that the filter is removed from the chain.</li>
+#onPostRemove调用通知过滤器已经从过滤链上移除
+ *   <li>{@link #destroy()} is invoked by {@link ReferenceCountingIoFilter} if
+ *       the removed filter was the last one.</li>
+ #如果过滤器在过滤链的链尾，ReferenceCountingIoFilter将调用#destroy方法释放共享资源
+ * </ol>      
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ * 
+ * @see IoFilterAdapter
+ */
+public interface IoFilter {
+    /**
+     * Invoked by {@link ReferenceCountingIoFilter} when this filter
+     * is added to a {@link IoFilterChain} at the first time, so you can
+     * initialize shared resources.  Please note that this method is never
+     * called if you don't wrap a filter with {@link ReferenceCountingIoFilter}.
+     IoFilter添加到过滤链时，最好以ReferenceCountingIoFilter包装，添加到过滤链，init方法
+     在添加到过滤链时，由ReferenceCountingIoFilter第一次调用，所以可以在init方法初始化一些共享资源。
+     如果过滤器没有包装成ReferenceCountingIoFilter，init方法将不会调用。
+     */
+    void init() throws Exception;
+
+    /**
+     * Invoked by {@link ReferenceCountingIoFilter} when this filter
+     * is not used by any {@link IoFilterChain} anymore, so you can destroy
+     * shared resources.  Please note that this method is never called if
+     * you don't wrap a filter with {@link ReferenceCountingIoFilter}.
+     当过滤器不再被过滤链使用时，ReferenceCountingIoFilter调用destroy方法使用共享资源。
+     如果过滤器没有包装成ReferenceCountingIoFilter，destroy方法将不会调用。
+     */
+    void destroy() throws Exception;
+
+    /**
+     * Invoked before this filter is added to the specified <tt>parent</tt>.
+     * Please note that this method can be invoked more than once if
+     * this filter is added to more than one parents.  This method is not
+     * invoked before {@link #init()} is invoked. 
+     *当过滤器添加到过滤链时，调用此方法，如果过滤器添加到多个过滤链，此方法可以多次调用。
+     此方法不会在init方法前调用。
+     * @param parent the parent who called this method
+     * @param name the name assigned to this filter
+     * @param nextFilter the {@link NextFilter} for this filter.  You can reuse
+     *                   this object until this filter is removed from the chain.
+     */
+    void onPreAdd(IoFilterChain parent, String name, NextFilter nextFilter)
+            throws Exception;
+
+    /**
+     * Invoked after this filter is added to the specified <tt>parent</tt>.
+     * Please note that this method can be invoked more than once if
+     * this filter is added to more than one parents.  This method is not
+     * invoked before {@link #init()} is invoked. 
+     *当过滤器添加到过滤链后，调用此方法，如果过滤器添加到多个过滤链，此方法可以多次调用。
+     此方法不会在init方法前调用。
+     * @param parent the parent who called this method
+     * @param name the name assigned to this filter
+     * @param nextFilter the {@link NextFilter} for this filter.  You can reuse
+     *                   this object until this filter is removed from the chain.
+     */
+    void onPostAdd(IoFilterChain parent, String name, NextFilter nextFilter)
+            throws Exception;
+
+    /**
+     * Invoked before this filter is removed from the specified <tt>parent</tt>.
+     * Please note that this method can be invoked more than once if
+     * this filter is removed from more than one parents.
+     * This method is always invoked before {@link #destroy()} is invoked.
+     *  当过滤器从过滤链移除前，调用此方法，如果从多个过滤链移除，此方法可以多次调用。
+     此方法在#destroy方法前调用
+     * @param parent the parent who called this method
+     * @param name the name assigned to this filter
+     * @param nextFilter the {@link NextFilter} for this filter.  You can reuse
+     *                   this object until this filter is removed from the chain.
+     */
+    void onPreRemove(IoFilterChain parent, String name, NextFilter nextFilter)
+            throws Exception;
+
+    /**
+     * Invoked after this filter is removed from the specified <tt>parent</tt>.
+     * Please note that this method can be invoked more than once if
+     * this filter is removed from more than one parents.
+     * This method is always invoked before {@link #destroy()} is invoked.
+     *  当过滤器从过滤链移除后，调用此方法，如果从多个过滤链移除，此方法可以多次调用。
+     此方法在#destroy方法前调用。
+     * @param parent the parent who called this method
+     * @param name the name assigned to this filter
+     * @param nextFilter the {@link NextFilter} for this filter.  You can reuse
+     *                   this object until this filter is removed from the chain.
+     */
+    void onPostRemove(IoFilterChain parent, String name, NextFilter nextFilter)
+            throws Exception;
+
+    /**
+     * Filters {@link IoHandler#sessionCreated(IoSession)} event.
+     过滤IoHandler#sessionCreated事件
+     */
+    void sessionCreated(NextFilter nextFilter, IoSession session)
+            throws Exception;
+
+    /**
+     * Filters {@link IoHandler#sessionOpened(IoSession)} event.
+     过滤IoHandler#sessionOpened事件
+     */
+    void sessionOpened(NextFilter nextFilter, IoSession session)
+            throws Exception;
+
+    /**
+     * Filters {@link IoHandler#sessionClosed(IoSession)} event.
+     过滤IoHandler#sessionClosed事件
+     */
+    void sessionClosed(NextFilter nextFilter, IoSession session)
+            throws Exception;
+
+    /**
+     * Filters {@link IoHandler#sessionIdle(IoSession,IdleStatus)}
+     * event.
+     过滤IoHandler#sessionIdle事件
+     */
+    void sessionIdle(NextFilter nextFilter, IoSession session, IdleStatus status)
+            throws Exception;
+
+    /**
+     * Filters {@link IoHandler#exceptionCaught(IoSession,Throwable)}
+     * event.
+     过滤IoHandler#exceptionCaught事件
+     */
+    void exceptionCaught(NextFilter nextFilter, IoSession session,
+            Throwable cause) throws Exception;
+
+    /**
+     * Filters {@link IoHandler#messageReceived(IoSession,Object)}
+     * event.
+     过滤IoHandler#messageReceived事件
+     */
+    void messageReceived(NextFilter nextFilter, IoSession session,
+            Object message) throws Exception;
+
+    /**
+     * Filters {@link IoHandler#messageSent(IoSession,Object)}
+     * event.
+     过滤IoHandler#messageSent事件
+     */
+    void messageSent(NextFilter nextFilter, IoSession session, Object message)
+            throws Exception;
+
+    /**
+     * Filters {@link IoSession#close()} method invocation.
+     过滤IoSession#close事件
+     */
+    void filterClose(NextFilter nextFilter, IoSession session) throws Exception;
+
+    /**
+     * Filters {@link IoSession#write(Object)} method invocation.
+     过滤IoSession#write事件
+     */
+    void filterWrite(NextFilter nextFilter, IoSession session,
+            WriteRequest writeRequest) throws Exception;
+
+    /**
+     * Represents the next {@link IoFilter} in {@link IoFilterChain}.
+     过滤器在过滤链中的后继，转发IoHandler的会话相关事件（创建，打开，空闲，异常，关闭，接受数据，发送数据）
+     及IoSesssion的Write与close事件。
+     */
+    public interface NextFilter {
+        /**
+         * Forwards <tt>sessionCreated</tt> event to next filter.
+         */
+        void sessionCreated(IoSession session);
+
+        /**
+         * Forwards <tt>sessionOpened</tt> event to next filter.
+         */
+        void sessionOpened(IoSession session);
+
+        /**
+         * Forwards <tt>sessionClosed</tt> event to next filter.
+         */
+        void sessionClosed(IoSession session);
+
+        /**
+         * Forwards <tt>sessionIdle</tt> event to next filter.
+         */
+        void sessionIdle(IoSession session, IdleStatus status);
+
+        /**
+         * Forwards <tt>exceptionCaught</tt> event to next filter.
+         */
+        void exceptionCaught(IoSession session, Throwable cause);
+
+        /**
+         * Forwards <tt>messageReceived</tt> event to next filter.
+         */
+        void messageReceived(IoSession session, Object message);
+
+        /**
+         * Forwards <tt>messageSent</tt> event to next filter.
+         */
+        void messageSent(IoSession session, Object message);
+
+        /**
+         * Forwards <tt>filterWrite</tt> event to next filter.
+         */
+        void filterWrite(IoSession session, WriteRequest writeRequest);
+
+        /**
+         * Forwards <tt>filterClose</tt> event to next filter.
+         */
+        void filterClose(IoSession session);
+    }
+
+    /**
+     * Represents write request fired by {@link IoSession#write(Object)}.
+     表示一个会话写请求IoSession#write
+     */
+    public static class WriteRequest {
+        //写请求返回值WriteFuture
+        private static final WriteFuture UNUSED_FUTURE = new WriteFuture() {
+            public boolean isWritten() {
+                return false;
+            }
+
+            public void setWritten(boolean written) {
+            }
+            //获取关联会话
+            public IoSession getSession() {
+                return null;
+            }
+
+            public Object getLock() {
+                return this;
+            }
+
+            public void join() {
+            }
+
+            public boolean join(long timeoutInMillis) {
+                return true;
+            }
+
+            public boolean isReady() {
+                return true;
+            }
+
+            public void addListener(IoFutureListener listener) {
+                throw new IllegalStateException(
+                        "You can't add a listener to a dummy future.");
+            }
+
+            public void removeListener(IoFutureListener listener) {
+                throw new IllegalStateException(
+                        "You can't add a listener to a dummy future.");
+            }
+        };
+
+        private final Object message;//发送消息
+
+        private final WriteFuture future;//写操作返回Future
+
+        private final SocketAddress destination;//socket目的地址
+
+        /**
+         * Creates a new instance without {@link WriteFuture}.  You'll get
+         * an instance of {@link WriteFuture} even if you called this constructor
+         * because {@link #getFuture()} will return a bogus future.
+         */
+        public WriteRequest(Object message) {
+            this(message, null, null);
+        }
+
+        /**
+         * Creates a new instance with {@link WriteFuture}.
+         */
+        public WriteRequest(Object message, WriteFuture future) {
+            this(message, future, null);
+        }
+
+        /**
+         * Creates a new instance.
+         * 根据消息，WriteFuture，消息socket目的地址构建WriteRequest
+         * @param message a message to write
+         * @param future a future that needs to be notified when an operation is finished
+         * @param destination the destination of the message.  This property will be
+         *                    ignored unless the transport supports it.
+         */
+        public WriteRequest(Object message, WriteFuture future,
+                SocketAddress destination) {
+            if (message == null) {
+                throw new NullPointerException("message");
+            }
+
+            if (future == null) {
+                future = UNUSED_FUTURE;
+            }
+
+            this.message = message;
+            this.future = future;
+            this.destination = destination;
+        }
+
+        /**
+         * Returns {@link WriteFuture} that is associated with this write request.
+         */
+        public WriteFuture getFuture() {
+            return future;
+        }
+
+        /**
+         * Returns a message object to be written.
+         */
+        public Object getMessage() {
+            return message;
+        }
+
+        /**
+         * Returne the destination of this write request.
+         * 
+         * @return <tt>null</tt> for the default destination
+         */
+        public SocketAddress getDestination() {
+            return destination;
+        }
+
+        public String toString() {
+            return message.toString();
+        }
+    }
+}
+总结：
+IoFilter添加到过滤链时，一般以ReferenceCountingIoFilter包装，添加到过滤链，init方法
+在添加到过滤链时，由ReferenceCountingIoFilter调用，所以可以在init方法初始化一些共享资源。
+如果过滤器没有包装成ReferenceCountingIoFilter，init方法将不会调用。
+然后调用onPreAdd通知过滤器将会添加到过滤连上，当过滤器添加到过滤链上时，所有IoHandler事件和IO请求，将会被过滤器拦截
+当过滤器添加到过滤链上后，将会调用onPostAdd，如果方法有异常，过滤器在过滤链的链尾，
+ReferenceCountingIoFilter将调用#destroy方法释放共享资源。
+过滤器IoFilter，主要是监听会话IoSession相关事件（创建，打开，空闲，异常，关闭，接受数据，发送数据） 及IoSesssion的Write与close事件；
+过滤器后继NextFilter关注的事件与过滤器IoFilter相同，主要是转发相关事件。WriteRequest是会话IoSession写操作write的包装，内部有一个
+消息对象用于存放write的内容，一个socket地址，即会话写请求的目的socket地址，一个写请求结果返回值WriteFuture，用于获取
+会话write消息的操作结果。
+当一个过滤器从过滤链上移除时，#onPreRemove被调用，用于通知过滤器将从过滤链上移除；
+如果过滤器从过滤链上移除，所有IoHandler事件和IO请求，过滤器不再拦截；
+#onPostRemove调用通知过滤器已经从过滤链上移除；移除后，如果过滤器在过滤链的链尾，
+ReferenceCountingIoFilter将调用#destroy方法释放共享资源。
+IoFilter生命周期如下：
+inti->onPreAdd->onPostAdd->(拦截IoHandler相关事件：sessionCreated，Opened，Idle，
+exceptionCaught，Closed，messageSent，messageReceived;会话相关事件：filterWrite，filterClose)->onPreRemove
+->onPostRemove->destroy。
+
+符：
+//IoFilterAdapter,过滤器适配器
+/**
+ * An abstract adapter class for {@link IoFilter}.  You can extend
+ * this class and selectively override required event filter methods only.  All
+ * methods forwards events to the next filter by default.
+ * IoFilterAdapter为过滤器的抽象实现。在实现自己的过滤器时，可以扩展IoFilterAdapter，
+ 选择需要关注的时间，默认所有事件方法将会转发事件到后继过滤器。
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public class IoFilterAdapter implements IoFilter {
+    public void init() throws Exception {
+    }
+    public void destroy() throws Exception {
+    }
+    public void onPreAdd(IoFilterChain parent, String name,
+            NextFilter nextFilter) throws Exception {
+    }
+    public void onPostAdd(IoFilterChain parent, String name,
+            NextFilter nextFilter) throws Exception {
+    }
+    public void onPreRemove(IoFilterChain parent, String name,
+            NextFilter nextFilter) throws Exception {
+    }
+    public void onPostRemove(IoFilterChain parent, String name,
+            NextFilter nextFilter) throws Exception {
+    }
+   //默认实现为，将事件转发到后继过滤器
+    public void sessionCreated(NextFilter nextFilter, IoSession session)
+            throws Exception {
+        nextFilter.sessionCreated(session);
+    }
+    public void sessionOpened(NextFilter nextFilter, IoSession session)
+            throws Exception {
+        nextFilter.sessionOpened(session);
+    }
+    public void sessionClosed(NextFilter nextFilter, IoSession session)
+            throws Exception {
+        nextFilter.sessionClosed(session);
+    }
+    public void sessionIdle(NextFilter nextFilter, IoSession session,
+            IdleStatus status) throws Exception {
+        nextFilter.sessionIdle(session, status);
+    }
+    public void exceptionCaught(NextFilter nextFilter, IoSession session,
+            Throwable cause) throws Exception {
+        nextFilter.exceptionCaught(session, cause);
+    }
+    public void messageReceived(NextFilter nextFilter, IoSession session,
+            Object message) throws Exception {
+        nextFilter.messageReceived(session, message);
+    }
+    public void messageSent(NextFilter nextFilter, IoSession session,
+            Object message) throws Exception {
+        nextFilter.messageSent(session, message);
+    }
+    public void filterWrite(NextFilter nextFilter, IoSession session,
+            WriteRequest writeRequest) throws Exception {
+        nextFilter.filterWrite(session, writeRequest);
+    }
+    public void filterClose(NextFilter nextFilter, IoSession session)
+            throws Exception {
+        nextFilter.filterClose(session);
+    }
+}
+IoFuture：异步IO操作结果
+package org.apache.mina.common;
+
+/**
+ * Represents the result of an ashynchronous I/O operation.
+ * IoFuture表示一个异步操作的结果
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface IoFuture {
+    /**
+     * Returns the {@link IoSession} which is associated with this future.
+     获取结果关联的会话
+     */
+    IoSession getSession();
+
+    /**
+     * Returns the lock object this future acquires.
+     */
+    Object getLock();
+
+    /**
+     * Wait for the asynchronous operation to end.
+     等待异步IO操作结束
+     */
+    void join();
+
+    /**
+     * Wait for the asynchronous operation to end with the specified timeout.
+     * 超时等待异步IO操作完成
+     * @return <tt>true</tt> if the operation is finished.
+     */
+    boolean join(long timeoutInMillis);
+
+    /**
+     * Returns if the asynchronous operation is finished.
+     判断一个异步操作是否完成
+     */
+    boolean isReady();
+
+    /**
+     * Adds an event <tt>listener</tt> which is notified when
+     * the state of this future changes.
+     添加结果监听器，用于监听结果状态的变化
+     */
+    void addListener(IoFutureListener listener);
+
+    /**
+     * Removes an existing event <tt>listener</tt> which is notified when
+     * the state of this future changes.
+      移除结果监听器
+     */
+    void removeListener(IoFutureListener listener);
+}
+
+WriteFuture：异步写操作结果
+
+package org.apache.mina.common;
+
+/**
+ * An {@link IoFuture} for asynchronous write requests.
+ *WriteFuture表示一个异步写请求
+ * <h3>Example</h3>，示例：
+ * <pre>
+ * IoSession session = ...;
+ * WriteFuture future = session.write(...);
+ * // Wait until the message is completely written out to the O/S buffer.
+ * future.join();//等待写操作完成
+ * if( future.isWritten() )
+ * {
+ *     // The message has been written successfully.写操作完成
+ * }
+ * else
+ * {
+ *     // The messsage couldn't be written out completely for some reason.
+ *     // (e.g. Connection is closed) 写操作没有完成
+ * }
+ * </pre>
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface WriteFuture extends IoFuture {
+    /**
+     * Returns <tt>true</tt> if the write operation is finished successfully.
+     判断写操作是否完成
+     */
+    boolean isWritten();
+
+    /**
+     * Sets whether the message is written or not, and notifies all threads
+     * waiting for this future.  This method is invoked by MINA internally.
+     * Please do not call this method directly.
+     设置消息是否被写，并通知所有等待此结果的线程。这个方法为MINA内部调用。
+     不要直接调用这个方法。
+     */
+    void setWritten(boolean written);
+}

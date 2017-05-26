@@ -1,0 +1,478 @@
+MINA 多路复用协议编解码器工厂一（多路复用协议编码器）:
+[url]http://donald-draper.iteye.com/blog/2377170[/url]
+引言:
+   上一篇文章我们看了多路复用协议编码器，今天我们来看一下多路复用协议解码器，先来回顾一下：
+   多路复用的协议编码器添加消息编码器，如果参数为消息类型和消息编码器类型，添加消息类型与默认构造消息编码工厂到消息编码器Map映射type2encoderFactory；如果参数为消息类型和消息编码器实例，添加消息类型与单例消息编码器工厂到消息编码器Map映射type2encoderFactory。多路复用的协议编码器编码消息，首先从会话获取消息编码器状态，从消息编码器状态获取消息对应的编码器（先从消息编码器查找，没有则从消息编码器映射type2encoder查找），如果没有消息对应的解码，则查找消息父接口和类对应的编码器，编码消息。
+public class DemuxingProtocolCodecFactory
+    implements ProtocolCodecFactory
+{
+    private final DemuxingProtocolEncoder encoder = new DemuxingProtocolEncoder();//多路复用的协议编码器
+    private final DemuxingProtocolDecoder decoder = new DemuxingProtocolDecoder();//多路复用的协议解码器
+    public DemuxingProtocolCodecFactory()
+    {
+    }
+    public ProtocolEncoder getEncoder(IoSession session)
+        throws Exception
+    {
+        return encoder;
+    }
+    public ProtocolDecoder getDecoder(IoSession session)
+        throws Exception
+    {
+        return decoder;
+    }
+    ...
+}
+从上面来看多路复用协议编解码工厂，包含一个多路复用的协议编码器和解码器。在往下看之前，我们先看一下
+多路复用的协议编码器和解码器。
+我们来看多路复用协议解码器：
+public class DemuxingProtocolDecoder extends CumulativeProtocolDecoder
+{
+    private final AttributeKey STATE = new AttributeKey(getClass(), "state");
+    private MessageDecoderFactory decoderFactories[];//消息解码器工厂集
+    private static final Class EMPTY_PARAMS[] = new Class[0];
+     public DemuxingProtocolDecoder()
+    {
+        decoderFactories = new MessageDecoderFactory[0];
+    }
+}
+先看看一下消息解码器工厂和消息解码器的定义
+//消息解码器工厂
+//MessageDecoderFactory
+public interface MessageDecoderFactory
+{
+    public abstract MessageDecoder getDecoder()
+        throws Exception;
+}
+//消息解码器MessageDecoder
+/**
+ * Decodes specific messages.
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ * 
+ * @see DemuxingProtocolCodecFactory
+ * @see MessageDecoderFactory
+ */
+public interface MessageDecoder {
+    /**
+     * Represents a result from {@link #decodable(IoSession, ByteBuffer)} and
+     * {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}.  Please
+     * refer to each method's documentation for detailed explanation.
+    #decodable和#decode方法的返回结果
+     */
+    static MessageDecoderResult OK = MessageDecoderResult.OK;
+
+    /**
+     * Represents a result from {@link #decodable(IoSession, ByteBuffer)} and
+     * {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}.  Please
+     * refer to each method's documentation for detailed explanation.
+      #decodable和#decode方法的返回结果
+     */
+    static MessageDecoderResult NEED_DATA = MessageDecoderResult.NEED_DATA;
+
+    /**
+     * Represents a result from {@link #decodable(IoSession, ByteBuffer)} and
+     * {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}.  Please
+     * refer to each method's documentation for detailed explanation.
+      #decodable和#decode方法的返回结果
+     */
+    static MessageDecoderResult NOT_OK = MessageDecoderResult.NOT_OK;
+
+    /**
+     * Checks the specified buffer is decodable by this decoder.
+     * 检查解码器是否可解buffer中的数据
+     * @return {@link #OK} if this decoder can decode the specified buffer.
+     #OK可以解码buffer中的数据
+     *         {@link #NOT_OK} if this decoder cannot decode the specified buffer.
+    #NOT_OK表示解码器不可解码buffer数据
+     *         {@link #NEED_DATA} if more data is required to determine if the
+     *         specified buffer is decodable ({@link #OK}) or not decodable
+     *         {@link #NOT_OK}.
+      #NEED_DATA表示需要更多的数据来确认解码器是否可以解码buffer数据
+     */
+    MessageDecoderResult decodable(IoSession session, ByteBuffer in);
+
+    /**
+     * Decodes binary or protocol-specific content into higher-level message objects.
+     * MINA invokes {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}
+     * method with read data, and then the decoder implementation puts decoded
+     * messages into {@link ProtocolDecoderOutput}.
+     * 解码二级制或协议数据为上层消息对象。mina调用#decode方法解码读到的数据，解码将解码后的消息
+     放到协议解码输出ProtocolDecoderOutput的消息队列中，待flush消息给下一个过滤器
+     * @return {@link #OK} if you finished decoding messages successfully.
+     #OK解码消息成功
+     *         {@link #NEED_DATA} if you need more data to finish decoding current message.
+     #NEED_DATA，需要更多的数据完成消息解码
+     *         {@link #NOT_OK} if you cannot decode current message due to protocol specification violation.
+     * #NOT_OK由于内容与协议不一致，不能解码当前消息，        
+     * @throws Exception if the read data violated protocol specification 
+     */
+    MessageDecoderResult decode(IoSession session, ByteBuffer in,
+            ProtocolDecoderOutput out) throws Exception;
+
+    /**
+     * Invoked when the specified <tt>session</tt> is closed while this decoder was
+     * parsing the data.  This method is useful when you deal with the protocol which doesn't
+     * specify the length of a message such as HTTP response without <tt>content-length</tt>
+     * header. Implement this method to process the remaining data that
+     * {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)} method didn't process
+     * completely.
+     * 当会话关闭，同时解码器正在解码消息，调用此方法。这个方法在需要处理的消息没有固定长度的情况下，非常
+     有用，比如Http响应，没有内容长度头部。此方法用于解码器没有解码完的数据。
+     * @throws Exception if the read data violated protocol specification
+     */
+    void finishDecode(IoSession session, ProtocolDecoderOutput out)
+            throws Exception;
+}
+从上可以看出消息解码器MessageDecoder，有3个方法分别为，decodable方法用于判断解码器是否可以解码buffer数据，返回值
+（MessageDecoderResult）#OK表示可以解码buffer中的数据，#NOT_OK表示解码器不可解码buffer数据， #NEED_DATA表示需要更多的数据来确认解码器
+是否可以解码buffer数据；decode用于解码buffer数据，返回值#OK表示解码消息成功，#NEED_DATA，表示需要更多的数据完成消息解码，
+ #NOT_OK由于内容与协议不一致，不能解码当前消息；finishDecode主要是处理#decode方法没有解码完的数据。
+ 我们在回到多路复用协议解码器
+ //DemuxingProtocolDecoder
+ //添加消息解码器
+  public void addMessageDecoder(Class decoderClass)
+    {
+        if(decoderClass == null)
+            throw new IllegalArgumentException("decoderClass");
+        try
+        {
+            decoderClass.getConstructor(EMPTY_PARAMS);
+        }
+        catch(NoSuchMethodException e)
+        {
+            throw new IllegalArgumentException("The specified class doesn't have a public default constructor.");
+        }
+        boolean registered = false;
+	//如果消息解码器类型为MessageDecoder
+        if(org/apache/mina/filter/codec/demux/MessageDecoder.isAssignableFrom(decoderClass))
+        {
+	    //添加解码器工厂，到多路复用协议解码器工厂组decoderFactories
+            addMessageDecoder(((MessageDecoderFactory) (new DefaultConstructorMessageDecoderFactory(decoderClass))));
+            registered = true;
+        }
+        if(!registered)
+            throw new IllegalArgumentException((new StringBuilder()).append("Unregisterable type: ").append(decoderClass).toString());
+        else
+            return;
+    }
+来看这一句
+//添加解码器工厂，到多路复用协议解码器工厂集decoderFactories
+addMessageDecoder(((MessageDecoderFactory) (new DefaultConstructorMessageDecoderFactory(decoderClass))));
+
+ public void addMessageDecoder(MessageDecoderFactory factory)
+    {
+        if(factory == null)
+        {
+            throw new IllegalArgumentException("factory");
+        } else
+        {
+	    //将解码器工厂集长度增+1，将解码器工厂放入解码器工厂集
+            MessageDecoderFactory decoderFactories[] = this.decoderFactories;
+            MessageDecoderFactory newDecoderFactories[] = new MessageDecoderFactory[decoderFactories.length + 1];
+            System.arraycopy(decoderFactories, 0, newDecoderFactories, 0, decoderFactories.length);
+            newDecoderFactories[decoderFactories.length] = factory;
+            this.decoderFactories = newDecoderFactories;
+            return;
+        }
+    }
+再来看以下默认构造消息解码器工厂DefaultConstructorMessageDecoderFactory
+ private static class DefaultConstructorMessageDecoderFactory
+        implements MessageDecoderFactory
+    {
+        private final Class decoderClass;//解码器类
+        private DefaultConstructorMessageDecoderFactory(Class decoderClass)
+        {
+            if(decoderClass == null)
+                throw new IllegalArgumentException("decoderClass");
+            if(!org/apache/mina/filter/codec/demux/MessageDecoder.isAssignableFrom(decoderClass))
+            {
+                throw new IllegalArgumentException("decoderClass is not assignable to MessageDecoder");
+            } else
+            {
+                this.decoderClass = decoderClass;
+                return;
+            }
+        }
+	 public MessageDecoder getDecoder()
+            throws Exception
+        {
+            return (MessageDecoder)decoderClass.newInstance();//创建解码器实例
+        }
+    }
+再看多路复用协议解码器添加解码器实例
+
+    public void addMessageDecoder(MessageDecoder decoder)
+    {
+        //添加单例解码器工厂，到多路复用协议解码器工厂集decoderFactories
+        addMessageDecoder(((MessageDecoderFactory) (new SingletonMessageDecoderFactory(decoder))));
+    }
+再来看单例解码器工厂SingletonMessageDecoderFactory
+  private static class SingletonMessageDecoderFactory
+        implements MessageDecoderFactory
+    {
+        private final MessageDecoder decoder;
+        private SingletonMessageDecoderFactory(MessageDecoder decoder)
+        {
+            if(decoder == null)
+            {
+                throw new IllegalArgumentException("decoder");
+            } else
+            {
+                this.decoder = decoder;
+                return;
+            }
+        public MessageDecoder getDecoder()
+        {
+            return decoder;
+        }
+        
+        }
+}  
+从添加解码器到多路复用协议解码器可以看出，如果添加的解码器为Class，则添加默认构造消息解码器工厂
+到到多路复用协议解码器工厂集decoderFactories；如果添加的解码器为实例，则添加单例解码器工厂，
+到多路复用协议解码器工厂集。
+由于多路复用协议解码器继承DemuxingProtocolDecoder于累计协议解码器CumulativeProtocolDecoder
+我们来看实际的解码工作：
+protected boolean doDecode(IoSession session, IoBuffer in, ProtocolDecoderOutput out)
+        throws Exception
+    {
+        State state;
+        MessageDecoder decoders[];
+        int undecodables;
+        int i;
+	//从会话获取解码器状态
+        state = getState(session);
+        if(state.currentDecoder != null)
+            break MISSING_BLOCK_LABEL_250;
+	//获取状态解码器集
+        decoders = state.decoders;
+        undecodables = 0;
+        i = decoders.length - 1;
+_L3:
+        if(i < 0) goto _L2; else goto _L1
+_L1:
+       //遍历状态解码器集
+        MessageDecoder decoder;
+        int limit;
+        int pos;
+        decoder = decoders[i];
+        limit = in.limit();
+        pos = in.position();
+	//测试解码器是否可以解码buffer数据
+        MessageDecoderResult result = decoder.decodable(session, in);
+        in.position(pos);
+        in.limit(limit);
+        break MISSING_BLOCK_LABEL_103;
+        Exception exception;
+        exception;
+        in.position(pos);
+        in.limit(limit);
+        throw exception;
+        if(result == MessageDecoder.OK)
+        {
+	    //可以解码，则会话状态的解码器为decoder
+            state.currentDecoder = decoder;
+            break; /* Loop/switch isn't completed */
+        }
+        if(result == MessageDecoder.NOT_OK)
+        {
+            undecodables++;
+            continue; /* Loop/switch isn't completed */
+        }
+        if(result != MessageDecoder.NEED_DATA)//需要数据判断解码器是否可以解码
+            throw new IllegalStateException((new StringBuilder()).append("Unexpected decode result (see your decodable()): ").append(result).toString());
+        i--;
+          goto _L3
+_L2:
+        if(undecodables == decoders.length)
+        {
+	    //没有解码器，可以解码buffer数据
+            String dump = in.getHexDump();
+            in.position(in.limit());
+            ProtocolDecoderException e = new ProtocolDecoderException((new StringBuilder()).append("No appropriate message decoder: ").append(dump).toString());
+            e.setHexdump(dump);
+            throw e;
+        }
+        if(state.currentDecoder == null)
+            return false;
+        MessageDecoderResult result;
+	//会话状态当前解码器，解码buffer
+        result = state.currentDecoder.decode(session, in, out);
+        if(result != MessageDecoder.OK)
+            break MISSING_BLOCK_LABEL_282;
+        state.currentDecoder = null;
+        return true;
+	//解码器完成解码消息，需要数据
+        if(result == MessageDecoder.NEED_DATA)
+            return false;
+        try
+        {
+            if(result == MessageDecoder.NOT_OK)
+            {
+	        //buffer数据与协议不一致
+                state.currentDecoder = null;
+                throw new ProtocolDecoderException("Message decoder returned NOT_OK.");
+            } else
+            {
+                state.currentDecoder = null;
+                throw new IllegalStateException((new StringBuilder()).append("Unexpected decode result (see your decode()): ").append(result).toString());
+            }
+        }
+        catch(Exception e)
+        {
+            state.currentDecoder = null;
+            throw e;
+        }
+    }
+上面有一点我们要关注：
+//从会话获取解码器状态
+state = getState(session);
+先看一下State的定义
+ private class State
+    {
+
+        private final MessageDecoder decoders[];//消息解码器集
+        private MessageDecoder currentDecoder;//当前消息解码器
+        final DemuxingProtocolDecoder this$0;//多路复用协议解码器
+        private State()
+            throws Exception
+        {
+            this$0 = DemuxingProtocolDecoder.this;
+            super();
+            MessageDecoderFactory decoderFactories[] = DemuxingProtocolDecoder.this.decoderFactories;
+            decoders = new MessageDecoder[decoderFactories.length];
+	    //遍历多路复用协议解码的解码器工厂集，从工厂获取解码器，添加到消息解码器集decoders
+            for(int i = decoderFactories.length - 1; i >= 0; i--)
+                decoders[i] = decoderFactories[i].getDecoder();
+
+        }
+    }
+//从会话获取解码器状态
+ private State getState(IoSession session)
+        throws Exception
+    {
+        //先从会话获取解码器状态属性，如果解码器状态为空，则创建解码器状态，并添加到会话中
+        State state = (State)session.getAttribute(STATE);
+        if(state == null)
+        {
+            state = new State();
+            State oldState = (State)session.setAttributeIfAbsent(STATE, state);
+            if(oldState != null)
+                state = oldState;
+        }
+        return state;
+    }
+从上面可以看出多路复用协议解码器，解码消息的过程为，首先从会话获取解码器状态集，遍历解码器集，找到可以解码消息
+的解码器，并赋给会话解码器状态当前解码器currentDecoder，最后由currentDecoder解码消息。
+//解码解码器没有处理的数据
+public void finishDecode(IoSession session, ProtocolDecoderOutput out)
+        throws Exception
+    {
+        super.finishDecode(session, out);
+        State state = getState(session);
+        MessageDecoder currentDecoder = state.currentDecoder;
+        if(currentDecoder == null)
+        {
+            return;
+        } else
+        {
+	    //委托给会话当前解码器
+            currentDecoder.finishDecode(session, out);
+            return;
+        }
+    }
+    //释放解码器资源
+    public void dispose(IoSession session)
+        throws Exception
+    {
+        super.dispose(session);
+        session.removeAttribute(STATE);
+    }
+至此我们把多路复用协议编解码器看完，现在我们来看多路复用协议编解码器工的其他方法：
+//添加消息编码器，直接委托给内部的多路复用协议编码器
+  public void addMessageEncoder(Class messageType, Class encoderClass)
+    {
+        encoder.addMessageEncoder(messageType, encoderClass);
+    }
+    public void addMessageEncoder(Class messageType, MessageEncoder encoder)
+    {
+        this.encoder.addMessageEncoder(messageType, encoder);
+    }
+    public void addMessageEncoder(Class messageType, MessageEncoderFactory factory)
+    {
+        encoder.addMessageEncoder(messageType, factory);
+    }
+    public void addMessageEncoder(Iterable messageTypes, Class encoderClass)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, encoderClass))
+            messageType = (Class)iterator.next();
+
+    }
+    public void addMessageEncoder(Iterable messageTypes, MessageEncoder encoder)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, encoder))
+            messageType = (Class)iterator.next();
+
+    }
+    public void addMessageEncoder(Iterable messageTypes, MessageEncoderFactory factory)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, factory))
+            messageType = (Class)iterator.next();
+
+    }
+//添加消息解码器，直接委托给内部的多路复用协议解码器
+    public void addMessageDecoder(Class decoderClass)
+    {
+        decoder.addMessageDecoder(decoderClass);
+    }
+    public void addMessageDecoder(MessageDecoder decoder)
+    {
+        this.decoder.addMessageDecoder(decoder);
+    }
+    public void addMessageDecoder(MessageDecoderFactory factory)
+    {
+        decoder.addMessageDecoder(factory);
+    }
+
+ 总结：
+ 消息解码器MessageDecoder，有3个方法分别为，decodable方法用于判断解码器是否可以解码buffer数据，返回值
+（MessageDecoderResult）#OK表示可以解码buffer中的数据，#NOT_OK表示解码器不可解码buffer数据， #NEED_DATA表示需要更多的数据来确认解码器
+是否可以解码buffer数据；decode用于解码buffer数据，返回值#OK表示解码消息成功，#NEED_DATA，表示需要更多的数据完成消息解码，
+ #NOT_OK由于内容与协议不一致，不能解码当前消息；finishDecode主要是处理#decode方法没有解码完的数据。
+添加解码器到多路复用协议解码器，如果添加的解码器为Class，则添加默认构造消息解码器工厂
+到到多路复用协议解码器工厂集decoderFactories；如果添加的解码器为实例，则添加单例解码器工厂，
+到多路复用协议解码器工厂集。多路复用协议解码器，解码消息的过程为，首先从会话获取解码器状态集，遍历解码器集，找到可以解码消息
+的解码器，并赋给会话解码器状态当前解码器currentDecoder，最后由currentDecoder解码消息。
+多路复用协议编解码器工厂内部关联一个多路复用协议编码器和解码器器，添加消息编码器和解码器到多路复用协议编解码器工厂，
+实际是添加多路复用协议编解码器中。
+
+
+
+
+ 附：
+ //MessageDecoderResult消息解码结果
+/**
+ * Represents results from {@link MessageDecoder}.
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ * @see MessageDecoder
+ */
+public class MessageDecoderResult {
+    private final String name;
+    private MessageDecoderResult(String name) {
+        this.name = name;
+    }
+    public static MessageDecoderResult OK = new MessageDecoderResult("OK");
+    public static MessageDecoderResult NEED_DATA = new MessageDecoderResult(
+            "NEED_DATA");
+    public static MessageDecoderResult NOT_OK = new MessageDecoderResult(
+            "NOT_OK");
+    public String toString() {
+        return name;
+    }
+}

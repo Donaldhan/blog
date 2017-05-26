@@ -1,0 +1,329 @@
+MINA 多路分离解码器实例：[url]http://donald-draper.iteye.com/blog/2375324[/url]
+Mina 协议编解码过滤器一（协议编解码工厂、协议编码器）：
+[url]http://donald-draper.iteye.com/blog/2376663[/url]
+Mina 协议编解码过滤器二（协议解码器）：
+[url]http://donald-draper.iteye.com/blog/2376679[/url]
+Mina 队列Queue：[url]http://donald-draper.iteye.com/blog/2376712[/url]
+Mina 协议编解码过滤器三（会话write与消息接收过滤）：
+[url]http://donald-draper.iteye.com/blog/2376818[/url]
+/**
+ * A composite {@link ProtocolCodecFactory} that consists of multiple
+ * {@link MessageEncoder}s and {@link MessageDecoder}s.
+ * {@link ProtocolEncoder} and {@link ProtocolDecoder} this factory
+ * returns demultiplex incoming messages and buffers to
+ * appropriate {@link MessageEncoder}s and {@link MessageDecoder}s. 
+ * 多路复用的协议编解码器工厂DemuxingProtocolCodecFactory包含多个消息编码器和解码器，此多路复用编解码器工厂，
+ 可以返回消息或buffer对应的编解码器，及多路分离。
+ * <h2>Disposing resources acquired by {@link MessageEncoder} and {@link MessageDecoder}</h2>
+ * <p>消息编解码器需要释放相应的资源。
+ * We didn't provide any <tt>dispose</tt> method for {@link MessageEncoder} and {@link MessageDecoder}
+ * because they can give you a big performance penalty in case you have a lot of
+ * message types to handle.
+ * 在消息编解码器中，我们没有提供dispose方法，因为dispose方法可能会对大量消息类型编码的情况下的性能有影响。
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ * 
+ * @see MessageEncoder
+ * @see MessageDecoder
+ */
+public class DemuxingProtocolCodecFactory
+    implements ProtocolCodecFactory
+{
+    private final DemuxingProtocolEncoder encoder = new DemuxingProtocolEncoder();//多路复用的协议编码器
+    private final DemuxingProtocolDecoder decoder = new DemuxingProtocolDecoder();//多路复用的协议解码器
+    public DemuxingProtocolCodecFactory()
+    {
+    }
+    public ProtocolEncoder getEncoder(IoSession session)
+        throws Exception
+    {
+        return encoder;
+    }
+    public ProtocolDecoder getDecoder(IoSession session)
+        throws Exception
+    {
+        return decoder;
+    }
+    ...
+}
+从上面来看多路复用协议编解码工厂，包含一个多路复用的协议编码器和解码器。在往下看之前，我们先看一下
+多路复用的协议编码器和解码器。
+先来看多路复用的协议编码器DemuxingProtocolEncoder：
+public class DemuxingProtocolEncoder
+    implements ProtocolEncoder
+{
+    private final AttributeKey STATE = new AttributeKey(getClass(), "state");
+    //消息类型Class与编码器工厂MessageEncoderFactory映射关系CopyOnWriteMap<Class,MessageEncoderFactory>
+    private final Map type2encoderFactory = new CopyOnWriteMap();
+    private static final Class EMPTY_PARAMS[] = new Class[0];
+     public DemuxingProtocolEncoder()
+    {
+    }
+}
+来看多路复用的协议编码器添加消息编码器操作：
+//根据消息类型和消息编码器类型，添加消息编码器
+ public void addMessageEncoder(Class messageType, Class encoderClass)
+    {
+        if(encoderClass == null)
+            throw new IllegalArgumentException("encoderClass");
+        try
+        {
+            encoderClass.getConstructor(EMPTY_PARAMS);//获取编码器无参构造
+        }
+        catch(NoSuchMethodException e)
+        {
+            throw new IllegalArgumentException("The specified class doesn't have a public default constructor.");
+        }
+        boolean registered = false;
+	//如果编码器为MessageEncoder，则添加消息与消息编码工厂映射到消息编码器Map映射type2encoderFactory
+        if(org/apache/mina/filter/codec/demux/MessageEncoder.isAssignableFrom(encoderClass))
+        {
+            addMessageEncoder(messageType, ((MessageEncoderFactory) (new DefaultConstructorMessageEncoderFactory(encoderClass))));
+            registered = true;
+        }
+        if(!registered)
+            throw new IllegalArgumentException((new StringBuilder()).append("Unregisterable type: ").append(encoderClass).toString());
+        else
+            return;
+ }
+
+来看添加消息类型与消息编码工厂的映射关系
+ public void addMessageEncoder(Class messageType, MessageEncoderFactory factory)
+    {
+        if(messageType == null)
+            throw new IllegalArgumentException("messageType");
+        if(factory == null)
+            throw new IllegalArgumentException("factory");
+        synchronized(type2encoderFactory)
+        {
+	   //将消息类型与消息编码工厂的映射关系添加到type2encoderFactory
+            if(type2encoderFactory.containsKey(messageType))
+                throw new IllegalStateException((new StringBuilder()).append("The specified message type (").append(messageType.getName()).append(") is registered already.").toString());
+            type2encoderFactory.put(messageType, factory);
+        }
+    }
+来看默认构造消息编码工厂DefaultConstructorMessageEncoderFactory
+private static class DefaultConstructorMessageEncoderFactory
+        implements MessageEncoderFactory
+    {
+         private final Class encoderClass;//消息编码器类
+	 private DefaultConstructorMessageEncoderFactory(Class encoderClass)
+        {
+            if(encoderClass == null)
+                throw new IllegalArgumentException("encoderClass");
+            if(!org/apache/mina/filter/codec/demux/MessageEncoder.isAssignableFrom(encoderClass))
+            {
+                throw new IllegalArgumentException("encoderClass is not assignable to MessageEncoder");
+            } else
+            {
+                this.encoderClass = encoderClass;
+                return;
+            }
+        }
+	//生产消息编码器
+        public MessageEncoder getEncoder()
+            throws Exception
+        {
+	   //创建消息编码器实例
+            return (MessageEncoder)encoderClass.newInstance();
+        }
+}
+从上可以看出，多路复用的协议编码器添加消息编码器，如果参数为消息类型和消息编码器类型，添加消息类型与默认构造消息编码工厂
+到消息编码器Map映射type2encoderFactory。
+再来看根据消息类型和消息编码器实例添加消息编码器
+   public void addMessageEncoder(Class messageType, MessageEncoder encoder)
+    {
+        //编码器工厂为单例消息编码器工厂
+        addMessageEncoder(messageType, ((MessageEncoderFactory) (new SingletonMessageEncoderFactory(encoder))));
+    }
+//单例消息编码器工厂SingletonMessageEncoderFactory
+ private static class SingletonMessageEncoderFactory
+        implements MessageEncoderFactory
+    {
+        private final MessageEncoder encoder;//消息编码器实例
+        private SingletonMessageEncoderFactory(MessageEncoder encoder)
+        {
+            if(encoder == null)
+            {
+                throw new IllegalArgumentException("encoder");
+            } else
+            {
+                this.encoder = encoder;
+                return;
+            }
+        }
+	//获取单例消息解码器
+        public MessageEncoder getEncoder()
+        {
+            return encoder;
+        }
+    }
+从上可以看出，多路复用的协议编码器添加消息编码器，如果参数为消息类型和消息编码器实例，添加消息类型与单例消息编码器工厂
+到消息编码器Map映射type2encoderFactory。
+下面这几个消息编码器的方法，与上面两类方法无异，很容易理解
+ public void addMessageEncoder(Iterable messageTypes, Class encoderClass)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, encoderClass))
+            messageType = (Class)iterator.next();
+
+    }
+    public void addMessageEncoder(Iterable messageTypes, MessageEncoder encoder)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, encoder))
+            messageType = (Class)iterator.next();
+
+    }
+    public void addMessageEncoder(Iterable messageTypes, MessageEncoderFactory factory)
+    {
+        Class messageType;
+        for(Iterator iterator = messageTypes.iterator(); iterator.hasNext(); addMessageEncoder(messageType, factory))
+            messageType = (Class)iterator.next();
+    }
+再来看消息编码：
+ public void encode(IoSession session, Object message, ProtocolEncoderOutput out)
+        throws Exception
+    {
+        State state = getState(session);//获取会话消息编码器状态
+	//获取消息对应的编码器
+        MessageEncoder encoder = findEncoder(state, message.getClass());
+        if(encoder != null)
+	    //编码消息
+            encoder.encode(session, message, out);
+        else
+            throw new UnknownMessageTypeException((new StringBuilder()).append("No message encoder found for message: ").append(message).toString());
+    }
+编码消息方法有两点要关注
+1.
+ State state = getState(session);//获取会话消息编码器状态
+先来看会话编码器状态的定义：
+ private class State
+    {
+
+        private final ConcurrentHashMap findEncoderCache;//消息编码器缓存
+        private final Map type2encoder;//消息与消息编码器映射关系
+        final DemuxingProtocolEncoder this$0;
+        private State()
+            throws Exception
+        {
+            this$0 = DemuxingProtocolEncoder.this;
+            super();
+            findEncoderCache = new ConcurrentHashMap();
+            type2encoder = new ConcurrentHashMap();
+            java.util.Map.Entry e;
+	    //遍历多路复用协议编码器的消息编码器Map映射type2encoderFactory
+	    //将消息类型，与工厂生产的消息编码器映射添加到会话编码器状态State消息与消息编码器映射关系type2encoder
+            for(Iterator iterator = type2encoderFactory.entrySet().iterator(); iterator.hasNext(); type2encoder.put(e.getKey(), ((MessageEncoderFactory)e.getValue()).getEncoder()))
+                e = (java.util.Map.Entry)iterator.next();
+
+        }
+    }
+再来看获取会话编码器状态:
+ private State getState(IoSession session)
+        throws Exception
+    {
+        //从会话获取消息编码器状态，为空，则添加消息编码器状态到会话，否则返回会话编码器状态
+        State state = (State)session.getAttribute(STATE);
+        if(state == null)
+        {
+            state = new State();
+            State oldState = (State)session.setAttributeIfAbsent(STATE, state);
+            if(oldState != null)
+                state = oldState;
+        }
+        return state;
+    }
+从上可以看出，
+
+2.
+//获取消息对应的编码器
+MessageEncoder encoder = findEncoder(state, message.getClass());
+//从会话消息编码器状态，获取消息类型对应的编码器
+protected MessageEncoder findEncoder(State state, Class type)
+    {
+        return findEncoder(state, type, null);
+    }
+    private MessageEncoder findEncoder(State state, Class type, Set triedClasses)
+    {
+        MessageEncoder encoder = null;
+        if(triedClasses != null && triedClasses.contains(type))
+            return null;
+	//从会话消息编码器状态缓存获取消息编码器
+        encoder = (MessageEncoder)state.findEncoderCache.get(type);
+	//不为null，则返回
+        if(encoder != null)
+            return encoder;
+	//否则从会话消息编码器状态的消息编码器映射Map中获取消息编码器
+        encoder = (MessageEncoder)state.type2encoder.get(type);
+        if(encoder == null)
+        {
+	    //如果编码器为空，则获取消息类型的副接口对应的编码器
+            if(triedClasses == null)
+                triedClasses = new IdentityHashSet();
+            triedClasses.add(type);
+            Class interfaces[] = type.getInterfaces();
+            Class aclass[] = interfaces;
+            int i = aclass.length;
+            int j = 0;
+            do
+            {
+                if(j >= i)
+                    break;
+                Class element = aclass[j];
+                encoder = findEncoder(state, element, triedClasses);
+                if(encoder != null)
+                    break;
+                j++;
+            } while(true);
+        }
+        if(encoder == null)
+        {
+	   //获取消息类型的父类对应的消息编码器
+            Class superclass = type.getSuperclass();
+            if(superclass != null)
+                encoder = findEncoder(state, superclass);
+        }
+        if(encoder != null)
+        {
+	   //不为空，则添加消息编码器到会话消息编码器状态findEncoderCache
+            state.findEncoderCache.put(type, encoder);
+            MessageEncoder tmpEncoder = (MessageEncoder)state.findEncoderCache.putIfAbsent(type, encoder);
+            if(tmpEncoder != null)
+                encoder = tmpEncoder;
+        }
+        return encoder;
+    }
+
+
+从上面可以看出，多路复用的协议编码器编码消息，首先从会话获取消息编码器状态，从消息编码器状态获取消息对应的编码器
+（先从消息编码器查找，没有则从消息编码器映射type2encoder查找），如果没有消息对应的解码，则查找消息父接口和类对应的
+编码器，编码消息。
+
+//释放会话编码器状态
+ public void dispose(IoSession session)
+        throws Exception
+    {
+        session.removeAttribute(STATE);
+    }
+我们再来消息编码器的定义：
+//消息编码器工厂MessageEncoderFactory
+public interface MessageEncoderFactory
+{
+    public abstract MessageEncoder getEncoder()
+        throws Exception;
+}
+public interface MessageEncoder
+{
+    public abstract void encode(IoSession iosession, Object obj, ProtocolEncoderOutput protocolencoderoutput)
+        throws Exception;
+}
+多路复用的协议解码器DemuxingProtocolDecoder，我们在下一篇文章中再看。
+
+总结：
+多路复用的协议编码器添加消息编码器，如果参数为消息类型和消息编码器类型，添加消息类型与默认构造消息编码工厂
+到消息编码器Map映射type2encoderFactory；如果参数为消息类型和消息编码器实例，添加消息类型与单例消息编码器工厂
+到消息编码器Map映射type2encoderFactory。多路复用的协议编码器编码消息，首先从会话获取消息编码器状态，
+从消息编码器状态获取消息对应的编码器（先从消息编码器查找，没有则从消息编码器映射type2encoder查找），
+如果没有消息对应的解码，则查找消息父接口和类对应的编码器，编码消息。
+

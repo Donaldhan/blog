@@ -1,0 +1,443 @@
+ Mina Io处理器抽象实现：http://donald-draper.iteye.com/blog/2377663
+ 引言：
+ 上一篇文章我们看了Io处理器的抽象实现，先来回顾一下：
+     抽象Io处理器AbstractPollingIoProcessor，主要几个关键内部变量为选择操作超时时间SELECT_TIMEOUT，用于腾出时间，处理空闲的会话； executor处理器内部执行器，用于运行内部处理器Processor；存储Io处理器等线程最大线程id的threadIds（Map）；创建会话队列newSessions用于存储新创建的会话；移除会话队列removingSessions用于存放从处理器移除的会话；刷新会话队列flushingSessions，用于存放要发送写请求的会话；次序控制会话队列trafficControllingSessions用于存放会话待读写的会话；Io处理器线程引用processorRef。
+     添加会话首先添加会话到Io处理器的创建会话队列中，启动处理器线程Processor。处理器的实际工作，尝试10次nbTries选择操作，在每次选择操作过程中，首先进行超时选择操作，然后检查Io处理器是否断开连接，尝试次数nbTries是否为零如果为0，则注册新的选择器；然后遍历创建会话队列，从队列拉取会话，如果会话为不null，则初始化会话，构建会话过滤链（从IoService继承）触发会话过滤链的会话创建和会话打开事件，并记录新创建的会话数量nSessions；更会会话状态，此过程为从会话次序控制队列获取会话，检查会话状态，如果状态为OPENED更新会话的读写状态，如果为OPENING放回次序控制会话队列；如果选择操作返回的SELECTKey的值大于0，即有相关的兴趣操作事件（读写事件），遍历选择后读写等操作就绪的会话，如果会话可读，则读取会话缓存区数据到buffer，触发过滤链消息接收事件MessageReceive，接收完消息后，如果会话输入流关闭则触发过滤链fireInputClosed事件，如果在这过程有异常发生，则触发过滤链异常事件ExceptionCaught，如果会话可写，则添加会话到刷新会话队列；遍历刷新会话队列，根据会话写请求消息类型为IoBuffer还是FileRegion，发送会话数据，发送会话数据后，如果会话还有些请求，则添加会话到队列，如果在这个过程中有异常，则添加会话到会话移除队列；遍历会话移除队列，如果会话为关闭，则尝试关闭会话，并清除会话写请求队列，如果会话数据已发送完，则触发会话过滤链消息发送事件fireMessageSent；更新处理器会话计数器nSessions；遍历处理器所有会话，触发会话过滤器会话空闲时间fireSessionIdle；如果在这个过程中，处理器会话计数器nSessions为0，则清除处理器引用；如果Io处理器正在关闭，则添加所有会话到移除会话队列，释放Io处理器先关的资源。
+     抽象Io处理器AbstractPollingIoProcessor主要是处理IoProcessor关联会话message*事件，而所有的工作，都是通过处理器线程Processor完成。每当有会话添加到IoProcessor，则启动一个处理器线程Processor，处理会话的读写操作及相关事件。就连IoProcessor资源的释放，也是由处理器线程Processor处理。关闭IoProcessor时，现将处理器关联会话，添加移除会话队列，实际工作由IoProcessor的子类的doDispose方法完成。
+今天来看Io处理器的一个具体实现NioProcessor：
+/**
+ * A processor for incoming and outgoing data get and written on a TCP socket.
+ *
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public final class NioProcessor extends AbstractPollingIoProcessor<NioSession> {
+    /** The selector associated with this processor */
+    private Selector selector;//选择器
+    /** A lock used to protect concurent access to the selector */
+    private ReadWriteLock selectorLock = new ReentrantReadWriteLock();
+    private SelectorProvider selectorProvider = null;//选择器提供者
+ }
+ 来看构造方法
+    /**
+     *
+     * Creates a new instance of NioProcessor.
+     *
+     * @param executor The executor to use
+     */
+    public NioProcessor(Executor executor) {
+        super(executor);
+
+        try {
+            // Open a new selector
+            selector = Selector.open();
+        } catch (IOException e) {
+            throw new RuntimeIoException("Failed to open a selector.", e);
+        }
+    }
+    /**
+     *
+     * Creates a new instance of NioProcessor.
+     *
+     * @param executor The executor to use
+     * @param selectorProvider The Selector provider to use
+     */
+    public NioProcessor(Executor executor, SelectorProvider selectorProvider) {
+        super(executor);
+
+        try {
+            // Open a new selector
+            if (selectorProvider == null) {
+                selector = Selector.open();
+            } else {
+                this.selectorProvider = selectorProvider;
+                selector = selectorProvider.openSelector();
+            }
+        } catch (IOException e) {
+            throw new RuntimeIoException("Failed to open a selector.", e);
+        }
+}
+从构造函数可以看出，NioProcessor主要是初始化线程执行器和选择器。
+再来选择操作：
+ @Override
+    protected int select(long timeout) throws Exception {
+        selectorLock.readLock().lock();
+        
+        try {
+            return selector.select(timeout);
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+
+    @Override
+    protected int select() throws Exception {
+        selectorLock.readLock().lock();
+        
+        try {
+            return selector.select();
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+从上来看Nio处理器的选择操作，实际通过内部的选择器完成。
+    @Override
+    protected boolean isSelectorEmpty() {
+        selectorLock.readLock().lock();
+        
+        try {
+            return selector.keys().isEmpty();
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+    @Override
+    protected void wakeup() {
+        wakeupCalled.getAndSet(true);
+        selectorLock.readLock().lock();
+        
+        try {
+            selector.wakeup();
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+    @Override
+    protected Iterator<NioSession> allSessions() {
+        selectorLock.readLock().lock();
+        
+        try {
+            return new IoSessionIterator(selector.keys());
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+    @SuppressWarnings("synthetic-access")
+    @Override
+    protected Iterator<NioSession> selectedSessions() {
+        return new IoSessionIterator(selector.selectedKeys());
+    }
+ 
+   //初始化会话，主要是配置会话通道为非阻塞模式，注册会话通道读事件到选择器
+    @Override
+    protected void init(NioSession session) throws Exception {
+        SelectableChannel ch = (SelectableChannel) session.getChannel();
+        ch.configureBlocking(false);
+        selectorLock.readLock().lock();
+        
+        try {
+            session.setSelectionKey(ch.register(selector, SelectionKey.OP_READ, session));
+        } finally {
+            selectorLock.readLock().unlock();
+        }
+    }
+    
+    @Override
+    //关闭会话关联的字节通道及选择key
+    protected void destroy(NioSession session) throws Exception {
+        ByteChannel ch = session.getChannel();
+        SelectionKey key = session.getSelectionKey();
+        if (key != null) {
+            key.cancel();
+        }
+        if ( ch.isOpen() ) {
+            ch.close();
+        }
+    }
+再来看注册新选择器
+    /**
+     * In the case we are using the java select() method, this method is used to
+     * trash the buggy selector and create a new one, registering all the
+     * sockets on it.
+     */
+    @Override
+    protected void registerNewSelector() throws IOException {
+        selectorLock.writeLock().lock();
+        
+        try {
+	    //获取选择器选择key集合
+            Set<SelectionKey> keys = selector.keys();
+            Selector newSelector;
+	    //创建一个新的选择器
+            // Open a new selector
+            if (selectorProvider == null) {
+                newSelector = Selector.open();
+            } else {
+                newSelector = selectorProvider.openSelector();
+            }
+            //注册旧选择器的选择key关联的会话，通道，及通道兴趣事件集到新的选择器。
+            // Loop on all the registered keys, and register them on the new selector
+            for (SelectionKey key : keys) {
+                SelectableChannel ch = key.channel();
+
+                // Don't forget to attache the session, and back !
+                NioSession session = (NioSession) key.attachment();
+                SelectionKey newKey = ch.register(newSelector, key.interestOps(), session);
+                session.setSelectionKey(newKey);
+            }
+
+            // Now we can close the old selector and switch it
+            selector.close();
+            selector = newSelector;
+        } finally {
+            selectorLock.writeLock().unlock();
+        }
+
+    }
+从上可以看着注册新选择器，主要是注册旧选择器的选择key（集合）关联的会话，通道，及通道兴趣事件集到新的选择器；
+会话时附加在通道选择key的Attachment上。
+再看其他操作
+ /**
+ * {@inheritDoc}
+ */
+@Override
+//判断处理器是否关闭，主要是看注册到选择器的选择key关联的通道是否有断开连接，
+//有一个断开连接，则处理器断开连接
+protected boolean isBrokenConnection() throws IOException {
+    // A flag set to true if we find a broken session
+    boolean brokenSession = false;
+    selectorLock.readLock().lock();
+    try {
+        // Get the selector keys
+        Set<SelectionKey> keys = selector.keys();
+        // Loop on all the keys to see if one of them
+        // has a closed channel
+        for (SelectionKey key : keys) {
+            SelectableChannel channel = key.channel();
+            if (((channel instanceof DatagramChannel) && !((DatagramChannel) channel).isConnected())
+                    || ((channel instanceof SocketChannel) && !((SocketChannel) channel).isConnected())) {
+                // The channel is not connected anymore. Cancel
+                // the associated key then.
+                key.cancel();
+
+                // Set the flag to true to avoid a selector switch
+                brokenSession = true;
+            }
+        }
+    } finally {
+        selectorLock.readLock().unlock();
+    }
+    return brokenSession;
+}
+
+/**
+ * {@inheritDoc}
+ 如果会话关联的选择key有效，即会话状态为打开，为null则正在打开，否则会话关闭。
+ */
+@Override
+protected SessionState getState(NioSession session) {
+    SelectionKey key = session.getSelectionKey();
+    if (key == null) {
+        // The channel is not yet registred to a selector
+        return SessionState.OPENING;
+    }
+    if (key.isValid()) {
+        // The session is opened
+        return SessionState.OPENED;
+    } else {
+        // The session still as to be closed
+        return SessionState.CLOSING;
+    }
+}
+//会话是否可读
+@Override
+protected boolean isReadable(NioSession session) {
+    SelectionKey key = session.getSelectionKey();
+    return (key != null) && key.isValid() && key.isReadable();
+}
+//会话是否可写
+@Override
+protected boolean isWritable(NioSession session) {
+    SelectionKey key = session.getSelectionKey();
+    return (key != null) && key.isValid() && key.isWritable();
+}
+//会话是否可读
+@Override
+protected boolean isInterestedInRead(NioSession session) {
+    SelectionKey key = session.getSelectionKey();
+    return (key != null) && key.isValid() && ((key.interestOps() & SelectionKey.OP_READ) != 0);
+}
+//是否关注写事件
+@Override
+protected boolean isInterestedInWrite(NioSession session) {
+    SelectionKey key = session.getSelectionKey();
+
+    return (key != null) && key.isValid() && ((key.interestOps() & SelectionKey.OP_WRITE) != 0);
+}
+/**
+ * {@inheritDoc}
+ 设置读事件为会话兴趣事件
+ */
+@Override
+protected void setInterestedInRead(NioSession session, boolean isInterested) throws Exception {
+    SelectionKey key = session.getSelectionKey();
+
+    if ((key == null) || !key.isValid()) {
+        return;
+    }
+    int oldInterestOps = key.interestOps();
+    int newInterestOps = oldInterestOps;
+    if (isInterested) {
+        newInterestOps |= SelectionKey.OP_READ;
+    } else {
+        newInterestOps &= ~SelectionKey.OP_READ;
+    }
+    if (oldInterestOps != newInterestOps) {
+        key.interestOps(newInterestOps);
+    }
+}
+
+/**
+ * {@inheritDoc}
+ 设置写事件为会话兴趣事件
+ */
+@Override
+protected void setInterestedInWrite(NioSession session, boolean isInterested) throws Exception {
+    SelectionKey key = session.getSelectionKey();
+
+    if ((key == null) || !key.isValid()) {
+        return;
+    }
+    int newInterestOps = key.interestOps();
+    if (isInterested) {
+        newInterestOps |= SelectionKey.OP_WRITE;
+    } else {
+        newInterestOps &= ~SelectionKey.OP_WRITE;
+    }
+    key.interestOps(newInterestOps);
+}
+再来看读写操作
+@Override
+protected int read(NioSession session, IoBuffer buf) throws Exception {
+    ByteChannel channel = session.getChannel();
+    //委托给会话关联通道
+    return channel.read(buf.buf());
+}
+
+@Override
+//委托给会话关联通道
+protected int write(NioSession session, IoBuffer buf, int length) throws IOException {
+    if (buf.remaining() <= length) {
+        return session.getChannel().write(buf.buf());
+    }
+    int oldLimit = buf.limit();
+    buf.limit(buf.position() + length);
+    try {
+        return session.getChannel().write(buf.buf());
+    } finally {
+        buf.limit(oldLimit);
+    }
+}
+@Override
+protected int transferFile(NioSession session, FileRegion region, int length) throws Exception {
+    try {
+        return (int) region.getFileChannel().transferTo(region.getPosition(), length, session.getChannel());
+    } catch (IOException e) {
+        // Check to see if the IOException is being thrown due to
+        // http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=5103988
+        String message = e.getMessage();
+        if ((message != null) && message.contains("temporarily unavailable")) {
+            return 0;
+        }
+        throw e;
+    }
+}
+从上面来看，处理器处理会话读写操作，主要是通过会话关联的通道完成。
+@Override
+protected void doDispose() throws Exception {
+    selectorLock.readLock().lock();
+    try {
+        selector.close();//关闭选择器
+    } finally {
+        selectorLock.readLock().unlock();
+    }
+}
+下面我们贴出NioSession的代码，以便理解Nio处理器，
+public abstract class NioSession extends AbstractIoSession
+{
+    protected final IoProcessor processor;//Io处理器
+    protected final Channel channel;//选择通道
+    private SelectionKey key;//选择key
+    private final IoFilterChain filterChain = new DefaultIoFilterChain(this);//过滤链
+    protected NioSession(IoProcessor processor, IoService service, Channel channel)
+    {
+        super(service);
+        this.channel = channel;
+        this.processor = processor;
+    }
+    abstract ByteChannel getChannel();
+    public IoFilterChain getFilterChain()
+    {
+        return filterChain;
+    }
+    SelectionKey getSelectionKey()
+    {
+        return key;
+    }
+    void setSelectionKey(SelectionKey key)
+    {
+        this.key = key;
+    }
+    public IoProcessor getProcessor()
+    {
+        return processor;
+    }
+    public final boolean isActive()
+    {
+        return key.isValid();
+    }
+}
+从NioSession的定义可以看出，Nio会话关联一个Io处理器IoProcessor，选择通道Channel，选择key（SelectionKey）
+和一个过滤链IoFilterChain。其实个人感觉NioProcessor和NioSession我们可以理解为Java Nio中选择器Selector与选择通道Channel。
+总结：
+NioProcessor内部有一个选择器Selector，一个可重入读写锁用于控制选择器相关的操作，构造主要是初始化线程执行器和选择器。
+Nio处理器的选择操作，唤醒等操作，实际通过内部的选择器完成。
+初始化会话，主要是配置会话通道为非阻塞模式，注册会话通道读事件到选择器。
+注册新选择器，主要是注册旧选择器的选择key（集合）关联的会话，通道，及通道兴趣事件集到新的选择器；
+会话时附加在通道选择key的Attachment上。
+处理器处理会话读写操作，主要是通过会话关联的通道完成。
+关闭会话主要是关闭会话关联的字节通道和取消会话关联选择key。
+
+附：
+//IoSessionIterator
+  /**
+     * An encapsulating iterator around the {@link Selector#selectedKeys()} or
+     * the {@link Selector#keys()} iterator;
+     */
+    protected static class IoSessionIterator<NioSession> implements Iterator<NioSession> {
+        private final Iterator<SelectionKey> iterator;
+
+        /**
+         * Create this iterator as a wrapper on top of the selectionKey Set.
+         *
+         * @param keys
+         *            The set of selected sessions
+         */
+        private IoSessionIterator(Set<SelectionKey> keys) {
+            iterator = keys.iterator();
+        }
+
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public boolean hasNext() {
+            return iterator.hasNext();
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public NioSession next() {
+            SelectionKey key = iterator.next();
+            
+            return (NioSession) key.attachment();
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void remove() {
+            iterator.remove();
+        }
+    }
+}

@@ -1,0 +1,212 @@
+MINA 编解码器实例：[url]http://donald-draper.iteye.com/blog/2375317[/url]
+Mina Socket与报文过滤链：[url]http://donald-draper.iteye.com/blog/2376440[/url]
+Mina 协议编解码过滤器一（协议编解码工厂、协议编码器）：
+[url]http://donald-draper.iteye.com/blog/2376663[/url]
+Mina 协议编解码过滤器二（协议解码器）：
+[url]http://donald-draper.iteye.com/blog/2376679[/url]
+Mina 队列Queue：[url]http://donald-draper.iteye.com/blog/2376712[/url]
+Mina 协议编解码过滤器三（会话write与消息接收过滤）：
+[url]http://donald-draper.iteye.com/blog/2376818[/url]
+前面我们看了一下协议编解码器，在编解码器实例这篇文章中，用的编码器不是ProtocolDecoderAdapter
+而是CumulativeProtocolDecoder，今天我们就来看一下可累积性协议解码器：
+/**
+ * A {@link ProtocolDecoder} that cumulates the content of received
+ * buffers to a <em>cumulative buffer</em> to help users implement decoders.
+ * <p>CumulativeProtocolDecoder累计接收的数据到一个累计性的buffer中，以帮助使用解码数据。
+ * If the received {@link ByteBuffer} is only a part of a message.
+ * decoders should cumulate received buffers to make a message complete or
+ * to postpone decoding until more buffers arrive.
+ * <p>如果接收的数据只是消息的一部分，解码器应该累计接收的buffer，直到消息传输完成，
+ 或者退出解码，直到更多的buffer到达。
+ * Here is an example decoder that decodes CRLF terminated lines into 
+ * <code>Command</code> objects:
+ * <pre>这里是一个使用CRLF为行结束符的解码器
+ * public class CRLFTerminatedCommandLineDecoder 
+ *         extends CumulativeProtocolDecoder {
+ * 
+ *     private Command parseCommand(ByteBuffer in) {
+ *         // Convert the bytes in the specified buffer to a 
+ *         // Command object.
+ *         ...
+ *     }
+ * 
+ *     protected boolean doDecode(IoSession session, ByteBuffer in,
+ *                                ProtocolDecoderOutput out) 
+ *             throws Exception {
+ * 
+ *         // Remember the initial position.
+ *         int start = in.position();
+ *        
+ *         // Now find the first CRLF in the buffer.
+ *         byte previous = 0;
+ *         while (in.hasRemaining()) {
+ *             byte current = in.get();
+ *            
+ *             if (previous == '\r' && current == '\n') {
+ *                 // Remember the current position and limit.
+                   //记录当前位置和limit
+ *                 int position = in.position();
+ *                 int limit = in.limit();
+ *                 try {
+ *                     in.position(start);
+ *                     in.limit(position);
+ *                     // The bytes between in.position() and in.limit()
+ *                     // now contain a full CRLF terminated line.解析命令
+ *                     out.write(parseCommand(in.slice()));
+ *                 } finally {
+ *                     // Set the position to point right after the
+ *                     // detected line and set the limit to the old
+ *                     // one.解码后恢复position，limit位置
+ *                     in.position(position);
+ *                     in.limit(limit);
+ *                 }
+ *                 // Decoded one line; CumulativeProtocolDecoder will  
+ *                 // call me again until I return false. So just 
+ *                 // return true until there are no more lines in the 
+ *                 // buffer.解码一行数据；累计协议解码再次调用doDecode，直到doDecode返回false；
+                   //则返回true，直到在buffer中，不再有一行数据，
+ *                 return true;
+ *             }
+ *            
+ *             previous = current;
+ *         }
+ *         如果在buffer中，没有发现换行符，则重置position位置为start
+ *         // Could not find CRLF in the buffer. Reset the initial 
+ *         // position to the one we recorded above.
+ *         in.position(start);
+ *        
+ *         return false;
+ *     }
+ * }
+ * </pre>
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public abstract class CumulativeProtocolDecoder extends ProtocolDecoderAdapter {
+
+    private static final String BUFFER = CumulativeProtocolDecoder.class
+            .getName()
+            + ".Buffer";
+
+    /**
+     * Creates a new instance.
+     */
+    protected CumulativeProtocolDecoder() {
+    }
+
+    /**
+     * Cumulates content of <tt>in</tt> into internal buffer and forwards
+     * decoding request to {@link #doDecode(IoSession, ByteBuffer, ProtocolDecoderOutput)}.
+     * <tt>doDecode()</tt> is invoked repeatedly until it returns <tt>false</tt>
+     * and the cumulative buffer is compacted after decoding ends.
+     * 累计数据放在内部buffer in中，转发解码请求到#doDecode方法，在#doDecode方法返回false之前，
+     重复调用#doDecode方法解码内部in缓存数据，在每次解码结束，如果buffer中还有没解码完的数据，则
+     压缩可累计buffer。
+     * @throws IllegalStateException if your <tt>doDecode()</tt> returned
+     *                               <tt>true</tt> not consuming the cumulative buffer.
+     */
+    public void decode(IoSession session, ByteBuffer in,
+            ProtocolDecoderOutput out) throws Exception {
+        boolean usingSessionBuffer = true;//是否开启会话缓存buffer
+        ByteBuffer buf = (ByteBuffer) session.getAttribute(BUFFER);//从会话获取属性BUFFER对应的buffer
+        // If we have a session buffer, append data to that; otherwise
+        // use the buffer read from the network directly.
+        if (buf != null) {
+	    //如果会话缓存buffer不为null，则将当前in（ByteBuffer）的内容放到会话缓存buffer中
+            buf.put(in);
+            buf.flip();//读写模式切换
+        } else { 
+	    //否则直接使用当前in（ByteBuffer），将是否开启会话缓存buffer，置为否。
+            buf = in;
+            usingSessionBuffer = false;
+        }
+
+        for (;;) {
+            int oldPos = buf.position();
+	    //调用doDecode解码buffer
+            boolean decoded = doDecode(session, buf, out);
+            if (decoded) {
+	        //解码成功
+                if (buf.position() == oldPos) {
+                    throw new IllegalStateException(
+                            "doDecode() can't return true when buffer is not consumed.");
+                }
+                if (!buf.hasRemaining()) {
+		    //如果buffer中还有数据没解码，则跳出当前循环
+                    break;
+                }
+            } else {
+	        //否则继续尝试解码
+                break;
+            }
+        }
+        
+        // if there is any data left that cannot be decoded, we store
+        // it in a buffer in the session and next time this decoder is
+        // invoked the session buffer gets appended to
+	//如果buffer中的数据没有解码完，则存储在会话中，以便下次解码器，将遗留的数据与
+	//接收的数据一起解码
+        if (buf.hasRemaining()) {
+            if (usingSessionBuffer)
+	        //使用缓存，则压缩buffer，将为解码的数据移到buffer的头部
+                buf.compact();
+            else
+	        //否则存储在会话中
+                storeRemainingInSession(buf, session);
+        } else {
+	    //如果buffer中没有数据，且开启会话缓存buffer，则从会话中移除属性BUFFER，
+	    //并释放对应的buffer空间
+            if (usingSessionBuffer)
+                removeSessionBuffer(session);
+        }
+    }
+
+    /**
+     * Implement this method to consume the specified cumulative buffer and
+     * decode its content into message(s). 
+     *  实现此方法，用于消费累积性buffer中的数据，解码数据为上层消息对象。
+     * @param in the cumulative buffer
+     * @return <tt>true</tt> if and only if there's more to decode in the buffer
+     *         and you want to have <tt>doDecode</tt> method invoked again.
+     *         Return <tt>false</tt> if remaining data is not enough to decode,
+     *         then this method will be invoked again when more data is cumulated.
+     * @throws Exception if cannot decode <tt>in</tt>.
+     //待子类扩展
+     */
+    protected abstract boolean doDecode(IoSession session, ByteBuffer in,
+            ProtocolDecoderOutput out) throws Exception;
+
+    /**
+     * Releases the cumulative buffer used by the specified <tt>session</tt>.
+     * Please don't forget to call <tt>super.dispose( session )</tt> when
+     * you override this method.
+     释放会话的可累计性缓存buffer，当重写此方法，不要忘了调用super.dispose( session )。
+     */
+    public void dispose(IoSession session) throws Exception {
+        removeSessionBuffer(session);
+    }
+    //从会话中移除属性BUFFER，并释放对应的buffer空间
+    private void removeSessionBuffer(IoSession session) {
+        ByteBuffer buf = (ByteBuffer) session.removeAttribute(BUFFER);
+        if (buf != null) {
+            buf.release();
+        }
+    }
+   //将buffer存储在会话属性BUFFER中
+    private void storeRemainingInSession(ByteBuffer buf, IoSession session) {
+        ByteBuffer remainingBuf = ByteBuffer.allocate(buf.capacity());
+        remainingBuf.setAutoExpand(true);
+        remainingBuf.order(buf.order());
+        remainingBuf.put(buf);
+        session.setAttribute(BUFFER, remainingBuf);
+    }
+}
+总结：
+累积性协议解码器decode方法，首先从会话获取属性BUFFER对应的buffer，如果会话缓存buffer不为null，
+则将当前in（ByteBuffer）的内容放到会话缓存buffer中；//否则直接使用当前in（ByteBuffer），
+将是否开启会话缓存buffer，置为否；循环尝试使用doDecode方法解码数据，直到doDecode方法返回false，如果doDecode方法
+返回true，则继续调用doDecode方法解码数据，如果在一次解码数据返回true，但buffer中还有数据，则根据
+是否开启会话缓存buffer决定将buffer数据进行压缩还是存储在会话中；如果在一次解码数据返回true，但buffer中没有数据，
+则从会话中移除属性BUFFER，并释放对应的buffer空间。doDecode方法放抽象方法待类型实现。CumulativeProtocolDecoder
+实现可累性方法主要是通过将buffer存储在会话中，以实现接收数据的可累计性。

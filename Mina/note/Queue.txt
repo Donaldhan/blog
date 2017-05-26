@@ -1,0 +1,282 @@
+Mina 协议编解码过滤器一（协议编解码工厂、协议编码器）：
+[url]http://donald-draper.iteye.com/blog/2376663[/url]
+Mina 协议编解码过滤器二（协议解码器）：
+[url]http://donald-draper.iteye.com/blog/2376679[/url]
+前面这两篇文章中，都涉及到Queue，我们今天就来看一Queue是如何工作的。
+/**
+ * A unbounded circular queue.
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public class Queue extends AbstractList implements List, Serializable {
+    private static final int DEFAULT_CAPACITY = 4;//默认容量
+    private static final int DEFAULT_MASK = DEFAULT_CAPACITY - 1;//默认掩码
+    private Object[] items;//存放队列元素数组
+    private int mask;
+    private int first = 0;//队头
+    private int last = 0;//队尾
+    private int size = 0;//队列实际容量
+    /**
+     * Construct a new, empty queue.
+     构造空队列
+     */
+    public Queue() {
+        items = new Object[DEFAULT_CAPACITY];
+        mask = DEFAULT_MASK;
+    }
+}
+从上来看队列Queue实际上为List，用一个对象数组items存放元素，一个实际容量计数器size，
+一个队头first和一个队尾索引last，默认队列容量为4。
+
+/**
+     * Enqueue into this queue.添加元素到队列
+     */
+    public void push(Object item) {
+        if (item == null) {
+            throw new NullPointerException("item");
+        }
+        ensureCapacity();//确保队列可以存放元素
+        items[last] = item;//存放元素
+        increaseSize();//更新实际容量size，及队尾索引
+    }
+来看ensureCapacity
+ private void ensureCapacity() {
+        //如果队列未满，直接返回
+        if (size < items.length) {
+            return;
+        }
+
+        // expand queue，否则扩容，为原来的两倍
+        final int oldLen = items.length;
+        Object[] tmp = new Object[oldLen * 2];
+        //拷贝原始队列数据到新队列
+        if (first < last) {
+            System.arraycopy(items, first, tmp, 0, last - first);
+        } else {
+            System.arraycopy(items, first, tmp, 0, oldLen - first);
+            System.arraycopy(items, 0, tmp, oldLen - first, last);
+        }
+        first = 0;
+        last = oldLen;
+        items = tmp;
+        mask = tmp.length - 1;
+    }
+//更新队尾，及size
+  private void increaseSize() {
+        last = (last + 1) & mask;
+        size++;
+    }
+再来看出队列
+  /**
+     * Dequeues from this queue.
+     * 
+     * @return <code>null</code>, if this queue is empty or the element is
+     *         really <code>null</code>.
+     */
+    public Object pop() {
+        if (size == 0) {
+            return null;
+        }
+       //返回队头元素，置空原始队头
+        Object ret = items[first];
+        items[first] = null;
+        decreaseSize();//更新size，及队头索引
+        return ret;
+    }
+ private void decreaseSize() {
+        first = (first + 1) & mask;
+        size--;
+    }
+再来看其他操作：
+ /**
+     * Returns the capacity of this queue.返回队列容量
+     */
+    public int capacity() {
+        return items.length;
+    }
+
+    /**
+     * Clears this queue.清空队列
+     */
+    public void clear() {
+        Arrays.fill(items, null);
+        first = 0;
+        last = 0;
+        size = 0;
+    }
+  /**
+     * Returns the first element of the queue.
+     * 返回队头元素
+     * @return <code>null</code>, if the queue is empty, or the element is
+     *         really <code>null</code>.
+     */
+    public Object first() {
+        if (size == 0) {
+            return null;
+        }
+
+        return items[first];
+    }
+    /**
+     * Returns the last element of the queue.
+     * 获取队尾元素
+     * @return <code>null</code>, if the queue is empty, or the element is
+     *         really <code>null</code>.
+     */
+    public Object last() {
+        if (size == 0) {
+            return null;
+        }
+
+        return items[(last + items.length - 1) & mask];
+    }
+     /**
+     * Returns <code>true</code> if the queue is empty.是否为空
+     */
+    public boolean isEmpty() {
+        return (size == 0);
+    }
+
+    /**
+     * Returns the number of elements in the queue.
+     获取队列元素个数
+     */
+    public int size() {
+        return size;
+    }
+    //获取索引对应的队列元素
+    public Object get(int idx) {
+        checkIndex(idx);//检查索引
+        return items[getRealIndex(idx)];
+    }
+    //检查索引
+   private void checkIndex(int idx) {
+        if (idx < 0 || idx >= size) {
+            throw new IndexOutOfBoundsException(String.valueOf(idx));
+        }
+    }
+   //获取实际队列索引
+    private int getRealIndex(int idx) {
+        return (first + idx) & mask;
+    }
+  //////////////////////////////////////////
+    // java.util.List compatibility methods //
+    //////////////////////////////////////////
+    //添加元素到队列
+    public boolean add(Object o) {
+        push(o);
+        return true;
+    }
+   //更新索引对应的元素
+    public Object set(int idx, Object o) {
+        checkIndex(idx);
+
+        int realIdx = getRealIndex(idx);
+        Object old = items[realIdx];
+        items[realIdx] = o;
+        return old;
+    }
+   //添加元素到指定索引
+    public void add(int idx, Object o) {
+         //如果为队列，直接添加
+        if (idx == size) {
+            push(o);
+            return;
+        }
+        //检查索引，确保容量可用
+        checkIndex(idx);
+        ensureCapacity();
+        //获取实际索引
+        int realIdx = getRealIndex(idx);
+
+        // Make a room for a new element.
+	//下面这个操作，比较耗时，将realIdx索引对应的前后元素重新移动队列中，把索引
+	//对应的位置腾出
+        if (first < last) {
+            System
+                    .arraycopy(items, realIdx, items, realIdx + 1, last
+                            - realIdx);
+        } else {
+            if (realIdx >= first) {
+                System.arraycopy(items, 0, items, 1, last);
+                items[0] = items[items.length - 1];
+                System.arraycopy(items, realIdx, items, realIdx + 1,
+                        items.length - realIdx - 1);
+            } else {
+                System.arraycopy(items, realIdx, items, realIdx + 1, last
+                        - realIdx);
+            }
+        }
+        items[realIdx] = o;
+        increaseSize();//更新size，及队尾last
+    }
+   //移除指定索引对应的元素
+    public Object remove(int idx) {
+        if (idx == 0) {
+            return pop();
+        }
+
+        checkIndex(idx);
+
+        int realIdx = getRealIndex(idx);
+        Object removed = items[realIdx];
+
+        // Remove a room for the removed element.
+         //下面这个操作，比较耗时，将realIdx索引对应的前后元素重新移动队列中，把索引
+	//对应的位置清空，即占有掉
+        if (first < last) {
+            System.arraycopy(items, first, items, first + 1, realIdx - first);
+        } else {
+            if (realIdx >= first) {
+                System.arraycopy(items, first, items, first + 1, realIdx
+                        - first);
+            } else {
+                System.arraycopy(items, 0, items, 1, realIdx);
+                items[0] = items[items.length - 1];
+                System.arraycopy(items, first, items, first + 1, items.length
+                        - first - 1);
+            }
+        }
+
+        items[first] = null;
+        decreaseSize();//更新size，及队头last
+
+        return removed;
+    }
+
+    ///////////////////////////////////////////
+    // java.util.Queue compatibility methods //
+    ///////////////////////////////////////////
+    //添加元素
+    public boolean offer(Object o) {
+        push(o);
+        return true;
+    }
+    //获取队头元素
+    public Object poll() {
+        return pop();
+    }
+    //移除队头元素
+    public Object remove() {
+        if (size == 0) {
+            throw new NoSuchElementException();
+        }
+        return pop();
+    }
+    //查看队列是否有元素
+    public Object peek() {
+        return first();
+    }
+    //返回队列元素
+    public Object element() {
+        if (size == 0) {
+            throw new NoSuchElementException();
+        }
+        return first();
+    }
+总结：
+队列Queue实际上为List，用一个对象数组items存放元素，一个实际容量计数器size，
+一个队头first和一个队尾索引last，默认队列容量为4。
+push元素时，先判断队列是否已满，如果已满，则扩容队列为原来的两倍。
+Queue实际为具有队列特性的List。Queue可以随机地访问队列索引。

@@ -1,0 +1,631 @@
+MINA TCP简单通信实例：[url]http://donald-draper.iteye.com/blog/2375297[/url]
+MINA 编解码器实例：[url]http://donald-draper.iteye.com/blog/2375317[/url]
+MINA 多路分离解码器实例：[url]http://donald-draper.iteye.com/blog/2375324[/url]
+在上面的测试实例中我们，看到Mina使用DefaultIoFilterChainBuilder来管理过滤器，今天我们就来看一下
+mina默认过滤链管理器。
+我们从获取默认过滤链管理器开始：
+IoAcceptor acceptor=new NioSocketAcceptor();
+...
+ //配置过滤器
+DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = acceptor.getFilterChain();
+LoggingFilter loggingFilter = new LoggingFilter();
+defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+ //NioSocketAcceptor
+ public NioSocketAcceptor()
+    {
+        super(new DefaultSocketSessionConfig(), org/apache/mina/transport/socket/nio/NioProcessor);
+        selectorProvider = null;
+        ((DefaultSocketSessionConfig)getSessionConfig()).init(this);
+    }
+//AbstractPollingIoAcceptor
+  protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Class processorClass)
+    {
+        this(sessionConfig, null, ((IoProcessor) (new SimpleIoProcessorPool(processorClass))), true, null);
+    }
+//AbstractPollingIoAcceptor
+   private AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Executor executor, IoProcessor processor, boolean createdProcessor, SelectorProvider selectorProvider)
+    {
+        super(sessionConfig, executor);
+	...
+    }
+//AbstractIoAcceptor
+  protected AbstractIoAcceptor(IoSessionConfig sessionConfig, Executor executor)
+    {
+        super(sessionConfig, executor);
+	...
+   }
+//AbstractIoService
+public abstract class AbstractIoService
+    implements IoService
+{
+    private static final AtomicInteger id = new AtomicInteger();
+    private final String threadName;
+    private final Executor executor;//线程池执行器
+    private final boolean createdExecutor;//是否创建了线程池
+    private IoHandler handler;//Io处理器
+    protected final IoSessionConfig sessionConfig;//Io会话配置
+    //Io服务监听器，这里默认创建一个内部的IoServiceListener，则个我们在后面再看
+    private final IoServiceListener serviceActivationListener = new IoServiceListener() {
+    ...
+    }
+    private IoFilterChainBuilder filterChainBuilder;//过滤器链
+    private IoSessionDataStructureFactory sessionDataStructureFactory;//会话属性管理器
+    private final IoServiceListenerSupport listeners = new IoServiceListenerSupport(this);
+    protected final Object disposalLock = new Object();
+    private volatile boolean disposing;
+    private volatile boolean disposed;
+    private IoServiceStatistics stats;
+    //上面的变量只是暂时的理解，如果以后发现错误，在更正
+    protected AbstractIoService(IoSessionConfig sessionConfig, Executor executor)
+    {
+        ...
+        filterChainBuilder = new DefaultIoFilterChainBuilder();//默认过滤器链
+        listeners.add(serviceActivationListener);
+        this.sessionConfig = sessionConfig;//初始化Session配置
+        ExceptionMonitor.getInstance();
+        if(executor == null)
+        {
+	    //如果执行器为null，通过执行器Executors，创建一个CachedThreadPool
+            this.executor = Executors.newCachedThreadPool();
+            createdExecutor = true;
+        } else
+        {
+            this.executor = executor;
+            createdExecutor = false;
+        }
+	...
+    }
+     public final void setFilterChainBuilder(IoFilterChainBuilder builder)
+    {
+        if(builder == null)
+            builder = new DefaultIoFilterChainBuilder();
+        filterChainBuilder = builder;
+    }
+    public final DefaultIoFilterChainBuilder getFilterChain()
+    {
+        if(filterChainBuilder instanceof DefaultIoFilterChainBuilder)
+            return (DefaultIoFilterChainBuilder)filterChainBuilder;
+        else
+            throw new IllegalStateException("Current filter chain builder is not a DefaultIoFilterChainBuilder.");
+    }
+}
+从上面来看，默认的过滤链管理器DefaultIoFilterChainBuilder为AbstractIoService的filterChainBuilder（IoFilterChainBuilder）。
+先来看一下IoFilterChainBuilder接口的定义
+/**
+ * An interface that builds {@link IoFilterChain} in predefined way
+ * when {@link IoSession} is created.  You can extract common filter chain
+ * modification logic to this interface.  For example, to add a filter
+ * to the chain,
+在IoSession中创建时，IoFilterChainBuilder预先构建过滤器链IoFilterChain。
+你可以修改过滤链的逻辑。比如添加过滤器到过滤链。
+ * <pre>
+ * public class MyFilterChainBuilder implements IoFilterChainBuilder {
+ *     public void buildFilterChain( IoFilterChain chain ) throws Exception {
+ *         chain.addLast( "myFilter", new MyFilter() );
+ *     }
+ * }
+ * </pre>
+ *
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ */
+public interface IoFilterChainBuilder
+{
+    public abstract void buildFilterChain(IoFilterChain iofilterchain)
+        throws Exception;
+    //空过滤链
+    public static final IoFilterChainBuilder NOOP = new IoFilterChainBuilder() {
+
+        public void buildFilterChain(IoFilterChain iofilterchain)
+            throws Exception
+        {
+        }
+        public String toString()
+        {
+            return "NOOP";
+        }
+    };
+}
+
+再来看默认过滤链管理器DefaultIoFilterChainBuilder，在往下看之前，先看一下IoFilterChain：
+//IoFilterChain
+/**
+ * A container of {@link IoFilter}s that forwards {@link IoHandler} events
+ * to the consisting filters and terminal {@link IoHandler} sequentially.
+ * Every {@link IoSession} has its own {@link IoFilterChain} (1-to-1 relationship). 
+ * IoFilterChain是IoFilter的容器，用于转发IoHandler的事件到包含过滤器和Io处理器的链。
+ (IoService->IoProcessor->IoFilter->IoFilter->...->IoHandler)
+ */
+public interface IoFilterChain
+{
+    
+    /**
+     * Represents a name-filter pair that an {@link IoFilterChain} contains.
+     * *IoFilterChain包含的IOFilter对
+     * @author The Apache Directory Project (mina-dev@directory.apache.org)
+     */
+    public interface Entry {
+        /**
+         * Returns the name of the filter.
+	 过滤器名
+         */
+        String getName();
+
+        /**
+         * Returns the filter.
+	 当前过滤器
+         */
+        IoFilter getFilter();
+
+        /**
+         * Returns the {@link NextFilter} of the filter.
+	 过滤器后继
+         * 
+         * @throws IllegalStateException if the {@link NextFilter} is not available
+         */
+        NextFilter getNextFilter();
+    }
+    public abstract IoSession getSession();//
+    /**
+     * Returns the parent {@link IoSession} of this chain.
+     返回过滤链依附的Io会话
+     * @return {@link IoSession}
+     */
+    IoSession getSession();
+
+    /**
+     * Returns the {@link Entry} with the specified <tt>name</tt> in this chain.
+     * @return <tt>null</tt> if there's no such name in this chain
+     根据过滤器name获取Entry
+     */
+    Entry getEntry(String name);
+
+    /**
+     * Returns the {@link IoFilter} with the specified <tt>name</tt> in this chain.
+     * @return <tt>null</tt> if there's no such name in this chain
+     根据过滤器name获取IoFilter
+     */
+    IoFilter get(String name);
+
+    /**
+     * Returns the {@link NextFilter} of the {@link IoFilter} with the
+     * specified <tt>name</tt> in this chain.
+     * @return <tt>null</tt> if there's no such name in this chain
+     根据过滤器name获取IoFilter的后继过滤器NextFilter
+     */
+    NextFilter getNextFilter(String name);
+
+    /**
+     * Returns the list of all {@link Entry}s this chain contains.
+     返回所有Entry(添加顺序)
+     */
+    List getAll();
+
+    /**
+     * Returns the reversed list of all {@link Entry}s this chain contains.
+     获取所有Entry倒序（LIFO）
+     */
+    List getAllReversed();
+
+    /**
+     * Returns <tt>true</tt> if this chain contains an {@link IoFilter} with the
+     * specified <tt>name</tt>.
+     判断是否包含name对应的IoFilter
+     */
+    boolean contains(String name);
+
+    /**
+     * Returns <tt>true</tt> if this chain contains the specified <tt>filter</tt>.
+     判断是否包含IoFilter类型的实例
+     */
+    boolean contains(IoFilter filter);
+
+    /**
+     * Returns <tt>true</tt> if this chain contains an {@link IoFilter} of the
+     * specified <tt>filterType</tt>.
+     判断是否包含Class类型的过滤器
+     */
+    boolean contains(Class filterType);
+
+    /**
+     * Adds the specified filter with the specified name at the beginning of this chain.
+     * @throws IoFilterLifeCycleException
+     *             if {@link IoFilter#onPostAdd(IoFilterChain, String, NextFilter)} or
+     *             {@link IoFilter#init()} throws an exception.
+     添加过滤器到过滤链的头部
+     */
+    void addFirst(String name, IoFilter filter);
+
+    /**
+     * Adds the specified filter with the specified name at the end of this chain.
+     * @throws IoFilterLifeCycleException
+     *             if {@link IoFilter#onPostAdd(IoFilterChain, String, NextFilter)} or
+     *             {@link IoFilter#init()} throws an exception.
+      添加过滤器到过滤链的尾部
+     */
+    void addLast(String name, IoFilter filter);
+
+    /**
+     * Adds the specified filter with the specified name just before the filter whose name is
+     * <code>baseName</code> in this chain.
+     * @throws IoFilterLifeCycleException
+     *             if {@link IoFilter#onPostAdd(IoFilterChain, String, NextFilter)} or
+     *             {@link IoFilter#init()} throws an exception.
+      添加过滤器到baseName过滤器的前面
+     */
+    void addBefore(String baseName, String name, IoFilter filter);
+
+    /**
+     * Adds the specified filter with the specified name just after the filter whose name is
+     * <code>baseName</code> in this chain.
+     * @throws IoFilterLifeCycleException
+     *             if {@link IoFilter#onPostAdd(IoFilterChain, String, NextFilter)} or
+     *             {@link IoFilter#init()} throws an exception.
+     添加过滤器到baseName过滤器的后面
+     */
+    void addAfter(String baseName, String name, IoFilter filter);
+
+    /**
+     * Removes the filter with the specified name from this chain.
+     * @throws IoFilterLifeCycleException
+     *             if {@link IoFilter#onPostRemove(IoFilterChain, String, NextFilter)} or
+     *             {@link IoFilter#destroy()} throws an exception.
+     移除name对应的过滤器
+     */
+    IoFilter remove(String name);
+
+    /**
+     * Removes all filters added to this chain.清空过滤器链
+     * @throws Exception if {@link IoFilter#onPostRemove(IoFilterChain, String, NextFilter)} thrown an exception.
+     */
+    void clear() throws Exception;
+
+    /**
+     * Fires a {@link IoHandler#sessionCreated(IoSession)} event.  Most users don't need to
+     * call this method at all.  Please use this method only when you implement a new transport
+     * or fire a virtual event.
+     通知IoHandler#sessionCreated创建事件。用户必须要调用这个方法。仅在实现一个新的transport或
+     通知一个虚拟事件时，才调用此方法。
+     */
+    public void fireSessionCreated(IoSession session);
+
+    /**
+     * Fires a {@link IoHandler#sessionOpened(IoSession)} event.  Most users don't need to call
+     * this method at all.  Please use this method only when you implement a new transport or
+     * fire a virtual event.
+     */
+    public void fireSessionOpened(IoSession session);
+
+    /**
+     * Fires a {@link IoHandler#sessionClosed(IoSession)} event.  Most users don't need to call
+     * this method at all.  Please use this method only when you implement a new transport or
+     * fire a virtual event.
+     */
+    public void fireSessionClosed(IoSession session);
+
+    /**
+     * Fires a {@link IoHandler#sessionIdle(IoSession, IdleStatus)} event.  Most users don't
+     * need to call this method at all.  Please use this method only when you implement a new
+     * transport or fire a virtual event.
+     */
+    public void fireSessionIdle(IoSession session, IdleStatus status);
+
+    /**
+     * Fires a {@link #fireMessageReceived(IoSession, Object)} event.  Most users don't need to
+     * call this method at all.  Please use this method only when you implement a new transport
+     * or fire a virtual event.
+     */
+    public void fireMessageReceived(IoSession session, Object message);
+
+    /**
+     * Fires a {@link IoHandler#sessionOpened(IoSession)} event.  Most users don't need to call
+     * this method at all.  Please use this method only when you implement a new transport or
+     * fire a virtual event.
+     */
+    public void fireMessageSent(IoSession session, WriteRequest request);
+
+    /**
+     * Fires a {@link IoHandler#exceptionCaught(IoSession, Throwable)} event.  Most users don't
+     * need to call this method at all.  Please use this method only when you implement a new
+     * transport or fire a virtual event.
+     */
+    public void fireExceptionCaught(IoSession session, Throwable cause);
+
+    /**
+     * Fires a {@link IoSession#write(Object)} event.  Most users don't need to call this
+     * method at all.  Please use this method only when you implement a new transport or fire a
+     * virtual event.
+     通知IoSession#write事件
+     */
+    public void fireFilterWrite(IoSession session, WriteRequest writeRequest);
+
+    /**
+     * Fires a {@link IoSession#close()} event.  Most users don't need to call this method at
+     * all.  Please use this method only when you implement a new transport or fire a virtual
+     * event.
+     通知IoSession#close事件
+     */
+    public void fireFilterClose(IoSession session);
+}
+从上面可以看出fireMessage*/exceptionCaught相关方法为触发IoHandler的相关事件,fireFilterWrite/Close触发的是，
+会话的相关事件IoSession#write/close。IoFilterChain用Entry存放过滤器对，即每个过滤器IoFilter关联一个后继过滤器NextFilter。
+/**
+ * The default implementation of {@link IoFilterChainBuilder} which is useful
+ * in most cases.  {@link DefaultIoFilterChainBuilder} has an identical interface
+ * with {@link IoFilter}; it contains a list of {@link IoFilter}s that you can
+ * modify. The {@link IoFilter}s which are added to this builder will be appended
+ * to the {@link IoFilterChain} when {@link #buildFilterChain(IoFilterChain)} is
+ * invoked.
+ DefaultIoFilterChainBuilder为过滤器链构建器IoFilterChainBuilder的默认实现，
+ 在大多数场景下是非常要有的。DefaultIoFilterChainBuilder与过滤器IoFilter具有相同的interface，
+ 包含一个可以修改的过滤器集合。当调用#buildFilterChain方法时，将过滤器集合的过滤器添加到
+ 过滤器链上。
+ * <p>
+ * However, the identical interface doesn't mean that it behaves in an exactly
+ * same way with {@link IoFilterChain}.  {@link DefaultIoFilterChainBuilder}
+ * doesn't manage the life cycle of the {@link IoFilter}s at all, and the
+ * existing {@link IoSession}s won't get affected by the changes in this builder.
+ * {@link IoFilterChainBuilder}s affect only newly created {@link IoSession}s.
+ * 然而统一的interface，不意味着，行为与IoFilterChain一样。DefaultIoFilterChainBuilder
+ 不管理IoFilter的生命周期，改变构建器不为影响依赖的会话。IoFilterChainBuilder只会在会话创建时，
+ 用于构建过滤器链。
+ * <pre>
+ * IoAcceptor acceptor = ...;
+ * DefaultIoFilterChainBuilder builder = acceptor.getFilterChain();
+ * builder.addLast( "myFilter", new MyFilter() );
+ * ...
+ * </pre>
+ *
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public class DefaultIoFilterChainBuilder
+    implements IoFilterChainBuilder
+{
+    //默认日志为slf4j
+    private static final Logger LOGGER = LoggerFactory.getLogger(org/apache/mina/core/filterchain/DefaultIoFilterChainBuilder);
+    private final List entries;//List<DefaultIoFilterChainBuilder.EntryImpl>
+     /**
+     * Creates a new instance with an empty filter list.
+     */
+    public DefaultIoFilterChainBuilder() {
+        //初始化entries为写安全的List
+        entries = new CopyOnWriteArrayList();
+    }
+    //EntryImpl
+     private static class EntryImpl implements Entry {
+        private final String name;
+        private final IoFilter filter;
+        private EntryImpl(String name, IoFilter filter) {
+            if (name == null) {
+                throw new NullPointerException("name");
+            }
+            if (filter == null) {
+                throw new NullPointerException("filter");
+            }
+
+            this.name = name;
+            this.filter = filter;
+        }
+        public String getName() {
+            return name;
+        }
+        public IoFilter getFilter() {
+            return filter;
+        }
+	//默认不支持获取过滤器的后继
+        public NextFilter getNextFilter() {
+            throw new IllegalStateException();
+        }
+        public String toString() {
+            return "(" + getName() + ':' + filter + ')';
+        }
+    }
+     /**
+     * @see IoFilterChain#addFirst(String, IoFilter)
+     添加过滤器到过滤链头部
+     */
+    public synchronized void addFirst(String name, IoFilter filter) {
+        register(0, new EntryImpl(name, filter));
+    }
+    /**
+    添加过滤器到过滤链尾部
+     * @see IoFilterChain#addLast(String, IoFilter)
+     */
+    public synchronized void addLast(String name, IoFilter filter) {
+        register(entries.size(), new EntryImpl(name, filter));
+    }
+    //添加过滤器到过滤链上的指定索引
+    private void register(int index, Entry e) {
+        if (contains(e.getName())) {
+            throw new IllegalArgumentException(
+                    "Other filter is using the same name: " + e.getName());
+        }
+        entries.add(index, e);
+    }
+     /**
+     * @see IoFilterChain#addBefore(String, String, IoFilter)
+     */
+    public synchronized void addBefore(String baseName, String name,
+            IoFilter filter) {
+	 //检查baseName对应的过滤器是否存在
+        checkBaseName(baseName);
+
+        for (ListIterator i = entries.listIterator(); i.hasNext();) {
+            Entry base = (Entry) i.next();
+	     //将name对应的过滤器放在baseName过滤器之前
+            if (base.getName().equals(baseName)) {
+                register(i.previousIndex(), new EntryImpl(name, filter));
+                break;
+            }
+        }
+    }
+
+    /**
+     * @see IoFilterChain#addAfter(String, String, IoFilter)
+     */
+    public synchronized void addAfter(String baseName, String name,
+            IoFilter filter) {
+	//检查baseName对应的过滤器是否存在
+        checkBaseName(baseName);
+        
+        for (ListIterator i = entries.listIterator(); i.hasNext();) {
+            Entry base = (Entry) i.next();
+	    //将name对应的过滤器放在baseName过滤器之后
+            if (base.getName().equals(baseName)) {
+                register(i.nextIndex(), new EntryImpl(name, filter));
+                break;
+            }
+        }
+    }
+    //检查baseName对应的过滤器是否存在
+     private void checkBaseName(String baseName) {
+        if (baseName == null) {
+            throw new NullPointerException("baseName");
+        }
+        
+        if (!contains(baseName)) {
+            throw new IllegalArgumentException("Unknown filter name: "
+                    + baseName);
+        }
+    }
+     /**
+     * @see IoFilterChain#getEntry(String)
+     根据过滤器名获取过滤器Entry
+     */
+    public Entry getEntry(String name) {
+        for (Iterator i = entries.iterator(); i.hasNext(); ) {
+            Entry e = (Entry) i.next();
+            if (e.getName().equals(name)) {
+                return e;
+            }
+        }
+        
+        return null;
+    }
+    /**
+     * @see IoFilterChain#get(String)
+     根据过滤器名获取过滤器IoFilter
+     */
+    public IoFilter get(String name) {
+        Entry e = getEntry(name);
+        if (e == null) {
+            return null;
+        }
+
+        return e.getFilter();
+    }
+     /**
+     * @see IoFilterChain#getAll()
+    获取所有过滤器（正序，添加顺序）
+     */
+    public List getAll() {
+        return new ArrayList(entries);
+    }
+
+    /**
+     * @see IoFilterChain#getAllReversed()
+      获取所有过滤器（反序）
+     */
+    public List getAllReversed() {
+        List result = getAll();
+        Collections.reverse(result);
+        return result;
+    }
+    
+    /**
+     * @see IoFilterChain#contains(String)
+     判断过滤器链中是否包含过滤器名对应的过滤器
+     */
+    public boolean contains(String name) {
+        return getEntry(name) != null;
+    }
+
+    /**
+     * @see IoFilterChain#contains(IoFilter)
+     //判断过滤器链中是否包含过过滤器实例filter
+     */
+    public boolean contains(IoFilter filter) {
+        for (Iterator i = entries.iterator(); i.hasNext();) {
+            Entry e = (Entry) i.next();
+            if (e.getFilter() == filter) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+    /**
+     * @see IoFilterChain#contains(Class)
+     判断过滤器链中是否包含指定类型filterType的过滤器
+     */
+    public boolean contains(Class filterType) {
+        for (Iterator i = entries.iterator(); i.hasNext();) {
+            Entry e = (Entry) i.next();
+            if (filterType.isAssignableFrom(e.getFilter().getClass())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+     /**
+     * @see IoFilterChain#remove(String)
+     移除name对应的过滤器
+     */
+    public synchronized IoFilter remove(String name) {
+        if (name == null) {
+            throw new NullPointerException("name");
+        }
+	//遍历过滤器链找到对应的过滤器移除（List-》ListIterator）
+        for (ListIterator i = entries.listIterator(); i.hasNext();) {
+            Entry e = (Entry) i.next();
+            if (e.getName().equals(name)) {
+                entries.remove(i.previousIndex());
+                return e.getFilter();
+            }
+        }
+
+        throw new IllegalArgumentException("Unknown filter name: " + name);
+    }
+
+    /**
+     * @see IoFilterChain#clear()
+     清空过滤器链
+     */
+    public synchronized void clear() throws Exception {
+        entries.clear();
+    }
+    //根据默认过滤器链构建器的过滤器集合构建过滤器链
+    public void buildFilterChain(IoFilterChain chain) throws Exception {
+        //遍历默认过滤器链构建器的过滤器集合，添加过滤器到过滤链
+        for (Iterator i = entries.iterator(); i.hasNext();) {
+            Entry e = (Entry) i.next();
+            chain.addLast(e.getName(), e.getFilter());
+        }
+    }
+}
+从上可以看出DefaultIoFilterChainBuilder用entries列表（CopyOnWriteArrayList<DefaultIoFilterChainBuilder.EntryImpl>）来管理
+过滤器；添加过滤器，移除过滤器，及判断是否包含过滤器都是依赖于CopyOnWriteArrayList的相关功能。buildFilterChain方法
+是将默认过滤器链构建器的过滤器集合中的过滤器添加到指定的过滤链上IoFilterChain。
+DefaultIoFilterChainBuilder的过滤器EntryImpl
+中的getNextFilter并未有实际作用，即无效，这就说明了DefaultIoFilterChainBuilder只用于在创建会话时，构建过滤器链。
+创建完毕后，对过滤器链构建器的修改不会影响到会话实际的过滤器链IoFilterChain
+（SocketFilterChain,DatagramFilterChain...），这一点我们在后面碰到是再说。
+
+//IoFilterChain
+public abstract class AbstractIoFilterChain implements IoFilterChain
+class SocketFilterChain extends AbstractIoFilterChain 
+class DatagramFilterChain extends AbstractIoFilterChain 
+public class VmPipeFilterChain extends AbstractIoFilterChain 
+
+总结：
+IoFilterChain用Entry存放过滤器对，即每个过滤器IoFilter关联一个后继过滤器NextFilter。我们可以通过滤器名name或
+过滤器实例ioFilter或过滤器类型获取相应的过滤器或过滤器对应的Entry。fireMessage*/exceptionCaught相关方法为
+触发IoHandler的相关事件,fireFilterWrite/Close触发的是，会话的相关事件IoSession#write/close。
+DefaultIoFilterChainBuilder用entries列表（CopyOnWriteArrayList<DefaultIoFilterChainBuilder.EntryImpl>）来管理
+过滤器；添加过滤器，移除过滤器，及判断是否包含过滤器都是依赖于CopyOnWriteArrayList的相关功能。buildFilterChain方法
+是将默认过滤器链构建器的过滤器集合中的过滤器添加到指定的过滤链上IoFilterChain。
+DefaultIoFilterChainBuilder的过滤器EntryImpl中的getNextFilter并未有实际作用，即无效，
+这就说明了DefaultIoFilterChainBuilder只用于在创建会话时，构建过滤器链。
+创建完毕后，对过滤器链构建器的修改不会影响到会话实际的过滤器链IoFilterChain
+（SocketFilterChain,DatagramFilterChain...），这一点我们在后面碰到是再说。

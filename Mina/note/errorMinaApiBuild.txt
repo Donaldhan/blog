@@ -1,0 +1,50 @@
+ Maven依赖包问题解决-could not resolve artifact/Missing artifact：http://donald-draper.iteye.com/blog/2317801
+
+首先从github中直到项目的地址
+https://github.com/apache/mina.git
+
+用eclipse检查的Mina的Maven项目时pom.xml文件出现以下问题：
+
+Failure to transfer org.apache.maven.plugins:maven-surefire-plugin:pom:2.12.4 
+from https://repo.maven.apache.org/maven2 was cached in the local repository, 
+ resolution will not be reattempted until the update interval of central has 
+ elapsed or updates are forced. Original error: Could not transfer artifact 
+ org.apache.maven.plugins:maven-surefire-plugin:pom:2.12.4 from/to central
+ (https://repo.maven.apache.org/maven2): The operation was cancelled.
+问题：无法下载maven-surefire-plugin-2.12.4.jar
+
+
+
+CoreException: Could not get the value for parameter compilerId for plugin execution default-compile: 
+PluginResolutionException: Plugin org.apache.maven.plugins:maven-compiler-plugin:3.1 or
+one of its dependencies could not be resolved: 
+The following artifacts could not be resolved: 
+com.google.collections
+:google-collections:jar:1.0, 
+junit:junit:jar:3.8.2: 
+Failure to transfer com.google.collections:google-collections:jar:1.0 
+from https://repo.maven.apache.org/maven2 was cached in the local repository, 
+resolution will not be reattempted until the update interval of central has elapsed or 
+updates are forced. Original error: Could not transfer artifact com.google.collections:
+google-collections:jar:1.0 from/to central (https://repo.maven.apache.org/maven2): 
+The operation was cancelled.
+问题：org.apache.maven.plugins:maven-compiler-plugin:3.1依赖无法解决，主要是
+com.google.collections:google-collections:jar:1.0, 
+junit:junit:jar:3.8.2:
+这两个包有问题
+
+
+上面两个问题主要是jar包，自动下载失败的原因，可能网络或其他原因：
+解决方式
+1.先删除相应的mvn本地仓库中对应jar包的文件夹的文件；（这个一定要做，里面有记录下载jar失败的本地缓存文件）
+2.到maven中心仓库下载相应的jar包（http://search.maven.org/）;
+3.dos下，进入下载jar的目录下：
+4.执行以下命令
+mvn install:install-file -Dfile=fgoogle-collections-1.0.jar -DgroupId=com.google.collections -DartifactId=google-collections -Dversion=1.0 -Dpackaging=jar  
+mvn install:install-file -Dfile=junit-3.8.2.jar -DgroupId=junit -DartifactId=junit -Dversion=3.8.2 -Dpackaging=jar  
+mvn install:install-file -Dfile=maven-surefire-plugin-2.12.4.jar -DgroupId=org.apache.maven.plugins -DartifactId=maven-surefire-plugin -Dversion=2.12.4 -Dpackaging=jar  
+注意：这里的groupId，artifactId，到maven仓库中jar的对应的pom.xml中找，这个不能错，
+命令的使用，可以查看文章引入链接;
+5.更新Maven项目（maven-》update project）。
+
+

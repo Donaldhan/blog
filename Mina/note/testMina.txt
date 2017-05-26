@@ -1,0 +1,498 @@
+Apache Mina（一）:http://www.cnblogs.com/xuekyo/archive/2013/03/06/2945826.html
+Mina是一个网络通信应用框架，也就是说，它主要是对基于TCP/IP、UDP/IP
+协议栈的通信框架（当然，也可以提供JAVA 对象的序列化服务、虚拟机管道通信服务等），
+Mina 可以帮助我们快速开发高性能、高扩展性的网络通信应用，Mina 提供了事件驱动、异
+步（Mina 的异步IO 默认使用的是JAVA NIO 作为底层支持）操作的编程模型。Mina的相关组件
+IoService，IoProcessor,IoFilter,IoHanler,IoBuffer的含义，可以搜索相关文件，这里不再赘述。
+今天我们来看一个简单的TCP通信实例：
+server：
+package mina.tcp.main;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.filter.codec.textline.LineDelimiter;
+import org.apache.mina.filter.codec.textline.TextLineCodecFactory;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.SocketSessionConfig;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.handler.SimpleServerHandler;
+/**
+ * simple Server-TextLineCodecFactory
+ * @author donald
+ * 2017年5月19日
+ * 上午8:59:37
+ */
+public class SimpleServer {
+	private static final Logger log = LoggerFactory.getLogger(SimpleServer.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	private static final  int readBufferSize = 2048;
+	private static final  int idleTime = 10;
+	private static final Charset charset = Charset.forName("UTF-8");
+	public static void main(String[] args) throws IOException {
+		 IoAcceptor acceptor=new NioSocketAcceptor();
+		 //配置socket会话
+		 SocketSessionConfig socketSessionConfig = (SocketSessionConfig) acceptor.getSessionConfig();
+		 socketSessionConfig.setReadBufferSize(readBufferSize);
+		 socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE,idleTime);
+		 //配置过滤器
+		 DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = acceptor.getFilterChain();
+		 LoggingFilter loggingFilter = new LoggingFilter();
+		 defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+		 TextLineCodecFactory textLineCodecFactory = 
+		         new TextLineCodecFactory(charset,LineDelimiter.WINDOWS.getValue(),
+				 LineDelimiter.WINDOWS.getValue());
+		 ProtocolCodecFilter protocolCodecFilter = new ProtocolCodecFilter(textLineCodecFactory);
+		 defaultIoFilterChainBuilder.addLast("protocolCodecFilter",protocolCodecFilter);
+		 //配置NioSocketAcceptor处理器
+		 SimpleServerHandler simpleServerHandler = new SimpleServerHandler();
+		 acceptor.setHandler(simpleServerHandler);
+		 InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		 acceptor.bind(inetSocketAddress);
+		 log.info("=========SimpleServer is start============");
+
+	}
+}
+server handler：
+package mina.tcp.handler;
+
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * simple server  handler
+ * @author donald
+ * 2017年5月19日
+ * 下午1:13:45
+ */
+public class SimpleServerHandler extends IoHandlerAdapter {
+	private final static Logger log = LoggerFactory.getLogger(SimpleServerHandler.class);
+	private  static final CharsetEncoder charsetEncoder= Charset.forName("UTF-8").newEncoder();
+	private static final CharsetDecoder charsetDecoder= Charset.forName("UTF-8").newDecoder();
+	public void messageReceived(IoSession session, Object message) throws Exception {
+		String msg = (String) message;
+		log.info("=========The message received from Client is:" + msg);
+		//收到客户端发送的关闭会话命令
+		/*if(msg.equals("quit")){
+			session.closeNow();
+		}*/
+		IoBuffer buffer = IoBuffer.allocate(1024);
+		buffer.putString("Hello Client...\r\nI'm Server...\r\nserver test...", charsetEncoder);
+		buffer.flip();
+		session.write(buffer);
+	}
+	@Override
+	public void sessionClosed(IoSession session) throws Exception {
+		log.debug("=========Session Closed...");
+	}
+	@Override
+	public void sessionCreated(IoSession session) throws Exception {
+		log.debug("=========Session Created...");
+	}
+	@Override
+	public void sessionIdle(IoSession session, IdleStatus status) throws Exception {
+		log.debug(session + "=========Session Idle...");
+	}
+	@Override
+	public void sessionOpened(IoSession session) throws Exception {
+		log.debug("=========Session Opened...");
+	}
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error(cause.getMessage());
+		cause.printStackTrace();
+		session.closeNow();
+	}
+	@Override
+	public void messageSent(IoSession session, Object message) throws Exception {
+		log.debug("=========messageSent...");
+	}
+
+}
+
+client：
+package mina.tcp.main;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoConnector;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.filter.codec.textline.LineDelimiter;
+import org.apache.mina.filter.codec.textline.TextLineCodecFactory;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.nio.NioSocketConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.handler.SimpleClientHandler;
+/**
+ * Simple Client - TextLineCodecFactory
+ * @author donald
+ * 2017年5月19日
+ * 下午1:04:10
+ */
+public class SimpleClient {
+	private static final Logger log = LoggerFactory.getLogger(SimpleClient.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	private static final  int connectTimeoutMillis = 30000;
+	private static final Charset charset = Charset.forName("UTF-8");
+	public static void main(String[] args) {
+		 IoConnector connector=new NioSocketConnector();
+		 connector.setConnectTimeoutMillis(connectTimeoutMillis);
+		//配置过滤器
+		 DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = connector.getFilterChain();
+		 LoggingFilter loggingFilter = new LoggingFilter();
+		 defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+		 TextLineCodecFactory textLineCodecFactory = 
+		         new TextLineCodecFactory(charset,LineDelimiter.WINDOWS.getValue(),
+				 LineDelimiter.WINDOWS.getValue());
+		 ProtocolCodecFilter protocolCodecFilter = new ProtocolCodecFilter(textLineCodecFactory);
+		 defaultIoFilterChainBuilder.addLast("protocolCodecFilter",protocolCodecFilter);
+		//配置NioSocketConnector处理器
+		 SimpleClientHandler simpleClientHandler = new SimpleClientHandler();
+		 connector.setHandler(simpleClientHandler);
+		 InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		 connector.connect(inetSocketAddress);
+		 log.info("=========SimpleClient is start============");
+	}
+}
+
+client handler：
+package mina.tcp.handler;
+
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * simple client handler
+ * @author donald
+ * 2017年5月19日
+ * 下午1:10:12
+ */
+public class SimpleClientHandler extends IoHandlerAdapter {
+	private final static Logger log = LoggerFactory.getLogger(SimpleClientHandler.class);
+	private  static final CharsetEncoder charsetEncoder= Charset.forName("UTF-8").newEncoder();
+	private static final CharsetDecoder charsetDecoder= Charset.forName("UTF-8").newDecoder();
+	public void messageReceived(IoSession session, Object message) throws Exception {
+		String msg = (String) message;
+		log.info("=========The message received from Server  is:" + msg);
+	}
+	@Override
+	public void sessionCreated(IoSession session) throws Exception {
+		log.debug("=========Session Created...");
+	}
+	@Override
+	public void sessionOpened(IoSession session) throws CharacterCodingException {
+		IoBuffer buffer = IoBuffer.allocate(1024);
+		buffer.putString("Hello Server...\r\nI'm Client...\r\nclient test...", charsetEncoder);
+		buffer.flip();
+		session.write(buffer);
+		//我们可以在这里发送一个quit命令，当Server接受到quit命令时，关闭会话
+		/*buffer.clear();
+		buffer.putString("quit\r\n", charsetEncoder);
+		buffer.flip();
+		session.write(buffer);*/
+	}
+	@Override
+	public void sessionIdle(IoSession session, IdleStatus status) throws Exception {
+		log.debug(session + "=========Session Idle...");
+	}
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error(cause.getMessage());
+		cause.printStackTrace();
+		session.closeNow();
+	}
+	@Override
+	public void messageSent(IoSession session, Object message) throws Exception {
+		log.debug("=========messageSent...");
+	}
+	@Override
+	public void sessionClosed(IoSession session) throws Exception {
+		log.debug("=========Session Closed...");
+	}
+}
+本实例中的handler的继承IoHandlerAdapter，在实际开发中，
+我们不需要实现所有方法，我们只需要实现关注的方法即可比如sessionOpened，
+messageReceived，exceptionCaught，sessionClosed。
+启动server，client控制台输出：
+server：
+[INFO ] 2017-05-21 10:46:31 mina.tcp.main.SimpleServer =========SimpleServer is start============
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter CREATED
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========Session Created...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter OPENED
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========Session Opened...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=46 cap=2048: 48 65 6C 6C 6F 20 53 65 72 76 65 72 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========The message received from Client is:Hello Server...
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========The message received from Client is:I'm Client...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=46 cap=1024: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========messageSent...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=46 cap=1024: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleServerHandler =========messageSent...
+[INFO ] 2017-05-21 10:46:53 org.apache.mina.filter.logging.LoggingFilter IDLE
+[DEBUG] 2017-05-21 10:46:53 mina.tcp.handler.SimpleServerHandler (0x00000001: nio socket, server, /192.168.31.153:60519 => /192.168.31.153:9122)=========Session Idle...
+
+
+client：
+[INFO ] 2017-05-21 10:46:43 mina.tcp.main.SimpleClient =========SimpleClient is start============
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter CREATED
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========Session Created...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter OPENED
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=46 cap=1024: 48 65 6C 6C 6F 20 53 65 72 76 65 72 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========messageSent...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=46 cap=2048: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========The message received from Server  is:Hello Client...
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========The message received from Server  is:I'm Server...
+[INFO ] 2017-05-21 10:46:43 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=46 cap=2048: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 10:46:43 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========The message received from Server  is:server test...Hello Client...
+[INFO ] 2017-05-21 10:46:43 mina.tcp.handler.SimpleClientHandler =========The message received from Server  is:I'm Server...
+
+
+
+从上面的日志可以看出，LoggingFilter的输出在Handler日志前面，
+证明了，IoService发送的数据要经过IoFilter层，再由IoHandler处理。
+由于我们用的是TextLineCodecFactory（按行发送与接收数据），从日志输出来，client将多行数据一次
+发送，而server将发送过来的多行数据分行读取；client发送的为
+Hello Server...\r\nI'm Client...\r\nclient test...
+而server收到的为
+1.Hello Server...
+2.I'm Client...
+这两行后面的client test...没有收到，证明TextLineCodecFactory是按行发送与接收数据，不到一行数据不发送。
+
+由于server接受了两次client发送过来的数据，并回复
+Hello Client...\r\nI'm Server...\r\nserver test...
+从client的输出来看，
+第一次接收事件：
+Hello Client...
+I'm Server...  
+第二次接收事件：
+server test...Hello Client...
+I'm Server...      
+从上面可以看出，第一次没有解析完的数据留在缓冲区中，与下一次接收的数据合并处理。
+
+整个过程：
+client发生一次发送事件，server一次接收事件，多次调用handler处理行数据，并产生了多次发送事件，
+client相应的产生多次接收事件，并将上一次没有解析完的数据，与下一次接收的数据合并处理。
+
+再来测试一下IoFilter，编写测试IoFilter
+package mina.tcp.filter;
+
+import org.apache.mina.core.filterchain.IoFilter;
+import org.apache.mina.core.filterchain.IoFilterChain;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.core.write.WriteRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * 测试过滤器
+ * @author donald
+ * 2017年5月19日
+ * 上午8:59:29
+ */
+public class TestFilter implements IoFilter {
+	private static final Logger log = LoggerFactory.getLogger(TestFilter.class);
+	@Override
+	public void onPreAdd(IoFilterChain parent, String name, NextFilter nextFilter) throws Exception {
+		log.debug("$$$$$$$$onPreAdd...");
+	}
+	@Override
+	public void onPostAdd(IoFilterChain parent, String name, NextFilter nextFilter) throws Exception {
+		log.debug("$$$$$$$$onPostAdd...");
+	}
+	@Override
+	public void init() throws Exception {
+		log.debug("$$$$$$$$init...");
+	}
+	@Override
+	public void filterWrite(NextFilter nextFilter, IoSession session, WriteRequest writeRequest) throws Exception {
+		log.debug("$$$$$$$$filterWrite...");
+		nextFilter.filterWrite(session, writeRequest);
+	}
+	@Override
+	public void sessionCreated(NextFilter nextFilter, IoSession session) throws Exception {
+		log.debug("$$$$$$$$sessionCreated...");
+		nextFilter.sessionCreated(session);
+	}
+	@Override
+	public void sessionIdle(NextFilter nextFilter, IoSession session, IdleStatus status) throws Exception {
+		log.debug("$$$$$$$$sessionIdle...");
+		nextFilter.sessionIdle(session, status);
+	}
+	@Override
+	public void sessionOpened(NextFilter nextFilter, IoSession session) throws Exception {
+		log.debug("$$$$$$$$sessionOpened...");
+		nextFilter.sessionOpened(session);
+	}
+	@Override
+	public void messageReceived(NextFilter nextFilter, IoSession session, Object message) throws Exception {
+		log.debug("$$$$$$$$messageReceived...");
+		nextFilter.messageReceived(session, message);
+	}
+	@Override
+	public void messageSent(NextFilter nextFilter, IoSession session, WriteRequest writeRequest) throws Exception {
+		log.debug("$$$$$$$$messageSent...");
+		nextFilter.messageSent(session, writeRequest);
+	}
+	@Override
+	public void exceptionCaught(NextFilter nextFilter, IoSession session, Throwable cause) throws Exception {
+		log.debug("$$$$$$$$exceptionCaught...");
+		nextFilter.exceptionCaught(session, cause);
+	}
+	@Override
+	public void onPostRemove(IoFilterChain parent, String name, NextFilter nextFilter) throws Exception {
+		log.debug("$$$$$$$$onPostRemove...");
+	}
+	
+	@Override
+	public void onPreRemove(IoFilterChain parent, String name, NextFilter nextFilter) throws Exception {
+		log.debug("$$$$$$$$onPreRemove...");
+	}
+	@Override
+	public void inputClosed(NextFilter arg0, IoSession arg1) throws Exception {
+		log.debug("$$$$$$$$inputClosed...");
+	}
+	@Override
+	public void filterClose(NextFilter nextFilter, IoSession session) throws Exception {
+		log.debug("$$$$$$$$filterClose...");
+		nextFilter.filterClose(session);
+	}
+	@Override
+	public void sessionClosed(NextFilter nextFilter, IoSession session) throws Exception {
+		log.debug("$$$$$$$$sessionClosed...");
+		nextFilter.sessionClosed(session);
+	}
+	@Override
+	public void destroy() throws Exception {
+		log.debug("$$$$$$$$destroy...");
+	}
+}
+注意在filter*和session*及exceptionCaught方法调用时，要NextFilter相应方法，这一点和web的Filter#doFilter相似。
+修改上一个实例中的Server端：
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.filter.codec.textline.LineDelimiter;
+import org.apache.mina.filter.codec.textline.TextLineCodecFactory;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.filter.util.ReferenceCountingFilter;
+import org.apache.mina.transport.socket.SocketSessionConfig;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import mina.tcp.filter.TestFilter;
+import mina.tcp.handler.SimpleServerHandler;
+/**
+ * Simple Server With TestFilter
+ * @author donald
+ * 2017年5月19日
+ * 上午8:59:37
+ */
+public class SimpleServerWithTestFilter {
+	private static final Logger log = LoggerFactory.getLogger(SimpleServerWithTestFilter.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	private static final  int readBufferSize = 2048;
+	private static final  int idleTime = 10;
+	private static final Charset charset = Charset.forName("UTF-8");
+	public static void main(String[] args) throws IOException {
+		 IoAcceptor acceptor=new NioSocketAcceptor();
+		//配置socket会话
+		 SocketSessionConfig socketSessionConfig = (SocketSessionConfig) acceptor.getSessionConfig();
+		 socketSessionConfig.setReadBufferSize(readBufferSize);
+		 socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE,idleTime);
+		//配置过滤器
+		 DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = acceptor.getFilterChain();
+		 LoggingFilter loggingFilter = new LoggingFilter();
+		 defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+		 TextLineCodecFactory textLineCodecFactory = 
+		         new TextLineCodecFactory(charset,LineDelimiter.WINDOWS.getValue(),
+				 LineDelimiter.WINDOWS.getValue());
+		 ProtocolCodecFilter protocolCodecFilter = new ProtocolCodecFilter(textLineCodecFactory);
+		 defaultIoFilterChainBuilder.addLast("protocolCodecFilter",protocolCodecFilter);
+		 TestFilter testFilter = new TestFilter(); 
+		 ReferenceCountingFilter referenceCountingFilter = new ReferenceCountingFilter(testFilter);
+		 defaultIoFilterChainBuilder.addLast("testFilter",referenceCountingFilter);
+		//配置NioSocketAcceptor处理器
+		 SimpleServerHandler simpleServerHandler = new SimpleServerHandler();
+		 acceptor.setHandler(simpleServerHandler);
+		 InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		 acceptor.bind(inetSocketAddress);
+		 log.info("=========SimpleServer is start============");
+
+	}
+}
+启动SimpleServerWithTestFilter，server，及上例中的client，
+SimpleServerWithTestFilter控制台输出：
+[INFO ] 2017-05-21 00:51:54 mina.tcp.main.SimpleServerWithTestFilter =========SimpleServer is start============
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$init...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$onPreAdd...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$onPostAdd...
+[INFO ] 2017-05-21 00:52:00 org.apache.mina.filter.logging.LoggingFilter CREATED
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$sessionCreated...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========Session Created...
+[INFO ] 2017-05-21 00:52:00 org.apache.mina.filter.logging.LoggingFilter OPENED
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$sessionOpened...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========Session Opened...
+[INFO ] 2017-05-21 00:52:00 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=46 cap=2048: 48 65 6C 6C 6F 20 53 65 72 76 65 72 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 00:52:00 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$messageReceived...
+[INFO ] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========The message received from Client is:Hello Server...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$filterWrite...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$messageReceived...
+[INFO ] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========The message received from Client is:I'm Client...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$filterWrite...
+[INFO ] 2017-05-21 00:52:00 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=46 cap=1024: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$messageSent...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========messageSent...
+[INFO ] 2017-05-21 00:52:00 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=46 cap=1024: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 2E 2E 2E 0D...]
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.filter.TestFilter $$$$$$$$messageSent...
+[DEBUG] 2017-05-21 00:52:00 mina.tcp.handler.SimpleServerHandler =========messageSent...
+
+从日志输出来看，init，onPreAdd，onPostAdd事件在会话创建时已经发生，这些方法主要用于初始化过滤器，添加过滤器到IoService
+的过滤链时触发。会话事件顺序CREATED-》OPENED-》RECEIVED。从上面的日志输出可以看出整个过程的处理顺序为，
+SimpleServerWithTestFilter-》LoggingFilter-》TestFilter-》ProtocolCodecFilter-》SimpleServerHandler，
+过滤器的顺序默认为添加的顺序。在每次过滤器捕捉到接收数据事件，都将调用filterWrite方法。
+
+
+
+
+

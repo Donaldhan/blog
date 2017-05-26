@@ -1,0 +1,261 @@
+Mina 协议编解码过滤器一（协议编解码工厂、协议编码器）：
+[url]http://donald-draper.iteye.com/blog/2376663[/url]
+
+引言：
+    上一篇文章，我们看了协议编解码过滤器，其中涉及到协议编解码工厂、协议编码器、和协议解码器，
+由于篇幅原因，我们只看了协议编解码工厂、协议编码器，先来回顾一下：
+    协议编解码过滤器ProtocolCodecFilter关联一个协议编解码工厂ProtocolCodecFactory，协议编解码工厂提供协议编码器ProtocolEncoder和解码器ProtocolDecoder；编码器将消息对象编码成二进制或协议数据，解码器将二进制或协议数据解码成消息对象。编码器ProtocolEncoder主要有两个方法，encode和dispose；encode用于，编码上层的消息对象为二进制或协议数据。mina调用编码器的#encode方法将从会话写请求队列中pop的消息，然后调用ProtocolEncoderOutput#write方法将编码后的消息放在ByteBuffer；dispose方法释放编码器资源。ProtocolEncoderAdapter为编码器抽象实现，默认实现了dispose，不做任何事情，对于不需要释放资源的编码器继承ProtocolEncoderAdapter。ProtocolEncoderOutput主要的工作是将协议编码器编码后的
+字节buffer，缓存起来，等待flush方法调用时，则将数据发送出去。SimpleProtocolEncoderOutput为ProtocolEncoderOutput的简单实现内部有一个buffer队列bufferQueue（Queue），用于存放write（ByteBuffer）方法，传入的字节buffer；
+mergeAll方法为合并buffer队列的所有buffer数据到一个buffer；flush方法为发送buffer队列中的所有buffer，实际发送工作委托给doFlush方法待子类实现。ProtocolEncoderOutputImpl为协议编解码过滤器的内部类，ProtocolEncoderOutputImpl的doFlush，首先将会话包装成DefaultWriteFuture，将会话，写请求信息传递给NextFilter。 
+
+今天这篇文章我们来看一下协议解码器：
+先贴出协议编解码过滤器及协议编解码工厂ProtocolCodecFactory的代码，以便理解
+//ProtocolCodecFilter
+/**
+ * An {@link IoFilter} which translates binary or protocol specific data into
+ * message object and vice versa using {@link ProtocolCodecFactory},
+ * {@link ProtocolEncoder}, or {@link ProtocolDecoder}.
+ *
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public class ProtocolCodecFilter extends IoFilterAdapter
+{
+    private static final Logger LOGGER = LoggerFactory.getLogger(org/apache/mina/filter/codec/ProtocolCodecFilter);
+    private static final Class EMPTY_PARAMS[] = new Class[0];
+    private static final IoBuffer EMPTY_BUFFER = IoBuffer.wrap(new byte[0]);
+    //编码器属性key
+    private static final AttributeKey ENCODER = 
+         new AttributeKey(org/apache/mina/filter/codec/ProtocolCodecFilter, "encoder");
+    //编码器输出属性key
+    private static final AttributeKey ENCODER_OUT = 
+         new AttributeKey(org/apache/mina/filter/codec/ProtocolCodecFilter, "encoderOut");
+    //解码器属性key
+    private static final AttributeKey DECODER = 
+         new AttributeKey(org/apache/mina/filter/codec/ProtocolCodecFilter, "decoder");  
+    //解码器输出属性key
+    private static final AttributeKey DECODER_OUT = 
+         new AttributeKey(org/apache/mina/filter/codec/ProtocolCodecFilter, "decoderOut");
+    private final ProtocolCodecFactory factory;//协议编解码器工厂
+}
+//ProtocolCodecFactory
+/**
+ * Provides {@link ProtocolEncoder} and {@link ProtocolDecoder} which translates
+ * binary or protocol specific data into message object and vice versa.
+ * <p>协议编解码工厂ProtocolCodecFactory提供协议编码器和解码器，解码器二进制数据或
+ 协议数据到消息对象；编码器反之。
+ * Please refer to
+ * <a href="../../../../../xref-examples/org/apache/mina/examples/reverser/ReverseProtocolProvider.html"><code>ReverserProtocolProvider</code></a>
+ * example.
+ *  
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface ProtocolCodecFactory {
+    /**
+     * Returns a new (or reusable) instance of {@link ProtocolEncoder} which
+     * encodes message objects into binary or protocol-specific data.
+     返回一个编码器实例，用于将消息对象编码成二进制或协议数据
+     */
+    ProtocolEncoder getEncoder() throws Exception;
+    /**
+     * Returns a new (or reusable) instance of {@link ProtocolDecoder} which
+     * decodes binary or protocol-specific data into message objects.
+     返回一个解码器实例，用于将二进制或协议数据解码成消息对象
+     */
+    ProtocolDecoder getDecoder() throws Exception;
+}
+从上可以看出，协议编解码工厂ProtocolCodecFactory提供协议编码器ProtocolEncoder和解码器ProtocolDecoder；
+编码器将消息对象编码成二进制或协议数据，解码器将二进制或协议数据解码成消息对象。
+上一篇文章我们看了协议编码器，今天来看一下协议解码器:
+/**
+ * Decodes binary or protocol-specific data into higher-level message objects.
+ * MINA invokes {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}
+ * method with read data, and then the decoder implementation puts decoded
+ * messages into {@link ProtocolDecoderOutput} by calling
+ * {@link ProtocolDecoderOutput#write(Object)}.
+ * <p>
+ * Please refer to
+ * <a href="../../../../../xref-examples/org/apache/mina/examples/reverser/TextLineDecoder.html"><code>TextLineDecoder</code></a>
+ * example. 
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface ProtocolDecoder {
+    /**
+     * Decodes binary or protocol-specific content into higher-level message objects.
+     * MINA invokes {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}
+     * method with read data, and then the decoder implementation puts decoded
+     * messages into {@link ProtocolDecoderOutput}.
+     * 将二级制或协议内存解码成上层消息对象。mina在读取数据时，调用解码器的#decode，
+     将解码后的消息放到ProtocolDecoderOutput
+     * @throws Exception if the read data violated protocol specification
+     */
+    void decode(IoSession session, ByteBuffer in, ProtocolDecoderOutput out)
+            throws Exception;
+
+    /**
+     * Invoked when the specified <tt>session</tt> is closed.  This method is useful
+     * when you deal with the protocol which doesn't specify the length of a message
+     * such as HTTP response without <tt>content-length</tt> header. Implement this
+     * method to process the remaining data that {@link #decode(IoSession, ByteBuffer, ProtocolDecoderOutput)}
+     * method didn't process completely.
+     * 到session关闭时，调用此方法。当处理没有精确长度协议时，特别有用，不如Http没有内容长度的回应。
+     实现此方法，主要是对于
+     * @throws Exception if the read data violated protocol specification
+     */
+    void finishDecode(IoSession session, ProtocolDecoderOutput out)
+            throws Exception;
+
+    /**
+     * Releases all resources related with this decoder.
+     * 释放所有与解码器有关的资源。
+     * @throws Exception if failed to dispose all resources
+     */
+    void dispose(IoSession session) throws Exception;
+}
+从上面来看解码器主要是将二级制或协议内存解码成上层消息对象。mina在读取数据时，调用解码器的#decode，
+将解码后的消息放到ProtocolDecoderOutput；当会话关闭时，调用finishDecode解码那些在#decode方法中没有处理完的数据。
+dispose主要是 释放所有与解码器有关的资源。
+
+再来看协议解码器的抽象实现ProtocolDecoderAdapter
+/**
+ * An abstract {@link ProtocolDecoder} implementation for those who don't need
+ * {@link ProtocolDecoder#finishDecode(IoSession, ProtocolDecoderOutput)} nor
+ * {@link ProtocolDecoder#dispose(IoSession)} method.
+ * 协议解码适配器主要是针对那些不需要#finishDecode和#dispose的解码器
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public abstract class ProtocolDecoderAdapter implements ProtocolDecoder {
+
+    /**
+     * Override this method to deal with the closed connection.
+     * The default implementation does nothing.会话关闭
+     */
+    public void finishDecode(IoSession session, ProtocolDecoderOutput out)
+            throws Exception {
+    }
+
+    /**
+     * Override this method to dispose all resources related with this decoder.
+     * The default implementation does nothing.释放资源
+     */
+    public void dispose(IoSession session) throws Exception {
+    }
+}
+ProtocolDecoderAdapter协议解码适配器主要是针对那些不需要#finishDecode和#dispose的解码器；
+mina对于大部分的组件，都实现的相应的适配，使我们可以根据需要，去实现需要关注的方法或事件，
+忽略不关心的方法或事件。比如我们前面看的IoFilter->IoFilterAdapter。
+
+再来看编码输出ProtocolDecoderOutput，
+/**
+ * Callback for {@link ProtocolDecoder} to generate decoded messages.
+ * {@link ProtocolDecoder} must call {@link #write(Object)} for each decoded
+ * messages.
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface ProtocolDecoderOutput {
+    /**
+     * Callback for {@link ProtocolDecoder} to generate decoded messages.
+     * {@link ProtocolDecoder} must call {@link #write(Object)} for each
+     * decoded messages.
+     * 用于解码器，解码消息后，回调write方法。
+     * @param message the decoded message
+     */
+    void write(Object message);
+
+    /**
+     * Flushes all messages you wrote via {@link #write(Object)} to
+     * the next filter.刷新所有write方法写的消息
+     */
+    void flush();
+}
+ProtocolDecoderOutput主要有两个方法，一个write方法，用于解码器，解完消息后回调；
+一个flush方法，用于刷新所有解码器写到协议解码输出的消息对象。
+
+再来看ProtocolDecoderOutput的简单实现SimpleProtocolDecoderOutput
+/**
+ * A {@link ProtocolDecoderOutput} based on queue.
+ * 
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ *
+ */
+public class SimpleProtocolDecoderOutput implements ProtocolDecoderOutput {
+    private final NextFilter nextFilter;//后继过滤器
+    private final IoSession session;//关联会话
+    private final Queue messageQueue = new Queue();//消息队列
+    //根据会话和后继过滤器构建简单协议解码输出
+    public SimpleProtocolDecoderOutput(IoSession session, NextFilter nextFilter) {
+        this.nextFilter = nextFilter;
+        this.session = session;
+    }
+    //写消息，直接将消息push到消息队列
+    public void write(Object message) {
+        messageQueue.push(message);
+        if (session instanceof BaseIoSession) {
+            ((BaseIoSession) session).increaseReadMessages();
+        }
+    }
+    //将消息队列中的消息传给后继过滤器的messageReceived方法。
+    public void flush() {
+        while (!messageQueue.isEmpty()) {
+            nextFilter.messageReceived(session, messageQueue.pop());
+        }
+
+    }
+}
+从上面来看，简单协议解码输出SimpleProtocolDecoderOutput，关联一个会话session，一个后继过滤器nextFilter，
+及一个消息队列messageQueue；所有解码器解码后的消息，回调协议解码输出的write方法，将消息暂时放在消息队列messageQueue中
+；flush方法主要是将消息队列中的消息传给后继过滤器的messageReceived方法。
+再来看一些编解码过滤器获取协议解码输出的方法：
+//ProtocolCodecFilter
+//获取协议解码输出
+ private ProtocolDecoderOutput getDecoderOut(IoSession session,
+            NextFilter nextFilter) {
+	//从当前会话获取解码输出属性DECODER_OUT对一个的ProtocolDecoderOutput
+        ProtocolDecoderOutput out = (ProtocolDecoderOutput) session.getAttribute(DECODER_OUT);
+        if (out == null) {
+	   //为null，则创建一个SimpleProtocolDecoderOutput，添加到会话中
+            out = new SimpleProtocolDecoderOutput(session, nextFilter);
+            session.setAttribute(DECODER_OUT, out);
+        }
+        return out;
+    }
+//获取协议编码输出
+private ProtocolEncoderOutputImpl getEncoderOut(IoSession session,
+            NextFilter nextFilter, WriteRequest writeRequest) {
+	//这个就是我们上一篇文章讲的
+        return new ProtocolEncoderOutputImpl(session, nextFilter, writeRequest);
+    }
+从上面来看协议编解码过滤器ProtocolCodecFilter默认的协议编码输出为ProtocolEncoderOutputImpl，
+协议解码输出为SimpleProtocolDecoderOutput。
+
+至此我们将协议编解码过滤器的所涉及到的相关概念看完，来整理一下：
+协议编解码过滤器关联一个协议编解码工厂，协议编解码工厂用于创建协议编码和解码器；协议编码器将上层消息，编码成
+二级制或特定协议格式的数据，写到协议编码器输出的字节队列中，flush字节队列中的数据（filterWrite）给下一个过滤器。
+协议解码器将接收到的二级制或特定协议格式的数据，解码成上层消息，存放到协议解码器输出的消息队列，flush将消息队列
+中的消息传给后继过滤器的messageReceived方法。协议编解码过滤器ProtocolCodecFilter默认的协议编码输出为ProtocolEncoderOutputImpl，
+协议解码输出为SimpleProtocolDecoderOutput。
+结构如下：
+ProtocolCodecFilter extends IoFilterAdapter
+   --ProtocolCodecFactory
+      --ProtocolEncoder
+         --ProtocolEncoderOutput（ProtocolEncoderOutputImpl）
+      --ProtocolDecoder
+         --ProtocolDecoderOutput（SimpleProtocolDecoderOutput）
+         
+总结：
+解码器ProtocolDecoder将二级制或协议内存解码成上层消息对象。mina在读取数据时，调用解码器的#decode，
+将解码后的消息放到ProtocolDecoderOutput；当会话关闭时，调用finishDecode解码那些在#decode方法中没有处理完的数据。
+dispose主要是 释放所有与解码器有关的资源。针对不需要#finishDecode和#dispose的解码器，
+我们可以继承协议解码适配器ProtocolDecoderAdapter。
+ProtocolDecoderOutput有两个方法，一个write方法，用于解码器，解完消息后回调；
+一个flush方法，用于刷新所有解码器写到协议解码输出的消息对象。
+简单协议解码输出SimpleProtocolDecoderOutput，关联一个会话session，一个后继过滤器nextFilter，
+及一个消息队列messageQueue；所有解码器解码后的消息，回调协议解码输出的write方法，将消息暂时放在消息队列messageQueue中
+；flush方法主要是将消息队列中的消息传给后继过滤器的messageReceived方法。

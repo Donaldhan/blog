@@ -1,0 +1,486 @@
+MINA TCP简单通信实例：[url]http://donald-draper.iteye.com/blog/2375297[/url]
+MINA 编解码器实例：[url]http://donald-draper.iteye.com/blog/2375317[/url]
+MINA 多路分离解码器实例：[url]http://donald-draper.iteye.com/blog/2375324[/url]
+上面一篇文章中的解码器只能针对我们已经定义的固定协议格式解码，假设我们现在需要使用更具客户端发送
+过来的数据的某个条件确定来解码，该怎样做呢?我们通过一个实例来解决这个问题。
+协议为，两个int 类型的数字，还有一个char 类型的符号。如果符号是+，使用1号解码器，
+对两个数字相加。如果符号是-，使用2 号解码器，对两个数字相减。
+计算协议实体：
+package mina.tcp.message;
+/**
+ * 计算协议
+ * @author donald
+ * 2017年5月20日
+ * 下午11:48:08
+ */
+public class MathMessage {
+	private int firstNum = 0;
+	private int secondNum = 0;
+	private char symbol = '+';
+	public char getSymbol() {
+		return symbol;
+	}
+	public void setSymbol(char symbol) {
+		this.symbol = symbol;
+	}
+	public int getFirstNum() {
+		return firstNum;
+	}
+	public void setFirstNum(int firstNum) {
+		this.firstNum = firstNum;
+	}
+	public int getSecondNum() {
+		return secondNum;
+	}
+	public void setSecondNum(int secondNum) {
+		this.secondNum = secondNum;
+	}
+}
+计算结果协议实体：
+package mina.tcp.message;
+/**
+ * 计算结果
+ * @author donald
+ * 2017年5月20日
+ * 下午11:48:27
+ */
+public class AckMessage {
+	private int result = 0;
+	public int getResult() {
+		return result;
+	}
+	public void setResult(int result) {
+		this.result = result;
+	}
+}
+计算协议编码：
+
+package mina.tcp.coder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolEncoderOutput;
+import org.apache.mina.filter.codec.demux.MessageEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.MathMessage;
+
+/**
+ * 计算消息编码器
+ * @author donald 
+ * 2017年5月20日 
+ * 下午11:49:42
+ */
+public class MathMessageEncoder implements MessageEncoder<MathMessage> {
+	private final static Logger log = LoggerFactory.getLogger(MathMessageEncoder.class);
+	@Override
+	public void encode(IoSession session, MathMessage message, ProtocolEncoderOutput out) throws Exception {
+		IoBuffer buffer = IoBuffer.allocate(10);
+		buffer.putChar(message.getSymbol());
+		buffer.putInt(message.getFirstNum());
+		buffer.putInt(message.getSecondNum());
+		buffer.flip();
+		out.write(buffer);
+	}
+}
+
+计算结果协议编码：
+package mina.tcp.coder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolEncoderOutput;
+import org.apache.mina.filter.codec.demux.MessageEncoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.AckMessage;
+/**
+ * 计算结果编码器
+ * @author donald
+ * 2017年5月20日
+ * 下午11:58:18
+ */
+public class AckMessageEncoder implements MessageEncoder<AckMessage> {
+	private final static Logger log = LoggerFactory.getLogger(AckMessageEncoder.class);
+	@Override
+	public void encode(IoSession session, AckMessage message, ProtocolEncoderOutput out) throws Exception {
+		IoBuffer buffer = IoBuffer.allocate(4);
+		buffer.putInt(message.getResult());
+		buffer.flip();
+		out.write(buffer);
+	}
+}
+
+计算协议解码器（加法解码器）：
+package mina.tcp.coder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolDecoderOutput;
+import org.apache.mina.filter.codec.demux.MessageDecoder;
+import org.apache.mina.filter.codec.demux.MessageDecoderResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.MathMessage;
+/**
+ * 加法解码器
+ * @author donald
+ * 2017年5月20日
+ * 下午11:56:47
+ */
+public class MathMessageDecoderPositive implements MessageDecoder {
+	private final static Logger log = LoggerFactory.getLogger(MathMessageDecoderPositive.class);
+	@Override
+	public MessageDecoderResult decodable(IoSession session, IoBuffer in) {
+		if (in.remaining() < 2)
+			return MessageDecoderResult.NEED_DATA;
+		else {
+			char symbol = in.getChar();
+			if (symbol == '+') {
+				return MessageDecoderResult.OK;
+			} else {
+				return MessageDecoderResult.NOT_OK;
+			}
+		}
+	}
+
+	@Override
+	public MessageDecoderResult decode(IoSession session, IoBuffer in, ProtocolDecoderOutput out) throws Exception {
+		MathMessage sm = new MathMessage();
+		sm.setSymbol(in.getChar());
+		sm.setFirstNum(in.getInt());
+		sm.setSecondNum(in.getInt());
+		out.write(sm);
+		return MessageDecoderResult.OK;
+	}
+
+	@Override
+	public void finishDecode(IoSession session, ProtocolDecoderOutput out) throws Exception {
+		// undo
+	}
+}
+计算协议解码器（减法解码器）：
+package mina.tcp.coder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolDecoderOutput;
+import org.apache.mina.filter.codec.demux.MessageDecoder;
+import org.apache.mina.filter.codec.demux.MessageDecoderResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.MathMessage;
+/**
+ * 减法解码器
+ * @author donald
+ * 2017年5月20日
+ * 下午11:54:25
+ */
+public class MathMessageDecoderNegative implements MessageDecoder {
+	private final static Logger log = LoggerFactory.getLogger(MathMessageDecoderNegative.class);
+	@Override
+	public MessageDecoderResult decodable(IoSession session, IoBuffer in) {
+		if (in.remaining() < 2)
+			return MessageDecoderResult.NEED_DATA;
+		else {
+			char symbol = in.getChar();
+			if (symbol == '-') {
+				return MessageDecoderResult.OK;
+			} else {
+				return MessageDecoderResult.NOT_OK;
+			}
+		}
+	}
+
+	@Override
+	public MessageDecoderResult decode(IoSession session, IoBuffer in, ProtocolDecoderOutput out) throws Exception {
+		MathMessage sm = new MathMessage();
+		sm.setSymbol(in.getChar());
+		sm.setFirstNum(in.getInt());
+		sm.setSecondNum(in.getInt());
+		out.write(sm);
+		return MessageDecoderResult.OK;
+	}
+
+	@Override
+	public void finishDecode(IoSession session, ProtocolDecoderOutput out) throws Exception {
+		// undo
+	}
+}
+计算协议结果解码器：
+package mina.tcp.coder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.session.IoSession;
+import org.apache.mina.filter.codec.ProtocolDecoderOutput;
+import org.apache.mina.filter.codec.demux.MessageDecoder;
+import org.apache.mina.filter.codec.demux.MessageDecoderResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.AckMessage;
+/**
+ * 计算结果解码器
+ * @author donald
+ * 2017年5月21日
+ * 上午12:01:04
+ */
+public class AckMessageDecoder implements MessageDecoder {
+	private final static Logger log = LoggerFactory.getLogger(AckMessageDecoder.class);
+	@Override
+	public MessageDecoderResult decodable(IoSession session, IoBuffer in) {
+		if (in.remaining() < 4)
+			return MessageDecoderResult.NEED_DATA;
+		else if (in.remaining() == 4)
+			return MessageDecoderResult.OK;
+		else
+			return MessageDecoderResult.NOT_OK;
+	}
+
+	@Override
+	public MessageDecoderResult decode(IoSession session, IoBuffer in, ProtocolDecoderOutput out) throws Exception {
+		AckMessage rm = new AckMessage();
+		rm.setResult(in.getInt());
+		out.write(rm);
+		return MessageDecoderResult.OK;
+	}
+
+	@Override
+	public void finishDecode(IoSession session, ProtocolDecoderOutput out) throws Exception {
+		// undo
+	}
+}
+协议编码解码器工厂：
+package mina.tcp.coder;
+
+import org.apache.mina.filter.codec.demux.DemuxingProtocolCodecFactory;
+
+import mina.tcp.message.AckMessage;
+import mina.tcp.message.MathMessage;
+/**
+ * 协议编码解码器工厂
+ * @author donald
+ * 2017年5月21日
+ * 上午12:02:11
+ */
+public class MathProtocolCodecFactory extends DemuxingProtocolCodecFactory {
+	public MathProtocolCodecFactory(boolean server) {
+		if (server) {
+			super.addMessageEncoder(AckMessage.class, AckMessageEncoder.class);
+			super.addMessageDecoder(MathMessageDecoderPositive.class);
+			super.addMessageDecoder(MathMessageDecoderNegative.class);
+		} else {
+			super.addMessageEncoder(MathMessage.class, MathMessageEncoder.class);
+			super.addMessageDecoder(AckMessageDecoder.class);
+		}
+	}
+}
+我们在多路分离解码器中，通过一个boolean参数控制相应的编码解码器；
+server：
+package mina.tcp.main;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.SocketSessionConfig;
+import org.apache.mina.transport.socket.nio.NioSocketAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.coder.MathProtocolCodecFactory;
+import mina.tcp.handler.MathServerHandler;
+/**
+ * MathServer
+ * @author donald
+ * 2017年5月19日
+ * 下午10:16:29
+ */
+public class MathServer {
+	private static final Logger log = LoggerFactory.getLogger(MathServer.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	private static final  int readBufferSize = 2048;
+	private static final  int idleTime = 10;
+	public static void main(String[] args) throws IOException {
+		 IoAcceptor acceptor=new NioSocketAcceptor();
+		//配置socket会话
+		 SocketSessionConfig socketSessionConfig = (SocketSessionConfig) acceptor.getSessionConfig();
+		 socketSessionConfig.setReadBufferSize(readBufferSize);
+		 socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE,idleTime);
+		 //配置过滤器
+		 DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = acceptor.getFilterChain();
+		 LoggingFilter loggingFilter = new LoggingFilter();
+		 defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+		 MathProtocolCodecFactory mathProtocolCodecFactory = new MathProtocolCodecFactory(true);
+		 ProtocolCodecFilter protocolCodecFilter = new ProtocolCodecFilter(mathProtocolCodecFactory);
+		 defaultIoFilterChainBuilder.addLast("protocolCodecFilter",protocolCodecFilter);
+		 //配置NioSocketAcceptor处理器
+		 MathServerHandler mathServerHandler = new MathServerHandler();
+		 acceptor.setHandler(mathServerHandler);
+		 InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		 acceptor.bind(inetSocketAddress);
+		 log.info("=========MathServer is start============");
+	}
+}
+server handler：
+package mina.tcp.handler;
+
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.AckMessage;
+import mina.tcp.message.MathMessage;
+/**
+ * MathServerHandler
+ * @author donald
+ * 2017年5月20日
+ * 下午11:49:02
+ */
+public class MathServerHandler extends IoHandlerAdapter {
+	private final static Logger log = LoggerFactory.getLogger(MathServerHandler.class);
+
+	@Override
+	public void messageReceived(IoSession session, Object message) throws Exception {
+		MathMessage sm = (MathMessage) message;
+		log.info("===recieve MathMessage:" + sm.getFirstNum() + " " + sm.getSymbol() + " " + sm.getSecondNum());
+		AckMessage rm = new AckMessage();
+		if (sm.getSymbol() == '+')
+			rm.setResult(sm.getFirstNum() + sm.getSecondNum());
+		if (sm.getSymbol() == '-')
+			rm.setResult(sm.getFirstNum() - sm.getSecondNum());
+		session.write(rm);
+	}
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error("===会话异常："+cause.getMessage());
+		cause.printStackTrace();
+		session.closeNow();
+	}
+}
+
+client：
+package mina.tcp.main;
+
+import java.net.InetSocketAddress;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoConnector;
+import org.apache.mina.filter.codec.ProtocolCodecFilter;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.nio.NioSocketConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.coder.MathProtocolCodecFactory;
+import mina.tcp.handler.MathClientHandler;
+/**
+ * MathClient
+ * @author donald
+ * 2017年5月19日
+ * 下午10:27:30
+ */
+public class MathClient {
+	private static final Logger log = LoggerFactory.getLogger(MathClient.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	private static final  int connectTimeoutMillis = 30000;
+	public static void main(String[] args) {
+		IoConnector connector=new NioSocketConnector();
+		 connector.setConnectTimeoutMillis(connectTimeoutMillis);
+		//配置过滤器
+		 DefaultIoFilterChainBuilder defaultIoFilterChainBuilder = connector.getFilterChain();
+		 LoggingFilter loggingFilter = new LoggingFilter();
+		 defaultIoFilterChainBuilder.addLast("loggingFilter", loggingFilter);
+		 MathProtocolCodecFactory mathProtocolCodecFactory = new MathProtocolCodecFactory(false);
+		 ProtocolCodecFilter protocolCodecFilter = new ProtocolCodecFilter(mathProtocolCodecFactory);
+		 defaultIoFilterChainBuilder.addLast("protocolCodecFilter",protocolCodecFilter);
+		//配置NioSocketConnector处理器
+		 MathClientHandler mathClientHandler = new MathClientHandler();
+		 connector.setHandler(mathClientHandler);
+		 InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		 connector.connect(inetSocketAddress);
+		 log.info("=========MathClient is start============");
+	}
+}
+
+client handler：
+package mina.tcp.handler;
+
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.tcp.message.AckMessage;
+import mina.tcp.message.MathMessage;
+/**
+ * MathClientHandler
+ * @author donald
+ * 2017年5月20日
+ * 下午11:48:48
+ */
+public class MathClientHandler extends IoHandlerAdapter {
+	private final static Logger log = LoggerFactory.getLogger(MathClientHandler.class);
+	@Override
+	public void sessionOpened(IoSession session) throws Exception {
+		MathMessage sm = new MathMessage();
+		sm.setFirstNum(100);
+		sm.setSecondNum(99);
+		sm.setSymbol('-');
+		session.write(sm);
+		sm.setSymbol('+');
+		session.write(sm);
+		log.info("====计算消息已发送");
+	}
+	@Override
+	public void messageReceived(IoSession session, Object message) {
+		AckMessage rs = (AckMessage) message;
+		log.info("====calculate result:"+rs.getResult());
+	}
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error("===会话异常："+cause.getMessage());
+		cause.printStackTrace();
+		session.closeNow();
+	}
+}
+启动Server，Client，控制台输出：
+Server：
+[INFO ] 2017-05-21 12:58:26 mina.tcp.main.MathServer =========MathServer is start============
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter CREATED
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter OPENED
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=10 cap=2048: 00 2D 00 00 00 64 00 00 00 63]
+[DEBUG] 2017-05-21 12:58:34 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 12:58:34 mina.tcp.handler.MathServerHandler ===recieve MathMessage:100 - 99
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter SENT: mina.tcp.message.AckMessage@ef8e761
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=10 cap=2048: 00 2B 00 00 00 64 00 00 00 63]
+[DEBUG] 2017-05-21 12:58:34 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 12:58:34 mina.tcp.handler.MathServerHandler ===recieve MathMessage:100 + 99
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter SENT: mina.tcp.message.AckMessage@771e98f4
+
+client：
+[INFO ] 2017-05-21 12:58:34 mina.tcp.main.MathClient =========MathClient is start============
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter CREATED
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter OPENED
+[INFO ] 2017-05-21 12:58:34 mina.tcp.handler.MathClientHandler ====计算消息已发送
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter SENT: mina.tcp.message.MathMessage@684d0ca0
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter SENT: mina.tcp.message.MathMessage@684d0ca0
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=4 cap=2048: 00 00 00 01]
+[DEBUG] 2017-05-21 12:58:34 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 12:58:34 mina.tcp.handler.MathClientHandler ====calculate result:1
+[INFO ] 2017-05-21 12:58:34 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=4 cap=2048: 00 00 00 C7]
+[DEBUG] 2017-05-21 12:58:34 org.apache.mina.filter.codec.ProtocolCodecFilter Processing a MESSAGE_RECEIVED for session 1
+[INFO ] 2017-05-21 12:58:34 mina.tcp.handler.MathClientHandler ====calculate result:199
+
+本文中主要设计的概念有MessageEncoder，MessageDecoder，DemuxingProtocolCodecFactory，这个我们在以后再讲。

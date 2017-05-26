@@ -1,0 +1,203 @@
+Mina 抽象Polling连接器（AbstractPollingIoConnector）：[url]http://donald-draper.iteye.com/blog/2378978[/url]
+Mina 报文监听器NioDatagramAcceptor一（初始化，Io处理器）：[url]http://donald-draper.iteye.com/blog/2379152[/url]
+Mina 报文监听器NioDatagramAcceptor二（发送会话消息据等）：[url]http://donald-draper.iteye.com/blog/2379228[/url]
+引言：
+    前面两篇文章我们看了报文监听器/接收器NioDatagramAcceptor，先来回顾一下
+    报文监听器NioDatagramAcceptor，内部有一个注册队列registerQueue，用于存放地址绑定的请求，一个取消队列，用于存放地址解绑请求，一个Map-boundHandles，用于存放socket地址与报文通道映射映射关系，会话管理器sessionRecycler，监控连接Service的会话，如果会话过期，关闭过期的会话，一个通道选择器selector处理报文通道的读写操作事件，一个监听器线程acceptor，用于处理地址绑定和解绑，报文通道读写事件，发送会话消息及销毁监听器工作。报文监听器构造主要是初始化会话配置，IO事件执行器和打开选择器。报文监听器写操作，首先获取会话写请求队列，计算会话最大发送字节数，获取会话写请求buffer；如果写请求为空，则从请求队列poll一个写请求，然后获取写请求buffer及写请求目的socket地址，委托会话关联的报文通道发送数据；如果buffer数据太多或没有写成功，添加写请求到会话请求队列，关注写事件，否则取消关注写事件，置空会话当前写请求，触发会话发送事件。绑定地址，首先添加地址绑定请求到注册队列registerQueue，启动监听器线程acceptor，唤醒选择操作，然后等待地址绑定完成，最后返回报文通道绑定的socket地址集。
+    监听器线程Acceptor,首先执行超时选择操作；处理地址绑定请求，首先从注册队列poll地址绑定请求，遍历绑定请求地址集，根据绑定的socket地址打开一个报文通道，配置通道会话及阻塞模式，绑定socket地址，注册报文通道读操作事件OP_READ到选择器selector，添加socket地址与报文通道映射到boundHandles，通知service监听，服务已开启，触发fireServiceActivated事件；  如果没有报文通道处理，则清空注册队列和取消队列，置空监听器线程； 如果选择操作后，有报文通道的读写事件就绪，则遍历读写操作事件就绪的报文通道，如果是读事件，接受报文通道数据，如果远端地址不为空，创建会话，首先从boundHandles获取远端socket地址关联的报文通道，从会话管理器sessionRecycler，获取远端socket地址会话，以便重用，如果会话管理器中不存在，则根据Io处理器，报文通道及远端socket地址创建报文会话，设置会话选择key，将会话添加会话管理器，监控会话，初始化会话，构建会话过滤链，通知Service监听器发生会话创建事件fireSessionCreated；如果是写事件，则调度Service管理的会话，添加到刷新队列； 处理刷新队列，从刷新队列poll写请求会话，获取会话写请求队列，会话最大读buffer size，获取会话当前写请求，获取写请求消息，写请求远端地址，通过会话关联的报文通道发送会话消息字节序列，数据发送成功，置空会话当前写请求，触发会话过滤链消息发送事件fireMessageSent，否则设置会话重新关注写操作事件，如果刷新会话写请求成功，但会话写请求队列不为空，且未调度，则重新调度会话；处理解绑地址请求队列，首先从取消队列，poll地址解绑请求，遍历地址解绑请求socket地址集合，从socket与报文通道映射集boundHandles移除socket地址，关闭报文通道；通知service管理的会话空闲；如何Io处理器正在关闭，则销毁报文监听器。 
+今天我们来看一下报文连接器NioDatagramConnector,先看一下报文连接器接口的定义：
+/**
+ * {@link IoConnector} for datagram transport (UDP/IP).
+ *
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public interface DatagramConnector extends IoConnector {
+    /**
+     * @return the default remote InetSocketAddress to connect to when no argument
+     * is specified in {@link #connect()} method.
+     返回默认的远端socket地址
+     * This method overrides the {@link IoConnector#getDefaultRemoteAddress()} method.
+     */
+    @Override
+    InetSocketAddress getDefaultRemoteAddress();
+
+    /**
+     * @return the default configuration of the new FatagramSessions created by 
+     * this connect service.
+     获取会话配置
+     */
+    @Override
+    DatagramSessionConfig getSessionConfig();
+    
+    /**
+     * Sets the default remote InetSocketAddress to connect to when no argument is
+     * specified in {@link #connect()} method.
+     * This method overrides the {@link IoConnector#setDefaultRemoteAddress(java.net.SocketAddress)} method.
+     * 设置默认远端socket地址
+     * @param remoteAddress The remote address to set
+     */
+    void setDefaultRemoteAddress(InetSocketAddress remoteAddress);
+}
+再来看报文连接器NioDatagramConnector
+/**
+ * {@link IoConnector} for datagram transport (UDP/IP).
+ *
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public final class NioDatagramConnector extends AbstractPollingIoConnector<NioSession, DatagramChannel> implements
+DatagramConnector {
+
+    /**
+     * Creates a new instance.
+     创建一个报文连接器，默认会话配置,使用简单IO处理器线程池
+     */
+    public NioDatagramConnector() {
+        super(new DefaultDatagramSessionConfig(), NioProcessor.class);
+    }
+
+    /**
+     * Creates a new instance.
+     * 与上面不同，限定了简单IO处理器线程池线程数量，即IO处理器实例数
+     * @param processorCount The number of IoProcessor instance to create
+     */
+    public NioDatagramConnector(int processorCount) {
+        super(new DefaultDatagramSessionConfig(), NioProcessor.class, processorCount);
+    }
+
+    /**
+     * Creates a new instance.
+     * 多service共享同一IO处理器实例
+     * @param processor The IoProcessor instance to use
+     */
+    public NioDatagramConnector(IoProcessor<NioSession> processor) {
+        super(new DefaultDatagramSessionConfig(), processor);
+    }
+
+    /**
+     * Constructor for {@link NioDatagramConnector} with default configuration which will use a built-in
+     * thread pool executor to manage the given number of processor instances. The processor class must have
+     * a constructor that accepts ExecutorService or Executor as its single argument, or, failing that, a
+     * no-arg constructor.
+     * 使用简单处理器线程池，限定线程池处理线程实例数量
+     * @param processorClass the processor class.
+     * @param processorCount the number of processors to instantiate.
+     * @see SimpleIoProcessorPool#SimpleIoProcessorPool(Class, Executor, int, java.nio.channels.spi.SelectorProvider)
+     * @since 2.0.0-M4
+     */
+    public NioDatagramConnector(Class<? extends IoProcessor<NioSession>> processorClass, int processorCount) {
+        super(new DefaultDatagramSessionConfig(), processorClass, processorCount);
+    }
+
+    /**
+     * Constructor for {@link NioDatagramConnector} with default configuration with default configuration which will use a built-in
+     * thread pool executor to manage the default number of processor instances. The processor class must have
+     * a constructor that accepts ExecutorService or Executor as its single argument, or, failing that, a
+     * no-arg constructor. The default number of instances is equal to the number of processor cores
+     * in the system, plus one.
+     * 处理器线程数量为核心线程数+1与此方与SimpleIoProcessorPool#SimpleIoProcessorPool相似
+     * @param processorClass the processor class.
+     * @see SimpleIoProcessorPool#SimpleIoProcessorPool(Class, Executor, int, java.nio.channels.spi.SelectorProvider)
+     * @since 2.0.0-M4
+     */
+    public NioDatagramConnector(Class<? extends IoProcessor<NioSession>> processorClass) {
+        super(new DefaultDatagramSessionConfig(), processorClass);
+    }
+}
+NioDatagramConnector上面结果构造方法与AbstractPollingIoConnector构造方法相似。
+来看其他方法
+/**
+ * {@inheritDoc}
+ 根据socket地址创建报文通道
+ */
+@Override
+protected DatagramChannel newHandle(SocketAddress localAddress) throws Exception {
+    //打开报文通道
+    DatagramChannel ch = DatagramChannel.open();
+
+    try {
+        if (localAddress != null) {
+            try {
+	        //绑定socket地址
+                ch.socket().bind(localAddress);
+		//设置默认绑定的socket地址
+                setDefaultLocalAddress(localAddress);
+            } catch (IOException ioe) {
+                // Add some info regarding the address we try to bind to the
+                // message
+                String newMessage = "Error while binding on " + localAddress + "\n" + "original message : "
+                        + ioe.getMessage();
+                Exception e = new IOException(newMessage);
+                e.initCause(ioe.getCause());
+
+                // and close the channel
+                ch.close();
+
+                throw e;
+            }
+        }
+        return ch;
+    } catch (Exception e) {
+        // If we got an exception while binding the datagram,
+        // we have to close it otherwise we will loose an handle
+        ch.close();
+        throw e;
+    }
+}
+
+ /**
+  * {@inheritDoc}
+  连接远端socket地址，直接委托给报文通道
+  */
+ @Override
+ protected boolean connect(DatagramChannel handle, SocketAddress remoteAddress) throws Exception {
+     handle.connect(remoteAddress);
+     return true;
+ }
+/**
+ * {@inheritDoc}
+ 创建会话
+ */
+@Override
+protected NioSession newSession(IoProcessor<NioSession> processor, DatagramChannel handle) {
+    NioSession session = new NioDatagramSession(this, handle, processor);
+    session.getConfig().setAll(getSessionConfig());
+    return session;
+}
+/**
+@Override
+ * {@inheritDoc}
+ */
+@Override
+protected void init() throws Exception {
+    // Do nothing
+}
+ /**
+  * {@inheritDoc}
+  */
+ @Override
+ protected void register(DatagramChannel handle, ConnectionRequest request) throws Exception {
+     throw new UnsupportedOperationException();
+ }
+
+ /**
+  * {@inheritDoc}
+  */
+ @Override
+ protected int select(int timeout) throws Exception {
+     return 0;
+ }
+/**
+ * {@inheritDoc}
+ */
+@Override
+protected void wakeup() {
+    // Do nothing
+}
+/**
+ * {@inheritDoc}
+ */
+@Override
+protected void close(DatagramChannel handle) throws Exception {
+    handle.disconnect();
+    handle.close();
+}

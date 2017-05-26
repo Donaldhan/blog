@@ -1,0 +1,139 @@
+Mina 过滤链抽象实现：[url]http://donald-draper.iteye.com/blog/2376335[/url]
+在上面这篇文章中，当IOService接收消息后，首先过滤链，
+ //消息接收，从链头到链尾-》Iohanlder（这个过程handler处理相关事件）
+public void fireMessageReceived(IoSession session, Object message) {
+        Entry head = this.head;
+        callNextMessageReceived(head, session, message);
+}
+private void callNextMessageReceived(Entry entry, IoSession session,
+            Object message) {
+        try {
+            entry.getFilter().messageReceived(entry.getNextFilter(), session,
+                    message);
+        } catch (Throwable e) {
+            fireExceptionCaught(session, e);
+        }
+}
+ private static class TailFilter extends IoFilterAdapter {
+       ...
+        public void messageReceived(NextFilter nextFilter, IoSession session,
+                Object message) throws Exception {
+            try {
+                session.getHandler().messageReceived(session, message);
+            } finally {
+	        //如果发送消息对象为ByteBuffer，则释放buffer
+                ByteBufferUtil.releaseIfPossible(message);
+            }
+        }
+        ...
+}
+从上可以看出IoService接收消息后，消息过滤链中的过滤器（协议解码器等）过滤后，最后交给
+会话handler处理，即IoHandler，今天我们来看一下IoHandler。
+
+/**
+ * Handles all I/O events fired by MINA.
+ * 
+ * @author The Apache MINA Project (dev@mina.apache.org)
+ * @version $Rev$, $Date$
+ * 
+ * @see IoHandlerAdapter
+ */
+public interface IoHandler {
+    /**
+     * Invoked from an I/O processor thread when a new connection has been created.
+     * Because this method is supposed to be called from the same thread that
+     * handles I/O of multiple sessions, please implement this method to perform
+     * tasks that consumes minimal amount of time such as socket parameter
+     * and user-defined session attribute initialization.
+     当一个新的连接创建时，有IO处理器线程调用此方法。由于此方法可以被相同的线程调用，
+     处理多个会话IO，所以实现此方法时，执行任务时，尽量消耗尽少的时间，比如做一些Socket参数配置，
+     用户自定义的会话属性
+     */
+    void sessionCreated(IoSession session) throws Exception;
+
+    /**
+     * Invoked when a connection has been opened.  This method is invoked after
+     * {@link #sessionCreated(IoSession)}.  The biggest difference from
+     * {@link #sessionCreated(IoSession)} is that it's invoked from other thread
+     * than an I/O processor thread once thread modesl is configured properly.
+     当一个连接打开时调用此方法。此方法在会话创建后调用。与会话创建方法不同的是，
+     一旦线程模型配置，会话打开被其他线程调用，而不是IO处理器。
+     */
+    void sessionOpened(IoSession session) throws Exception;
+
+    /**
+     * Invoked when a connection is closed.当连接关闭时，调用。
+     */
+    void sessionClosed(IoSession session) throws Exception;
+
+    /**
+     * Invoked with the related {@link IdleStatus} when a connection becomes idle.
+     * This method is not invoked if the transport type is UDP; it's a known bug,
+     * and will be fixed in 2.0.
+     当连接空闲时，sessionIdle方法被相关空闲状态调用。如果传输接口为UDP，此方法不会调用，
+     这是一个已知的bug，在2.0版本修复
+     */
+    void sessionIdle(IoSession session, IdleStatus status) throws Exception;
+
+    /**
+     * Invoked when any exception is thrown by user {@link IoHandler}
+     * implementation or by MINA.  If <code>cause</code> is instanceof
+     * {@link IOException}, MINA will close the connection automatically.
+     当用户的IO处理器抛出异常时，方法有mina调用。如果异常为IOException,mina将
+     自动关闭连接。
+     */
+    void exceptionCaught(IoSession session, Throwable cause) throws Exception;
+
+    /**
+     * Invoked when a message is received.接收消息时，调用
+     */
+    void messageReceived(IoSession session, Object message) throws Exception;
+
+    /**
+     * Invoked when a message written by {@link IoSession#write(Object)} is
+     * sent out.
+     当消息被Io会话write方法发送出去后，调用
+     */
+    void messageSent(IoSession session, Object message) throws Exception;
+}
+
+/**
+ * An abstract adapter class for {@link IoHandler}.  You can extend this
+ * class and selectively override required event handler methods only.  All
+ * methods do nothing by default. 
+ * IoHandlerAdapter为IO处理器的简单实现。你可以扩展此类或重写需要关注的事件处理方法，
+ 默认所有方法什么都不做。
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public class IoHandlerAdapter implements IoHandler {
+    public void sessionCreated(IoSession session) throws Exception {
+        SessionUtil.initialize(session);
+    }
+
+    public void sessionOpened(IoSession session) throws Exception {
+    }
+
+    public void sessionClosed(IoSession session) throws Exception {
+    }
+
+    public void sessionIdle(IoSession session, IdleStatus status)
+            throws Exception {
+    }
+
+    public void exceptionCaught(IoSession session, Throwable cause)
+            throws Exception {
+        if (SessionLog.isWarnEnabled(session)) {
+            SessionLog.warn(session, "EXCEPTION, please implement "
+                    + getClass().getName()
+                    + ".exceptionCaught() for proper handling:", cause);
+        }
+    }
+
+    public void messageReceived(IoSession session, Object message)
+            throws Exception {
+    }
+
+    public void messageSent(IoSession session, Object message) throws Exception {
+    }
+}

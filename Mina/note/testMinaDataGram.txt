@@ -1,0 +1,258 @@
+MINA TCP简单通信实例：[url]http://donald-draper.iteye.com/blog/2375297[/url]
+MINA 编解码器实例：[url]http://donald-draper.iteye.com/blog/2375317[/url]
+MINA 多路分离解码器实例：[url]http://donald-draper.iteye.com/blog/2375324[/url]
+Mina Socket会话配置：[url]http://donald-draper.iteye.com/blog/2375529[/url]
+Mina Socket与报文过滤链：[url]http://donald-draper.iteye.com/blog/2376440[/url]
+Mina 协议编解码过滤器一（协议编解码工厂、协议编码器）：
+[url]http://donald-draper.iteye.com/blog/2376663[/url]
+Mina 协议编解码过滤器二（协议解码器）：
+[url]http://donald-draper.iteye.com/blog/2376679[/url]
+Mina 队列Queue：[url]http://donald-draper.iteye.com/blog/2376712[/url]
+Mina 协议编解码过滤器三（会话write与消息接收过滤）：
+[url]http://donald-draper.iteye.com/blog/2376818[/url]
+Mina 累计协议解码器：[url]http://donald-draper.iteye.com/blog/2377029[/url]
+MINA 多路复用协议编解码器工厂一（多路复用协议编码器）:
+[url]http://donald-draper.iteye.com/blog/2377170[/url]
+MINA 多路复用协议编解码器工厂二（多路复用协议解码器）：
+[url]http://donald-draper.iteye.com/blog/2377324[/url]
+Mina IoHandler接口定义：[url]http://donald-draper.iteye.com/blog/2377419[/url]
+Mina Nio会话（Socket，DataGram）：[url]http://donald-draper.iteye.com/blog/2378169[/url]
+Mina Nio处理器：[url]http://donald-draper.iteye.com/blog/2377725[/url]
+Mina socket监听器（NioSocketAcceptor）：[url]http://donald-draper.iteye.com/blog/2378668[/url]
+Mina socket连接器（NioSocketConnector）：[url]http://donald-draper.iteye.com/blog/2379000[/url]
+前面的文章我们关注时Mina的socket通信，从今天起，我们来看一下报文通信，从一个实例开始：
+Server-peer：
+package mina.udp.main;
+
+import java.net.InetSocketAddress;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.service.IoAcceptor;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.DatagramSessionConfig;
+import org.apache.mina.transport.socket.nio.NioDatagramAcceptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.udp.handler.UdpServerHandler;
+/**
+ * NioDatagramAcceptor Server peer
+ * @author donald
+ * 2017年5月18日
+ * 下午9:59:13
+ */
+public class UdpServer {
+	private  static final Logger log = LoggerFactory.getLogger(UdpServer.class);
+	private static final  String ip = "192.168.31.153";
+	private static final  int port = 9122;
+	
+	public static void main(String[] args) throws Exception {
+		IoAcceptor acceptor = new NioDatagramAcceptor();
+		//配置会话Handler
+		UdpServerHandler udpServerHandler = new UdpServerHandler();
+		acceptor.setHandler(udpServerHandler);
+		//配置过滤器
+		DefaultIoFilterChainBuilder  defaultIoFilterChainBuilder = acceptor.getFilterChain();
+		defaultIoFilterChainBuilder.addLast("logger", new LoggingFilter());
+		//配置会话
+		DatagramSessionConfig datagramSessionConfig = (DatagramSessionConfig) acceptor.getSessionConfig();
+		datagramSessionConfig.setReuseAddress(true);
+		//绑定地址
+		InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		acceptor.bind(inetSocketAddress);
+		log.info("=========Udp Server peer is start...");
+	}
+}
+
+server-handler：
+package mina.udp.handler;
+
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+/**
+ * Udp Server peer handler
+ * @author donald
+ * 2017年5月18日
+ * 下午10:00:21
+ */
+public class UdpServerHandler extends IoHandlerAdapter {
+	private  static final Logger log = LoggerFactory.getLogger(UdpServerHandler.class);
+	private  static final CharsetEncoder charsetEncoder= Charset.forName("UTF-8").newEncoder();
+	private static final CharsetDecoder charsetDecoder= Charset.forName("UTF-8").newDecoder();
+	public void messageReceived(IoSession session, Object message) throws Exception {
+		IoBuffer buffer = (IoBuffer) message;
+		String msg = buffer.getString(buffer.limit(),charsetDecoder);
+		log.info("=========The message received from Server peer is:" + msg);
+		buffer.clear();
+		buffer.putString("Hello Client peer...", charsetEncoder);
+		buffer.flip();
+		session.write(buffer);
+	}
+
+	@Override
+	public void sessionClosed(IoSession session) throws Exception {
+		log.debug("=========Session Closed...");
+	}
+
+	@Override
+	public void sessionCreated(IoSession session) throws Exception {
+		log.debug("=========Session Created...");
+	}
+
+	@Override
+	public void sessionIdle(IoSession session, IdleStatus status) throws Exception {
+		log.debug(session + "=========Session Idle...");
+	}
+
+	@Override
+	public void sessionOpened(IoSession session) throws Exception {
+		log.debug("=========Session Opened...");
+	}
+
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error(cause.getMessage());
+		session.closeNow();
+	}
+
+	@Override
+	public void messageSent(IoSession session, Object message) throws Exception {
+		log.debug("******************* messageSent...");
+	}
+}
+
+client-peer：
+package mina.udp.main;
+
+import java.net.InetSocketAddress;
+
+import org.apache.mina.core.filterchain.DefaultIoFilterChainBuilder;
+import org.apache.mina.core.future.ConnectFuture;
+import org.apache.mina.core.service.IoConnector;
+import org.apache.mina.filter.logging.LoggingFilter;
+import org.apache.mina.transport.socket.nio.NioDatagramConnector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import mina.udp.handler.UdpClientHandler;
+/**
+ * NioDatagramConnector Client peer
+ * @author donald
+ * 2017年5月18日
+ * 下午10:19:35
+ */
+public class UdpClient {
+	private  static final Logger log = LoggerFactory.getLogger(UdpClient.class);
+	private static final String ip = "192.168.31.153";
+	private static final int port = 9122;
+	public static void main(String[] args) throws Exception {
+		IoConnector connector = new NioDatagramConnector();
+		//配置会话Handler
+		UdpClientHandler udpClientHandler = new UdpClientHandler();
+		connector.setHandler(udpClientHandler);
+		//配置过滤器
+		DefaultIoFilterChainBuilder  defaultIoFilterChainBuilder = connector.getFilterChain();
+		defaultIoFilterChainBuilder.addLast("logger", new LoggingFilter());
+		InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+		//连接远端peer
+		ConnectFuture connFuture = connector.connect(inetSocketAddress);
+		connFuture.awaitUninterruptibly();
+		log.info("=========Udp Client peer is start...");
+	}
+}
+
+client-handler：
+package mina.udp.handler;
+
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CharsetEncoder;
+
+import org.apache.mina.core.buffer.IoBuffer;
+import org.apache.mina.core.service.IoHandlerAdapter;
+import org.apache.mina.core.session.IdleStatus;
+import org.apache.mina.core.session.IoSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+/**
+ * Udp Client peer handler
+ * @author donald
+ * 2017年5月18日
+ * 下午10:24:45
+ */
+public class UdpClientHandler extends IoHandlerAdapter {
+	private  static final Logger log = LoggerFactory.getLogger(UdpClientHandler.class);
+	private  static final CharsetEncoder charsetEncoder= Charset.forName("UTF-8").newEncoder();
+	private static final CharsetDecoder charsetDecoder= Charset.forName("UTF-8").newDecoder();
+	public void messageReceived(IoSession session, Object message) throws Exception {
+		IoBuffer buffer = (IoBuffer) message;
+		String msg = buffer.getString(buffer.limit(),charsetDecoder);
+		log.info("=========The message received from Server peer is:" + msg);
+	}
+
+	@Override
+	public void sessionClosed(IoSession session) throws Exception {
+		log.debug("=========Session Closed...");
+	}
+
+	@Override
+	public void sessionCreated(IoSession session) throws Exception {
+		log.debug("=========Session Created...");
+	}
+
+	@Override
+	public void sessionIdle(IoSession session, IdleStatus status) throws Exception {
+		log.debug(session + "=========Session Idle...");
+	}
+
+	@Override
+	public void sessionOpened(IoSession session) throws Exception {
+		log.debug("=========Session Opened...");
+		IoBuffer buffer = IoBuffer.allocate(1024);
+		buffer.putString("Hello server peer...", charsetEncoder);
+		buffer.flip();
+		session.write(buffer);
+	}
+
+	@Override
+	public void exceptionCaught(IoSession session, Throwable cause) throws Exception {
+		log.error(cause.getMessage());
+		session.closeNow();
+	}
+
+	@Override
+	public void messageSent(IoSession session, Object message) throws Exception {
+		log.debug("=========messageSent...");
+	}
+}
+启动server&client peer，控制台输出：
+server peer：
+[INFO ] 2017-06-12 09:01:05 mina.udp.main.UdpServer =========Udp Server peer is start...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter CREATED
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpServerHandler =========Session Created...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter OPENED
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpServerHandler =========Session Opened...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=20 cap=2048: 48 65 6C 6C 6F 20 73 65 72 76 65 72 20 70 65 65...]
+[INFO ] 2017-06-12 09:01:15 mina.udp.handler.UdpServerHandler =========The message received from Server peer is:Hello server peer...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=20 cap=2048: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 20 70 65 65...]
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpServerHandler ******************* messageSent...
+
+client peer:
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter CREATED
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpClientHandler =========Session Created...
+[INFO ] 2017-06-12 09:01:15 mina.udp.main.UdpClient =========Udp Client peer is start...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter OPENED
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpClientHandler =========Session Opened...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter SENT: HeapBuffer[pos=0 lim=20 cap=1024: 48 65 6C 6C 6F 20 73 65 72 76 65 72 20 70 65 65...]
+[DEBUG] 2017-06-12 09:01:15 mina.udp.handler.UdpClientHandler =========messageSent...
+[INFO ] 2017-06-12 09:01:15 org.apache.mina.filter.logging.LoggingFilter RECEIVED: HeapBuffer[pos=0 lim=20 cap=2048: 48 65 6C 6C 6F 20 43 6C 69 65 6E 74 20 70 65 65...]
+[INFO ] 2017-06-12 09:01:15 mina.udp.handler.UdpClientHandler =========The message received from Server peer is:Hello Client peer...
+

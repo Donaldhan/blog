@@ -1,0 +1,1135 @@
+Mina Io监听器接口定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2378315[/url]
+ 引言：
+ IoAcceptor与IoService不同的是，添加了监听连接请求和地址绑定功能。抽象Io监听器AbstractIoAcceptor绑定地址首先要检查绑定的socket地址与传输元数据的地址类型是否相同，相同则通过bindInternal完成实际的绑定，然后通知Service监听器，Service已激活fireServiceActivated。解绑地址方法，主要是委托unbind0方法完成实际解绑工作，清空绑定地址集合boundAddresses，触发Service监听器无效事件fireServiceDeactivated。
+/**
+ * A base class for implementing transport using a polling strategy. The
+ * underlying sockets will be checked in an active loop and woke up when an
+ * socket needed to be processed. This class handle the logic behind binding,
+ * accepting and disposing the server sockets. An {@link Executor} will be used
+ * for running client accepting and an {@link AbstractPollingIoProcessor} will
+ * be used for processing client I/O operations like reading, writing and
+ * closing.
+ * 
+ * All the low level methods for binding, accepting, closing need to be provided
+ * by the subclassing implementation.
+ * 
+ * @see NioSocketAcceptor for a example of implementation
+ * @param <H> The type of IoHandler
+ * @param <S> The type of IoSession
+ * 
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public abstract class AbstractPollingIoAcceptor<S extends AbstractIoSession, H> extends AbstractIoAcceptor {
+    /** A lock used to protect the selector to be waked up before it's created */
+    //信号量用于在选择器被创建前，保护选择器被唤醒
+    private final Semaphore lock = new Semaphore(1);
+    private final IoProcessor<S> processor;//Io处理器
+    private final boolean createdProcessor;//Io处理器是否创建
+    //地址绑定请求队列，地址绑定时，添加绑定请求AcceptorOperationFuture到队列
+    private final Queue<AcceptorOperationFuture> registerQueue = new ConcurrentLinkedQueue<>();
+    //解绑队列，解绑地址时，添加地址解绑请求AcceptorOperationFuture到队列
+    private final Queue<AcceptorOperationFuture> cancelQueue = new ConcurrentLinkedQueue<>();
+    //监听器绑定的socket地址，与ServerSocketChannel映射关系
+    //绑定地址后，添加地址与ServerSocketChannel映射关系到boundHandles
+    private final Map<SocketAddress, H> boundHandles = Collections.synchronizedMap(new HashMap<SocketAddress, H>());
+    private final ServiceOperationFuture disposalFuture = new ServiceOperationFuture();//Service关闭结果
+    /** A flag set when the acceptor has been created and initialized */
+    private volatile boolean selectable;//当acceptor创建和初始化设置
+    /** The thread responsible of accepting incoming requests 监听连接请求线程Acceptor*/
+    private AtomicReference<Acceptor> acceptorRef = new AtomicReference<>();
+    protected boolean reuseAddress = false;//地址是否重用
+    /**
+     * Define the number of socket that can wait to be accepted. Default
+     * to 50 (as in the SocketServer default).
+     SocketServer默认可以接收的连接数。
+     */
+    protected int backlog = 50;
+ }
+ 来看AbstractPollingIoAcceptor的构造:
+     /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a default
+     * session configuration, a class of {@link IoProcessor} which will be instantiated in a
+     * {@link SimpleIoProcessorPool} for better scaling in multiprocessor systems. The default
+     * pool size will be used.
+     * 构造AbstractPollingIoAcceptor，需要提供默认的会话配置，在IO简单处理器线程池当中，执行的Io处理器类型。
+     默认的线程池大小将会被使用
+     * @see SimpleIoProcessorPool
+     * 
+     * @param sessionConfig
+     *            the default configuration for the managed {@link IoSession}
+     * @param processorClass a {@link Class} of {@link IoProcessor} for the associated {@link IoSession}
+     *            type.
+     */
+    protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Class<? extends IoProcessor<S>> processorClass) {
+        this(sessionConfig, null, new SimpleIoProcessorPool<S>(processorClass), true, null);
+    }
+
+    /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a default
+     * session configuration, a class of {@link IoProcessor} which will be instantiated in a
+     * {@link SimpleIoProcessorPool} for using multiple thread for better scaling in multiprocessor
+     * systems.
+     * 与上面的方法不同的时，指定Io处理器线程池大小，即Io处理器的个数。
+     * @see SimpleIoProcessorPool
+     * 
+     * @param sessionConfig
+     *            the default configuration for the managed {@link IoSession}
+     * @param processorClass a {@link Class} of {@link IoProcessor} for the associated {@link IoSession}
+     *            type.
+     * @param processorCount the amount of processor to instantiate for the pool
+     */
+    protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Class<? extends IoProcessor<S>> processorClass,
+            int processorCount) {
+        this(sessionConfig, null, new SimpleIoProcessorPool<S>(processorClass, processorCount), true, null);
+    }
+
+    /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a default
+     * session configuration, a class of {@link IoProcessor} which will be instantiated in a
+     * {@link SimpleIoProcessorPool} for using multiple thread for better scaling in multiprocessor
+     * systems.
+     *与上面不同的时，多个一个选择器提供者参数
+     * @see SimpleIoProcessorPool
+     *
+     * @param sessionConfig
+     *            the default configuration for the managed {@link IoSession}
+     * @param processorClass a {@link Class} of {@link IoProcessor} for the associated {@link IoSession}
+     *            type.
+     * @param processorCount the amount of processor to instantiate for the pool
+     * @param selectorProvider The SelectorProvider to use
+     */
+    protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Class<? extends IoProcessor<S>> processorClass,
+            int processorCount, SelectorProvider selectorProvider ) {
+        this(sessionConfig, null, new SimpleIoProcessorPool<S>(processorClass, processorCount, selectorProvider), true, selectorProvider);
+    }
+
+    /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a default
+     * session configuration, a default {@link Executor} will be created using
+     * {@link Executors#newCachedThreadPool()}.
+     * 此方法的Io处理器执行器，为 Executors#newCachedThreadPool
+     * @see AbstractIoService
+     * 
+     * @param sessionConfig
+     *            the default configuration for the managed {@link IoSession}
+     * @param processor the {@link IoProcessor} for processing the {@link IoSession} of this transport, triggering
+     *            events to the bound {@link IoHandler} and processing the chains of {@link IoFilter}
+     */
+    protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, IoProcessor<S> processor) {
+        this(sessionConfig, null, processor, false, null);
+    }
+
+    /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a
+     * default session configuration and an {@link Executor} for handling I/O
+     * events. If a null {@link Executor} is provided, a default one will be
+     * created using {@link Executors#newCachedThreadPool()}.
+     * 如果线程池为空，默认为Executors#newCachedThreadPool
+     * @see AbstractIoService#AbstractIoService(IoSessionConfig, Executor)
+     * 
+     * @param sessionConfig
+     *            the default configuration for the managed {@link IoSession}
+     * @param executor
+     *            the {@link Executor} used for handling asynchronous execution
+     *            of I/O events. Can be <code>null</code>.
+     * @param processor
+     *            the {@link IoProcessor} for processing the {@link IoSession}
+     *            of this transport, triggering events to the bound
+     *            {@link IoHandler} and processing the chains of
+     *            {@link IoFilter}
+     */
+    protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Executor executor, IoProcessor<S> processor) {
+        this(sessionConfig, executor, processor, false, null);
+    }
+
+    /**
+     * Constructor for {@link AbstractPollingIoAcceptor}. You need to provide a
+     * default session configuration and an {@link Executor} for handling I/O
+     * events. If a null {@link Executor} is provided, a default one will be
+     * created using {@link Executors#newCachedThreadPool()}.
+     * 这个就是最终的构造方法了。
+     * @see #AbstractIoService(IoSessionConfig, Executor)
+     * 
+     * @param sessionConfig 默认会话配置
+     *            the default configuration for the managed {@link IoSession}
+     * @param executor 异步IO事件执行器
+     *            the {@link Executor} used for handling asynchronous execution
+     *            of I/O events. Can be <code>null</code>.
+     * @param processor 会话处理器器，触发IoHander和过滤器的相关事件
+     *            the {@link IoProcessor} for processing the {@link IoSession}
+     *            of this transport, triggering events to the bound
+     *            {@link IoHandler} and processing the chains of
+     *            {@link IoFilter}
+     * @param createdProcessor
+     *            tagging the processor as automatically created, so it will be
+     *            automatically disposed
+     */
+    private AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Executor executor, IoProcessor<S> processor,
+            boolean createdProcessor, SelectorProvider selectorProvider) {
+        super(sessionConfig, executor);
+        if (processor == null) {
+            throw new IllegalArgumentException("processor");
+        }
+        this.processor = processor;
+        this.createdProcessor = createdProcessor;
+        try {
+            // Initialize the selector
+            init(selectorProvider);初始化选择器
+            // The selector is now ready, we can switch the
+            // flag to true so that incoming connection can be accepted
+            selectable = true;
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeIoException("Failed to initialize.", e);
+        } finally {
+            if (!selectable) {
+                try {
+                    destroy();
+                } catch (Exception e) {
+                    ExceptionMonitor.getInstance().exceptionCaught(e);
+                }
+            }
+        }
+    }
+  /**
+     * Initialize the polling system, will be called at construction time.
+     * 
+     * @param selectorProvider The Selector Provider that will be used by this polling acceptor
+     * @throws Exception any exception thrown by the underlying system calls
+     */
+    protected abstract void init(SelectorProvider selectorProvider) throws Exception;
+从上面来看，构造AbstractPollingIoAcceptor，主要是初始化会话配置，Io处理器类型，IO异步事件执行器
+为空的话默认为CachedThreadPool，然后初始化选择器。
+再来看其他方法:
+
+    /**
+     * Initialize the polling system, will be called at construction time.
+     * @throws Exception any exception thrown by the underlying system calls
+     初始化拉取系统，在构造是调用
+     */
+    protected abstract void init() throws Exception;
+
+  
+    /**
+     * Destroy the polling system, will be called when this {@link IoAcceptor}
+     * implementation will be disposed.
+     销毁拉取系统，在IO监听器销毁时，调用
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract void destroy() throws Exception;
+
+    /**
+     * Check for acceptable connections, interrupt when at least a server is ready for accepting.
+     * All the ready server socket descriptors need to be returned by {@link #selectedHandles()}
+     检查已接收的连接，当至少有一个准备好接收时，中断。所有的就绪serversocket描述符需要通过
+     #selectedHandles方法返回
+     * @return The number of sockets having got incoming client 接收的客户端连接数
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract int select() throws Exception;
+
+    /**
+     * Interrupt the {@link #select()} method. Used when the poll set need to be modified.
+     唤醒，选择操作。当poll及修改时
+     */
+    protected abstract void wakeup();
+
+    /**
+     * {@link Iterator} for the set of server sockets found with acceptable incoming connections
+     *  during the last {@link #select()} call.
+     返回在上一次选择操作中，服务端接收连接数
+     * @return the list of server handles ready
+     */
+    protected abstract Iterator<H> selectedHandles();
+    
+    /**
+     * Open a server socket for a given local address.
+     打开一个给定socket地址的serversocket
+     * @param localAddress the associated local address
+     * @return the opened server socket
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract H open(SocketAddress localAddress) throws Exception;
+
+    /**
+     * Get the local address associated with a given server socket
+     获取给定serversocket的本地地址
+     * @param handle the server socket
+     * @return the local {@link SocketAddress} associated with this handle
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract SocketAddress localAddress(H handle) throws Exception;
+
+    /**
+     * Accept a client connection for a server socket and return a new {@link IoSession}
+     * associated with the given {@link IoProcessor}
+     serversocket接收一个客户端连接请求，返回一个关联指定IO处理器的会话。
+     * @param processor the {@link IoProcessor} to associate with the {@link IoSession}
+     * @param handle the server handle
+     * @return the created {@link IoSession}
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract S accept(IoProcessor<S> processor, H handle) throws Exception;
+
+    /**
+     * Close a server socket. 关闭一个serversocket
+     * @param handle the server socket
+     * @throws Exception any exception thrown by the underlying systems calls
+     */
+    protected abstract void close(H handle) throws Exception;
+再来绑定socket地址：
+ /**
+ * {@inheritDoc}
+ */
+@Override
+protected final Set<SocketAddress> bindInternal(List<? extends SocketAddress> localAddresses) throws Exception {
+    // Create a bind request as a Future operation. When the selector
+    // have handled the registration, it will signal this future.
+    //创建绑定操作结果。当选择器处理注册时，将会通知操作结果。
+    AcceptorOperationFuture request = new AcceptorOperationFuture(localAddresses);
+    // adds the Registration request to the queue for the Workers
+    // to handle 注册请求到注册队列，以便工作线程处理
+    registerQueue.add(request);
+
+    // creates the Acceptor instance and has the local
+    // executor kick it off.
+    //创建监听器实例，本地执行器将会执行实例
+    startupAcceptor();
+
+    // As we just started the acceptor, we have to unblock the select()
+    // in order to process the bind request we just have added to the
+    // registerQueue.
+    //由于我们刚启动监听器，不得不unblock选择操作，处理刚刚添加到注册队列的绑定请求
+    try {
+        lock.acquire();
+
+        wakeup();
+    } finally {
+        lock.release();
+    }
+
+    // Now, we wait until this request is completed.
+    request.awaitUninterruptibly();
+
+    if (request.getException() != null) {
+        throw request.getException();
+    }
+    // Update the local addresses.
+    // setLocalAddresses() shouldn't be called from the worker thread
+    // because of deadlock.
+    Set<SocketAddress> newLocalAddresses = new HashSet<>();
+    for (H handle : boundHandles.values()) {
+        newLocalAddresses.add(localAddress(handle));
+    }
+    return newLocalAddresses;
+}
+地址绑定有一点要关注：
+// creates the Acceptor instance and has the local 
+// executor kick it off.                           
+//创建监听器实例，本地执行器将会执行实例           
+startupAcceptor();   
+
+
+ /**
+ * This method is called by the doBind() and doUnbind()
+ * methods.  If the acceptor is null, the acceptor object will
+ * be created and kicked off by the executor.  If the acceptor
+ * object is null, probably already created and this class
+ * is now working, then nothing will happen and the method
+ * will just return.
+ */
+private void startupAcceptor() throws InterruptedException {
+    // If the acceptor is not ready, clear the queues
+    // TODO : they should already be clean : do we have to do that ?
+    if (!selectable) {
+        //如果acceptor没有准备好，则清空注册队列和取消队列
+        registerQueue.clear();
+        cancelQueue.clear();
+    }
+    // start the acceptor if not already started,
+    //获取当前正在运行的acceptor，没有这创建一个，有执行器执行。
+    Acceptor acceptor = acceptorRef.get();
+    if (acceptor == null) {
+        lock.acquire();
+        acceptor = new Acceptor();
+
+        if (acceptorRef.compareAndSet(null, acceptor)) {
+            executeWorker(acceptor);
+        } else {
+            lock.release();
+        }
+    }
+}
+我们再来看监听器Acceptor的定义：
+  /**
+   * This class is called by the startupAcceptor() method and is
+   * placed into a NamePreservingRunnable class.
+  * It's a thread accepting incoming connections from clients.
+  * The loop is stopped when all the bound handlers are unbound.
+  Acceptor监听器，在startupAcceptor方法，创建被包装成NamePreservingRunnable线程
+  执行。Acceptor是一个线程，接收来自客户端的连接。当所有绑定的Handler解绑时，循环停止。
+  */
+ private class Acceptor implements Runnable {
+     /**
+      * {@inheritDoc}
+      */
+     @Override
+     public void run() {
+         assert acceptorRef.get() == this;
+         int nHandles = 0;
+         // Release the lock
+         lock.release();
+         //当监听器已经准备好
+         while (selectable) {
+             try {
+                 // Process the bound sockets to this acceptor.
+                 // this actually sets the selector to OP_ACCEPT,
+                 // and binds to the port on which this class will
+                 // listen on. We do that before the select because 
+                 // the registerQueue containing the new handler is
+                 // already updated at this point.
+		 //根据地址绑定队列中的绑定请求，打开一个ServerSocketChannle，
+		 //注册接收事件OP_ACCEPT到选择器
+                 nHandles += registerHandles();
+
+                 // Detect if we have some keys ready to be processed
+                 // The select() will be woke up if some new connection
+                 // have occurred, or if the selector has been explicitly
+                 // woke up
+		 //探测是否存在选择key就绪待处理，及一个新的连接请求发生，或者
+		 //选择操作被显示唤醒，执行选择操作
+                 int selected = select();
+
+                 // Now, if the number of registred handles is 0, we can
+                 // quit the loop: we don't have any socket listening
+                 // for incoming connection.
+                 if (nHandles == 0) {
+		     //如果绑定地址为空，则置空acceptorRef
+                     acceptorRef.set(null);
+
+                     if (registerQueue.isEmpty() && cancelQueue.isEmpty()) {
+                         assert acceptorRef.get() != this;
+                         break;
+                     }
+
+                     if (!acceptorRef.compareAndSet(null, this)) {
+                         assert acceptorRef.get() != this;
+                         break;
+                     }
+
+                     assert acceptorRef.get() == this;
+                 }
+
+                 if (selected > 0) {
+                     // We have some connection request, let's process
+                     // them here.
+		     //有接收连接事件发生，则处理连接请求
+                     processHandles(selectedHandles());
+                 }
+
+                 // check to see if any cancellation request has been made.
+		 //unbind解绑队列的解绑地址请求
+                 nHandles -= unregisterHandles();
+             } catch (ClosedSelectorException cse) {
+                 // If the selector has been closed, we can exit the loop
+                 ExceptionMonitor.getInstance().exceptionCaught(cse);
+                 break;
+             } catch (Exception e) {
+                 ExceptionMonitor.getInstance().exceptionCaught(e);
+
+                 try {
+                     Thread.sleep(1000);
+                 } catch (InterruptedException e1) {
+                     ExceptionMonitor.getInstance().exceptionCaught(e1);
+                 }
+             }
+         }
+
+         // Cleanup all the processors, and shutdown the acceptor.
+         if (selectable && isDisposing()) {
+	    //如果acceptor正在关闭，则关闭关联processor
+             selectable = false;
+             try {
+                 if (createdProcessor) {
+                     processor.dispose();
+                 }
+             } finally {
+                 try {
+                     synchronized (disposalLock) {
+                         if (isDisposing()) {
+                             destroy();
+                         }
+                     }
+                 } catch (Exception e) {
+                     ExceptionMonitor.getInstance().exceptionCaught(e);
+                 } finally {
+                     disposalFuture.setDone();
+                 }
+             }
+         }
+     }
+     /**
+      * This method will process new sessions for the Worker class.  All
+      * keys that have had their status updates as per the Selector.selectedKeys()
+      * method will be processed here.  Only keys that are ready to accept
+      * connections are handled here.
+      * <p/>
+      * Session objects are created by making new instances of SocketSessionImpl
+      * and passing the session object to the SocketIoProcessor class.
+      */
+     @SuppressWarnings("unchecked")
+     private void processHandles(Iterator<H> handles) throws Exception {
+        //遍历接收事件就绪的ServerSocketChannel
+         while (handles.hasNext()) {
+             H handle = handles.next();
+             handles.remove();
+
+             // Associates a new created connection to a processor,
+             // and get back a session
+	     //ServerSocketChannel创建一个关联processor的会话
+             S session = accept(processor, handle);
+             if (session == null) {
+                 continue;
+             }
+	     //初始化会话
+             initSession(session, null, null);
+             // add the session to the SocketIoProcessor
+	     //添加会话到会话关联io处理器
+             session.getProcessor().add(session);
+         }
+     }
+     /**
+      * Sets up the socket communications.  Sets items such as:
+     绑定socket地址，打开一个ServerSocketChannle，注册接收事件OP_ACCEPT到选择器
+      * <p/>
+      * Blocking
+      * Reuse address
+      * Receive buffer size
+      * Bind to listen port
+      * Registers OP_ACCEPT for selector
+      */
+     private int registerHandles() {
+         for (;;) {
+             // The register queue contains the list of services to manage
+             // in this acceptor.
+	     //从socket地址绑定请求队列，poll一个地址绑定请求
+             AcceptorOperationFuture future = registerQueue.poll();
+
+             if (future == null) {
+                 return 0;
+             }
+
+             // We create a temporary map to store the bound handles,
+             // as we may have to remove them all if there is an exception
+             // during the sockets opening.
+             Map<SocketAddress, H> newHandles = new ConcurrentHashMap<>();
+	     //获取需要绑定的地址
+             List<SocketAddress> localAddresses = future.getLocalAddresses();
+             try {
+                 // Process all the addresses
+                 for (SocketAddress a : localAddresses) {
+                     H handle = open(a);//根据Socket地址，打开一个ServerSocketChannle
+                     newHandles.put(localAddress(handle), handle);
+                 }
+
+                 // Everything went ok, we can now update the map storing
+                 // all the bound sockets.
+		 //将绑定地址与ServerSocketChannle映射管理添加到地址绑定映射集合
+                 boundHandles.putAll(newHandles);
+
+                 // and notify.
+                 future.setDone();
+                 
+                 return newHandles.size();
+             } catch (Exception e) {
+                 // We store the exception in the future
+                 future.setException(e);
+             } finally {
+                 // Roll back if failed to bind all addresses.
+                 if (future.getException() != null) {
+		     //如果绑定地址有异常，则关闭打开的ServerSocketChannle
+                     for (H handle : newHandles.values()) {
+                         try {
+                             close(handle);
+                         } catch (Exception e) {
+                             ExceptionMonitor.getInstance().exceptionCaught(e);
+                         }
+                     }
+
+                     // Wake up the selector to be sure we will process the newly bound handle
+                     // and not block forever in the select()
+		     //唤醒选择器处理新创建的ServerSocketChannle，不在阻塞在选择操作
+                     wakeup();
+                 }
+             }
+         }
+     }
+
+     /**
+      * This method just checks to see if anything has been placed into the
+      * cancellation queue.  The only thing that should be in the cancelQueue
+      * is CancellationRequest objects and the only place this happens is in
+      * the doUnbind() method.
+      unregisterHandles方法，检查是否有地址解绑请求。如果有解绑请求CancellationRequest，
+      解绑请求在doUnbind方法中产生
+      */
+     private int unregisterHandles() {
+         int cancelledHandles = 0;
+         for (;;) {
+	 //从解绑队列中poll解绑请求
+             AcceptorOperationFuture future = cancelQueue.poll();
+             if (future == null) {
+                 break;
+             }
+             // close the channels
+	     //获取ServerSocketChannle绑定的地址
+             for (SocketAddress a : future.getLocalAddresses()) {
+	        //从绑定socket地址与ServerSocketChannle映射map中，移除绑定的socket地址
+                 H handle = boundHandles.remove(a);
+                 if (handle == null) {
+                     continue;
+                 }
+                 try {
+		     //关闭ServerSocketChannle
+                     close(handle);
+		     //唤醒，触发ServerSocketChannle线程death
+                     wakeup(); // wake up again to trigger thread death
+                 } catch (Exception e) {
+                     ExceptionMonitor.getInstance().exceptionCaught(e);
+                 } finally {
+                     cancelledHandles++;
+                 }
+             }
+             //解绑成功
+             future.setDone();
+         }
+
+         return cancelledHandles;
+     }
+}
+从Acceptor的源码可以看出，如果监听器AbstractPollingIoAcceptor已经初始化，首先
+根据地址绑定队列中的绑定请求，打开一个ServerSocketChannle，注册接收事件OP_ACCEPT到选择器，
+并将绑定地址与ServerSocketChannle映射管理添加到地址绑定映射集合；执行选择操作，
+如果实际绑定地址为空，则置空acceptorRef；如果接收连接事件发生，则处理连接请求，
+遍历接收事件就绪的ServerSocketChannel，ServerSocketChannel创建一个关联processor的会话，
+初始化会话，添加会话到会话关联io处理器；检查是否有地址解绑请求，如果有解绑请求CancellationRequest，
+从绑定socket地址与ServerSocketChannle映射map中，移除绑定的socket地址，关闭ServerSocketChannle；
+最后检查监听器是否正在关闭，如果acceptor正在关闭，则关闭关联processor。
+回到地址绑定方法：
+protected final Set<SocketAddress> bindInternal(List<? extends SocketAddress> localAddresses) throws Exception {
+    // Create a bind request as a Future operation. When the selector
+    // have handled the registration, it will signal this future.
+    //创建绑定操作结果。当选择器处理注册时，将会通知操作结果。
+    AcceptorOperationFuture request = new AcceptorOperationFuture(localAddresses);
+    // adds the Registration request to the queue for the Workers
+    // to handle 注册请求到注册队列，以便工作线程处理
+    registerQueue.add(request);
+
+    // creates the Acceptor instance and has the local
+    // executor kick it off.
+    //创建监听器实例，本地执行器将会执行实例
+    startupAcceptor();
+
+    // As we just started the acceptor, we have to unblock the select()
+    // in order to process the bind request we just have added to the
+    // registerQueue.
+    //由于我们刚启动监听器，不得不unblock选择操作，处理刚刚添加到注册队列的绑定请求
+    try {
+        lock.acquire();
+
+        wakeup();
+    } finally {
+        lock.release();
+    }
+
+    // Now, we wait until this request is completed.
+    request.awaitUninterruptibly();
+
+    if (request.getException() != null) {
+        throw request.getException();
+    }
+    // Update the local addresses.
+    // setLocalAddresses() shouldn't be called from the worker thread
+    // because of deadlock.
+    Set<SocketAddress> newLocalAddresses = new HashSet<>();
+    for (H handle : boundHandles.values()) {
+        newLocalAddresses.add(localAddress(handle));
+    }
+    return newLocalAddresses;
+}
+
+ /**
+ * This method is called by the doBind() and doUnbind()
+ * methods.  If the acceptor is null, the acceptor object will
+ * be created and kicked off by the executor.  If the acceptor
+ * object is null, probably already created and this class
+ * is now working, then nothing will happen and the method
+ * will just return.
+ */
+private void startupAcceptor() throws InterruptedException {
+    // If the acceptor is not ready, clear the queues
+    // TODO : they should already be clean : do we have to do that ?
+    if (!selectable) {
+        //如果acceptor没有准备好，则清空注册队列和取消队列
+        registerQueue.clear();
+        cancelQueue.clear();
+    }
+    // start the acceptor if not already started,
+    //获取当前正在运行的acceptor，没有这创建一个，有执行器执行。
+    Acceptor acceptor = acceptorRef.get();
+    if (acceptor == null) {
+        lock.acquire();
+        acceptor = new Acceptor();
+
+        if (acceptorRef.compareAndSet(null, acceptor)) {
+            executeWorker(acceptor);
+        } else {
+            lock.release();
+        }
+    }
+}
+
+从上面来看，地址绑定过程为，创建绑定操作结果，注册绑定请求到注册地址绑定请求队列，
+创建监听器Acceptor实例并执行。
+再来看地址解绑:
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected final void unbind0(List<? extends SocketAddress> localAddresses) throws Exception {
+        //根据解绑地址创建AcceptorOperationFuture，添加到解绑队列，启动Acceptor线程，完成实际解绑工作。
+        AcceptorOperationFuture future = new AcceptorOperationFuture(localAddresses);
+        cancelQueue.add(future);
+        startupAcceptor();
+        wakeup();
+        future.awaitUninterruptibly();
+        if (future.getException() != null) {
+            throw future.getException();
+        }
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    protected void dispose0() throws Exception {
+        unbind();//解绑地址
+        startupAcceptor();//启动Acceptor线程，完成实际清理工作。
+        wakeup();
+    }
+    /**
+     * {@inheritDoc}
+     默认不支持根据远端地址和本地地址创建会话
+     */
+    @Override
+    public final IoSession newSession(SocketAddress remoteAddress, SocketAddress localAddress) {
+        throw new UnsupportedOperationException();
+    }
+    /**
+     * @return the backLog
+     */
+    public int getBacklog() {
+        return backlog;
+    }
+    /**
+     * Sets the Backlog parameter
+     * 
+     * @param backlog
+     *            the backlog variable
+     */
+    public void setBacklog(int backlog) {
+        synchronized (bindLock) {
+            if (isActive()) {
+                throw new IllegalStateException("backlog can't be set while the acceptor is bound.");
+            }
+
+            this.backlog = backlog;
+        }
+    }
+    /**
+     * @return the flag that sets the reuseAddress information
+     */
+    public boolean isReuseAddress() {
+        return reuseAddress;
+    }
+    /**
+     * Set the Reuse Address flag
+     * 
+     * @param reuseAddress
+     *            The flag to set
+     */
+    public void setReuseAddress(boolean reuseAddress) {
+        synchronized (bindLock) {
+            if (isActive()) {
+                throw new IllegalStateException("backlog can't be set while the acceptor is bound.");
+            }
+            this.reuseAddress = reuseAddress;
+        }
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public SocketSessionConfig getSessionConfig() {
+        return (SocketSessionConfig)sessionConfig;
+    }
+
+
+总结：
+AbstractPollingIoAcceptor主要变量为Io处理器processor，地址绑定请求队列registerQueue，地址解绑请求队列cancelQueue，
+监听器绑定的socket地址，与ServerSocketChannel映射关系boundHandles-Map，监听工作线程Acceptor引用acceptorRef。
+构造AbstractPollingIoAcceptor，主要是初始化会话配置，Io处理器类型，IO异步事件执行器
+为空的话默认为CachedThreadPool，然后初始化选择器。
+地址绑定过程为，创建绑定操作结果，注册绑定请求到注册地址绑定请求队列，
+创建监听器Acceptor实例并执行。
+Acceptor主要功能为，地址绑定，监听连接请求，解绑地址，实际工作逻辑为：
+如果监听器AbstractPollingIoAcceptor已经初始化，首先
+根据地址绑定队列中的绑定请求，打开一个ServerSocketChannle，注册接收事件OP_ACCEPT到选择器，
+并将绑定地址与ServerSocketChannle映射管理添加到地址绑定映射集合；执行选择操作，
+如果实际绑定地址为空，则置空acceptorRef；如果接收连接事件发生，则处理连接请求，
+遍历接收事件就绪的ServerSocketChannel，ServerSocketChannel创建一个关联processor的会话，
+初始化会话，添加会话到会话关联io处理器；检查是否有地址解绑请求，如果有解绑请求CancellationRequest，
+从绑定socket地址与ServerSocketChannle映射map中，移除绑定的socket地址，关闭ServerSocketChannle；
+最后检查监听器是否正在关闭，如果acceptor正在关闭，则关闭关联processor。
+Acceptor和AbstractPollingIoAcceptor的关系，与AbstractPollingIoProcessor和Processor的关系很像。
+地址解绑过程，首先根据解绑地址创建AcceptorOperationFuture，添加到解绑队列，启动Acceptor线程，完成实际解绑工作。
+AbstractPollingIoAcceptor所有的工作（地址绑定，接收连接，创建会话，添加会话到IO处理器，解绑地址，释放监听器资源）
+都是在Acceptor线程里完成。
+
+
+
+附：
+//SimpleIoProcessorPool,简单的IO处理器线程池，这一步，可以做个了解。
+简单的IO处理器线程池SimpleIoProcessorPool，将一个会话的相关事件在多个Io处理器执行。
+当前的transport内部实现用SimpleIoProcessorPool，在多处理器环境下，具有良好的性能，
+因此不需要直接使用SimpleIoProcessorPool，除非在同个虚拟机中运行多个IoService。
+Io处理器线程池，主要是创建size个IO处理器线程处理会话和过滤器相关事件。
+如果在同一虚拟机中运行多个Io服务，你需要共享处理器线程池。为了达到这个效果，你需要构造
+SimpleIoProcessorPool实例，在创建IO服务时，作为参数传入。会话与IO处理器线程池，主要通过会话的
+处理器属性关联，获取会话关联的处理器，如果会话属性没有存储关联处理器，则从处理器线程池中获取一个，
+添加会话属性中。SimpleIoProcessorPool的其他方法发送写请求，刷新会话，添加移除会话等操作都是通过
+会话关联的处理器线程池中的处理器。
+简单的说，SimpleIoProcessorPool使用与再同一个虚拟机下启动多个IO服务的情况，简单处理器线程池，
+就是一个处理器集合，添加会话时，从会话属性中，获会话关联的处理器，如果会话属性没有存储关联处理器，
+则从处理器线程池中获取一个，添加会话属性中。
+/**
+ * An {@link IoProcessor} pool that distributes {@link IoSession}s into one or more
+ * {@link IoProcessor}s. Most current transport implementations use this pool internally
+ * to perform better in a multi-core environment, and therefore, you won't need to 
+ * use this pool directly unless you are running multiple {@link IoService}s in the
+ * same JVM.
+简单的IO处理器线程池SimpleIoProcessorPool，将一个会话的相关事件在多个Io处理器执行。
+当前的transport内部实现用SimpleIoProcessorPool，在多处理器环境下，具有良好的性能，
+因此不需要直接使用SimpleIoProcessorPool，除非在同个虚拟机中运行多个IoService。
+ * <p>
+ * If you are running multiple {@link IoService}s, you could want to share the pool
+ * among all services.  To do so, you can create a new {@link SimpleIoProcessorPool}
+ * instance by yourself and provide the pool as a constructor parameter when you
+ * create the services.
+ 如果在同一虚拟机中运行多个Io服务，你需要共享处理器线程池。为了达到这个效果，你需要构造
+SimpleIoProcessorPool实例，在创建IO服务时，作为参数传入。
+ * <p>
+ * This pool uses Java reflection API to create multiple {@link IoProcessor} instances.
+ * It tries to instantiate the processor in the following order:
+Io处理器线程池默认通过反射创建io处理器实例，有一下三中形式
+ * <ol>
+ * <li>A public constructor with one {@link ExecutorService} parameter.</li>
+ * <li>A public constructor with one {@link Executor} parameter.</li>
+ * <li>A public default constructor</li>
+ * </ol>
+ * The following is an example for the NIO socket transport:
+ * <pre><code>
+ 下面是创建TCP服务端的一个实例
+ * // Create a shared pool.
+ * SimpleIoProcessorPool&lt;NioSession&gt; pool = 
+ *         new SimpleIoProcessorPool&lt;NioSession&gt;(NioProcessor.class, 16);
+ * 
+ * // Create two services that share the same pool.
+ * SocketAcceptor acceptor = new NioSocketAcceptor(pool);
+ * SocketConnector connector = new NioSocketConnector(pool);
+ * 
+ * ...
+ * 
+ * // Release related resources.
+ * connector.dispose();
+ * acceptor.dispose();
+ * pool.dispose();
+ * </code></pre>
+ * 
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ * 
+ * @param <S> the type of the {@link IoSession} to be managed by the specified
+ *            {@link IoProcessor}.
+ */
+public class SimpleIoProcessorPool<S extends AbstractIoSession> implements IoProcessor<S> {
+    /** A logger for this class */
+    private static final Logger LOGGER = LoggerFactory.getLogger(SimpleIoProcessorPool.class);
+    /** The default pool size, when no size is provided. */
+    private static final int DEFAULT_SIZE = Runtime.getRuntime().availableProcessors() + 1;
+    /** A key used to store the processor pool in the session's Attributes */
+    private static final AttributeKey PROCESSOR = new AttributeKey(SimpleIoProcessorPool.class, "processor");
+    /** The pool table */
+    private final IoProcessor<S>[] pool;//io处理器集会话的相关事件。
+    /** The contained  which is passed to the IoProcessor when they are created */
+    private final Executor executor;//io异步事件执行器
+    /** A flag set to true if we had to create an executor */
+    private final boolean createdExecutor;
+    /** A lock to protect the disposal against concurrent calls */
+    private final Object disposalLock = new Object();
+    /** A flg set to true if the IoProcessor in the pool are being disposed */
+    private volatile boolean disposing;
+    /** A flag set to true if all the IoProcessor contained in the pool have been disposed */
+    private volatile boolean disposed;
+
+    /**
+     * Creates a new instance of SimpleIoProcessorPool with a default
+     * size of NbCPUs +1.
+     *
+     * @param processorType The type of IoProcessor to use
+     */
+    public SimpleIoProcessorPool(Class<? extends IoProcessor<S>> processorType) {
+        this(processorType, null, DEFAULT_SIZE, null);
+    }
+    /**
+     * Creates a new instance of SimpleIoProcessorPool with a defined
+     * number of IoProcessors in the pool
+     *
+     * @param processorType The type of IoProcessor to use
+     * @param size The number of IoProcessor in the pool
+     */
+    public SimpleIoProcessorPool(Class<? extends IoProcessor<S>> processorType, int size) {
+        this(processorType, null, size, null);
+    }
+    /**
+     * Creates a new instance of SimpleIoProcessorPool with a defined
+     * number of IoProcessors in the pool
+     *
+     * @param processorType The type of IoProcessor to use
+     * @param size The number of IoProcessor in the pool
+     * @param selectorProvider The SelectorProvider to use
+     */
+    public SimpleIoProcessorPool(Class<? extends IoProcessor<S>> processorType, int size, SelectorProvider selectorProvider) {
+        this(processorType, null, size, selectorProvider);
+    }
+    /**
+     * Creates a new instance of SimpleIoProcessorPool with an executor
+     *
+     * @param processorType The type of IoProcessor to use
+     * @param executor The {@link Executor}
+     */
+    public SimpleIoProcessorPool(Class<? extends IoProcessor<S>> processorType, Executor executor) {
+        this(processorType, executor, DEFAULT_SIZE, null);
+    }
+    /**
+     * Creates a new instance of SimpleIoProcessorPool with an executor
+     *
+     * @param processorType The type of IoProcessor to use
+     * @param executor The {@link Executor}
+     * @param size The number of IoProcessor in the pool
+     * @param selectorProvider The SelectorProvider to used
+     */
+    @SuppressWarnings("unchecked")
+    public SimpleIoProcessorPool(Class<? extends IoProcessor<S>> processorType, Executor executor, int size, 
+            SelectorProvider selectorProvider) {
+        if (processorType == null) {
+            throw new IllegalArgumentException("processorType");
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException("size: " + size + " (expected: positive integer)");
+        }
+        // Create the executor if none is provided
+        createdExecutor = executor == null;
+        if (createdExecutor) {
+            this.executor = Executors.newCachedThreadPool();
+            // Set a default reject handler
+            ((ThreadPoolExecutor) this.executor).setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        } else {
+            this.executor = executor;
+        }
+        pool = new IoProcessor[size];//初始化IO处理器集
+        boolean success = false;
+        Constructor<? extends IoProcessor<S>> processorConstructor = null;
+        boolean usesExecutorArg = true;
+        try {
+            // We create at least one processor
+            try {
+                try {
+		    //创建处理器
+                    processorConstructor = processorType.getConstructor(ExecutorService.class);
+                    pool[0] = processorConstructor.newInstance(this.executor);
+                } catch (NoSuchMethodException e1) {
+                    // To the next step...
+                    try {
+		        //如果处理器没有相关构造方法，重新构造Io处理器
+                        if(selectorProvider==null) {
+                            processorConstructor = processorType.getConstructor(Executor.class);
+                            pool[0] = processorConstructor.newInstance(this.executor);
+                        } else {
+                            processorConstructor = processorType.getConstructor(Executor.class, SelectorProvider.class);
+                            pool[0] = processorConstructor.newInstance(this.executor,selectorProvider);
+                        }
+                    } catch (NoSuchMethodException e2) {
+                        // To the next step...
+                        try {
+                            processorConstructor = processorType.getConstructor();
+                            usesExecutorArg = false;
+                            pool[0] = processorConstructor.newInstance();
+                        } catch (NoSuchMethodException e3) {
+                            // To the next step...
+                        }
+                    }
+                }
+            } catch (RuntimeException re) {
+                LOGGER.error("Cannot create an IoProcessor :{}", re.getMessage());
+                throw re;
+            } catch (Exception e) {
+                String msg = "Failed to create a new instance of " + processorType.getName() + ":" + e.getMessage();
+                LOGGER.error(msg, e);
+                throw new RuntimeIoException(msg, e);
+            }
+
+            if (processorConstructor == null) {
+                // Raise an exception if no proper constructor is found.
+                String msg = String.valueOf(processorType) + " must have a public constructor with one "
+                        + ExecutorService.class.getSimpleName() + " parameter, a public constructor with one "
+                        + Executor.class.getSimpleName() + " parameter or a public default constructor.";
+                LOGGER.error(msg);
+                throw new IllegalArgumentException(msg);
+            }
+
+            // Constructor found now use it for all subsequent instantiations
+            for (int i = 1; i < pool.length; i++) {
+                try {
+                    if (usesExecutorArg) {
+                        if(selectorProvider==null) {
+                            pool[i] = processorConstructor.newInstance(this.executor);
+                        } else {
+                            pool[i] = processorConstructor.newInstance(this.executor, selectorProvider);
+                        }
+                    } else {
+                        pool[i] = processorConstructor.newInstance();
+                    }
+                } catch (Exception e) {
+                    // Won't happen because it has been done previously
+                }
+            }
+
+            success = true;
+        } finally {
+            if (!success) {
+                dispose();
+            }
+        }
+    }
+   //从上来看，构造Io处理器线程池，主要是创建size个IO处理器线程处理会话和过滤器相关事件
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void add(S session) {
+        getProcessor(session).add(session);
+    }
+     /**
+     * Find the processor associated to a session. If it hasen't be stored into
+     * the session's attributes, pick a new processor and stores it.
+     获取会话关联的处理器，如果会话属性没有存储关联处理器，则从处理器线程池中获取一个，添加
+     会话属性中。
+     */
+    @SuppressWarnings("unchecked")
+    private IoProcessor<S> getProcessor(S session) {
+        IoProcessor<S> processor = (IoProcessor<S>) session.getAttribute(PROCESSOR);
+        if (processor == null) {
+            if (disposed || disposing) {
+                throw new IllegalStateException("A disposed processor cannot be accessed.");
+            }
+            processor = pool[Math.abs((int) session.getId()) % pool.length];
+
+            if (processor == null) {
+                throw new IllegalStateException("A disposed processor cannot be accessed.");
+            }
+            session.setAttributeIfAbsent(PROCESSOR, processor);
+        }
+
+        return processor;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void flush(S session) {
+        getProcessor(session).flush(session);
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void write(S session, WriteRequest writeRequest) {
+        getProcessor(session).write(session, writeRequest);
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void remove(S session) {
+        getProcessor(session).remove(session);
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void updateTrafficControl(S session) {
+        getProcessor(session).updateTrafficControl(session);
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isDisposed() {
+        return disposed;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isDisposing() {
+        return disposing;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final void dispose() {
+        if (disposed) {
+            return;
+        }
+        synchronized (disposalLock) {
+            if (!disposing) {
+                disposing = true;
+                //遍历处理器集，释放处理器资源
+                for (IoProcessor<S> ioProcessor : pool) {
+                    if (ioProcessor == null) {
+                        // Special case if the pool has not been initialized properly
+                        continue;
+                    }
+
+                    if (ioProcessor.isDisposing()) {
+                        continue;
+                    }
+
+                    try {
+                        ioProcessor.dispose();
+                    } catch (Exception e) {
+                        LOGGER.warn("Failed to dispose the {} IoProcessor.", ioProcessor.getClass().getSimpleName(), e);
+                    }
+                }
+
+                if (createdExecutor) {
+                    ((ExecutorService) executor).shutdown();
+                }
+            }
+
+            Arrays.fill(pool, null);
+            disposed = true;
+        }
+    }
+}

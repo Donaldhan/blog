@@ -1,0 +1,908 @@
+Mina Socket会话配置：[url]http://donald-draper.iteye.com/blog/2375529[/url]
+Mina 抽象Io会话：[url]http://donald-draper.iteye.com/blog/2377880[/url]
+引言：
+    上一篇我们看了一下Io会话的抽象实现，先来回顾一下：
+    抽象会话AbstractIoSession内部有一个关联的IoService和一个IoHandler；一个写请求队列用于存发会话写请求；一个会话属性Map存放会话属性，还有一些读写字节数，消息数，相关吞吐量和上次读写或空闲操作时间计数器。，会话初始化主要为初始化关联service，及关联的IoHandler，实际为Service的IoHandler；初始化所有的会话事件计数器为当前时间。关闭方法默认关闭时，清空写请求队列，并将写请求的结果置为已写，触发过滤过滤链fireFilterClose事件，即不flush会话写请求队列，closeOnFlush方法为，在关闭会话前，flush会话写请求队列。会话读操作，首先获取会话读请求结果队列，从队列poll一个读结果，如果读结果不为空且已关闭，则重新入队列，否则新建一个默认读请求结果，添加到会话等待读请求结果队列。会话写请求，首先保证消息不为null，会话建立连接，并且远端socket地址不为null；如果消息为IoBuffer，确保buffer不为空，如果消息为文件通道/文件类型，则包装消息为DefaultFileRegion/FilenameFileRegion；然后创建写请求DefaultWriteRequest，触发会话过滤链fireFilterWrite事件，如果消息为文件通道，则注册写结果监听器，在消息发送完后，关闭文件通道,返回写结果DefaultWriteFuture。
+今天来看Io会话的具体实现传输层管理的会话NioSession
+/**
+ * An {@link IoSession} which is managed by the NIO transport.
+ *  
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public abstract class NioSession extends AbstractIoSession {
+    /** The NioSession processor */
+    protected final IoProcessor<NioSession> processor;//会话关联Io处理器
+    /** The communication channel */
+    protected final Channel channel;//会话管理通道
+    /** The SelectionKey used for this session */
+    private SelectionKey key;//会话通道选择key
+    /** The FilterChain created for this session */
+    private final IoFilterChain filterChain;//会话过滤链
+    /**
+     * 
+     * Creates a new instance of NioSession, with its associated IoProcessor.
+     * <br>
+     * This method is only called by the inherited class.
+     *根据IO处理器，IoService，通道Channel构建nio会话
+     * @param processor The associated {@link IoProcessor}
+     * @param service The associated {@link IoService}
+     * @param channel The associated {@link Channel}
+     */
+    protected NioSession(IoProcessor<NioSession> processor, IoService service, Channel channel) {
+        super(service);
+        this.channel = channel;
+        this.processor = processor;
+        filterChain = new DefaultIoFilterChain(this);
+    }
+
+    /**
+     * @return The ByteChannel associated with this {@link IoSession} 
+     获取会话通道
+     */
+    abstract ByteChannel getChannel();
+
+    /**
+     * {@inheritDoc}
+     获取会话过滤链
+     */
+    @Override
+    public IoFilterChain getFilterChain() {
+        return filterChain;
+    }
+
+    /**
+     * @return The {@link SelectionKey} associated with this {@link IoSession}
+     获取会话选择key
+     */
+    /* No qualifier*/SelectionKey getSelectionKey() {
+        return key;
+    }
+
+    /**
+     * Sets the {@link SelectionKey} for this {@link IoSession}
+     *设置会话选择key
+     * @param key The new {@link SelectionKey}
+     */
+    /* No qualifier*/void setSelectionKey(SelectionKey key) {
+        this.key = key;
+    }
+
+    /**
+     * {@inheritDoc}
+     获取会话关联Io处理器
+     */
+    @Override
+    public IoProcessor<NioSession> getProcessor() {
+        return processor;
+    }
+
+    /**
+     * {@inheritDoc}
+     会话是否处于激活状态
+     */
+    @Override
+    public final boolean isActive() {
+        return key.isValid();
+    }
+}
+从上面可以看出，NioSession会话主要管理会话关联Io处理器processor，通道channel，
+选择键SelectionKey和会话过滤链IoFilterChain；IoService交由AbstractIoSession管理。
+下面来看socket会话NioSocketSession
+/**
+ * An {@link IoSession} for socket transport (TCP/IP).
+ *
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+class NioSocketSession extends NioSession {
+   //Transport元数据
+    static final TransportMetadata METADATA = new DefaultTransportMetadata("nio", "socket", false, true,
+            InetSocketAddress.class, SocketSessionConfig.class, IoBuffer.class, FileRegion.class);
+}
+//默认Transport元数据
+public class DefaultTransportMetadata
+    implements TransportMetadata
+{
+    private final String providerName;//提供者名nio/aio/bio
+    private final String name;//Transport元数据名
+    private final boolean connectionless;//连接状态，（有连接的通信tcp，还是无连接udp）
+    private final boolean fragmentation;//是否分片
+    private final Class addressType;//地址类型
+    private final Class sessionConfigType;//会话配置类型
+    private final Set envelopeTypes;//涉及包装类型
+    public transient DefaultTransportMetadata(String providerName, String name, boolean connectionless, 
+                  boolean fragmentation, Class addressType, Class sessionConfigType, Class envelopeTypes[])
+    {
+    ...
+    }
+}
+再来看socket会话的构造：
+
+/**
+ * 
+ * Creates a new instance of NioSocketSession.
+ *创建socket会话
+ * @param service the associated IoService 
+ * @param processor the associated IoProcessor
+ * @param channel the used channel
+ */
+public NioSocketSession(IoService service, IoProcessor<NioSession> processor, SocketChannel channel) {
+    super(processor, service, channel);
+    config = new SessionConfigImpl();
+    config.setAll(service.getSessionConfig());
+}
+从构造来看，socket会话配置继承于关联IoService的会话配置 ；
+//获取会话socket
+private Socket getSocket() {
+    return ((SocketChannel) channel).socket();
+}
+/**
+ * {@inheritDoc}
+ 获取传输元数据
+ */
+@Override
+public TransportMetadata getTransportMetadata() {
+    return METADATA;
+}
+/**
+ * {@inheritDoc}
+ 获取socket会话配置
+ */
+@Override
+public SocketSessionConfig getConfig() {
+    return (SocketSessionConfig) config;
+}
+/**
+ * {@inheritDoc}
+ 获取会话通道
+ */
+@Override
+SocketChannel getChannel() {
+    return (SocketChannel) channel;
+}
+/**
+ * {@inheritDoc}
+ 获取会话远端地址
+ */
+@Override
+public InetSocketAddress getRemoteAddress() {
+    if (channel == null) {
+        return null;
+    }
+    Socket socket = getSocket();
+    if (socket == null) {
+        return null;
+    }
+    return (InetSocketAddress) socket.getRemoteSocketAddress();
+}
+/**
+ * {@inheritDoc}
+ 获取会话本地地址
+ */
+@Override
+public InetSocketAddress getLocalAddress() {
+    if (channel == null) {
+        return null;
+    }
+    Socket socket = getSocket();
+    if (socket == null) {
+        return null;
+    }
+    return (InetSocketAddress) socket.getLocalSocketAddress();
+}
+//关闭会话，即取消会话关联的选择key和关闭关联通道。
+protected void destroy(NioSession session) throws IOException {
+    ByteChannel ch = session.getChannel();
+    SelectionKey key = session.getSelectionKey();
+    if (key != null) {
+        key.cancel();
+    }
+    ch.close();
+}
+@Override
+//获取会话关联Ioservice地址
+public InetSocketAddress getServiceAddress() {
+    return (InetSocketAddress) super.getServiceAddress();
+}
+回到构造函数中的会话配置:
+public NioSocketSession(IoService service, IoProcessor<NioSession> processor, SocketChannel channel) {
+    super(processor, service, channel);
+    config = new SessionConfigImpl();
+    config.setAll(service.getSessionConfig());
+}
+我们来看看一下SessionConfigImpl：
+/**
+     * A private class storing a copy of the IoService configuration when the IoSession
+     * is created. That allows the session to have its own configuration setting, over
+     * the IoService default one.
+     SessionConfigImpl为socket会话私有类。当Io会话创建时，从关联IoService拷贝一份会话相关配置到
+     当前会话。运行会话可以拥有自己的配置，覆盖从IoService继承的
+     */
+    private class SessionConfigImpl extends AbstractSocketSessionConfig {
+       //下面这些配置，我们在前面已讲，这里不再重复，与socket配置基本相同
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public boolean isKeepAlive() {
+            try {
+                return getSocket().getKeepAlive();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setKeepAlive(boolean on) {
+            try {
+                getSocket().setKeepAlive(on);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public boolean isOobInline() {
+            try {
+                return getSocket().getOOBInline();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setOobInline(boolean on) {
+            try {
+                getSocket().setOOBInline(on);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public boolean isReuseAddress() {
+            try {
+                return getSocket().getReuseAddress();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setReuseAddress(boolean on) {
+            try {
+                getSocket().setReuseAddress(on);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public int getSoLinger() {
+            try {
+                return getSocket().getSoLinger();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setSoLinger(int linger) {
+            try {
+                if (linger < 0) {
+                    getSocket().setSoLinger(false, 0);
+                } else {
+                    getSocket().setSoLinger(true, linger);
+                }
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public boolean isTcpNoDelay() {
+            if (!isConnected()) {
+                return false;
+            }
+            try {
+                return getSocket().getTcpNoDelay();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setTcpNoDelay(boolean on) {
+            try {
+                getSocket().setTcpNoDelay(on);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public int getTrafficClass() {
+            try {
+                return getSocket().getTrafficClass();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setTrafficClass(int tc) {
+            try {
+                getSocket().setTrafficClass(tc);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public int getSendBufferSize() {
+            try {
+                return getSocket().getSendBufferSize();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setSendBufferSize(int size) {
+            try {
+                getSocket().setSendBufferSize(size);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public int getReceiveBufferSize() {
+            try {
+                return getSocket().getReceiveBufferSize();
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+        /**
+         * {@inheritDoc}
+         */
+        @Override
+        public void setReceiveBufferSize(int size) {
+            try {
+                getSocket().setReceiveBufferSize(size);
+            } catch (SocketException e) {
+                throw new RuntimeIoException(e);
+            }
+        }
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public final boolean isSecured() {
+        // If the session does not have a SslFilter, we can return false
+        IoFilterChain chain = getFilterChain();
+	//根据会话过滤链中是否添加SslFilter过滤器，来判断会话是否安全
+        IoFilter sslFilter = chain.get(SslFilter.class);
+        if (sslFilter != null) {
+        // Get the SslHandler from the SslFilter
+            return ((SslFilter)sslFilter).isSslStarted(this);
+        } else {
+            return false;
+        }
+    }
+}
+我们再来看一下报文会话：
+class NioDatagramSession extends NioSession {
+   //传输元数据
+    static final TransportMetadata METADATA = new DefaultTransportMetadata("nio", "datagram", true, false,
+            InetSocketAddress.class, DatagramSessionConfig.class, IoBuffer.class);
+    private final InetSocketAddress localAddress;//本地地址
+    private final InetSocketAddress remoteAddress;//远端地址
+     /**
+     * Creates a new connector-side session instance.
+     创建一个单向连接的报文会话实例
+     */
+    NioDatagramSession(IoService service, DatagramChannel channel, IoProcessor<NioSession> processor) {
+        this(service, channel, processor, channel.socket().getRemoteSocketAddress());
+    }
+    /**
+     * Creates a new acceptor-side session instance.
+     创建一个单向连接的报文会话实例
+     */
+    NioDatagramSession(IoService service, DatagramChannel channel, IoProcessor<NioSession> processor,
+            SocketAddress remoteAddress) {
+        super(processor, service, channel);
+        config = new NioDatagramSessionConfig(channel);
+        config.setAll(service.getSessionConfig());
+        this.remoteAddress = (InetSocketAddress) remoteAddress;
+        this.localAddress = (InetSocketAddress) channel.socket().getLocalSocketAddress();
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public DatagramSessionConfig getConfig() {
+        return (DatagramSessionConfig) config;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    DatagramChannel getChannel() {
+        return (DatagramChannel) channel;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public TransportMetadata getTransportMetadata() {
+        return METADATA;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public InetSocketAddress getRemoteAddress() {
+        return remoteAddress;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public InetSocketAddress getLocalAddress() {
+        return localAddress;
+    }
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public InetSocketAddress getServiceAddress() {
+        return (InetSocketAddress) super.getServiceAddress();
+    }
+}
+总结:
+NioSession会话主要管理会话关联Io处理器processor，通道channel，
+选择键SelectionKey和会话过滤链IoFilterChain；IoService交由AbstractIoSession管理。
+socket会话NioSocketSession配置继承于关联IoService的会话配置 ；
+关闭会话，即取消会话关联的选择key和关闭关联通道。
+附：
+public class DefaultTransportMetadata
+    implements TransportMetadata
+{
+    private final String providerName;//提供者名nio/aio/bio
+    private final String name;//Transport元数据名
+    private final boolean connectionless;//连接状态，（有连接的通信tcp，还是无连接udp）
+    private final boolean fragmentation;//是否分片
+    private final Class addressType;//地址类型
+    private final Class sessionConfigType;//会话配置类型
+    private final Set envelopeTypes;//涉及包装类型
+    public transient DefaultTransportMetadata(String providerName, String name, boolean connectionless, 
+                  boolean fragmentation, Class addressType, Class sessionConfigType, Class envelopeTypes[])
+    {
+        
+        if(providerName == null)
+            throw new IllegalArgumentException("providerName");
+        if(name == null)
+            throw new IllegalArgumentException("name");
+        providerName = providerName.trim().toLowerCase();
+        if(providerName.length() == 0)
+            throw new IllegalArgumentException("providerName is empty.");
+        name = name.trim().toLowerCase();
+        if(name.length() == 0)
+            throw new IllegalArgumentException("name is empty.");
+        if(addressType == null)
+            throw new IllegalArgumentException("addressType");
+        if(envelopeTypes == null)
+            throw new IllegalArgumentException("envelopeTypes");
+        if(envelopeTypes.length == 0)
+            throw new IllegalArgumentException("envelopeTypes is empty.");
+        if(sessionConfigType == null)
+            throw new IllegalArgumentException("sessionConfigType");
+        this.providerName = providerName;
+        this.name = name;
+        this.connectionless = connectionless;
+        this.fragmentation = fragmentation;
+        this.addressType = addressType;
+        this.sessionConfigType = sessionConfigType;
+        Set newEnvelopeTypes = new IdentityHashSet();
+        Class aclass[] = envelopeTypes;
+        int i = aclass.length;
+        for(int j = 0; j < i; j++)
+        {
+            Class c = aclass[j];
+            newEnvelopeTypes.add(c);
+        }
+        this.envelopeTypes = Collections.unmodifiableSet(newEnvelopeTypes);
+    } 
+}
+下面这部分是报文会话配置，不做太多介绍：
+//DatagramSessionConfig
+/**
+ * An {@link IoSessionConfig} for datagram transport type.
+ *
+ * @author The Apache Directory Project (mina-dev@directory.apache.org)
+ * @version $Rev$, $Date$
+ */
+public interface DatagramSessionConfig extends IoSessionConfig {
+    /**
+     * @see DatagramSocket#getBroadcast()
+     */
+    boolean isBroadcast();
+
+    /**
+     * @see DatagramSocket#setBroadcast(boolean)
+     */
+    void setBroadcast(boolean broadcast);
+
+    /**
+     * @see DatagramSocket#getReuseAddress()
+     */
+    boolean isReuseAddress();
+
+    /**
+     * @see DatagramSocket#setReuseAddress(boolean)
+     */
+    void setReuseAddress(boolean reuseAddress);
+
+    /**
+     * @see DatagramSocket#getReceiveBufferSize()
+     */
+    int getReceiveBufferSize();
+
+    /**
+     * @see DatagramSocket#setReceiveBufferSize(int)
+     */
+    void setReceiveBufferSize(int receiveBufferSize);
+
+    /**
+     * @see DatagramSocket#getSendBufferSize()
+     */
+    int getSendBufferSize();
+
+    /**
+     * @see DatagramSocket#setSendBufferSize(int)
+     */
+    void setSendBufferSize(int sendBufferSize);
+
+    /**
+     * @see DatagramSocket#getTrafficClass()
+     */
+    int getTrafficClass();
+
+    /**
+     * @see DatagramSocket#setTrafficClass(int)
+     */
+    void setTrafficClass(int trafficClass);
+}
+//AbstractDatagramSessionConfig
+/**
+ * The Datagram transport session configuration.
+ * 
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+public abstract class AbstractDatagramSessionConfig extends AbstractIoSessionConfig implements DatagramSessionConfig {
+    /** Tells if we should close the session if the port is unreachable. Default to true */
+    private boolean closeOnPortUnreachable = true;
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setAll(IoSessionConfig config) {
+        super.setAll(config);
+        
+        if (!(config instanceof DatagramSessionConfig)) {
+            return;
+        }
+
+        if (config instanceof AbstractDatagramSessionConfig) {
+            // Minimize unnecessary system calls by checking all 'propertyChanged' properties.
+            AbstractDatagramSessionConfig cfg = (AbstractDatagramSessionConfig) config;
+            
+            if (cfg.isBroadcastChanged()) {
+                setBroadcast(cfg.isBroadcast());
+            }
+            
+            if (cfg.isReceiveBufferSizeChanged()) {
+                setReceiveBufferSize(cfg.getReceiveBufferSize());
+            }
+            
+            if (cfg.isReuseAddressChanged()) {
+                setReuseAddress(cfg.isReuseAddress());
+            }
+            
+            if (cfg.isSendBufferSizeChanged()) {
+                setSendBufferSize(cfg.getSendBufferSize());
+            }
+            
+            if (cfg.isTrafficClassChanged() && getTrafficClass() != cfg.getTrafficClass()) {
+                setTrafficClass(cfg.getTrafficClass());
+            }
+        } else {
+            DatagramSessionConfig cfg = (DatagramSessionConfig) config;
+            setBroadcast(cfg.isBroadcast());
+            setReceiveBufferSize(cfg.getReceiveBufferSize());
+            setReuseAddress(cfg.isReuseAddress());
+            setSendBufferSize(cfg.getSendBufferSize());
+            
+            if (getTrafficClass() != cfg.getTrafficClass()) {
+                setTrafficClass(cfg.getTrafficClass());
+            }
+        }
+    }
+
+    /**
+     * @return <tt>true</tt> if and only if the <tt>broadcast</tt> property
+     * has been changed by its setter method.  The system call related with
+     * the property is made only when this method returns <tt>true</tt>.  By
+     * default, this method always returns <tt>true</tt> to simplify implementation
+     * of subclasses, but overriding the default behavior is always encouraged.
+     */
+    protected boolean isBroadcastChanged() {
+        return true;
+    }
+
+    /**
+     * @return <tt>true</tt> if and only if the <tt>receiveBufferSize</tt> property
+     * has been changed by its setter method.  The system call related with
+     * the property is made only when this method returns <tt>true</tt>.  By
+     * default, this method always returns <tt>true</tt> to simplify implementation
+     * of subclasses, but overriding the default behavior is always encouraged.
+     */
+    protected boolean isReceiveBufferSizeChanged() {
+        return true;
+    }
+
+    /**
+     * @return <tt>true</tt> if and only if the <tt>reuseAddress</tt> property
+     * has been changed by its setter method.  The system call related with
+     * the property is made only when this method returns <tt>true</tt>.  By
+     * default, this method always returns <tt>true</tt> to simplify implementation
+     * of subclasses, but overriding the default behavior is always encouraged.
+     */
+    protected boolean isReuseAddressChanged() {
+        return true;
+    }
+
+    /**
+     * @return <tt>true</tt> if and only if the <tt>sendBufferSize</tt> property
+     * has been changed by its setter method.  The system call related with
+     * the property is made only when this method returns <tt>true</tt>.  By
+     * default, this method always returns <tt>true</tt> to simplify implementation
+     * of subclasses, but overriding the default behavior is always encouraged.
+     */
+    protected boolean isSendBufferSizeChanged() {
+        return true;
+    }
+
+    /**
+     * @return <tt>true</tt> if and only if the <tt>trafficClass</tt> property
+     * has been changed by its setter method.  The system call related with
+     * the property is made only when this method returns <tt>true</tt>.  By
+     * default, this method always returns <tt>true</tt> to simplify implementation
+     * of subclasses, but overriding the default behavior is always encouraged.
+     */
+    protected boolean isTrafficClassChanged() {
+        return true;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public boolean isCloseOnPortUnreachable() {
+        return closeOnPortUnreachable;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void setCloseOnPortUnreachable(boolean closeOnPortUnreachable) {
+        this.closeOnPortUnreachable = closeOnPortUnreachable;
+    }
+}
+//NioDatagramSessionConfig
+/**
+ * Define the configuration for a Datagram based session. 
+ * 
+ * @author <a href="http://mina.apache.org">Apache MINA Project</a>
+ */
+class NioDatagramSessionConfig extends AbstractDatagramSessionConfig {
+    /** The associated channel 关联报文通道*/
+    private final DatagramChannel channel;
+
+    /**
+     * Creates a new instance of NioDatagramSessionConfig, associated
+     * with the given DatagramChannel.
+     *
+     * @param channel The associated DatagramChannel
+     */
+    NioDatagramSessionConfig(DatagramChannel channel) {
+        this.channel = channel;
+    }
+
+    /**
+     * Get the Socket receive buffer size for this DatagramChannel.
+     * 
+     * @return the DatagramChannel receive buffer size.
+     * @throws RuntimeIoException if the socket is closed or if we 
+     * had a SocketException
+     * 
+     * @see DatagramSocket#getReceiveBufferSize()
+     */
+    @Override
+    public int getReceiveBufferSize() {
+        try {
+            return channel.socket().getReceiveBufferSize();
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * Set the Socket receive buffer size for this DatagramChannel. <br>
+     * <br>
+     * Note : The underlying Socket may not accept the new buffer's size.
+     * The user has to check that the new value has been set. 
+     * 
+     * @param receiveBufferSize the DatagramChannel receive buffer size.
+     * @throws RuntimeIoException if the socket is closed or if we 
+     * had a SocketException
+     * 
+     * @see DatagramSocket#setReceiveBufferSize(int)
+     */
+    @Override
+    public void setReceiveBufferSize(int receiveBufferSize) {
+        try {
+            channel.socket().setReceiveBufferSize(receiveBufferSize);
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * Tells if SO_BROADCAST is enabled.
+     * 
+     * @return <tt>true</tt> if SO_BROADCAST is enabled
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public boolean isBroadcast() {
+        try {
+            return channel.socket().getBroadcast();
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    @Override
+    public void setBroadcast(boolean broadcast) {
+        try {
+            channel.socket().setBroadcast(broadcast);
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * 
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public int getSendBufferSize() {
+        try {
+            return channel.socket().getSendBufferSize();
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * 
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public void setSendBufferSize(int sendBufferSize) {
+        try {
+            channel.socket().setSendBufferSize(sendBufferSize);
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * Tells if SO_REUSEADDR is enabled.
+     * 
+     * @return <tt>true</tt> if SO_REUSEADDR is enabled
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public boolean isReuseAddress() {
+        try {
+            return channel.socket().getReuseAddress();
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * 
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public void setReuseAddress(boolean reuseAddress) {
+        try {
+            channel.socket().setReuseAddress(reuseAddress);
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * Get the current Traffic Class for this Socket, if any. As this is
+     * not a mandatory feature, the returned value should be considered as 
+     * a hint. 
+     * 
+     * @return The Traffic Class supported by this Socket
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public int getTrafficClass() {
+        try {
+            return channel.socket().getTrafficClass();
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+
+    /**
+     * {@inheritDoc}
+     * @throws RuntimeIoException If the socket is closed or if we get an
+     * {@link SocketException} 
+     */
+    @Override
+    public void setTrafficClass(int trafficClass) {
+        try {
+            channel.socket().setTrafficClass(trafficClass);
+        } catch (SocketException e) {
+            throw new RuntimeIoException(e);
+        }
+    }
+}
+

@@ -1,0 +1,610 @@
+MINA TCP简单通信实例：[url]http://donald-draper.iteye.com/blog/2375297[/url]
+MINA 编解码器实例：[url]http://donald-draper.iteye.com/blog/2375317[/url]
+MINA 多路分离解码器实例：[url]http://donald-draper.iteye.com/blog/2375324[/url]
+在前面的文章中，我们建立服务端时都有下面几句
+IoAcceptor acceptor=new NioSocketAcceptor();
+//配置socket会话
+SocketSessionConfig socketSessionConfig = (SocketSessionConfig) acceptor.getSessionConfig();
+socketSessionConfig.setReadBufferSize(readBufferSize);
+socketSessionConfig.setIdleTime(IdleStatus.BOTH_IDLE,idleTime);
+今天我们来看一下SocketSessionConfig是什么，以及它的作用：
+ //NioSocketAcceptor
+ public NioSocketAcceptor()
+    {
+        super(new DefaultSocketSessionConfig(), org/apache/mina/transport/socket/nio/NioProcessor);
+        selectorProvider = null;
+        ((DefaultSocketSessionConfig)getSessionConfig()).init(this);
+    }
+//AbstractPollingIoAcceptor
+  protected AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Class processorClass)
+    {
+        this(sessionConfig, null, ((IoProcessor) (new SimpleIoProcessorPool(processorClass))), true, null);
+    }
+//AbstractPollingIoAcceptor
+   private AbstractPollingIoAcceptor(IoSessionConfig sessionConfig, Executor executor, IoProcessor processor, boolean createdProcessor, SelectorProvider selectorProvider)
+    {
+        super(sessionConfig, executor);
+	...
+    }
+//AbstractIoAcceptor
+  protected AbstractIoAcceptor(IoSessionConfig sessionConfig, Executor executor)
+    {
+        super(sessionConfig, executor);
+	...
+   }
+//AbstractIoService
+public abstract class AbstractIoService
+    implements IoService
+{
+    private static final AtomicInteger id = new AtomicInteger();
+    private final String threadName;
+    private final Executor executor;//线程池执行器
+    private final boolean createdExecutor;//是否创建了线程池
+    private IoHandler handler;//Io处理器
+    protected final IoSessionConfig sessionConfig;//Io会话配置
+    //Io服务监听器，这里默认创建一个内部的IoServiceListener，则个我们在后面再看
+    private final IoServiceListener serviceActivationListener = new IoServiceListener() {
+    ...
+    }
+    private IoFilterChainBuilder filterChainBuilder;//过滤器链
+    private IoSessionDataStructureFactory sessionDataStructureFactory;//会话属性管理器
+    private final IoServiceListenerSupport listeners = new IoServiceListenerSupport(this);
+    protected final Object disposalLock = new Object();
+    private volatile boolean disposing;
+    private volatile boolean disposed;
+    private IoServiceStatistics stats;
+    //上面的变量只是暂时的理解，如果以后发现错误，在更正
+    protected AbstractIoService(IoSessionConfig sessionConfig, Executor executor)
+    {
+        ...
+        filterChainBuilder = new DefaultIoFilterChainBuilder();//默认过滤器链
+        listeners.add(serviceActivationListener);
+        this.sessionConfig = sessionConfig;//初始化Session配置
+        ExceptionMonitor.getInstance();
+        if(executor == null)
+        {
+	    //如果执行器为null，通过执行器Executors，创建一个CachedThreadPool
+            this.executor = Executors.newCachedThreadPool();
+            createdExecutor = true;
+        } else
+        {
+            this.executor = executor;
+            createdExecutor = false;
+        }
+	...
+    }
+}
+从上面可以看出NioSocketAcceptor构造是传输入的DefaultSocketSessionConfig参数实际上是初始化
+AbstractIoService的会话配置选项sessionConfig（IoSessionConfig）；
+来看DefaultSocketSessionConfig继承树
+//DefaultSocketSessionConfig
+public class DefaultSocketSessionConfig extends AbstractSocketSessionConfig
+//AbstractSocketSessionConfig
+public abstract class AbstractSocketSessionConfig extends AbstractIoSessionConfig
+    implements SocketSessionConfig
+//AbstractIoSessionConfig
+public abstract class AbstractIoSessionConfig
+    implements IoSessionConfig
+//SocketSessionConfig
+public interface SocketSessionConfig  extends IoSessionConfig
+我们以一下顺序来看DefaultSocketSessionConfig：
+IoSessionConfig->AbstractIoSessionConfig->SocketSessionConfig->
+AbstractSocketSessionConfig->DefaultSocketSessionConfig
+//IoSessionConfig
+public interface IoSessionConfig
+{
+    public abstract int getReadBufferSize();
+    /*设置IoProcessor每次读操作分配的buffer的容量。一般情况下，不用手动设置这个属性，因为
+    IoProcessor经常会自动调整。*/
+    public abstract void setReadBufferSize(int i);
+    public abstract int getMinReadBufferSize();
+    /*设置IoProcessor每次读操作分配的buffer的最小容量，IoProcessor自动调用不能小于这个值*/
+    public abstract void setMinReadBufferSize(int i);
+    public abstract int getMaxReadBufferSize();
+    /*设置IoProcessor每次读操作分配的buffer的最大容量，IoProcessor自动调用不能大于这个值*/
+    public abstract void setMaxReadBufferSize(int i);
+    public abstract int getThroughputCalculationInterval();
+    public abstract long getThroughputCalculationIntervalInMillis();
+    /*设置每次吞吐量计算的间隔，默认为3秒*/
+    public abstract void setThroughputCalculationInterval(int i);
+    public abstract int getIdleTime(IdleStatus idlestatus);
+    public abstract long getIdleTimeInMillis(IdleStatus idlestatus);
+    /*设置空闲状态IdleStatus（READER_IDLE, WRITER_IDLE 或 BOTH_IDLE）的空闲时间*/
+    public abstract void setIdleTime(IdleStatus idlestatus, int i);
+    public abstract int getReaderIdleTime();
+    public abstract long getReaderIdleTimeInMillis();
+    /*设置空闲状态READER_IDLE的空闲时间*/
+    public abstract void setReaderIdleTime(int i);
+    public abstract int getWriterIdleTime();
+    public abstract long getWriterIdleTimeInMillis();
+    /*设置空闲状态WRITER_IDLE的空闲时间*/
+    public abstract void setWriterIdleTime(int i);
+    public abstract int getBothIdleTime();
+    public abstract long getBothIdleTimeInMillis();
+    /*设置空闲状态BOTH_IDLE的空闲时间*/
+    public abstract void setBothIdleTime(int i);
+    public abstract int getWriteTimeout();
+    public abstract long getWriteTimeoutInMillis();
+    /*设置写超时时间*/
+    public abstract void setWriteTimeout(int i);
+    public abstract boolean isUseReadOperation();
+    /*Enables or disabled IoSession.read() operation. If enabled, all received messages are 
+    stored in an internal BlockingQueue so you can read received messages in more convenient
+    way for client applications. Enabling this option is not useful to server applications 
+    and can cause unintended memory leak, and therefore it's disabled by default.
+    开启或关闭会话读操作。如果开启，所有接收到的消息将会存储在内存的BlockingQueue中，使客户端应用可以更
+    便利地读取接收的消息。开启这个选项对服务器应用无效，并可能引起内存泄漏，因此默认为
+    关闭状态。
+    */
+    public abstract void setUseReadOperation(boolean flag);
+    /*拷贝iosessionconfig所有会话配置到当前会话*/
+    public abstract void setAll(IoSessionConfig iosessionconfig);
+}
+//IdleStatus
+public class IdleStatus
+{
+    private IdleStatus(String strValue)
+    {
+        this.strValue = strValue;
+    }
+    public String toString()
+    {
+        return strValue;
+    }
+    //读空闲，写空闲，读写空闲状态
+    public static final IdleStatus READER_IDLE = new IdleStatus("reader idle");
+    public static final IdleStatus WRITER_IDLE = new IdleStatus("writer idle");
+    public static final IdleStatus BOTH_IDLE = new IdleStatus("both idle");
+    private final String strValue;
+}
+从上面来看会话配置IoSessionConfig主要是配置IoProcessor每次读操作分配的buffer的容量，一般情况下，
+不用手动设置这个属性，因为IoProcessor经常会自动调整；设置空闲状态IdleStatus（READER_IDLE,
+WRITER_IDLE 或 BOTH_IDLE）的空闲时间；UseReadOperation配置项用于优化客户端的读取操作，
+开启这个选项对服务器应用无效，并可能引起内存泄漏，因此默认为关闭状态。
+再来看
+public abstract class AbstractIoSessionConfig
+    implements IoSessionConfig
+{
+   //这些变量，我们这里不用再说了，在IoSessionConfig已看过
+    private int minReadBufferSize;
+    private int readBufferSize;
+    private int maxReadBufferSize;
+    private int idleTimeForRead;
+    private int idleTimeForWrite;
+    private int idleTimeForBoth;
+    private int writeTimeout;
+    private boolean useReadOperation;
+    private int throughputCalculationInterval;
+     protected AbstractIoSessionConfig()
+    {
+        minReadBufferSize = 64;//2^6
+        readBufferSize = 2048;
+        maxReadBufferSize = 65536;//2^32
+        writeTimeout = 60;//默认写超时时间为60秒
+        throughputCalculationInterval = 3;
+    }
+    //copy会话配置
+    public void setAll(IoSessionConfig config)
+    {
+        if(config == null)
+        {
+            throw new IllegalArgumentException("config");
+        } else
+        {
+            setReadBufferSize(config.getReadBufferSize());
+            setMinReadBufferSize(config.getMinReadBufferSize());
+            setMaxReadBufferSize(config.getMaxReadBufferSize());
+            setIdleTime(IdleStatus.BOTH_IDLE, config.getIdleTime(IdleStatus.BOTH_IDLE));
+            setIdleTime(IdleStatus.READER_IDLE, config.getIdleTime(IdleStatus.READER_IDLE));
+            setIdleTime(IdleStatus.WRITER_IDLE, config.getIdleTime(IdleStatus.WRITER_IDLE));
+            setWriteTimeout(config.getWriteTimeout());
+            setUseReadOperation(config.isUseReadOperation());
+            setThroughputCalculationInterval(config.getThroughputCalculationInterval());
+            return;
+        }
+    }
+    //读buffer配置
+     public int getReadBufferSize()
+    {
+        return readBufferSize;
+    }
+    public void setReadBufferSize(int readBufferSize)
+    {
+        if(readBufferSize <= 0)
+        {
+            throw new IllegalArgumentException((new StringBuilder()).append("readBufferSize: ").append(readBufferSize).append(" (expected: 1+)").toString());
+        } else
+        {
+            this.readBufferSize = readBufferSize;
+            return;
+        }
+    }
+    //这些方法没有什么好说的，看看就明白
+     public int getIdleTime(IdleStatus status)
+    {
+        if(status == IdleStatus.BOTH_IDLE)
+            return idleTimeForBoth;
+        if(status == IdleStatus.READER_IDLE)
+            return idleTimeForRead;
+        if(status == IdleStatus.WRITER_IDLE)
+            return idleTimeForWrite;
+        else
+            throw new IllegalArgumentException((new StringBuilder()).append("Unknown idle status: ").append(status).toString());
+    }
+
+    public long getIdleTimeInMillis(IdleStatus status)
+    {
+        return (long)getIdleTime(status) * 1000L;
+    }
+
+    public void setIdleTime(IdleStatus status, int idleTime)
+    {
+        if(idleTime < 0)
+            throw new IllegalArgumentException((new StringBuilder()).append("Illegal idle time: ").append(idleTime).toString());
+        if(status == IdleStatus.BOTH_IDLE)
+            idleTimeForBoth = idleTime;
+        else
+        if(status == IdleStatus.READER_IDLE)
+            idleTimeForRead = idleTime;
+        else
+        if(status == IdleStatus.WRITER_IDLE)
+            idleTimeForWrite = idleTime;
+        else
+            throw new IllegalArgumentException((new StringBuilder()).append("Unknown idle status: ").append(status).toString());
+    }
+    //其他的属性配置与上面的方法类似，就不再说了
+    ...
+}
+再来看
+public interface SocketSessionConfig
+    extends IoSessionConfig
+{
+    public abstract boolean isReuseAddress();
+    public abstract void setReuseAddress(boolean flag);
+    public abstract int getReceiveBufferSize();
+    public abstract void setReceiveBufferSize(int i);
+    public abstract int getSendBufferSize();
+    public abstract void setSendBufferSize(int i);
+    public abstract int getTrafficClass();
+    public abstract void setTrafficClass(int i);
+    public abstract boolean isKeepAlive();
+    public abstract void setKeepAlive(boolean flag);
+    public abstract boolean isOobInline();
+    public abstract void setOobInline(boolean flag);
+    public abstract int getSoLinger();
+    public abstract void setSoLinger(int i);//设置当socket输出流中还有输出没发送完，延迟关闭socket的时间
+    public abstract boolean isTcpNoDelay();
+    public abstract void setTcpNoDelay(boolean flag);
+}
+从SocketSessionConfig的方法定义来看，SocketSessionConfig主要是配置Socket，这些属性在
+java.net.Socket中都可以找到相似或类似的属性。
+public abstract class AbstractSocketSessionConfig extends AbstractIoSessionConfig
+    implements SocketSessionConfig
+{
+    public AbstractSocketSessionConfig()
+    {
+    }
+    public void setAll(IoSessionConfig config)
+    {
+        super.setAll(config);
+        if(!(config instanceof SocketSessionConfig))
+            return;
+        if(config instanceof AbstractSocketSessionConfig)
+        {
+            AbstractSocketSessionConfig cfg = (AbstractSocketSessionConfig)config;
+            if(cfg.isKeepAliveChanged())
+                setKeepAlive(cfg.isKeepAlive());
+            if(cfg.isOobInlineChanged())
+                setOobInline(cfg.isOobInline());
+            if(cfg.isReceiveBufferSizeChanged())
+                setReceiveBufferSize(cfg.getReceiveBufferSize());
+            if(cfg.isReuseAddressChanged())
+                setReuseAddress(cfg.isReuseAddress());
+            if(cfg.isSendBufferSizeChanged())
+                setSendBufferSize(cfg.getSendBufferSize());
+            if(cfg.isSoLingerChanged())
+                setSoLinger(cfg.getSoLinger());
+            if(cfg.isTcpNoDelayChanged())
+                setTcpNoDelay(cfg.isTcpNoDelay());
+            if(cfg.isTrafficClassChanged() && getTrafficClass() != cfg.getTrafficClass())
+                setTrafficClass(cfg.getTrafficClass());
+        } else
+        {
+            SocketSessionConfig cfg = (SocketSessionConfig)config;
+            setKeepAlive(cfg.isKeepAlive());
+            setOobInline(cfg.isOobInline());
+            setReceiveBufferSize(cfg.getReceiveBufferSize());
+            setReuseAddress(cfg.isReuseAddress());
+            setSendBufferSize(cfg.getSendBufferSize());
+            setSoLinger(cfg.getSoLinger());
+            setTcpNoDelay(cfg.isTcpNoDelay());
+            if(getTrafficClass() != cfg.getTrafficClass())
+                setTrafficClass(cfg.getTrafficClass());
+        }
+    }
+    protected boolean isKeepAliveChanged()
+    {
+        return true;
+    }
+    protected boolean isOobInlineChanged()
+    {
+        return true;
+    }
+    protected boolean isReceiveBufferSizeChanged()
+    {
+        return true;
+    }
+    protected boolean isReuseAddressChanged()
+    {
+        return true;
+    }
+    protected boolean isSendBufferSizeChanged()
+    {
+        return true;
+    }
+    protected boolean isSoLingerChanged()
+    {
+        return true;
+    }
+    protected boolean isTcpNoDelayChanged()
+    {
+        return true;
+    }
+    protected boolean isTrafficClassChanged()
+    {
+        return true;
+    }
+}
+再来看DefaultSocketSessionConfig
+public class DefaultSocketSessionConfig extends AbstractSocketSessionConfig
+{
+    private static final boolean DEFAULT_REUSE_ADDRESS = false;
+    private static final int DEFAULT_TRAFFIC_CLASS = 0;
+    private static final boolean DEFAULT_KEEP_ALIVE = false;
+    private static final boolean DEFAULT_OOB_INLINE = false;
+    private static final int DEFAULT_SO_LINGER = -1;
+    private static final boolean DEFAULT_TCP_NO_DELAY = false;
+    protected IoService parent;//父对象，即谁拥有当前的SocketSessionConfig配置
+    //下面为SocketSessionConfig方法相关的属性
+    //发送、接收缓冲区大小，是否保活，地址是否可重用
+    private boolean defaultReuseAddress;
+    private boolean reuseAddress;
+    private int receiveBufferSize;
+    private int sendBufferSize;
+    private int trafficClass;
+    private boolean keepAlive;
+    private boolean oobInline;
+    private int soLinger;//当socket输出流中还有输出没发送完，延迟关闭socket的时间
+    private boolean tcpNoDelay;
+     public DefaultSocketSessionConfig()
+    {
+        //发送和接受缓存区默认为-1，这就是要设置NioSocketAcceptor发送和接收缓存区大小原因
+        receiveBufferSize = -1;
+        sendBufferSize = -1;
+        trafficClass = 0;
+        keepAlive = false;
+        oobInline = false;
+        soLinger = -1;
+        tcpNoDelay = false;
+    }
+   //初始化SocketSessionConfig配置的父对象IoService，
+    public void init(IoService parent)
+    {
+        this.parent = parent;
+	//如果父对象为IoService（SocketAcceptor），则地址默认可重用，否则不可
+        if(parent instanceof SocketAcceptor)
+            defaultReuseAddress = true;
+        else
+            defaultReuseAddress = false;
+        reuseAddress = defaultReuseAddress;
+    }
+   //下面这些没有什么好讲的，看看就行
+    public boolean isReuseAddress()
+    {
+        return reuseAddress;
+    }
+    public void setReuseAddress(boolean reuseAddress)
+    {
+        this.reuseAddress = reuseAddress;
+    }
+    public int getReceiveBufferSize()
+    {
+        return receiveBufferSize;
+    }
+    public void setReceiveBufferSize(int receiveBufferSize)
+    {
+        this.receiveBufferSize = receiveBufferSize;
+    }
+    public int getSendBufferSize()
+    {
+        return sendBufferSize;
+    }
+    public void setSendBufferSize(int sendBufferSize)
+    {
+        this.sendBufferSize = sendBufferSize;
+    }
+    public int getTrafficClass()
+    {
+        return trafficClass;
+    }
+    public void setTrafficClass(int trafficClass)
+    {
+        this.trafficClass = trafficClass;
+    }
+    public boolean isKeepAlive()
+    {
+        return keepAlive;
+    }
+    public void setKeepAlive(boolean keepAlive)
+    {
+        this.keepAlive = keepAlive;
+    }
+    public boolean isOobInline()
+    {
+        return oobInline;
+    }
+    public void setOobInline(boolean oobInline)
+    {
+        this.oobInline = oobInline;
+    }
+    public int getSoLinger()
+    {
+        return soLinger;
+    }
+    public void setSoLinger(int soLinger)
+    {
+        this.soLinger = soLinger;
+    }
+    public boolean isTcpNoDelay()
+    {
+        return tcpNoDelay;
+    }
+    public void setTcpNoDelay(boolean tcpNoDelay)
+    {
+        this.tcpNoDelay = tcpNoDelay;
+    }
+    protected boolean isKeepAliveChanged()
+    {
+        return keepAlive;
+    }
+    protected boolean isOobInlineChanged()
+    {
+        return oobInline;
+    }
+    protected boolean isReceiveBufferSizeChanged()
+    {
+        return receiveBufferSize != -1;
+    }
+    protected boolean isReuseAddressChanged()
+    {
+        return reuseAddress != defaultReuseAddress;
+    }
+    protected boolean isSendBufferSizeChanged()
+    {
+        return sendBufferSize != -1;
+    }
+    protected boolean isSoLingerChanged()
+    {
+        return soLinger != -1;
+    }
+    protected boolean isTcpNoDelayChanged()
+    {
+        return tcpNoDelay;
+    }
+    protected boolean isTrafficClassChanged()
+    {
+        return trafficClass != 0;
+    }
+}
+DefaultSocketSessionConfig构造时，发送和接受缓存区默认为-1，
+所以在创建NioSocketAcceptor要配置发送和接收缓存区大小；
+DefaultSocketSessionConfig关联一个parent父对象IoService，即配置的依附对象。
+#init方法初始化的parent父对象IoService，如果parent父对象为IoService（SocketAcceptor），
+则地址默认可重用，否则不可。
+总结：
+NioSocketAcceptor构造是传输入的DefaultSocketSessionConfig参数实际上是初始化
+AbstractIoService的会话配置选项sessionConfig（IoSessionConfig）。
+会话配置IoSessionConfig主要是配置IoProcessor每次读操作分配的buffer的容量，一般情况下，
+不用手动设置这个属性，因为IoProcessor经常会自动调整；设置空闲状态IdleStatus（READER_IDLE,
+WRITER_IDLE 或 BOTH_IDLE）的空闲时间；UseReadOperation配置项用于优化客户端的读取操作，
+开启这个选项对服务器应用无效，并可能引起内存泄漏，因此默认为关闭状态。
+SocketSessionConfig主要是配置Socket，这些属性在java.net.Socket中都可以找到相似或类似的属性，
+比如发送缓冲区大小，是否保活，地址是否可重用等。
+从AbstractSocketSessionConfig来看SocketSessionConfig的发送、接收缓冲区大小，是否保活，地址是否可重用
+等配置默认为true。
+DefaultSocketSessionConfig构造时，发送和接受缓存区默认为-1，
+所以在创建NioSocketAcceptor要配置发送和接收缓存区大小；
+DefaultSocketSessionConfig关联一个parent父对象IoService，即配置的依附对象。
+#init方法初始化的parent父对象IoService，如果parent父对象为IoService（SocketAcceptor），
+则地址默认可重用，否则不可。
+
+符：
+//AbstractIoSessionConfig
+public abstract class AbstractIoSessionConfig
+    implements IoSessionConfig
+{
+//这里不上AbstractIoSessionConfig的剩余方法
+...
+ public final int getBothIdleTime()
+    {
+        return getIdleTime(IdleStatus.BOTH_IDLE);
+    }
+    public final long getBothIdleTimeInMillis()
+    {
+        return getIdleTimeInMillis(IdleStatus.BOTH_IDLE);
+    }
+    public final int getReaderIdleTime()
+    {
+        return getIdleTime(IdleStatus.READER_IDLE);
+    }
+    public final long getReaderIdleTimeInMillis()
+    {
+        return getIdleTimeInMillis(IdleStatus.READER_IDLE);
+    }
+    public final int getWriterIdleTime()
+    {
+        return getIdleTime(IdleStatus.WRITER_IDLE);
+    }
+    public final long getWriterIdleTimeInMillis()
+    {
+        return getIdleTimeInMillis(IdleStatus.WRITER_IDLE);
+    }
+    public void setBothIdleTime(int idleTime)
+    {
+        setIdleTime(IdleStatus.BOTH_IDLE, idleTime);
+    }
+    public void setReaderIdleTime(int idleTime)
+    {
+        setIdleTime(IdleStatus.READER_IDLE, idleTime);
+    }
+    public void setWriterIdleTime(int idleTime)
+    {
+        setIdleTime(IdleStatus.WRITER_IDLE, idleTime);
+    }
+    public int getWriteTimeout()
+    {
+        return writeTimeout;
+    }
+    public long getWriteTimeoutInMillis()
+    {
+        return (long)writeTimeout * 1000L;
+    }
+    public void setWriteTimeout(int writeTimeout)
+    {
+        if(writeTimeout < 0)
+        {
+            throw new IllegalArgumentException((new StringBuilder()).append("Illegal write timeout: ").append(writeTimeout).toString());
+        } else
+        {
+            this.writeTimeout = writeTimeout;
+            return;
+        }
+    }
+    public boolean isUseReadOperation()
+    {
+        return useReadOperation;
+    }
+    public void setUseReadOperation(boolean useReadOperation)
+    {
+        this.useReadOperation = useReadOperation;
+    }
+    public int getThroughputCalculationInterval()
+    {
+        return throughputCalculationInterval;
+    }
+    public void setThroughputCalculationInterval(int throughputCalculationInterval)
+    {
+        if(throughputCalculationInterval < 0)
+        {
+            throw new IllegalArgumentException((new StringBuilder()).append("throughputCalculationInterval: ").append(throughputCalculationInterval).toString());
+        } else
+        {
+            this.throughputCalculationInterval = throughputCalculationInterval;
+            return;
+        }
+    }
+    public long getThroughputCalculationIntervalInMillis()
+    {
+        return (long)throughputCalculationInterval * 1000L;
+    }
+ }
