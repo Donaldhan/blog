@@ -1,0 +1,397 @@
+基于Redis Sentinel的Redis集群(主从&Sharding)高可用方案：
+http://www.tuicool.com/articles/naeEJbv
+[root@zabbix redis]# cd bin/
+[root@zabbix bin]# ls
+redis-benchmark  redis-check-aof  redis-check-dump  redis-cli  redis-sentinel  redis-server
+##redis-benchmark 基准测试，测试redis性能，
+##redis-check-aof 当redis宕机时，手动修复AOF文件
+[root@zabbix bin]# redis-cli -h
+redis-cli 3.0.5
+Usage: redis-cli [OPTIONS] [cmd [arg [arg ...]]]
+  -h <hostname>      Server hostname (default: 127.0.0.1).
+  -p <port>          Server port (default: 6379).
+  -s <socket>        Server socket (overrides hostname and port).
+  -a <password>      Password to use when connecting to the server.
+  -r <repeat>        Execute specified command N times.
+  -i <interval>      When -r is used, waits <interval> seconds per command.
+                     It is possible to specify sub-second times like -i 0.1.
+  -n <db>            Database number.
+  -x                 Read last argument from STDIN.
+  -d <delimiter>     Multi-bulk delimiter in for raw formatting (default: \n).
+  -c                 Enable cluster mode (follow -ASK and -MOVED redirections).
+  --raw              Use raw formatting for replies (default when STDOUT is
+                     not a tty).
+  --no-raw           Force formatted output even when STDOUT is not a tty.
+  --csv              Output in CSV format.
+  --stat             Print rolling stats about server: mem, clients, ...
+  --latency          Enter a special mode continuously sampling latency.
+  --latency-history  Like --latency but tracking latency changes over time.
+                     Default time interval is 15 sec. Change it using -i.
+  --latency-dist     Shows latency as a spectrum, requires xterm 256 colors.
+                     Default time interval is 1 sec. Change it using -i.
+  --lru-test <keys>  Simulate a cache workload with an 80-20 distribution.
+  --slave            Simulate a slave showing commands received from the master.
+  --rdb <filename>   Transfer an RDB dump from remote server to local file.
+  --pipe             Transfer raw Redis protocol from stdin to server.
+  --pipe-timeout <n> In --pipe mode, abort with error if after sending all data.
+                     no reply is received within <n> seconds.
+                     Default timeout: 30. Use 0 to wait forever.
+  --bigkeys          Sample Redis keys looking for big keys.
+  --scan             List all keys using the SCAN command.
+  --pattern <pat>    Useful with --scan to specify a SCAN pattern.
+  --intrinsic-latency <sec> Run a test to measure intrinsic system latency.
+                     The test will run for the specified amount of seconds.
+  --eval <file>      Send an EVAL command using the Lua script at <file>.
+  --help             Output this help and exit.
+  --version          Output version and exit.
+
+Examples:
+  cat /etc/passwd | redis-cli -x set mypasswd
+  redis-cli get mypasswd
+  redis-cli -r 100 lpush mylist x
+  redis-cli -r 100 -i 1 info | grep used_memory_human:
+  redis-cli --eval myscript.lua key1 key2 , arg1 arg2 arg3
+  redis-cli --scan --pattern '*:12345*'
+
+  (Note: when using --eval the comma separates KEYS[] from ARGV[] items)
+
+When no command is given, redis-cli starts in interactive mode.
+Type "help" in interactive mode for information on available commands.
+##实例 redis-cli -h 192.168.126.128 -p 6379 -a
+连接监听为192.168.126.128:6379的redis实例，并验证
+[root@zabbix bin]# ls
+redis-benchmark  redis-check-aof  redis-check-dump  redis-cli  redis-sentinel  redis-server
+[root@zabbix bin]# redis-server -h
+Usage: ./redis-server [/path/to/redis.conf] [options]
+       ./redis-server - (read config from stdin)
+       ./redis-server -v or --version
+       ./redis-server -h or --help
+       ./redis-server --test-memory <megabytes>
+
+Examples:
+       ./redis-server (run the server with default conf)
+       ./redis-server /etc/redis/6379.conf
+       ./redis-server --port 7777
+       ./redis-server --port 7777 --slaveof 127.0.0.1 8888
+       ./redis-server /etc/myredis.conf --loglevel verbose
+
+Sentinel mode:
+       ./redis-server /etc/sentinel.conf --sentinel
+###实例 ./redis-server /etc/myredis.conf --loglevel verbose
+以/etc/myredis.conf为配置文件，日志级别为 verbose启动redis
+[root@zabbix bin]# 
+[root@zabbix bin]# redis-benchmark -h
+Invalid option "-h" or option argument missing
+
+Usage: redis-benchmark [-h <host>] [-p <port>] [-c <clients>] [-n <requests]> [-k <boolean>]
+
+ -h <hostname>      Server hostname (default 127.0.0.1)
+ -p <port>          Server port (default 6379)
+ -s <socket>        Server socket (overrides host and port)
+ -a <password>      Password for Redis Auth
+ -c <clients>       Number of parallel connections (default 50)
+ -n <requests>      Total number of requests (default 100000)
+ -d <size>          Data size of SET/GET value in bytes (default 2)
+ -dbnum <db>        SELECT the specified db number (default 0)
+ -k <boolean>       1=keep alive 0=reconnect (default 1)
+ -r <keyspacelen>   Use random keys for SET/GET/INCR, random values for SADD
+  Using this option the benchmark will expand the string __rand_int__
+  inside an argument with a 12 digits number in the specified range
+  from 0 to keyspacelen-1. The substitution changes every time a command
+  is executed. Default tests use this to hit random keys in the
+  specified range.
+ -P <numreq>        Pipeline <numreq> requests. Default 1 (no pipeline).
+ -q                 Quiet. Just show query/sec values
+ --csv              Output in CSV format
+ -l                 Loop. Run the tests forever
+ -t <tests>         Only run the comma separated list of tests. The test
+                    names are the same as the ones produced as output.
+ -I                 Idle mode. Just open N idle connections and wait.
+
+Examples:
+
+ Run the benchmark with the default configuration against 127.0.0.1:6379:
+   $ redis-benchmark
+
+ Use 20 parallel clients, for a total of 100k requests, against 192.168.1.1:
+   $ redis-benchmark -h 192.168.1.1 -p 6379 -n 100000 -c 20
+
+ Fill 127.0.0.1:6379 with about 1 million keys only using the SET test:
+   $ redis-benchmark -t set -n 1000000 -r 100000000
+
+ Benchmark 127.0.0.1:6379 for a few commands producing CSV output:
+   $ redis-benchmark -t ping,set,get -n 100000 --csv
+
+ Benchmark a specific command line:
+   $ redis-benchmark -r 10000 -n 10000 eval 'return redis.call("ping")' 0
+
+ Fill a list with 10000 random elements:
+   $ redis-benchmark -r 10000 -n 10000 lpush mylist __rand_int__
+
+ On user specified command lines __rand_int__ is replaced with a random integer
+ with a range of values selected by the -r option.
+[root@zabbix bin]# 
+##默认的基准测试
+[root@zabbix bin]#  redis-benchmark
+====== PING_INLINE ======
+  100000 requests completed in 1.19 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+97.69% <= 1 milliseconds
+99.64% <= 2 milliseconds
+99.89% <= 3 milliseconds
+99.91% <= 4 milliseconds
+99.93% <= 5 milliseconds
+99.93% <= 6 milliseconds
+99.95% <= 62 milliseconds
+100.00% <= 62 milliseconds
+83892.62 requests per second
+
+====== PING_BULK ======
+  100000 requests completed in 1.12 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+97.54% <= 1 milliseconds
+99.67% <= 2 milliseconds
+100.00% <= 3 milliseconds
+100.00% <= 3 milliseconds
+89686.10 requests per second
+###set 性能
+====== SET ======
+  100000 requests completed in 1.29 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+96.90% <= 1 milliseconds
+99.03% <= 2 milliseconds
+99.50% <= 3 milliseconds
+99.62% <= 4 milliseconds
+99.67% <= 6 milliseconds
+99.72% <= 9 milliseconds
+99.77% <= 10 milliseconds
+99.82% <= 11 milliseconds
+99.87% <= 31 milliseconds
+99.88% <= 32 milliseconds
+99.92% <= 39 milliseconds
+99.95% <= 45 milliseconds
+99.98% <= 46 milliseconds
+100.00% <= 46 milliseconds
+77399.38 requests per second
+## get 性能
+====== GET ======
+  100000 requests completed in 1.07 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+98.28% <= 1 milliseconds
+99.81% <= 2 milliseconds
+99.95% <= 8 milliseconds
+99.97% <= 9 milliseconds
+100.00% <= 9 milliseconds
+93720.71 requests per second
+
+====== INCR ======
+  100000 requests completed in 1.10 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+97.47% <= 1 milliseconds
+99.86% <= 2 milliseconds
+99.94% <= 3 milliseconds
+99.95% <= 11 milliseconds
+100.00% <= 11 milliseconds
+90579.71 requests per second
+
+## LPUSH 性能
+====== LPUSH ======
+  100000 requests completed in 1.13 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+98.06% <= 1 milliseconds
+99.69% <= 2 milliseconds
+99.80% <= 3 milliseconds
+99.85% <= 6 milliseconds
+99.88% <= 7 milliseconds
+99.90% <= 13 milliseconds
+99.95% <= 60 milliseconds
+100.00% <= 61 milliseconds
+100.00% <= 61 milliseconds
+88183.43 requests per second
+
+
+## LPOP 性能
+====== LPOP ======
+  100000 requests completed in 1.07 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+98.59% <= 1 milliseconds
+100.00% <= 1 milliseconds
+93720.71 requests per second
+
+
+## SADD 性能
+====== SADD ======
+  100000 requests completed in 1.24 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+95.76% <= 1 milliseconds
+98.92% <= 2 milliseconds
+99.30% <= 3 milliseconds
+99.37% <= 4 milliseconds
+99.46% <= 5 milliseconds
+99.52% <= 6 milliseconds
+99.62% <= 7 milliseconds
+99.92% <= 9 milliseconds
+99.97% <= 13 milliseconds
+100.00% <= 13 milliseconds
+80710.25 requests per second
+
+
+
+## SPOP 性能
+====== SPOP ======
+  100000 requests completed in 1.27 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+95.80% <= 1 milliseconds
+99.05% <= 2 milliseconds
+99.50% <= 3 milliseconds
+99.70% <= 4 milliseconds
+99.79% <= 5 milliseconds
+99.80% <= 6 milliseconds
+99.81% <= 7 milliseconds
+99.95% <= 10 milliseconds
+100.00% <= 10 milliseconds
+78926.60 requests per second
+
+
+## LRANGE 性能
+====== LPUSH (needed to benchmark LRANGE) ======
+  100000 requests completed in 1.19 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+96.47% <= 1 milliseconds
+99.39% <= 2 milliseconds
+99.67% <= 3 milliseconds
+99.75% <= 4 milliseconds
+99.80% <= 5 milliseconds
+99.85% <= 7 milliseconds
+99.90% <= 9 milliseconds
+99.95% <= 11 milliseconds
+100.00% <= 11 milliseconds
+84245.99 requests per second
+
+====== LRANGE_100 (first 100 elements) ======
+  100000 requests completed in 2.51 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+80.96% <= 1 milliseconds
+97.52% <= 2 milliseconds
+99.16% <= 3 milliseconds
+99.51% <= 4 milliseconds
+99.71% <= 5 milliseconds
+99.83% <= 6 milliseconds
+99.84% <= 7 milliseconds
+99.87% <= 9 milliseconds
+99.91% <= 10 milliseconds
+100.00% <= 10 milliseconds
+39856.52 requests per second
+
+====== LRANGE_300 (first 300 elements) ======
+  100000 requests completed in 7.09 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+6.45% <= 1 milliseconds
+70.79% <= 2 milliseconds
+91.76% <= 3 milliseconds
+96.47% <= 4 milliseconds
+98.25% <= 5 milliseconds
+99.05% <= 6 milliseconds
+99.61% <= 7 milliseconds
+99.80% <= 8 milliseconds
+99.84% <= 9 milliseconds
+99.89% <= 10 milliseconds
+99.94% <= 11 milliseconds
+100.00% <= 12 milliseconds
+100.00% <= 12 milliseconds
+14104.37 requests per second
+
+====== LRANGE_500 (first 450 elements) ======
+  100000 requests completed in 9.45 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.89% <= 1 milliseconds
+26.40% <= 2 milliseconds
+82.42% <= 3 milliseconds
+94.71% <= 4 milliseconds
+97.25% <= 5 milliseconds
+98.59% <= 6 milliseconds
+99.30% <= 7 milliseconds
+99.68% <= 8 milliseconds
+99.88% <= 9 milliseconds
+99.98% <= 10 milliseconds
+100.00% <= 11 milliseconds
+10576.42 requests per second
+
+====== LRANGE_600 (first 600 elements) ======
+  100000 requests completed in 11.98 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+0.54% <= 1 milliseconds
+8.03% <= 2 milliseconds
+56.19% <= 3 milliseconds
+83.92% <= 4 milliseconds
+92.26% <= 5 milliseconds
+95.04% <= 6 milliseconds
+96.96% <= 7 milliseconds
+98.47% <= 8 milliseconds
+99.26% <= 9 milliseconds
+99.64% <= 10 milliseconds
+99.86% <= 11 milliseconds
+99.90% <= 12 milliseconds
+99.94% <= 13 milliseconds
+99.97% <= 14 milliseconds
+99.99% <= 15 milliseconds
+100.00% <= 15 milliseconds
+8345.85 requests per second
+
+====== MSET (10 keys) ======
+  100000 requests completed in 1.46 seconds
+  50 parallel clients
+  3 bytes payload
+  keep alive: 1
+
+91.67% <= 1 milliseconds
+98.99% <= 2 milliseconds
+99.60% <= 3 milliseconds
+99.84% <= 4 milliseconds
+99.89% <= 5 milliseconds
+99.95% <= 7 milliseconds
+100.00% <= 7 milliseconds
+68352.70 requests per second
+

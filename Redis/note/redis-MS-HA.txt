@@ -1,0 +1,815 @@
+Redis 的 Sentinel 文档：http://www.redis.cn/topics/sentinel.html
+redis的主从复制，读写分离，主从切换:http://www.tuicool.com/articles/3MneIbz
+Redis主从同步，读写分离:http://www.tuicool.com/articles/vyiUveq
+环境Centos7，redis-3.0.5
+Master-Centos7
+ip                   运行进程      内存        硬盘
+192.168.126.128   redis sentinel   2G          30G
+Slave-Centos7
+192.168.126.133   redis sentinel   1.5G        30G
+192.168.126.138   redis sentinel   1.5G        30G
+#拷贝安装文件
+[redis@agent133 Downloads]$ scp 192.168.126.128：/home/redis/Downloads/redis-3.0.5.tar.gz
+[redis@agent133 Downloads]$ ls
+redis-3.0.5.tar.gz
+解压，按照我们前面的redis安装配置文章，安装redis
+###从
+[root@agent133 redis-3.0.5]# cd /usr/local/redis/conf/
+[root@agent133 conf]# ls -al
+total 0
+drwxr-xr-x. 2 root root  6 Dec 21 17:12 .
+drwxr-xr-x. 4 root root 27 Dec 21 17:12 ..
+[root@agent133 conf]# scp 192.168.126.128:/usr/local/redis/conf/redis.conf .
+The authenticity of host '192.168.126.128 (192.168.126.128)' can't be established.
+ECDSA key fingerprint is 75:80:da:08:ea:2d:9d:3d:da:7c:b1:1f:71:7d:b1:a5.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '192.168.126.128' (ECDSA) to the list of known hosts.
+root@192.168.126.128's password: 
+redis.conf                                                                                                                 100%   41KB  40.6KB/s   00:00    
+[root@agent133 conf]# ls -al
+total 44
+drwxr-xr-x. 2 root root    23 Dec 21 17:13 .
+drwxr-xr-x. 4 root root    27 Dec 21 17:12 ..
+-rw-r--r--. 1 root root 41584 Dec 21 17:13 redis.conf
+拷贝数据目录及日志目录/redis
+[root@agent133 conf]# cd /
+[root@agent133 /]# ls
+bin  boot  dev  etc  home  lib  lib64  media  mnt  mysql  opt  proc  root  run  sbin  srv  sys  tmp  usr  var  zabbix
+[root@agent133 /]# scp -r 192.168.126.128:/redis .
+root@192.168.126.128's password: 
+redis.log                                                                                                                  100%   19KB  19.1KB/s   00:00    
+redis.sh                                                                                                                   100% 1338     1.3KB/s   00:00    
+appendonly.aof                                                                                                             100%  245     0.2KB/s   00:00    
+dump.rdb                                                                                                                   100%   18     0.0KB/s   00:00    
+[root@agent133 /]# ls -al
+total 48
+dr-xr-xr-x.  20 root   root   4096 Dec 21 17:17 .
+dr-xr-xr-x.  20 root   root   4096 Dec 21 17:17 ..
+lrwxrwxrwx.   1 root   root      7 Jun 24 17:17 bin -> usr/bin
+dr-xr-xr-x.   4 root   root   4096 Jun 27 10:54 boot
+drwxr-xr-x.  20 root   root   3280 Dec 21 16:53 dev
+drwxr-xr-x. 142 root   root  12288 Dec 21 16:59 etc
+drwxr-xr-x.   6 root   root     57 Dec 21 10:27 home
+lrwxrwxrwx.   1 root   root      7 Jun 24 17:17 lib -> usr/lib
+lrwxrwxrwx.   1 root   root      9 Jun 24 17:17 lib64 -> usr/lib64
+drwxr-xr-x.   2 root   root      6 Aug 12  2015 media
+drwxr-xr-x.   2 root   root      6 Aug 12  2015 mnt
+drwxr-xr-x.   2 mysql  root      6 Jun 29 17:36 mysql
+drwxr-xr-x.   3 root   root     15 Aug 12  2015 opt
+dr-xr-xr-x. 450 root   root      0 Dec 21 16:52 proc
+drwxr-xr-x.   5 root   root     38 Dec 21 17:17 redis
+dr-xr-x---.   5 root   root   4096 Dec 21 17:13 root
+drwxr-xr-x.  39 root   root   1180 Dec 21 16:59 run
+lrwxrwxrwx.   1 root   root      8 Jun 24 17:17 sbin -> usr/sbin
+drwxr-xr-x.   2 root   root      6 Aug 12  2015 srv
+dr-xr-xr-x.  13 root   root      0 Dec 21 16:52 sys
+drwxrwxrwt.  17 root   root   4096 Dec 21 17:12 tmp
+drwxr-xr-x.  13 root   root   4096 Jul  4 11:41 usr
+drwxr-xr-x.  23 root   root   4096 Dec 21 16:52 var
+drwxrwxr-x.   4 zabbix mysql  4096 Aug 11 15:58 zabbix
+[root@agent133 /]# 
+##清除原先的数据文件及日志文件
+[root@agent133 /]# cd redis/
+[root@agent133 redis]# ls
+bin  data  logs
+[root@agent133 redis]# cd data/
+[root@agent133 data]# ls -al
+total 8
+drwxr-xr-x. 2 root root  42 Dec 21 17:17 .
+drwxr-xr-x. 5 root root  38 Dec 21 17:17 ..
+-rw-r--r--. 1 root root 245 Dec 21 17:17 appendonly.aof
+-rw-r--r--. 1 root root  18 Dec 21 17:17 dump.rdb
+[root@agent133 data]# rm  ./*
+rm: remove regular file ‘./appendonly.aof’? y
+rm: remove regular file ‘./dump.rdb’? y
+[root@agent133 data]# ls -al
+total 0
+drwxr-xr-x. 2 root root  6 Dec 21 17:18 .
+drwxr-xr-x. 5 root root 38 Dec 21 17:17 ..
+[root@agent133 data]# cd ..
+[root@agent133 redis]# ls
+bin  data  logs
+[root@agent133 redis]# cd logs/
+[root@agent133 logs]# ls -al 
+total 20
+drwxr-xr-x. 2 root root    22 Dec 21 17:17 .
+drwxr-xr-x. 5 root root    38 Dec 21 17:17 ..
+-rw-r--r--. 1 root root 19546 Dec 21 17:17 redis.log
+[root@agent133 logs]# > redis.log 
+[root@agent133 logs]# tail redis.log 
+[root@agent133 logs]# 
+修改Slave1配置
+[root@agent133 redis]# cd conf/
+[root@agent133 conf]# vim redis.conf 
+[root@agent133 conf]# 
+
+################################# REPLICATION #################################
+
+# Master-Slave replication. Use slaveof to make a Redis instance a copy of
+# another Redis server. A few things to understand ASAP about Redis replication.
+#
+# 1) Redis replication is asynchronous, but you can configure a master to
+#    stop accepting writes if it appears to be not connected with at least
+#    a given number of slaves.
+# 2) Redis slaves are able to perform a partial resynchronization with the
+#    master if the replication link is lost for a relatively small amount of
+#    time. You may want to configure the replication backlog size (see the next
+#    sections of this file) with a sensible value depending on your needs.
+# 3) Replication is automatic and does not need user intervention. After a
+#    network partition slaves automatically try to reconnect to masters
+#    and resynchronize with them.
+# master的ip和port
+slaveof 192.168.126.128 6379
+
+# If the master is password protected (using the "requirepass" configuration
+# directive below) it is possible to tell the slave to authenticate before
+# starting the replication synchronization process, otherwise the master will
+# refuse the slave request.
+# master验证面
+masterauth redis
+
+
+# Since Redis 2.6 by default slaves are read-only.
+#
+# Note: read only slaves are not designed to be exposed to untrusted clients
+# on the internet. It's just a protection layer against misuse of the instance.
+# Still a read only slave exports by default all the administrative commands
+# such as CONFIG, DEBUG, and so forth. To a limited extent you can improve
+# security of read only slaves using 'rename-command' to shadow all the
+# administrative / dangerous commands.
+##slave只读
+slave-read-only yes
+# A slave with a low priority number is considered better for promotion, so
+# for instance if there are three slaves with priority 10, 100, 25 Sentinel will
+# pick the one with priority 10, that is the lowest.
+#
+# However a special priority of 0 marks the slave as not able to perform the
+# role of master, so a slave with priority of 0 will never be selected by
+# Redis Sentinel for promotion.
+#
+# By default the priority is 100.
+##slave优先级，优先级越低，当master宕机时，成为master的可能性越大
+slave-priority 90
+##注意slaves的优先级
+
+
+修改Master文件
+# It is possible for a master to stop accepting writes if there are less than
+# N slaves connected, having a lag less or equal than M seconds.
+#
+# The N slaves need to be in "online" state.
+#
+# The lag in seconds, that must be <= the specified value, is calculated from
+# the last ping received from the slave, that is usually sent every second.
+#
+# This option does not GUARANTEE that N replicas will accept the write, but
+# will limit the window of exposure for lost writes in case not enough slaves
+# are available, to the specified number of seconds.
+#
+# For example to require at least 3 slaves with a lag <= 10 seconds use:
+#
+###为了保证集群的一致性，master必须保证salve的在线数量和握手时间满足以下条件才
+接受写请求
+min-slaves-to-write 1
+min-slaves-max-lag 10
+
+为了保证集群的高可用性，我们在Master和slaves上，启动Sentinel，功能与类似与zookeeper。
+#从redis安装包中，拷贝sentinel配置文件到 /usr/local/redis/conf/
+[root@zabbix redis-3.0.5]# cp sentinel.conf  /usr/local/redis/conf/
+[root@zabbix redis-3.0.5]# cd /usr/local/redis/conf/
+[root@zabbix conf]# ls -al
+total 52
+drwxr-xr-x 2 root root    43 Dec 21 18:20 .
+drwxr-xr-x 4 root root    27 Dec 19 18:16 ..
+-rw-r--r-- 1 root root 41580 Dec 21 17:40 redis.conf
+-rw-r--r-- 1 root root  7109 Dec 21 18:20 sentinel.conf
+#创建sentinel工作目录
+[root@zabbix redis]# mkdir sentinel
+[root@zabbix redis]# ls -al
+total 4
+drwxr-xr-x   6 root root   53 Dec 21 18:29 .
+dr-xr-xr-x. 19 root root 4096 Dec 20 15:16 ..
+drwxr-xr-x   2 root root   21 Dec 20 15:37 bin
+drwxr-xr-x   2 root root   42 Dec 21 10:52 data
+drwxr-xr-x   2 root root   22 Dec 20 15:19 logs
+drwxr-xr-x   2 root root    6 Dec 21 18:29 sentinel
+
+[root@zabbix conf]# 
+修改sentinel.conf
+[root@zabbix conf]# vim sentinel.conf 
+具体如下，具体下面每个配置的意思，我们前文sentinel配置文件篇中已讲，这里不再赘述，
+其中zabbix是集群中master-128的主机名，
+# port <sentinel-port>
+# The port that this sentinel instance will run on
+port 26379
+dir /redis/sentinel
+sentinel monitor zabbix 192.168.126.128 6379 2
+sentinel auth-pass zabbix redis
+sentinel down-after-milliseconds zabbix 30000
+sentinel parallel-syncs zabbix 1
+sentinel failover-timeout zabbix 180000
+#由于我的操作系统是centos，有防火墙，为了Master与slave能够通信，
+将6379，与26379两个端口，解除防护，如下，具体可参考相关博文：
+http://donald-draper.iteye.com/admin/blogs/2315696
+
+[root@zabbix redis]# vim /etc/sysconfig/iptables
+[root@zabbix redis]# cat /etc/sysconfig/iptables
+# sample configuration for iptables service
+# you can edit this manually or use system-config-firewall
+# please do not ask us to add additional ports/services to this default configuration
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -p icmp -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 80 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 25 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 3306 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 10051 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 6379 -j ACCEPT
+-A INPUT -p tcp -m state --state NEW -m tcp --dport 26379 -j ACCEPT
+-A INPUT -j REJECT --reject-with icmp-host-prohibited
+-A FORWARD -j REJECT --reject-with icmp-host-prohibited
+COMMIT
+##在slaves上做同样的工作，再启动集群前，确保所有机器6379，26379端口畅通，
+如果以上方法解决不了，直接iptables -F
+[root@zabbix redis]# 
+至此sentinel配置完毕，将master的sentinel配置文件拷贝到Slaves上
+[root@agent133 redis]# cd conf/
+[root@agent133 conf]# ls
+redis.conf
+[root@agent133 conf]# scp 192.168.126.128:/usr/local/redis/conf/sentinel.conf .
+root@192.168.126.128's password: 
+sentinel.conf                                                                                                              100% 7094     6.9KB/s   00:00    
+[root@agent133 conf]# ls -al
+total 52
+drwxr-xr-x. 2 root root    43 Dec 21 18:40 .
+drwxr-xr-x. 4 root root    27 Dec 21 17:12 ..
+-rw-r--r--. 1 root root 41460 Dec 21 17:37 redis.conf
+-rw-r--r--. 1 root root  7094 Dec 21 18:40 sentinel.conf
+[root@agent133 conf]# 
+
+启动master redis
+[root@zabbix redis]# cd bin/
+[root@zabbix bin]# ls
+redis.sh
+[root@zabbix bin]# ./redis.sh start
+start redis-server...runing
+[root@zabbix bin]# 
+
+启动master sentinel
+
+[root@zabbix bin]#
+
+[1] 7365
+[root@zabbix bin]# 7365:X 21 Dec 18:44:48.955 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+                _._                                                  
+           _.-``__ ''-._                                             
+      _.-``    `.  `_.  ''-._           Redis 3.0.5 (00000000/0) 64 bit
+  .-`` .-```.  ```\/    _.,_ ''-._                                   
+ (    '      ,       .-`  | `,    )     Running in sentinel mode
+ |`-._`-...-` __...-.``-._|'` _.-'|     Port: 26379
+ |    `-._   `._    /     _.-'    |     PID: 7365
+  `-._    `-._  `-./  _.-'    _.-'                                   
+ |`-._`-._    `-.__.-'    _.-'_.-'|                                  
+ |    `-._`-._        _.-'_.-'    |           http://redis.io        
+  `-._    `-._`-.__.-'_.-'    _.-'                                   
+ |`-._`-._    `-.__.-'    _.-'_.-'|                                  
+ |    `-._`-._        _.-'_.-'    |                                  
+  `-._    `-._`-.__.-'_.-'    _.-'                                   
+      `-._    `-.__.-'    _.-'                                       
+          `-._        _.-'                                           
+              `-.__.-'                                               
+
+7365:X 21 Dec 18:44:48.956 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128.
+7365:X 21 Dec 18:44:48.956 # Sentinel runid is b4354571b53ffdbc7369913f3c2c87a31f2a22a4
+7365:X 21 Dec 18:44:48.956 # +monitor master zabbix 192.168.126.128 6379 quorum 2
+
+连接Master
+[root@zabbix bin]#redis-cli -h localhost -p 6379 -a redis
+localhost:6379> monitor
+OK
+1482317315.788890 [0 192.168.126.128:40190] "PING"
+1482317315.843660 [0 192.168.126.128:40190] "PUBLISH" "__sentinel__:hello" "192.168.126.128,26379,b4354571b53ffdbc7369913f3c2c87a31f2a22a4,0,zabbix,192.168.126.128,6379,0"
+1482317316.800317 [0 192.168.126.128:40190] "PING"
+1482317317.836785 [0 192.168.126.128:40190] "PING"
+1482317317.928621 [0 192.168.126.128:40190] "PUBLISH" "__sentinel__:hello" "192.168.126.128,26379,b4354571b53ffdbc7369913f3c2c87a31f2a22a4,0,zabbix,192.168.126.128,6379,0"
+1482317318.871309 [0 192.168.126.128:40190] "PING"
+1482317319.950063 [0 192.168.126.128:40190] "INFO"
+可以看出sentinel正在监控Master
+##连接sentinel查看状态
+[root@zabbix bin]# redis-cli -p 26379
+127.0.0.1:26379> info
+# Server
+redis_version:3.0.5
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:2b4372a303619568
+redis_mode:sentinel
+os:Linux 3.10.0-327.22.2.el7.x86_64 x86_64
+arch_bits:64
+multiplexing_api:epoll
+gcc_version:4.8.5
+process_id:7365
+run_id:b4354571b53ffdbc7369913f3c2c87a31f2a22a4
+tcp_port:26379
+uptime_in_seconds:1211
+uptime_in_days:0
+hz:18
+lru_clock:5923291
+config_file:/usr/local/redis/conf/sentinel.conf
+
+# Sentinel
+sentinel_masters:1
+sentinel_tilt:0
+sentinel_running_scripts:0
+sentinel_scripts_queue_length:0
+master0:name=zabbix,status=ok,address=192.168.126.128:6379,slaves=0,sentinels=1
+127.0.0.1:26379> 
+##查看master状态：
+127.0.0.1:6379> info
+# Replication
+role:master
+connected_slaves:1
+min_slaves_good_slaves:1
+slave0:ip=192.168.126.133,port=6379,state=online,offset=59413,lag=1
+master_repl_offset:59556
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:2
+repl_backlog_histlen:59555
+
+
+在slaves启动redis和sentinel
+
+[root@agent133 redis]# ls
+bin  data  logs  sentinel
+[root@agent133 redis]# cd bin/
+[root@agent133 bin]# ls
+redis.sh
+[root@agent133 bin]# ./redis.sh  start
+start redis-server...runing
+[root@agent133 bin]# netstat -ntlp | grep 6379
+tcp        0      0 0.0.0.0:6379            0.0.0.0:*               LISTEN      4282/redis-server * 
+tcp6       0      0 :::6379                 :::*                    LISTEN      4282/redis-server * 
+[root@agent133 bin]#  redis-sentinel /usr/local/redis/conf/sentinel.conf  &
+[1] 4288
+[root@agent133 bin]# 4288:X 21 Dec 19:12:32.938 * Increased maximum number of open files to 10032 (it was originally set to 1024).
+                _._                                                  
+           _.-``__ ''-._                                             
+      _.-``    `.  `_.  ''-._           Redis 3.0.5 (00000000/0) 64 bit
+  .-`` .-```.  ```\/    _.,_ ''-._                                   
+ (    '      ,       .-`  | `,    )     Running in sentinel mode
+ |`-._`-...-` __...-.``-._|'` _.-'|     Port: 26379
+ |    `-._   `._    /     _.-'    |     PID: 4288
+  `-._    `-._  `-./  _.-'    _.-'                                   
+ |`-._`-._    `-.__.-'    _.-'_.-'|                                  
+ |    `-._`-._        _.-'_.-'    |           http://redis.io        
+  `-._    `-._`-.__.-'_.-'    _.-'                                   
+ |`-._`-._    `-.__.-'    _.-'_.-'|                                  
+ |    `-._`-._        _.-'_.-'    |                                  
+  `-._    `-._`-.__.-'_.-'    _.-'                                   
+      `-._    `-.__.-'    _.-'                                       
+          `-._        _.-'                                           
+              `-.__.-'                                               
+
+4288:X 21 Dec 19:12:32.940 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128.
+4288:X 21 Dec 19:12:32.940 # Sentinel runid is 17607179ad13102b1561dcd6a999cff732ac0f98
+4288:X 21 Dec 19:12:32.940 # +monitor master zabbix 192.168.126.128 6379 quorum 2
+4288:X 21 Dec 19:12:33.944 * +slave slave 192.168.126.133:6379 192.168.126.133 6379 @ zabbix 192.168.126.128 6379
+4288:X 21 Dec 19:12:35.052 * +sentinel sentinel 192.168.126.128:26379 192.168.126.128 26379 @ zabbix 192.168.126.128 6379
+[root@agent133 bin]# 
+
+
+#连接Sentinel
+[root@agent133 bin]# redis-cli -p 26379
+127.0.0.1:26379> info
+# Server
+redis_version:3.0.5
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:e0daa82ba7583198
+redis_mode:sentinel
+os:Linux 3.10.0-327.22.2.el7.x86_64 x86_64
+arch_bits:64
+multiplexing_api:epoll
+gcc_version:4.8.5
+process_id:4288
+run_id:17607179ad13102b1561dcd6a999cff732ac0f98
+tcp_port:26379
+uptime_in_seconds:77
+uptime_in_days:0
+hz:11
+lru_clock:5923821
+config_file:/usr/local/redis/conf/sentinel.conf
+
+# Sentinel
+sentinel_masters:1
+sentinel_tilt:0
+sentinel_running_scripts:0
+sentinel_scripts_queue_length:0
+master0:name=zabbix,status=ok,address=192.168.126.128:6379,slaves=1,sentinels=2
+127.0.0.1:26379> 
+在master的monitor界面，可以看到slave上的Sentinel发来的握手信息
+482318873.513009 [0 192.168.126.133:52522] "PING"
+1482318873.596223 [0 192.168.126.133:52522] "PUBLISH" "__sentinel__:hello" "192.168.126.133,26379,17607179ad13102b1561dcd6a999cff732ac0f98,0,zabbix,192.168.126.128,6379,0"
+监控slave的redis实例，与master的握手信息
+[redis@agent133 Desktop]$ redis-cli -p 6379 -a redis
+127.0.0.1:6379> monitor
+OK
+1482318949.276759 [0 192.168.126.133:49624] "PING"
+1482318949.470154 [0 192.168.126.128:6379] "PUBLISH" "__sentinel__:hello" "192.168.126.133,26379,17607179ad13102b1561dcd6a999cff732ac0f98,0,zabbix,192.168.126.128,6379,0"
+1482318949.822874 [0 192.168.126.128:42838] "PING"
+1482318950.128768 [0 192.168.126.128:6379] "PUBLISH" "__sentinel__:hello" "192.168.126.128,26379,b4354571b53ffdbc7369913f3c2c87a31f2a22a4,0,zabbix,192.168.126.128,6379,0"
+1482318950.300715 [0 192.168.126.133:49624] "PING"
+1482318950.740239 [0 192.168.126.133:49624] "PUBLIS
+#查看slave状态
+[redis@agent133 Desktop]$ redis-cli -p 6379 -a redis
+127.0.0.1:6379> info 
+# Replication
+role:slave
+master_host:192.168.126.128
+master_port:6379
+master_link_status:up
+master_last_io_seconds_ago:1
+master_sync_in_progress:0
+slave_repl_offset:43672
+slave_priority:90
+slave_read_only:1
+connected_slaves:0
+master_repl_offset:0
+repl_backlog_active:0
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:0
+repl_backlog_histlen:0
+
+在master上，添加键
+localhost:6379> set name donald
+OK
+localhost:6379> get name 
+"donald"
+localhost:6379> 
+
+在slaves，我们可以看到
+127.0.0.1:6379> get name
+"donald"
+127.0.0.1:6379> 
+
+
+在master上连接sentinel，查看master状态
+127.0.0.1:26379> sentinel masters
+1)  1) "name"
+    2) "zabbix"
+    3) "ip"
+    4) "192.168.126.128"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "239033187f3fd756c470f7f31b5e49efbf7c603d"
+    9) "flags"
+   10) "master"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "264"
+   17) "last-ping-reply"
+   18) "264"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "1861"
+   23) "role-reported"
+   24) "master"
+   25) "role-reported-time"
+   26) "2472617"
+   27) "config-epoch"
+   28) "0"
+   29) "num-slaves"
+   30) "2"
+   31) "num-other-sentinels"
+   32) "1"
+   33) "quorum"
+   34) "2"
+   35) "failover-timeout"
+   36) "180000"
+   37) "parallel-syncs"
+   38) "1"
+#在128 Master 查看slave状态
+127.0.0.1:26379> sentinel slaves zabbix
+1)  1) "name"
+    2) "192.168.126.138:6379"
+    3) "ip"
+    4) "192.168.126.138"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "de9d33c23dc969932098503a28d7ac2cf2e67df6"
+    9) "flags"
+   10) "slave"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "21"
+   17) "last-ping-reply"
+   18) "21"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "7680"
+   23) "role-reported"
+   24) "slave"
+   25) "role-reported-time"
+   26) "198553"
+   27) "master-link-down-time"
+   28) "0"
+   29) "master-link-status"
+   30) "ok"
+   31) "master-host"
+   32) "192.168.126.128"
+   33) "master-port"
+   34) "6379"
+   35) "slave-priority"
+   36) "100"
+   37) "slave-repl-offset"
+   38) "119118"
+2)  1) "name"
+    2) "192.168.126.133:6379"
+    3) "ip"
+    4) "192.168.126.133"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "47c588eabdc0ec1fe29d40be35b612ac82980b44"
+    9) "flags"
+   10) "slave"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "21"
+   17) "last-ping-reply"
+   18) "21"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "7679"
+   23) "role-reported"
+   24) "slave"
+   25) "role-reported-time"
+   26) "881369"
+   27) "master-link-down-time"
+   28) "0"
+   29) "master-link-status"
+   30) "ok"
+   31) "master-host"
+   32) "192.168.126.128"
+   33) "master-port"
+   34) "6379"
+   35) "slave-priority"
+   36) "90"
+   37) "slave-repl-offset"
+   38) "119118"
+127.0.0.1:26379> 
+##当我们关闭138 slave redis实例时，master的sentinel会有相应的信息
+127.0.0.1:26379> 7365:X 21 Dec 19:28:33.155 # +sdown slave 192.168.126.138:6379 192.168.126.138 6379 @ zabbix 192.168.126.128 6379
+7365:X 21 Dec 19:28:52.068 * +reboot slave 192.168.126.138:6379 192.168.126.138 6379 @ zabbix 192.168.126.128 6379
+7365:X 21 Dec 19:28:52.134 # -sdown slave 192.168.126.138:6379 192.168.126.138 6379 @ zabbix 192.168.126.128 6379
+
+
+
+在138上连接sentinel，查看状态：
+# Server
+redis_version:3.0.5
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:e0daa82ba7583198
+redis_mode:sentinel
+os:Linux 3.10.0-327.22.2.el7.x86_64 x86_64
+arch_bits:64
+multiplexing_api:epoll
+gcc_version:4.8.5
+process_id:4847
+run_id:6183fe493327f4eff1d0d4971fce11afecc96408
+tcp_port:26379
+uptime_in_seconds:160
+uptime_in_days:0
+hz:11
+lru_clock:5925146
+config_file:/usr/local/redis/conf/sentinel.conf
+
+# Sentinel
+sentinel_masters:1
+sentinel_tilt:0
+sentinel_running_scripts:0
+sentinel_scripts_queue_length:0
+master0:name=zabbix,status=ok,address=192.168.126.128:6379,slaves=2,sentinels=3
+127.0.0.1:26379> 
+可以看出slaves为2,sentinels为3
+
+
+现在我们来测试一下HA，关闭Master
+localhost:6379> shutdown
+not connected> 
+在128上sentinel显示选举master和更新配置信息
+127.0.0.1:26379> 7365:X 21 Dec 19:33:16.433 * +sentinel sentinel 192.168.126.138:26379 192.168.126.138 26379 @ zabbix 192.168.126.128 6379
+7365:X 21 Dec 19:41:12.576 # +sdown master zabbix 192.168.126.128 6379
+7365:X 21 Dec 19:41:12.655 # +new-epoch 1
+##选择master
+7365:X 21 Dec 19:41:12.657 # +vote-for-leader 6183fe493327f4eff1d0d4971fce11afecc96408 1
+7365:X 21 Dec 19:41:12.661 # +odown master zabbix 192.168.126.128 6379 #quorum 3/2
+7365:X 21 Dec 19:41:12.661 # Next failover delay: I will not start a failover before Wed Dec 21 19:47:13 2016
+##更新slave 138配置
+7365:X 21 Dec 19:41:13.762 # +config-update-from sentinel 192.168.126.138:26379 192.168.126.138 26379 @ zabbix 192.168.126.128 6379
+##将133切换为Master，128切换为slave，由于133的优先级为90,138优先级为100，所以选举133为master
+7365:X 21 Dec 19:41:13.762 # +switch-master zabbix 192.168.126.128 6379 192.168.126.133 6379
+7365:X 21 Dec 19:41:13.762 * +slave slave 192.168.126.138:6379 192.168.126.138 6379 @ zabbix 192.168.126.133 6379
+7365:X 21 Dec 19:41:13.762 * +slave slave 192.168.126.128:6379 192.168.126.128 6379 @ zabbix 192.168.126.133 6379
+
+
+
+在133，查看sever信息：
+[redis@agent133 Desktop]$ redis-cli -p 6379 -a redis
+# Replication
+role:master
+connected_slaves:1
+slave0:ip=192.168.126.138,port=6379,state=online,offset=65952,lag=0
+master_repl_offset:65952
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:2
+repl_backlog_histlen:65951
+
+
+db0:keys=1,expires=0,avg_ttl=0
+127.0.0.1:6379> 
+
+
+128重启redis时，sentinel显示convert-to-slave
+7365:X 21 Dec 19:45:55.555 * +convert-to-slave slave 192.168.126.128:6379 192.168.126.128 6379 @ zabbix 192.168.126.133 6379
+
+
+在133上查看sentinel master与slaves状态
+127.0.0.1:26379> 
+127.0.0.1:26379> sentinel masters
+1)  1) "name"
+    2) "zabbix"
+    3) "ip"
+    4) "192.168.126.133"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "47c588eabdc0ec1fe29d40be35b612ac82980b44"
+    9) "flags"
+   10) "master"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "288"
+   17) "last-ping-reply"
+   18) "288"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "4219"
+   23) "role-reported"
+   24) "master"
+   25) "role-reported-time"
+   26) "546706"
+   27) "config-epoch"
+   28) "1"
+   29) "num-slaves"
+   30) "2"
+   31) "num-other-sentinels"
+   32) "2"
+   33) "quorum"
+   34) "2"
+   35) "failover-timeout"
+   36) "180000"
+   37) "parallel-syncs"
+   38) "1"
+127.0.0.1:26379> sentinel slaves zabbix
+1)  1) "name"
+    2) "192.168.126.128:6379"
+    3) "ip"
+    4) "192.168.126.128"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "71c8aab6f676f7d3e177a9c6321fd91a0d47fef6"
+    9) "flags"
+   10) "slave"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "610"
+   17) "last-ping-reply"
+   18) "610"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "5103"
+   23) "role-reported"
+   24) "slave"
+   25) "role-reported-time"
+   26) "286309"
+   27) "master-link-down-time"
+   28) "1482321036000"
+   29) "master-link-status"
+   30) "err"
+   31) "master-host"
+   32) "192.168.126.133"
+   33) "master-port"
+   34) "6379"
+   35) "slave-priority"
+   36) "100"
+   37) "slave-repl-offset"
+   38) "1"
+2)  1) "name"
+    2) "192.168.126.138:6379"
+    3) "ip"
+    4) "192.168.126.138"
+    5) "port"
+    6) "6379"
+    7) "runid"
+    8) "0397cb460b84ca7df4650483ae8707bda53c2ddc"
+    9) "flags"
+   10) "slave"
+   11) "pending-commands"
+   12) "0"
+   13) "last-ping-sent"
+   14) "0"
+   15) "last-ok-ping-reply"
+   16) "582"
+   17) "last-ping-reply"
+   18) "582"
+   19) "down-after-milliseconds"
+   20) "30000"
+   21) "info-refresh"
+   22) "5661"
+   23) "role-reported"
+   24) "slave"
+   25) "role-reported-time"
+   26) "568112"
+   27) "master-link-down-time"
+   28) "0"
+   29) "master-link-status"
+   30) "ok"
+   31) "master-host"
+   32) "192.168.126.133"
+   33) "master-port"
+   34) "6379"
+   35) "slave-priority"
+   36) "100"
+   37) "slave-repl-offset"
+   38) "117625"
+127.0.0.1:26379> 
+可以看到133被选举为master，128与138为slave
+
+查看138的redis配置文件redis.conf,Master已经被修改
+slaveof 192.168.126.133 6379
+
+查看138的redis配置文件sentinel已经被修改
+sentinel config-epoch zabbix 1
+sentinel leader-epoch zabbix 1
+sentinel known-slave zabbix 192.168.126.138 6379
+# Generated by CONFIG REWRITE
+sentinel known-slave zabbix 192.168.126.128 6379
+sentinel known-sentinel zabbix 192.168.126.133 26379 17607179ad13102b1561dcd6a999cff732ac0f98
+sentinel known-sentinel zabbix 192.168.126.128 26379 b4354571b53ffdbc7369913f3c2c87a31f2a22a4
+sentinel current-epoch 1
+
+查看128与133的配置文件，也相应的修改。
+133的slaveof配置被擦除，
+
+总结：
+redis的主从与mysql的主从有点类似，都要配置slave的Master，sentinel类与Hadoop HA环境下的Zookeeper的作用，
+当集群中master宕机时，sentinel通过GrossIP协议选择出Master，并修改相应的redis.conf,与sentinel.conf配置文件
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

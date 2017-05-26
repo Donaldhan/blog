@@ -1,0 +1,402 @@
+Jedis获取Redis连接详解:http://donald-draper.iteye.com/blog/2347121
+Redis的客户端Jedis及Jedis操作Redis命令详解：http://donald-draper.iteye.com/blog/2347192
+Spring与Redis的集成详解一:http://donald-draper.iteye.com/admin/blogs/2347337
+上一篇我们分析了Jedis连接工厂创建redis连接JedisConnection，及RedisTemplate执行Redis回调接口方法，
+今天来看一下RedisTemplate的相关设值方法
+public class RedisTemplate extends RedisAccessor
+    implements RedisOperations
+{
+    private boolean exposeConnection;
+    private RedisSerializer defaultSerializer;
+    private RedisSerializer keySerializer;
+    private RedisSerializer valueSerializer;
+    private RedisSerializer hashKeySerializer;
+    private RedisSerializer hashValueSerializer;
+    private RedisSerializer stringSerializer;
+    private ValueOperations valueOps;
+    private ListOperations listOps;
+    private SetOperations setOps;
+    private ZSetOperations zSetOps;
+     public RedisTemplate()
+    {
+        exposeConnection = false;
+        defaultSerializer = new JdkSerializationRedisSerializer();
+        keySerializer = null;
+        valueSerializer = null;
+        hashKeySerializer = null;
+        hashValueSerializer = null;
+        stringSerializer = new StringRedisSerializer();
+    }
+    //序列化字符串，这个我们在上一篇中，一看到
+     private byte[] rawString(String key)
+    {
+        return stringSerializer.serialize(key);
+    }
+    //删除key
+    public void delete(Object key)
+    {
+        final byte rawKey[] = rawKey(key);
+        execute(new RedisCallback() {
+           //从前文的分析中，connection实际为JedisConnection
+            public Object doInRedis(RedisConnection connection)
+            {
+                connection.del(new byte[][] {
+                    rawKey
+                });
+                return null;
+            }
+
+            final byte val$rawKey[];
+            final RedisTemplate this$0;
+
+            
+            {
+                this$0 = RedisTemplate.this;
+                rawKey = abyte0;
+                super();
+            }
+        }, true);
+    }
+    //过期时间设置
+    public Boolean expire(Object key, long timeout, TimeUnit unit)
+    {
+        final byte rawKey[] = rawKey(key);
+        final long rawTimeout = unit.toSeconds(timeout);
+        return (Boolean)execute(new RedisCallback() {
+
+            public Boolean doInRedis(RedisConnection connection)
+            {
+                return connection.expire(rawKey, rawTimeout);
+            }
+
+            public volatile Object doInRedis(RedisConnection x0)
+                throws DataAccessException
+            {
+                return doInRedis(x0);
+            }
+
+            final byte val$rawKey[];
+            final long val$rawTimeout;
+            final RedisTemplate this$0;
+
+            
+            {
+                this$0 = RedisTemplate.this;
+                rawKey = abyte0;
+                rawTimeout = l;
+                super();
+            }
+        }, true);
+    }
+    //重命令key
+     public void rename(Object oldKey, Object newKey)
+    {
+        final byte rawOldKey[] = rawKey(oldKey);
+        final byte rawNewKey[] = rawKey(newKey);
+        execute(new RedisCallback() {
+
+            public Object doInRedis(RedisConnection connection)
+            {
+                connection.rename(rawOldKey, rawNewKey);
+                return null;
+            }
+
+            final byte val$rawOldKey[];
+            final byte val$rawNewKey[];
+            final RedisTemplate this$0;
+
+            
+            {
+                this$0 = RedisTemplate.this;
+                rawOldKey = abyte0;
+                rawNewKey = abyte1;
+                super();
+            }
+        }, true);
+    }
+    //开启事务
+    public void multi()
+    {
+        execute(new RedisCallback() {
+
+            public Object doInRedis(RedisConnection connection)
+                throws DataAccessException
+            {
+                connection.multi();
+                return null;
+            }
+
+            final RedisTemplate this$0;
+
+            
+            {
+                this$0 = RedisTemplate.this;
+                super();
+            }
+        }, true);
+    }
+}
+从RedisTemplate的关于key的相关操作都是封装在Redis回调接口中，然后再执行。
+我们在来看JedisConnection
+public class JedisConnection
+    implements RedisConnection
+{
+    private static final Field CLIENT_FIELD;
+    private static final Method SEND_COMMAND;//发送命令方法
+    private static final Method GET_RESPONSE;
+    private final Jedis jedis;//jedis连接
+    private final Client client;//jedis与redis的socket客户端
+    private final BinaryTransaction transaction;//事务
+    private final Pool pool;//Jedis连接池
+    private boolean broken;
+    private volatile JedisSubscription subscription;
+    private volatile Pipeline pipeline;//管道
+    private final int dbIndex;//数据库
+
+    static 
+    {
+        //通过反射工具获取BinaryJedis的Client属性
+        CLIENT_FIELD = ReflectionUtils.findField(redis/clients/jedis/BinaryJedis, "client", redis/clients/jedis/Client);
+        ReflectionUtils.makeAccessible(CLIENT_FIELD);
+	//获取Jedis的Connection发送命令方法
+        SEND_COMMAND = ReflectionUtils.findMethod(redis/clients/jedis/Connection, "sendCommand", new Class[] {
+            redis/clients/jedis/Protocol$Command, [[B
+        });
+        ReflectionUtils.makeAccessible(SEND_COMMAND);
+        //Jedis的Connection获取redis回复结果的方法
+        GET_RESPONSE = ReflectionUtils.findMethod(redis/clients/jedis/Queable, "getResponse", new Class[] {
+            redis/clients/jedis/Builder
+        });
+        ReflectionUtils.makeAccessible(GET_RESPONSE);
+    }
+    public JedisConnection(Jedis jedis, Pool pool, int dbIndex)
+    {
+        broken = false;
+        this.jedis = jedis;
+	//获取Jedis的Client属性
+        client = (Client)ReflectionUtils.getField(CLIENT_FIELD, jedis);
+	//设置事务
+        transaction = new Transaction(client);
+	//连接池
+        this.pool = pool;
+	//数据库
+        this.dbIndex = dbIndex;
+        if(dbIndex > 0)
+	    //切换数据库
+            select(dbIndex);
+    }
+}
+//Transaction
+public class Transaction extends BinaryTransaction
+{
+ public Transaction(Client client)
+    {
+        super(client);
+    }
+    //设置键过期时间
+    public Response expire(String key, int seconds)
+    {
+        client.expire(key, seconds);
+        return getResponse(BuilderFactory.LONG);
+    }
+    //获取键值
+    public Response get(String key)
+    {
+        client.get(key);
+        return getResponse(BuilderFactory.STRING);
+    }
+}
+再看BinaryTransaction
+public class BinaryTransaction extends Queable
+{
+   protected Client client;//redis客户端
+   protected boolean inTransaction;//是否为事务
+   public BinaryTransaction(Client client)
+    {
+        this.client = null;
+        inTransaction = true;
+        this.client = client;
+    }
+     public Response setnx(byte key[], byte value[])
+    {
+        client.setnx(key, value);
+        return getResponse(BuilderFactory.LONG);
+    }
+}
+//Queable
+public class Queable
+{
+    private Queue pipelinedResponses;//实际为LinkedList
+    public Queable()
+    {
+        pipelinedResponses = new LinkedList();
+    }
+    protected void clean()
+    {
+        pipelinedResponses.clear();
+    }
+    protected Response generateResponse(Object data)
+    {
+        Response response = (Response)pipelinedResponses.poll();
+        if(response != null)
+            response.set(data);
+        return response;
+    }
+    //事务开启的情况下，将Redis返回结果添加到队列中
+    protected Response getResponse(Builder builder)
+    {
+        Response lr = new Response(builder);
+        pipelinedResponses.add(lr);
+        return lr;
+    }
+
+}
+
+下面来看一下JedisConnection的相关方法
+//是否为事务
+ public boolean isQueueing()
+    {
+        return client.isInMulti();
+    }
+//打开管道
+public void openPipeline()
+    {
+        if(pipeline == null)
+            pipeline = jedis.pipelined();
+    }
+//刷新DB
+ public void flushDb()
+    {
+        try
+        {
+            if(isQueueing())
+                transaction.flushDB();
+            if(isPipelined())
+                pipeline.flushDB();
+            jedis.flushDB();
+        }
+        catch(Exception ex)
+        {
+            throw convertJedisAccessException(ex);
+        }
+    }
+//Dump 数据库
+public void bgSave()
+    {
+        try
+        {
+            if(isQueueing())
+                throw new UnsupportedOperationException();
+            if(isPipelined())
+            {
+                pipeline.bgsave();
+                return;
+            }
+        }
+        catch(Exception ex)
+        {
+            throw convertJedisAccessException(ex);
+        }
+        jedis.bgsave();
+    }
+//写AOP
+ public void bgWriteAof()
+    {
+        try
+        {
+            if(isQueueing())
+                throw new UnsupportedOperationException();
+            if(isPipelined())
+            {
+                pipeline.bgrewriteaof();
+                return;
+            }
+        }
+        catch(Exception ex)
+        {
+            throw convertJedisAccessException(ex);
+        }
+        jedis.bgrewriteaof();
+    }
+//开启事务
+ public void multi()
+    {
+        if(isQueueing())
+            return;
+        try
+        {
+            if(isPipelined())
+            {
+                pipeline.multi();
+                return;
+            }
+        }
+        catch(Exception ex)
+        {
+            throw convertJedisAccessException(ex);
+        }
+        jedis.multi();
+    }
+//key不存在则设置
+public Boolean setNX(byte key[], byte value[])
+    {
+        if(!isQueueing())
+            break MISSING_BLOCK_LABEL_19;
+        transaction.setnx(key, value);
+        return null;
+        if(!isPipelined())
+            break MISSING_BLOCK_LABEL_38;
+        pipeline.setnx(key, value);
+        return null;
+        return JedisUtils.convertCodeReply(jedis.setnx(key, value));
+        Exception ex;
+        ex;
+        throw convertJedisAccessException(ex);
+    }
+从分析JedisConnection方法可以看出，JedisConnection相关方法都是依托于Jedis，Cclient和Transaction；
+总结：
+RedisTemplate的关于key的相关操作都是封装在Redis回调接口中，然后再执行；
+JedisConnection相关方法都是依托于Jedis，Cclient和Transaction。
+
+//Response
+class Response
+{
+    protected Object response;
+    private boolean built;
+    private boolean set;
+    private Builder builder;
+    private Object data;
+    public Response(Builder b)
+    {
+        response = null;
+        built = false;
+        set = false;
+        builder = b;
+    }
+    public void set(Object data)
+    {
+        this.data = data;
+        set = true;
+    }
+    public Object get()
+    {
+        if(!set)
+            throw new JedisDataException("Please close pipeline or multi block before calling this method.");
+        if(!built)
+        {
+            if(data != null)
+            {
+                if(data instanceof JedisDataException)
+                    throw new JedisDataException((JedisDataException)data);
+                response = builder.build(data);
+            }
+            data = null;
+            built = true;
+        }
+        return response;
+    }
+    public String toString()
+    {
+        return (new StringBuilder()).append("Response ").append(builder.toString()).toString();
+    }
+}

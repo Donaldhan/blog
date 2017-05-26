@@ -1,0 +1,576 @@
+Jedis操作Redis ：http://donald-draper.iteye.com/blog/2346958
+在前面一章中，我们讲了Jedis如何操作redis，今天我们来看一下他如何操作
+从线面这几句开始：
+    private static JedisPoolConfig jConfig = null;
+    private static JedisPool pool = null;  
+    private static Jedis jedis = null; 
+    static {
+    	jConfig = new JedisPoolConfig();
+    } 
+    public static void init() {  
+        pool = new JedisPool(jConfig,"192.168.126.128",6379);
+        jedis = pool.getResource();  
+        jedis.auth("redis");  
+        //测试是否连接成功
+        System.out.println("Connecting redis......."+jedis.ping());
+    }
+上面这段话有几个要点第一点：Jedis连接池配置
+jConfig = new JedisPoolConfig();
+第二点：jedis连接池初始化
+pool = new JedisPool(jConfig,"192.168.126.128",6379);
+第三点：从连接池获取jedis连接
+jedis = pool.getResource();  
+jedis.auth("redis");  
+//测试是否连接成功
+System.out.println("Connecting redis......."+jedis.ping());
+
+我们先来看第一点
+jConfig = new JedisPoolConfig();
+
+import org.apache.commons.pool.impl.GenericObjectPool;
+public class JedisPoolConfig extends org.apache.commons.pool.impl.GenericObjectPool.Config
+{
+    public JedisPoolConfig()
+    {
+        setTestWhileIdle(true);
+        setMinEvictableIdleTimeMillis(60000L);
+        setTimeBetweenEvictionRunsMillis(30000L);
+        setNumTestsPerEvictionRun(-1);
+    }
+    public int getMaxIdle()
+    {
+        return maxIdle;
+    }
+    public void setMaxIdle(int maxIdle)
+    {
+        this.maxIdle = maxIdle;
+    }
+     public int getMinIdle()
+    {
+        return minIdle;
+    }
+
+    public void setMinIdle(int minIdle)
+    {
+        this.minIdle = minIdle;
+    }
+      public int getMaxActive()
+    {
+        return maxActive;
+    }
+    public void setMaxActive(int maxActive)
+    {
+        this.maxActive = maxActive;
+    }
+    public long getMaxWait()
+    {
+        return maxWait;
+    }
+    public void setMaxWait(long maxWait)
+    {
+        this.maxWait = maxWait;
+    }
+...
+}
+从JedisPoolConfig我们可以看出，JedisPoolConfig的功能主要是配置连接最大空闲
+时间，存活数量，及等待时间；
+再来看GenericObjectPool.Config
+public class GenericObjectPool extends BaseObjectPool
+    implements ObjectPool
+{
+public static class Config
+    {
+
+        public int maxIdle;
+        public int minIdle;//空闲时间
+        public int maxActive;//存活数量
+        public long maxWait;//等待时间
+        public byte whenExhaustedAction;
+        public boolean testOnBorrow;
+        public boolean testOnReturn;
+        public boolean testWhileIdle;
+        public long timeBetweenEvictionRunsMillis;
+        public int numTestsPerEvictionRun;
+        public long minEvictableIdleTimeMillis;
+        public long softMinEvictableIdleTimeMillis;
+        public boolean lifo;
+
+        public Config()
+        {
+            maxIdle = 8;
+            minIdle = 0;
+            maxActive = 8;
+            maxWait = -1L;
+            whenExhaustedAction = 1;
+            testOnBorrow = false;
+            testOnReturn = false;
+            testWhileIdle = false;
+            timeBetweenEvictionRunsMillis = -1L;
+            numTestsPerEvictionRun = 3;
+            minEvictableIdleTimeMillis = 1800000L;
+            softMinEvictableIdleTimeMillis = -1L;
+            lifo = true;
+        }
+    }
+}
+从上可以看出JedisPoolConfig的父类Config为GenericObjectPool的静态内部类，与连接池
+有关的属性在Config中，而属性的设置在JedisPoolConfig中；
+下面我们来看第二点：
+ pool = new JedisPool(jConfig,"192.168.126.128",6379);
+ 初始化连接池：
+ package redis.clients.jedis;
+
+import org.apache.commons.pool.BasePoolableObjectFactory;
+import org.apache.commons.pool.impl.GenericObjectPool;
+import redis.clients.util.Pool;
+
+// Referenced classes of package redis.clients.jedis:
+//            BinaryJedis, Jedis
+
+public class JedisPool extends Pool
+{
+   public JedisPool(org.apache.commons.pool.impl.GenericObjectPool.Config poolConfig, String host, int port)
+    {
+        this(poolConfig, host, port, 2000, null, 0);
+    }
+    //最后几个参数为timeout, password, database，超时时间，密码，数据库
+    public JedisPool(org.apache.commons.pool.impl.GenericObjectPool.Config poolConfig, String host, int port, int timeout, String password, int database)
+    {
+        super(poolConfig, new JedisFactory(host, port, timeout, password, database));
+    }
+}
+在来看起父类Pool
+public abstract class Pool
+{
+    private final GenericObjectPool internalPool;//连接池
+    public Pool(org.apache.commons.pool.impl.GenericObjectPool.Config poolConfig, PoolableObjectFactory factory)
+    {
+        internalPool = new GenericObjectPool(factory, poolConfig);
+    }
+}
+再来看一下GenericObjectPool
+GenericObjectPool在上面已经出现过，Config为其静态内部类
+public class GenericObjectPool extends BaseObjectPool
+    implements ObjectPool
+{
+   public static final byte WHEN_EXHAUSTED_FAIL = 0;
+    public static final byte WHEN_EXHAUSTED_BLOCK = 1;
+    public static final byte WHEN_EXHAUSTED_GROW = 2;
+    public static final int DEFAULT_MAX_IDLE = 8;
+    public static final int DEFAULT_MIN_IDLE = 0;
+    public static final int DEFAULT_MAX_ACTIVE = 8;
+    public static final byte DEFAULT_WHEN_EXHAUSTED_ACTION = 1;
+    public static final boolean DEFAULT_LIFO = true;
+    public static final long DEFAULT_MAX_WAIT = -1L;
+    public static final boolean DEFAULT_TEST_ON_BORROW = false;
+    public static final boolean DEFAULT_TEST_ON_RETURN = false;
+    public static final boolean DEFAULT_TEST_WHILE_IDLE = false;
+    public static final long DEFAULT_TIME_BETWEEN_EVICTION_RUNS_MILLIS = -1L;
+    public static final int DEFAULT_NUM_TESTS_PER_EVICTION_RUN = 3;
+    public static final long DEFAULT_MIN_EVICTABLE_IDLE_TIME_MILLIS = 1800000L;
+    public static final long DEFAULT_SOFT_MIN_EVICTABLE_IDLE_TIME_MILLIS = -1L;
+    private int _maxIdle;//空闲时间
+    private int _minIdle;
+    private int _maxActive;//存活数量
+    private long _maxWait;//等待时间
+    private byte _whenExhaustedAction;
+    private volatile boolean _testOnBorrow;
+    private volatile boolean _testOnReturn;
+    private boolean _testWhileIdle;
+    private long _timeBetweenEvictionRunsMillis;
+    private int _numTestsPerEvictionRun;
+    private long _minEvictableIdleTimeMillis;
+    private long _softMinEvictableIdleTimeMillis;
+    private boolean _lifo;
+    private CursorableLinkedList _pool;//连接池
+    private CursorableLinkedList.Cursor _evictionCursor;//候选连接池
+    private PoolableObjectFactory _factory;//连接池对象工厂JedisFactory
+    private int _numActive;//存活数量
+    private Evictor _evictor;//候选连接执行器
+    private int _numInternalProcessing;
+    private final LinkedList _allocationQueue;//jedis连接获取互斥锁链
+    //根据连接池工程和配置初始化GenericObjectPool
+ public GenericObjectPool(PoolableObjectFactory factory, Config config)
+    {
+        this(factory, config.maxActive, config.whenExhaustedAction, config.maxWait, config.maxIdle, config.minIdle, config.testOnBorrow, config.testOnReturn, config.timeBetweenEvictionRunsMillis, config.numTestsPerEvictionRun, config.minEvictableIdleTimeMillis, config.testWhileIdle, config.softMinEvictableIdleTimeMillis, config.lifo);
+    }
+    public GenericObjectPool(PoolableObjectFactory factory, int maxActive, byte whenExhaustedAction, long maxWait, int maxIdle, int minIdle, 
+            boolean testOnBorrow, boolean testOnReturn, long timeBetweenEvictionRunsMillis, int numTestsPerEvictionRun, long minEvictableIdleTimeMillis, 
+            boolean testWhileIdle, long softMinEvictableIdleTimeMillis, boolean lifo)
+    {
+        _maxIdle = 8;
+        _minIdle = 0;
+        _maxActive = 8;
+        _maxWait = -1L;
+        _whenExhaustedAction = 1;
+        _testOnBorrow = false;
+        _testOnReturn = false;
+        _testWhileIdle = false;
+        _timeBetweenEvictionRunsMillis = -1L;
+        _numTestsPerEvictionRun = 3;
+        _minEvictableIdleTimeMillis = 1800000L;
+        _softMinEvictableIdleTimeMillis = -1L;
+        _lifo = true;
+        _pool = null;
+        _evictionCursor = null;
+        _factory = null;
+        _numActive = 0;//存活连接数量
+        _evictor = null;
+        _numInternalProcessing = 0;
+        _allocationQueue = new LinkedList();
+        _factory = factory;//连接池对象工厂
+        _maxActive = maxActive;//最大存活数量
+        _lifo = lifo;
+        switch(whenExhaustedAction)
+        {
+        case 0: // '\0'
+        case 1: // '\001'
+        case 2: // '\002'
+            _whenExhaustedAction = whenExhaustedAction;
+            break;
+
+        default:
+            throw new IllegalArgumentException((new StringBuilder()).append("whenExhaustedAction ").append(whenExhaustedAction).append(" not recognized.").toString());
+        }
+        _maxWait = maxWait;
+        _maxIdle = maxIdle;
+        _minIdle = minIdle;//空闲、等待时间
+        _testOnBorrow = testOnBorrow;
+        _testOnReturn = testOnReturn;
+        _timeBetweenEvictionRunsMillis = timeBetweenEvictionRunsMillis;
+        _numTestsPerEvictionRun = numTestsPerEvictionRun;
+        _minEvictableIdleTimeMillis = minEvictableIdleTimeMillis;
+        _softMinEvictableIdleTimeMillis = softMinEvictableIdleTimeMillis;
+        _testWhileIdle = testWhileIdle;
+	//class CursorableLinkedList implements List, Serializable，存放连接
+        _pool = new CursorableLinkedList();
+	//由于_evictor为空和_timeBetweenEvictionRunsMillis为-1L,这时候startEvictor没做任何事情
+        startEvictor(_timeBetweenEvictionRunsMillis);
+    }
+
+}
+//启动候选连接执行器
+ protected synchronized void startEvictor(long delay)
+    {
+        if(null != _evictor)
+        {
+            EvictionTimer.cancel(_evictor);
+            _evictor = null;
+        }
+        if(delay > 0L)
+        {
+            _evictor = new Evictor();
+            EvictionTimer.schedule(_evictor, delay, delay);
+        }
+//GenericObjectPool内部类Evictor
+ private class Evictor extends TimerTask
+    {
+        public void run()
+        {
+            try
+            {
+                //从连接池获取，候选连接池，并分配连接句柄
+		evict();
+            }
+            catch(Exception e) { }
+            catch(OutOfMemoryError oome)
+            {
+                oome.printStackTrace(System.err);
+            }
+            try
+            {
+                ensureMinIdle();
+            }
+            catch(Exception e) { }
+        }
+        final GenericObjectPool this$0;
+
+        private Evictor()
+        {
+            this$0 = GenericObjectPool.this;
+            super();
+        }
+    }
+    public void evict()
+        throws Exception
+    {
+        //如果候选连接为空，则从连接池中获取连接最为候选连接
+        if(null == _evictionCursor)
+            _evictionCursor = _pool.cursor(_lifo ? _pool.size() : 0);
+        
+        allocate();
+        return;
+    }
+    //分配连接获取锁
+    private synchronized void allocate()
+    {
+        if(isClosed())
+            return;
+        while(!_pool.isEmpty() && !_allocationQueue.isEmpty()) 
+        {
+            Latch latch = (Latch)_allocationQueue.removeFirst();
+            latch.setPair((GenericKeyedObjectPool.ObjectTimestampPair)_pool.removeFirst());
+            _numInternalProcessing++;
+            synchronized(latch)
+            {
+                latch.notify();
+            }
+        }
+        while(!_allocationQueue.isEmpty() && (_maxActive < 0 || _numActive + _numInternalProcessing < _maxActive)) 
+        {
+            Latch latch = (Latch)_allocationQueue.removeFirst();
+            latch.setMayCreate(true);
+            _numInternalProcessing++;
+            synchronized(latch)
+            {
+                latch.notify();
+            }
+        }
+}
+从上面可看出，GenericObjectPool初始化，主要是初始化连接池，连接数，空闲时间，等待时间，
+连接池，候选连接池，初始化候选连接初始化执行器。
+我们再看看一下JedisFactory
+public class JedisPool extends Pool
+{
+    private static class JedisFactory extends BasePoolableObjectFactory
+    {
+
+        //构造Redis客户连接Jedis
+	public Object makeObject()
+            throws Exception
+        {
+	     //构建Jedis
+            Jedis jedis = new Jedis(host, port, timeout);
+            jedis.connect();
+            if(null != password)
+	        //密码不为空则，校验
+                jedis.auth(password);
+            if(database != 0)
+	        //选择数据库
+                jedis.select(database);
+            return jedis;
+        }
+        //关闭Jedis连接
+        public void destroyObject(Object obj)
+            throws Exception
+        {
+            if(obj instanceof Jedis)
+            {
+                Jedis jedis = (Jedis)obj;
+                if(jedis.isConnected())
+                    try
+                    {
+                        try
+                        {
+                            jedis.quit();
+                        }
+                        catch(Exception e) { }
+                        jedis.disconnect();
+                    }
+                    catch(Exception e) { }
+            }
+        }
+       //验证Jedis连接
+        public boolean validateObject(Object obj)
+        {
+            Jedis jedis;
+            if(!(obj instanceof Jedis))
+                break MISSING_BLOCK_LABEL_40;
+            jedis = (Jedis)obj;
+            return jedis.isConnected() && jedis.ping().equals("PONG");
+            Exception e;
+            e;
+            return false;
+            return false;
+        }
+
+        private final String host;//ip
+        private final int port;//端口号
+        private final int timeout;//超时时间
+        private final String password;//密码
+        private final int database;//数据库
+
+        public JedisFactory(String host, int port, int timeout, String password, int database)
+        {
+            this.host = host;
+            this.port = port;
+            this.timeout = timeout;
+            this.password = password;
+            this.database = database;
+        }
+    }
+}
+从上面可以看出JedisFactory工厂为JedisPool的内部类，JedisFactory的属性有host，port，timeout，password和
+database；JedisFactory的主要功能为管理（创建，关闭，验证）redis连接jedis。
+现在我们来看第三点
+第三点：从连接池获取jedis连接
+ jedis = pool.getResource();  
+jedis.auth("redis");  
+//测试是否连接成功
+System.out.println("Connecting redis......."+jedis.ping());
+
+从连接池获取jedis连接资源
+jedis = pool.getResource();
+此方法在JedisPool在父类Pool中
+public abstract class Pool
+{
+
+    public Pool(org.apache.commons.pool.impl.GenericObjectPool.Config poolConfig, PoolableObjectFactory factory)
+    {
+        internalPool = new GenericObjectPool(factory, poolConfig);
+    }
+    //从连接池GenericObjectPool，获取jedis连接资源
+    public Object getResource()
+    {
+        return internalPool.borrowObject();
+    }
+}
+再来看GenericObjectPool的borrowObject的方法
+//GenericObjectPool
+public Object borrowObject()
+        throws Exception
+    {
+        long starttime;
+        Latch latch;
+        byte whenExhaustedAction;
+        long maxWait;
+        starttime = System.currentTimeMillis();
+        latch = new Latch();
+        synchronized(this)
+        {
+            whenExhaustedAction = _whenExhaustedAction;
+            maxWait = _maxWait;
+	    //将连接获取锁添加到连接分配锁队列
+            _allocationQueue.add(latch);
+        }
+        allocate();
+	...
+	//关键在这一句从上面，我们看出_factory为JedisFactory，JedisFactory的makeObject返回的是Jedis连接
+	Object obj = _factory.makeObject();
+        latch.setPair(new ObjectTimestampPair(obj));
+	...
+	 _factory.activateObject(latch.getPair().value);
+	//如果连接获取开关_testOnBorrow打开，则验证连接
+	 if(_testOnBorrow && !_factory.validateObject(latch.getPair().value))
+            throw new Exception("ValidateObject failed");
+	 //返回jedis客户端
+	 return latch.getPair().value;
+}
+再看borrowObject方法的这两句 
+latch.setPair(new ObjectTimestampPair(obj));
+
+//ObjectTimestampPair,带时间戳的对象
+  static class ObjectTimestampPair
+        implements Comparable
+    {
+
+        public String toString()
+        {
+            return (new StringBuilder()).append(value).append(";").append(tstamp).toString();
+        }
+
+        public int compareTo(Object obj)
+        {
+            return compareTo((ObjectTimestampPair)obj);
+        }
+
+        public int compareTo(ObjectTimestampPair other)
+        {
+            long tstampdiff = tstamp - other.tstamp;
+            if(tstampdiff == 0L)
+                return System.identityHashCode(this) - System.identityHashCode(other);
+            else
+                return (int)Math.min(Math.max(tstampdiff, -2147483648L), 2147483647L);
+        }
+
+        public Object getValue()
+        {
+            return value;
+        }
+
+        public long getTstamp()
+        {
+            return tstamp;
+        }
+
+        /**
+         * @deprecated Field value is deprecated
+         */
+        Object value;
+        /**
+         * @deprecated Field tstamp is deprecated
+         */
+        long tstamp;
+
+        ObjectTimestampPair(Object val)
+        {
+            this(val, System.currentTimeMillis());
+        }
+
+        ObjectTimestampPair(Object val, long time)
+        {
+            value = val;
+            tstamp = time;
+        }
+    }
+ }
+//Latch
+public class GenericObjectPool extends BaseObjectPool
+    implements ObjectPool
+{
+    //连接获取锁
+    private static final class Latch
+    {
+
+        private synchronized GenericKeyedObjectPool.ObjectTimestampPair getPair()
+        {
+            return _pair;
+        }
+
+        private synchronized void setPair(GenericKeyedObjectPool.ObjectTimestampPair pair)
+        {
+            _pair = pair;
+        }
+
+        private synchronized boolean mayCreate()
+        {
+            return _mayCreate;
+        }
+
+        private synchronized void setMayCreate(boolean mayCreate)
+        {
+            _mayCreate = mayCreate;
+        }
+
+        private synchronized void reset()
+        {
+            _pair = null;
+            _mayCreate = false;
+        }
+
+        private GenericKeyedObjectPool.ObjectTimestampPair _pair;
+        private boolean _mayCreate;
+        private Latch()
+        {
+            _mayCreate = false;
+        }
+
+    }
+}
+从连接池获取jedis连接资源，实际上看是从pool中获取，而pool又委托给JedisFactory，
+最后由JedisFactory创建redis连接jedis。
+这一节我们就看到这里
+总结：
+JedisPoolConfig的功能主要是配置连接最大空闲时间，存活数量，及等待时间；
+JedisPoolConfig的父类Config为GenericObjectPool的静态内部类，与连接池
+有关的属性在Config中，而属性的设置在JedisPoolConfig中；
+JedisPool的初始化主要是GenericObjectPool初始化，主要是初始化连接池，连接数，空闲时间，等待时间，
+连接池，候选连接池，初始化候选连接初始化执行器，JedisFactory。
+JedisFactory工厂为JedisPool的内部类，JedisFactory的属性有host，port，timeout，password和
+database；JedisFactory的主要功能为管理（创建，关闭，验证）redis连接jedis。
+从连接池获取jedis连接资源，实际上看是从JedisPool的父类pool中获取，而pool又委托给JedisFactory，
+最后由JedisFactory创建redis连接jedis。
+
+
+
+

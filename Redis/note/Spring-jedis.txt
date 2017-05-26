@@ -1,0 +1,446 @@
+Redis属性文件redis.properties：
+# Redis settings
+redis.host=192.168.126.128
+redis.port=6379
+redis.pass=redis
+  
+redis.maxIdle=300
+redis.maxActive=600
+redis.maxWait=1000
+redis.testOnBorrow=true
+
+Spring加载属性文件：
+<bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">  
+	<property name="locations">  
+			<list>  
+                 <value>/WEB-INF/classes/jdbc.properties</value>  
+                 <value>/WEB-INF/classes/redis.properties</value>
+                 
+            </list>  
+        </property>  
+</bean> 
+
+Redis配置文件：
+<?xml version="1.0" encoding="UTF-8"?>
+<beans	 xmlns="http://www.springframework.org/schema/beans" 
+		   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		   xmlns:p="http://www.springframework.org/schema/p" 
+		   xmlns:tx="http://www.springframework.org/schema/tx"
+		   xmlns:context="http://www.springframework.org/schema/context"
+		   xsi:schemaLocation="
+			http://www.springframework.org/schema/beans 
+			http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+			http://www.springframework.org/schema/tx 
+			http://www.springframework.org/schema/tx/spring-tx-3.0.xsd
+			http://www.springframework.org/schema/context
+			http://www.springframework.org/schema/context/spring-context-3.0.xsd
+			   ">
+	
+	
+	<bean id="poolConfig" class="redis.clients.jedis.JedisPoolConfig">  
+		<property name="maxIdle" value="${redis.maxIdle}" />  
+		<property name="maxActive" value="${redis.maxActive}" />  
+		<property name="maxWait" value="${redis.maxWait}" />  
+		<property name="testOnBorrow" value="${redis.testOnBorrow}" />  
+	</bean>  
+	  
+	<bean id="connectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory"  
+		p:host-name="${redis.host}" 
+		p:port="${redis.port}" 
+		p:password="${redis.pass}"  
+		p:pool-config-ref="poolConfig"/>  
+	  
+	<bean id="redisTemplate" class="org.springframework.data.redis.core.StringRedisTemplate">  
+		<property name="connectionFactory"   ref="connectionFactory" />  
+	</bean>	  
+	 
+</beans>			 
+Spring加载配置文件：
+
+
+实例类：
+public class Member extends BaseModel{
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -1959528436584592183L;
+	private String id;
+	private String nickname;
+	public Member(){}
+	public Member(String id, String nickname){
+		this.setId(id);
+		this.setNickname(nickname);
+	}
+	public String getId() {
+		return id;
+	}
+	public void setId(String id) {
+		this.id = id;
+	}
+	public String getNickname() {
+		return nickname;
+	}
+	public void setNickname(String nickname) {
+		this.nickname = nickname;
+	}
+}
+//BaseModel
+package com.enity.base;
+import java.io.Serializable;
+public class BaseModel implements Serializable{
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -1487254269873074502L;
+	//待扩展
+}
+
+Redis基础DAO
+package com.redis.dao.base;
+import java.io.Serializable;
+import javax.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.RedisSerializer;
+
+public abstract class RedisGeneratorDao<K extends Serializable, V extends Serializable>  {
+	@Resource(name="redisTemplate")
+	protected RedisTemplate<K,V> redisTemplate ;
+
+	/** 
+	 * 设置redisTemplate 
+	 * @param redisTemplate the redisTemplate to set 
+	 */  
+	public void setRedisTemplate(RedisTemplate<K, V> redisTemplate) {  
+		this.redisTemplate = redisTemplate;  
+	}  
+	  
+	/** 
+	 * 获取 RedisSerializer 
+	 * <br>------------------------------<br> 
+	 */  
+	protected RedisSerializer<String> getRedisSerializer() {  
+		return redisTemplate.getStringSerializer();  
+	}  
+}
+
+实体操纵类DAO
+
+package com.redis.dao.imp;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.dao.DataAccessException;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.stereotype.Repository;
+import org.springframework.util.Assert;
+
+import com.enity.Member;
+import com.redis.dao.MemberDao;
+import com.redis.dao.base.RedisGeneratorDao;
+
+@Repository(value="memberDao")
+public class MemberDaoImpl extends RedisGeneratorDao<String,Member> implements MemberDao{
+	/**
+	 * 添加对象
+	 */
+	public boolean add(final Member member) {  
+		boolean result = redisTemplate.execute(new RedisCallback<Boolean>() {  
+			public Boolean doInRedis(RedisConnection connection)  
+					throws DataAccessException {  
+				RedisSerializer<String> serializer = getRedisSerializer();  
+				byte[] key  = serializer.serialize(member.getId());  
+				byte[] name = serializer.serialize(member.getNickname());  
+				return connection.setNX(key, name);  
+			}  
+		});  
+		return result;  
+	}  
+
+	/**
+	 * 添加集合
+	 */
+	public boolean add(final List<Member> list) {
+		Assert.notEmpty(list);  
+		boolean result = redisTemplate.execute(new RedisCallback<Boolean>() {  
+			public Boolean doInRedis(RedisConnection connection)  
+					throws DataAccessException {  
+				RedisSerializer<String> serializer = getRedisSerializer();  
+				for (Member member : list) {  
+					byte[] key  = serializer.serialize(member.getId());  
+					byte[] name = serializer.serialize(member.getNickname());  
+					connection.setNX(key, name);  
+				}  
+				return true;  
+			}  
+		}, false, true);  
+		return result; 
+	}  
+	
+	/**
+	 * 删除对象 ,依赖key
+	 */
+	public void delete(String key) {  
+		List<String> list = new ArrayList<String>();  
+		list.add(key);  
+		delete(list);  
+	}  
+  
+	/**
+	 * 删除集合 ,依赖key集合
+	 */
+	public void delete(List<String> keys) {  
+		redisTemplate.delete(keys);  
+	}  
+	
+	/**
+	 * 修改对象 
+	 */
+	public boolean update(final Member member) {  
+		String key = member.getId();  
+		if (get(key) == null) {  
+			throw new NullPointerException("数据行不存在, key = " + key);  
+		}  
+		boolean result = redisTemplate.execute(new RedisCallback<Boolean>() {  
+			public Boolean doInRedis(RedisConnection connection)  
+					throws DataAccessException {  
+				RedisSerializer<String> serializer = getRedisSerializer();  
+				byte[] key  = serializer.serialize(member.getId());  
+				byte[] name = serializer.serialize(member.getNickname());  
+				connection.set(key, name);  
+				return true;  
+			}  
+		});  
+		return result;  
+	}  
+	
+	/**
+	 * 根据key获取对象
+	 */
+	public Member get(final String keyId) {  
+		Member result = redisTemplate.execute(new RedisCallback<Member>() {  
+			public Member doInRedis(RedisConnection connection)  
+					throws DataAccessException {  
+				RedisSerializer<String> serializer = getRedisSerializer();  
+				byte[] key = serializer.serialize(keyId);  
+				byte[] value = connection.get(key);  
+				if (value == null) {  
+					return null;  
+				}  
+				String nickname = serializer.deserialize(value);  
+				return new Member(keyId, nickname);  
+			}  
+		});  
+		return result;  
+	}  
+
+}
+//MemberDao
+package com.redis.dao;
+import java.util.List;
+import com.enity.Member;
+public interface MemberDao {
+	/**
+	 * 添加对象
+	 */
+	public boolean add(final Member member);
+
+	/**
+	 * 添加集合
+	 */
+	public boolean add(final List<Member> list);
+	/**
+	 * 删除对象 ,依赖key
+	 */
+	public void delete(String key);
+	/**
+	 * 删除集合 ,依赖key集合
+	 */
+	public void delete(List<String> keys);
+	
+	/**
+	 * 修改对象 
+	 */
+	public boolean update(final Member member);
+	/**
+	 * 根据key获取对象
+	 */
+	public Member get(final String keyId);
+
+}
+
+实体Service
+
+package com.service.imp;
+import java.util.List;
+import javax.annotation.Resource;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import com.enity.Member;
+import com.redis.dao.MemberDao;
+import com.service.MemberService;
+
+@Service
+public class MemberServiceImp implements MemberService{
+	@Autowired
+    private MemberDao memberDao;
+	@Override
+	public boolean add(Member member) {
+		return memberDao.add(member);
+	}
+	@Override
+	public boolean add(List<Member> list) {
+		return memberDao.add(list);
+	}
+	@Override
+	public void delete(String key) {
+		memberDao.delete(key);
+	}
+	@Override
+	public void delete(List<String> keys) {
+		memberDao.delete(keys);
+	}
+	@Override
+	public boolean update(Member member) {
+		return memberDao.update(member);
+	}
+	@Override
+	public Member get(String keyId) {
+		return memberDao.get(keyId);
+	}
+
+}
+//MemberService
+package com.service;
+import java.util.List;
+import com.enity.Member;
+public interface MemberService {
+	/**
+	 * 添加对象
+	 */
+	public boolean add(final Member member);
+
+	/**
+	 * 添加集合
+	 */
+	public boolean add(final List<Member> list);
+	/**
+	 * 删除对象 ,依赖key
+	 */
+	public void delete(String key);
+	/**
+	 * 删除集合 ,依赖key集合
+	 */
+	public void delete(List<String> keys);
+	
+	/**
+	 * 修改对象 
+	 */
+	public boolean update(final Member member);
+	/**
+	 * 根据key获取对象
+	 */
+	public Member get(final String keyId);
+}
+
+
+测试Controller
+package com.controller;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+import com.controller.base.BaseController;
+import com.enity.Member;
+import com.service.MemberService;
+import util.JsonUtil;
+
+
+@Controller
+@RequestMapping(value="/member")
+public class MemberController extends BaseController{
+	@Autowired
+	private MemberService memberService;
+	@RequestMapping("/add")
+	@ResponseBody
+	public String add(Member member){
+		memberService.add(member);
+		return "add ok!";
+	}
+	@RequestMapping("/get")
+	@ResponseBody
+	public String queryMember(String id){
+		Member member = memberService.get(id);
+		return JsonUtil.toJson(member);
+	}
+	@RequestMapping("/delete")
+	@ResponseBody
+	public String deleteMember(String id){
+		memberService.delete(id);
+		return "delete ok!";
+	}
+	@RequestMapping("/update")
+	@ResponseBody
+	public String updateMember(Member member){
+		memberService.update(member);
+		return "update ok!";
+	}
+}
+//BaseController
+package com.controller.base;
+public abstract class BaseController {
+  //待扩展
+}
+
+下面进行测试
+
+利用RestClient测试
+
+访问：http://localhost:8080/test/member/add?id=1&nickname=pig
+
+结果
+add ok!
+查看redis
+127.0.0.1:6379> dbsize
+(integer) 1
+127.0.0.1:6379> get 1
+"pig"
+127.0.0.1:6379> 
+
+访问：http://localhost:8080/test/member/get?id=1
+
+结果
+{"id":"1","nickname":"pig"}
+
+访问：http://localhost:8080/test/member/update?id=1&nickname=dog
+
+结果
+update ok!
+查看redis
+127.0.0.1:6379> get 1
+"dog"
+127.0.0.1:6379> 
+
+访问：http://localhost:8080/test/member/get?id=1
+
+结果
+{"id":"1","nickname":"dog"}
+
+访问： http://localhost:8080/test/member/delete?id=1
+
+结果
+delete ok!
+查看redis
+127.0.0.1:6379> get 1
+(nil)
+127.0.0.1:6379> 
+
+访问：http://localhost:8080/test/member/get?id=1
+
+结果
+null

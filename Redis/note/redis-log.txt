@@ -1,0 +1,157 @@
+简单粗暴的Redis数据备份和恢复方法：http://www.jb51.net/article/87249.htm
+[root@zabbix /]# mkdir redis
+[root@zabbix /]# ls
+bin  boot  dev  etc  home  lib  lib64  media  mnt  opt  proc  redis  root  run  sbin  srv  sys  tmp  usr  var  zabbix
+[root@zabbix ~]# cd /redis/
+[root@zabbix redis]# ls
+[root@zabbix redis]# mkdir logs
+[root@zabbix redis]# ls -al
+total 4
+drwxr-xr-x   3 root root   17 Dec 20 15:18 .
+dr-xr-xr-x. 19 root root 4096 Dec 20 15:16 ..
+drwxr-xr-x   2 root root    6 Dec 20 15:18 logs
+[root@zabbix redis]# cd .
+[root@zabbix redis]# ls
+[root@zabbix ~]# mv redis.sh /redis/
+[root@zabbix ~]# ls
+anaconda-ks.cfg  dump.rdb
+[root@zabbix ~]# cd /redis/
+[root@zabbix redis]# ls
+logs  redis.sh
+[root@zabbix redis]# mkdir bin
+[root@zabbix redis]# ls
+bin  logs  redis.sh
+[root@zabbix redis]# mv redis.sh  ./bin/
+[root@zabbix redis]# ls
+bin  logs
+[root@zabbix redis]# cd bin/
+[root@zabbix bin]# ls
+redis.sh
+[root@zabbix ~]# vim /usr/local/redis/conf/redis.conf 
+修改日志配置项
+# Specify the log file name. Also the empty string can be used to force
+# Redis to log on the standard output. Note that if you use standard
+# output for logging but daemonize, logs will be sent to /dev/null
+logfile /redis/logs/redis.log
+##注意logs文件夹必须存在
+[root@zabbix ~]# ./redis.sh start
+start redis-server...runing
+[root@zabbix bin]# netstat -ntlp | grep 6379
+tcp        0      0 0.0.0.0:6379            0.0.0.0:*               LISTEN      14855/redis-server  
+tcp6       0      0 :::6379                 :::*                    LISTEN      14855/redis-server  
+
+vim /usr/local/redis/conf/redis.conf 
+[root@zabbix redis]# cd ../logs/
+[root@zabbix logs]# ls
+redis.log
+[root@zabbix logs]# tail redis.log 
+ |    `-._`-._        _.-'_.-'    |                                  
+  `-._    `-._`-.__.-'_.-'    _.-'                                   
+      `-._    `-.__.-'    _.-'                                       
+          `-._        _.-'                                           
+              `-.__.-'                                               
+
+14855:M 20 Dec 15:19:24.007 # WARNING: The TCP backlog setting of 511 cannot be enforced because /proc/sys/net/core/somaxconn is set to the lower value of 128.
+14855:M 20 Dec 15:19:24.007 # Server started, Redis version 3.0.5
+14855:M 20 Dec 15:19:24.007 # WARNING you have Transparent Huge Pages (THP) support enabled in your kernel. This will create latency and memory usage issues with Redis. To fix this issue run the command 'echo never > /sys/kernel/mm/transparent_hugepage/enabled' as root, and add it to your /etc/rc.local in order to retain the setting after a reboot. Redis must be restarted after THP is disabled.
+14855:M 20 Dec 15:19:24.007 * The server is now ready to accept connections on port 6379
+
+[root@zabbix logs]# cd ..
+[root@zabbix redis]# ls
+bin  logs
+[root@zabbix redis]# mkdir data
+[root@zabbix redis]# vim /usr/local/redis/conf/redis.conf 
+修改data目录
+# The filename where to dump the DB
+dbfilename dump.rdb
+
+# The working directory.
+#
+# The DB will be written inside this directory, with the filename specified
+# above using the 'dbfilename' configuration directive.
+#
+# The Append Only File will also be created inside this directory.
+#
+# Note that you must specify a directory here, not a file name.
+关键是这个，注意/redis/data目录要存在
+dir /redis/data
+
+[root@zabbix redis]# cd data/
+[root@zabbix data]# ls -al
+total 0
+drwxr-xr-x 2 root root  6 Dec 20 15:27 .
+drwxr-xr-x 5 root root 38 Dec 20 15:27 ..
+[root@zabbix redis]# cd ..
+[root@zabbix redis]# vim /usr/local/redis/conf/redis.conf 
+添加客户端验证
+# Warning: since Redis is pretty fast an outside user can try up to
+# 150k passwords per second against a good box. This means that you should
+# use a very strong password otherwise it will be very easy to break.
+#
+requirepass redis
+
+开启AOF
+# AOF and RDB persistence can be enabled at the same time without problems.
+# If the AOF is enabled on startup Redis will load the AOF, that is the file
+# with the better durability guarantees.
+#
+# Please check http://redis.io/topics/persistence for more information.
+### 默认情况下，redis需要异步dump数据到磁盘上，但这种情况下redis进程可能导致
+部分写丢失，同时断电也会导致部分写丢失，为了避免这种情况，我们可以开启appendonly
+为yes，更好的保证redis的持久化，当redis启动时，redis会加载AOF文件；
+redis写操作，先写入到到AOF文件中，默认情况下，当AOF file每增加32MB，就将数据同步持久化到磁盘
+
+appendonly yes
+
+# The name of the append only file (default: "appendonly.aof")
+appendfilename "appendonly.aof"
+
+
+[root@zabbix data]# redis-cli -h localhost -p 6379
+localhost:6379> help
+redis-cli 3.0.5
+Type: "help @<group>" to get a list of commands in <group>
+      "help <command>" for help on <command>
+      "help <tab>" to get a list of possible help topics
+      "quit" to exit
+localhost:6379> help auth
+
+  AUTH password
+  summary: Authenticate to the server
+  since: 1.0.0
+  group: connection
+
+localhost:6379> AUTH redis
+OK
+localhost:6379> get name
+(nil)
+localhost:6379> set name  donald
+OK
+localhost:6379> get name
+"donald"
+localhost:6379> 
+[root@zabbix data]# ls -al
+total 4
+drwxr-xr-x 2 root root 27 Dec 20 15:57 .
+drwxr-xr-x 5 root root 38 Dec 20 15:27 ..
+-rw-r--r-- 1 root root 58 Dec 20 16:00 appendonly.aof
+redis写操作，先写入到到AOF文件中，默认情况下，当AOF file每增加32MB，就将数据同步持久化到磁盘
+dump.rdb文件
+[root@zabbix redis]# redis-cli -h localhost -p 6379 -a redis
+localhost:6379> get name
+"donald"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

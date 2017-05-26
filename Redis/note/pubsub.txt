@@ -1,0 +1,271 @@
+Redis 发布订阅
+
+
+##在一个客户端开启订阅频道redisChat
+[redis@zabbix Desktop]$  redis-cli -h localhost -p 6379 -a redis
+#订阅给定的一个或多个频道的信息
+localhost:6379> SUBSCRIBE redisChat
+Reading messages... (press Ctrl-C to quit)
+1) "subscribe"
+2) "redisChat"
+3) (integer) 1
+
+在另一个客户端向频道发布消息
+[root@zabbix bin]# redis-cli -h localhost -p 6379 -a redis
+#将信息发送到指定的频道。
+localhost:6379> PUBLISH redisChat "Redis is a great caching technique"
+(integer) 1
+localhost:6379> 
+
+这时候查看订阅客户端可以看到以下信息
+1) "message"
+2) "redisChat"
+3) "Redis is a great caching technique"
+
+
+Redis 事务
+
+#标记一个事务块的开始。
+localhost:6379> MULTI
+OK
+localhost:6379> set name donald
+QUEUED
+localhost:6379> get name
+QUEUED
+localhost:6379> sadd user rain jamel
+QUEUED
+localhost:6379> smembers user
+QUEUED
+#执行所有事务块内的命令
+localhost:6379> exec
+1) OK
+2) "donald"
+3) (integer) 2
+4) 1) "rain"
+   2) "jamel"
+localhost:6379> 
+
+
+Redis 连接
+
+localhost:6379> auth redis
+OK
+localhost:6379> ping
+PONG
+localhost:6379> echo hello
+"hello"
+#切换数据库，默认数据库为0，最大为databases
+# Set the number of databases. The default database is DB 0, you can select
+# a different one on a per-connection basis using SELECT <dbid> where
+# dbid is a number between 0 and 'databases'-1
+databases 16
+
+localhost:6379> select 0
+OK
+localhost:6379> get name
+"donald"
+localhost:6379> smembers user
+1) "rain"
+2) "jamel"
+localhost:6379> 
+
+
+
+Redis 服务器
+
+##服务器key数量
+localhost:6379> dbsize
+(integer) 3
+##异步执行一个 AOF（AppendOnly File） 文件重写操作
+localhost:6379> BGREWRITEAOF
+Background append only file rewriting started
+#在后台异步保存当前数据库的数据到磁盘
+localhost:6379> BGSAVE
+Background saving started
+#获取服务器时间
+localhost:6379> time
+1) "1482283953"
+2) "871588"
+##服务器角色
+localhost:6379> role
+1) "master"
+2) (integer) 0
+3) (empty list or set)
+##获取 Redis 服务器的各种信息和统计数值
+localhost:6379> info
+
+#服务器
+# Server
+redis_version:3.0.5
+redis_git_sha1:00000000
+redis_git_dirty:0
+redis_build_id:2b4372a303619568
+redis_mode:standalone
+os:Linux 3.10.0-327.22.2.el7.x86_64 x86_64
+arch_bits:64
+multiplexing_api:epoll
+gcc_version:4.8.5
+process_id:4839
+run_id:887dbc822c9f9d497c05fc11cc34a6a822357c18
+tcp_port:6379
+uptime_in_seconds:1314
+uptime_in_days:0
+hz:10
+lru_clock:5888962
+config_file:/usr/local/redis/conf/redis.conf
+
+#客户端
+# Clients
+connected_clients:1
+client_longest_output_list:0
+client_biggest_input_buf:0
+blocked_clients:0
+
+#内存
+# Memory
+used_memory:815592
+used_memory_human:796.48K
+used_memory_rss:8212480
+used_memory_peak:835392
+used_memory_peak_human:815.81K
+used_memory_lua:36864
+mem_fragmentation_ratio:10.07
+mem_allocator:jemalloc-3.6.0
+
+##持久化状态
+# Persistence
+loading:0
+rdb_changes_since_last_save:0
+rdb_bgsave_in_progress:0
+rdb_last_save_time:1482283929
+rdb_last_bgsave_status:ok
+rdb_last_bgsave_time_sec:0
+rdb_current_bgsave_time_sec:-1
+aof_enabled:1
+aof_rewrite_in_progress:0
+aof_rewrite_scheduled:0
+aof_last_rewrite_time_sec:0
+aof_current_rewrite_time_sec:-1
+aof_last_bgrewrite_status:ok
+aof_last_write_status:ok
+aof_current_size:172
+aof_base_size:172
+aof_pending_rewrite:0
+aof_buffer_length:0
+aof_rewrite_buffer_length:0
+aof_pending_bio_fsync:0
+aof_delayed_fsync:0
+##
+# Stats
+total_connections_received:3
+total_commands_processed:25
+instantaneous_ops_per_sec:0
+total_net_input_bytes:711
+total_net_output_bytes:564
+instantaneous_input_kbps:0.00
+instantaneous_output_kbps:0.00
+rejected_connections:0
+sync_full:0
+sync_partial_ok:0
+sync_partial_err:0
+expired_keys:0
+evicted_keys:0
+keyspace_hits:9
+keyspace_misses:0
+pubsub_channels:0
+pubsub_patterns:0
+latest_fork_usec:764
+migrate_cached_sockets:0
+
+##集群
+# Replication
+role:master
+connected_slaves:0
+master_repl_offset:0
+repl_backlog_active:0
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:0
+repl_backlog_histlen:0
+##CPU
+# CPU
+used_cpu_sys:2.25
+used_cpu_user:0.12
+used_cpu_sys_children:0.35
+used_cpu_user_children:0.00
+
+# Cluster
+cluster_enabled:0
+
+# Keyspace
+db0:keys=3,expires=0,avg_ttl=0
+localhost:6379> 
+#实时打印出 Redis 服务器接收到的命令，调试用
+localhost:6379> MONITOR
+OK
+1482284030.614149 [0 127.0.0.1:46386] "AUTH" "redis"
+1482284033.695838 [0 127.0.0.1:46386] "get" "name"
+1482284045.407687 [0 127.0.0.1:46386] "set" "name" "rain"
+#删除当前数据库的所有key
+localhost:6379> FLUSHDB
+OK
+localhost:6379> dbsize
+(integer) 0
+localhost:6379> 
+
+Redis 数据备份与恢复
+
+localhost:6379> 
+#创建redis 备份文件也可以使用命令 BGSAVE，该命令在后台执行
+localhost:6379> bgsave
+Background saving started
+恢复数据
+如果需要恢复数据，只需将备份文件 (dump.rdb) 移动到 redis 安装目录并启动服务即可
+##获取数据目录
+localhost:6379> CONFIG GET dir
+1) "dir"
+2) "/redis/data"
+
+
+Redis 安全
+
+##获取验证密码
+localhost:6379> CONFIG get requirepass
+1) "requirepass"
+2) "redis"
+localhost:6379> 
+localhost:6379> auth redis
+OK
+localhost:6379> 
+#设置密码
+CONFIG set requirepass "redis
+
+
+Redis 客户端连接
+
+#返回连接到 redis 服务的客户端列表
+localhost:6379> client list
+id=2 addr=127.0.0.1:46380 fd=7 name= age=2699 idle=140 flags=O db=0 sub=0 psub=0 multi=-1 qbuf=0 qbuf-free=0 obl=56 oll=0 omem=0 events=rw cmd=monitor
+id=5 addr=127.0.0.1:46386 fd=6 name= age=1383 idle=0 flags=N db=0 sub=0 psub=0 multi=-1 qbuf=0 qbuf-free=32768 obl=0 oll=0 omem=0 events=r cmd=client
+#设置当前连接的名称
+localhost:6379> client setname rain
+OK
+#获取通过 CLIENT SETNAME 命令设置的服务名称
+localhost:6379> client getname
+"rain"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

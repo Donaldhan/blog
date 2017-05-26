@@ -1,0 +1,592 @@
+Jedis获取Redis连接详解:http://donald-draper.iteye.com/blog/2347121
+Redis的客户端Jedis及Jedis操作Redis命令详解：http://donald-draper.iteye.com/blog/2347192
+在前文中我们分析了Jedis如何与Redis进行通信,Spring与Redis的集成，在Spring与Redis的集成
+的文章中，有如下Redis配置：
+Redis配置文件：
+<?xml version="1.0" encoding="UTF-8"?>
+<beans	 xmlns="http://www.springframework.org/schema/beans" 
+		   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+		   xmlns:p="http://www.springframework.org/schema/p" 
+		   xmlns:tx="http://www.springframework.org/schema/tx"
+		   xmlns:context="http://www.springframework.org/schema/context"
+		   xsi:schemaLocation="
+			http://www.springframework.org/schema/beans 
+			http://www.springframework.org/schema/beans/spring-beans-3.0.xsd
+			http://www.springframework.org/schema/tx 
+			http://www.springframework.org/schema/tx/spring-tx-3.0.xsd
+			http://www.springframework.org/schema/context
+			http://www.springframework.org/schema/context/spring-context-3.0.xsd
+			   ">
+	<bean id="poolConfig" class="redis.clients.jedis.JedisPoolConfig">  
+		<property name="maxIdle" value="${redis.maxIdle}" />  
+		<property name="maxActive" value="${redis.maxActive}" />  
+		<property name="maxWait" value="${redis.maxWait}" />  
+		<property name="testOnBorrow" value="${redis.testOnBorrow}" />  
+	</bean>  
+	<bean id="connectionFactory" class="org.springframework.data.redis.connection.jedis.JedisConnectionFactory"  
+		p:host-name="${redis.host}" 
+		p:port="${redis.port}" 
+		p:password="${redis.pass}"  
+		p:pool-config-ref="poolConfig"/>  
+	  
+	<bean id="redisTemplate" class="org.springframework.data.redis.core.StringRedisTemplate">  
+		<property name="connectionFactory"   ref="connectionFactory" />  
+	</bean>	   
+</beans>
+这里主要有三点要说1.JedisPoolConfig，2.JedisConnectionFactory，3.StringRedisTemplate
+在Jedis连接Redis详解篇中，我们有说JedisPoolConfig，今天我们就再来回顾一下，以便对Spring与Redis
+的集成有一个详细的了解
+1.JedisPoolConfig
+import org.apache.commons.pool.impl.GenericObjectPool;
+public class JedisPoolConfig extends org.apache.commons.pool.impl.GenericObjectPool.Config
+{
+    public JedisPoolConfig()
+    {
+        setTestWhileIdle(true);
+        setMinEvictableIdleTimeMillis(60000L);
+        setTimeBetweenEvictionRunsMillis(30000L);
+        setNumTestsPerEvictionRun(-1);
+    }
+    public int getMaxIdle()
+    {
+        return maxIdle;
+    }
+    public void setMaxIdle(int maxIdle)
+    {
+        this.maxIdle = maxIdle;
+    }
+     public int getMinIdle()
+    {
+        return minIdle;
+    }
+
+    public void setMinIdle(int minIdle)
+    {
+        this.minIdle = minIdle;
+    }
+      public int getMaxActive()
+    {
+        return maxActive;
+    }
+    public void setMaxActive(int maxActive)
+    {
+        this.maxActive = maxActive;
+    }
+    public long getMaxWait()
+    {
+        return maxWait;
+    }
+    public void setMaxWait(long maxWait)
+    {
+        this.maxWait = maxWait;
+    }
+...
+}
+从JedisPoolConfig我们可以看出，JedisPoolConfig的功能主要是配置连接最大空闲
+时间，存活数量，及等待时间；
+再来看GenericObjectPool.Config
+public class GenericObjectPool extends BaseObjectPool
+    implements ObjectPool
+{
+public static class Config
+    {
+
+        public int maxIdle;
+        public int minIdle;//空闲时间
+        public int maxActive;//存活数量
+        public long maxWait;//等待时间
+        public byte whenExhaustedAction;
+        public boolean testOnBorrow;//在获取连接时，是否要测试连接
+        public boolean testOnReturn;
+        public boolean testWhileIdle;
+        public long timeBetweenEvictionRunsMillis;
+        public int numTestsPerEvictionRun;
+        public long minEvictableIdleTimeMillis;
+        public long softMinEvictableIdleTimeMillis;
+        public boolean lifo;
+
+        public Config()
+        {
+            maxIdle = 8;
+            minIdle = 0;
+            maxActive = 8;
+            maxWait = -1L;
+            whenExhaustedAction = 1;
+            testOnBorrow = false;
+            testOnReturn = false;
+            testWhileIdle = false;
+            timeBetweenEvictionRunsMillis = -1L;
+            numTestsPerEvictionRun = 3;
+            minEvictableIdleTimeMillis = 1800000L;
+            softMinEvictableIdleTimeMillis = -1L;
+            lifo = true;
+        }
+    }
+}
+从上可以看出JedisPoolConfig的父类Config为GenericObjectPool的静态内部类，与连接池
+有关的属性在Config中，而属性的设置在JedisPoolConfig中；
+再来看Jedis连接工厂
+2.JedisConnectionFactory
+public class JedisConnectionFactory
+    implements InitializingBean, DisposableBean, RedisConnectionFactory
+{
+    private JedisShardInfo shardInfo;//Jedis共享信息类
+    private String hostName;//ip
+    private int port;//端口
+    private int timeout;//超时时间
+    private String password;//密码
+    private boolean usePool;//是否用连接池
+    private JedisPool pool;//jedis连接池
+    private JedisPoolConfig poolConfig;//池配置
+    private int dbIndex;//数据库
+    public JedisConnectionFactory()
+    {
+        hostName = "localhost";
+        port = 6379;
+        timeout = 2000;
+        usePool = true;
+        pool = null;
+        poolConfig = new JedisPoolConfig();
+        dbIndex = 0;
+    }
+
+    public void afterPropertiesSet()
+    {
+        if(shardInfo == null)
+        {
+	    //创建JedisShardInfo，设置JedisShardInfo的属性
+            shardInfo = new JedisShardInfo(hostName, port);
+            if(StringUtils.hasLength(password))
+                shardInfo.setPassword(password);
+            if(timeout > 0)
+                shardInfo.setTimeout(timeout);
+        }
+        if(usePool)
+	    //这个我们在Jedis获取redis连接篇中有详解，初始化连接池，及Jedis连接客户端工厂
+            pool = new JedisPool(poolConfig, shardInfo.getHost(), shardInfo.getPort(), shardInfo.getTimeout(), shardInfo.getPassword());
+    }
+}
+来看JedisConnectionFactory的获取连接
+    public volatile RedisConnection getConnection()
+    {
+        return getConnection();
+    }
+    public JedisConnection getConnection()
+    {
+        //获取连接，如果使用连接池，则直接从连接池中获取，否则直接创建一个连接
+        Jedis jedis = fetchJedisConnector();
+	 //返回连接
+        return postProcessConnection(usePool ? new JedisConnection(jedis, pool, dbIndex) : new JedisConnection(jedis, null, dbIndex));
+    }
+     //获取连接，如果使用连接池，则直接从连接池中获取，否则直接创建一个连接
+     protected Jedis fetchJedisConnector()
+    {
+         //如果使用连接池，则直接从连接池中获取
+        if(usePool && pool != null)
+	    
+            return (Jedis)pool.getResource();
+        Jedis jedis;
+	//否则直接创建一个连接
+        jedis = new Jedis(getShardInfo());
+        jedis.connect();
+        return jedis;
+        Exception ex;
+        ex;
+        throw new DataAccessResourceFailureException("Cannot get Jedis connection", ex);
+    }
+    //返回连接
+    protected JedisConnection postProcessConnection(JedisConnection connection)
+    {
+        return connection;
+    }
+ //JedisConnection
+ public class JedisConnection
+    implements RedisConnection
+{
+    private static final Field CLIENT_FIELD;
+    private static final Method SEND_COMMAND;
+    private static final Method GET_RESPONSE;
+    private final Jedis jedis;//jedis连接
+    private final Client client;//jedis与redis的socket客户端
+    private final BinaryTransaction transaction;//事务
+    private final Pool pool;//Jedis连接池
+    private boolean broken;
+    private volatile JedisSubscription subscription;
+    private volatile Pipeline pipeline;//管道
+    private final int dbIndex;
+  public JedisConnection(Jedis jedis, Pool pool, int dbIndex)
+    {
+        broken = false;
+        this.jedis = jedis;
+        client = (Client)ReflectionUtils.getField(CLIENT_FIELD, jedis);
+        transaction = new Transaction(client);
+        this.pool = pool;
+        this.dbIndex = dbIndex;
+        if(dbIndex > 0)
+            select(dbIndex);
+    }
+    public void openPipeline()
+    {
+        if(pipeline == null)
+            pipeline = jedis.pipelined();
+    }
+}
+JedisConnectionFactory在连接池配置和ip和port和密码等信息初始化后，
+初始化Jedis连接池（初始化连接池及Jedis连接客户端工厂），JedisConnectionFactory获取连接的方式
+如果使用连接池，则直接从连接池中获取，否则直接创建一个连接JedisConnection。
+再来看StringRedisTemplate
+3.StringRedisTemplate
+public class StringRedisTemplate extends RedisTemplate
+{
+    public StringRedisTemplate()
+    {
+        org.springframework.data.redis.serializer.RedisSerializer stringSerializer = new StringRedisSerializer();
+        //设置k-v，hash k-v的序列化工具
+	setKeySerializer(stringSerializer);
+        setValueSerializer(stringSerializer);
+        setHashKeySerializer(stringSerializer);
+        setHashValueSerializer(stringSerializer);
+    }
+}
+再来看RedisTemplate
+public class RedisTemplate extends RedisAccessor
+    implements RedisOperations
+{
+    private boolean exposeConnection;
+     //k-v，hash k-v的序列化工具,在StringRedisTemplate的构造中，初始化
+    private RedisSerializer defaultSerializer;
+    private RedisSerializer keySerializer;
+    private RedisSerializer valueSerializer;
+    private RedisSerializer hashKeySerializer;
+    private RedisSerializer hashValueSerializer;
+    private RedisSerializer stringSerializer;
+    private ValueOperations valueOps;
+    private ListOperations listOps;
+    private SetOperations setOps;
+    private ZSetOperations zSetOps;
+    public RedisTemplate()
+    {
+        exposeConnection = false;
+        defaultSerializer = new JdkSerializationRedisSerializer();
+        keySerializer = null;
+        valueSerializer = null;
+        hashKeySerializer = null;
+        hashValueSerializer = null;
+        stringSerializer = new StringRedisSerializer();
+    }
+}
+在Spring与Redis继承中，有下面一段
+@Repository(value="memberDao")
+public class MemberDaoImpl extends RedisGeneratorDao<String,Member> implements MemberDao{
+	/**
+	 * 添加对象
+	 */
+	public boolean add(final Member member) {  
+		boolean result = redisTemplate.execute(new RedisCallback<Boolean>() {  
+			public Boolean doInRedis(RedisConnection connection)  
+					throws DataAccessException {  
+				RedisSerializer<String> serializer = getRedisSerializer();  
+				byte[] key  = serializer.serialize(member.getId());  
+				byte[] name = serializer.serialize(member.getNickname());  
+				return connection.setNX(key, name);  
+			}  
+		});  
+		return result;  
+	} 
+}
+上面redisTemplate实际上为Redis配置文件中的StringRedisTemplate,
+
+我们来看下面这段
+redisTemplate.execute(new RedisCallback<Boolean>() {  
+    public Boolean doInRedis(RedisConnection connection)  throws DataAccessException { }  });  
+
+//RedisTemplate
+public Object execute(RedisCallback action)
+    {
+        return execute(action, isExposeConnection());
+    }
+
+    public Object execute(RedisCallback action, boolean exposeConnection)
+    {
+        return execute(action, exposeConnection, false);
+    }
+
+    public Object execute(RedisCallback action, boolean exposeConnection, boolean pipeline)
+    {
+        //RedisConnectionFactory
+        org.springframework.data.redis.connection.RedisConnectionFactory factory;
+        RedisConnection conn;//RedisConnection
+        boolean existingConnection;
+        boolean pipelineStatus;
+        Assert.notNull(action, "Callback object must not be null");
+	//获取redis连接工厂
+        factory = getConnectionFactory();
+	//从连接工厂获取连接
+        conn = RedisConnectionUtils.getConnection(factory);
+	//确定事务管理器中是否存在Redis连接工厂
+        existingConnection = TransactionSynchronizationManager.hasResource(factory);
+        preProcessConnection(conn, existingConnection);
+        pipelineStatus = conn.isPipelined();
+        if(pipeline && !pipelineStatus)
+	    //打开管道
+            conn.openPipeline();
+        Object obj;
+	//如果需要暴露连接，则返回连接，否则创建redis连接代理，默认为创建代理
+        RedisConnection connToExpose = exposeConnection ? conn : createRedisConnectionProxy(conn);
+	//调用redis回调接口的doInRedis方法
+        Object result = action.doInRedis(connToExpose);
+        if(pipeline && !pipelineStatus)
+            conn.closePipeline();
+	//处理redis回调接口的doInRedis方法返回结果
+        obj = postProcessResult(result, conn, existingConnection);
+	//释放连接与连接工厂的映射关系
+        RedisConnectionUtils.releaseConnection(conn, factory);
+        return obj;
+        Exception exception;
+        exception;
+        RedisConnectionUtils.releaseConnection(conn, factory);
+        throw exception;
+    }
+先来看这么一段
+//从连接工厂获取连接
+conn = RedisConnectionUtils.getConnection(factory);
+//确定事务管理器中是否存在Redis连接工厂
+existingConnection = TransactionSynchronizationManager.hasResource(factory);
+//返回连接
+preProcessConnection(conn, existingConnection);
+
+//RedisConnectionUtils
+public abstract class RedisConnectionUtils
+{
+    private static class RedisConnectionHolder
+        implements ResourceHolder
+    {
+
+        public boolean isVoid()
+        {
+            return isVoid;
+        }
+
+        public RedisConnection getConnection()
+        {
+            return conn;
+        }
+
+        public void reset()
+        {
+        }
+
+        public void unbound()
+        {
+            isVoid = true;
+        }
+
+        private boolean isVoid;
+        private final RedisConnection conn;
+
+        public RedisConnectionHolder(RedisConnection conn)
+        {
+            isVoid = false;
+            this.conn = conn;
+        }
+    }
+    //获取连接
+    public static RedisConnection getConnection(RedisConnectionFactory factory)
+    {
+        return doGetConnection(factory, true, false);
+    }
+    public static RedisConnection doGetConnection(RedisConnectionFactory factory, boolean allowCreate, boolean bind)
+    {
+        Assert.notNull(factory, "No RedisConnectionFactory specified");
+	//从事务管理器获取RedisConnectionHolder
+        RedisConnectionHolder connHolder = (RedisConnectionHolder)TransactionSynchronizationManager.getResource(factory);
+        if(connHolder != null)
+            return connHolder.getConnection();
+        if(!allowCreate)
+            throw new IllegalArgumentException("No connection found and allowCreate = false");
+        if(log.isDebugEnabled())
+            log.debug("Opening RedisConnection");
+	//从redis连接工厂获取连接
+        RedisConnection conn = factory.getConnection();
+        if(bind)
+        {
+	    //绑定redis连接工厂和连接句柄
+            connHolder = new RedisConnectionHolder(conn);
+            TransactionSynchronizationManager.bindResource(factory, connHolder);
+            return connHolder.getConnection();
+        } else
+        {
+            return conn;
+        }
+    }
+}
+//TransactionSynchronizationManager
+public abstract class TransactionSynchronizationManager
+{
+    private static final ThreadLocal resources = new ThreadLocal();//连接工厂与连接的映射关系
+    private static final ThreadLocal synchronizations = new ThreadLocal();
+    private static final Comparator synchronizationComparator = new OrderComparator();
+    private static final ThreadLocal currentTransactionName = new ThreadLocal();//事务名
+    private static final ThreadLocal currentTransactionReadOnly = new ThreadLocal();//事务ReadOnly状态
+    private static final ThreadLocal currentTransactionIsolationLevel = new ThreadLocal();//事务级别
+    private static final ThreadLocal actualTransactionActive = new ThreadLocal();//实际事务状态
+    //是否存在相关资源
+     public static boolean hasResource(Object key)
+    {
+        Assert.notNull(key, "Key must not be null");
+        Map map = (Map)resources.get();
+        return map != null && map.containsKey(key);
+    }
+    //获取资源
+ public static Object getResource(Object key)
+    {
+        Assert.notNull(key, "Key must not be null");
+        Map map = (Map)resources.get();
+        if(map == null)
+            return null;
+        Object value = map.get(key);
+        return value;
+    }
+    //绑定资源
+    public static void bindResource(Object key, Object value)
+        throws IllegalStateException
+    {
+        Assert.notNull(key, "Key must not be null");
+        Assert.notNull(value, "Value must not be null");
+        Map map = (Map)resources.get();
+        if(map == null)
+        {
+            map = new HashMap();
+            resources.set(map);
+        }
+        if(map.containsKey(key))
+            throw new IllegalStateException("Already value [" + map.get(key) + "] for key [" + key + "] bound to thread [" + Thread.currentThread().getName() + "]");
+        map.put(key, value);
+    }
+}
+从TransactionSynchronizationManager可以看出，ThreadLocal来管理连接工厂和连接的映射关系，
+事务级别和事务读写状态。
+
+//返回连接
+protected RedisConnection preProcessConnection(RedisConnection connection, boolean existingConnection)
+{
+    return connection;
+}
+
+再来看RedisTemplate的execute中的这么一段：
+public Object execute(RedisCallback action, boolean exposeConnection, boolean pipeline)
+{
+	//如果需要暴露连接，则返回连接，否则创建redis连接代理，默认为创建代理
+	RedisConnection connToExpose = exposeConnection ? conn : createRedisConnectionProxy(conn);
+	//调用redis回调接口的doInRedis方法
+	Object result = action.doInRedis(connToExpose);
+	if(pipeline && !pipelineStatus)
+	conn.closePipeline();
+	//处理redis回调接口的doInRedis方法返回结果
+	obj = postProcessResult(result, conn, existingConnection);
+}
+看一下关键代理的创建createRedisConnectionProxy(conn)
+ protected RedisConnection createRedisConnectionProxy(RedisConnection pm)
+    {
+        Class ifcs[] = ClassUtils.getAllInterfacesForClass(pm.getClass(), getClass().getClassLoader());
+	//创建redis连接动态代理
+        return (RedisConnection)Proxy.newProxyInstance(pm.getClass().getClassLoader(), ifcs, new CloseSuppressingInvocationHandler(pm));
+    }
+//CloseSuppressingInvocationHandler
+class CloseSuppressingInvocationHandler
+    implements InvocationHandler
+{
+    private static final String CLOSE = "close";
+    private static final String HASH_CODE = "hashCode";
+    private static final String EQUALS = "equals";
+    private final RedisConnection target;//动态代理，实际的目标类
+    public CloseSuppressingInvocationHandler(RedisConnection target)
+    {
+        this.target = target;
+    }
+
+    public Object invoke(Object proxy, Method method, Object args[])
+        throws Throwable
+    {
+        if(method.getName().equals("equals"))
+            return Boolean.valueOf(proxy == args[0]);
+        if(method.getName().equals("hashCode"))
+            return Integer.valueOf(System.identityHashCode(proxy));
+        if(method.getName().equals("close"))
+            return null;
+	//调用目标类的相应方法
+        Object retVal = method.invoke(target, args);
+        return retVal;
+        InvocationTargetException ex;
+        ex;
+        throw ex.getTargetException();
+    }
+}
+//返回结果
+protected Object postProcessResult(Object result, RedisConnection conn, boolean existingConnection)
+{
+     return result;
+}
+小节：
+从StringRedisTemplate的构造中，主要初始化k-v，hash k-v的序列化工具，RedisTemplate
+执行redis回调接口，首先获取redis连接工厂，再通过RedisConnectionUtils获取连接句柄，实际
+是委托给TransactionSynchronizationManager，如果redis事务管理器中没有与redis连接工厂关联的
+redis连接，则创建连接并与redis工厂绑定，然后如果需要暴露连接，则返回连接，
+否则创建redis连接动态代理，默认为创建动态代理，最后调用redis回调接口的doInRedis方法，最后返回
+处理结果，释放连接与连接工厂的映射关系。redis事务管理器管理事务主要的思想使用
+ThreadLocal来管理连接工厂和连接的映射关系，事务级别和事务读写状态。
+
+总结：
+JedisPoolConfig的功能主要是配置连接最大空闲
+时间，存活数量，及等待时间；JedisPoolConfig的父类Config为GenericObjectPool的静态内部类，与连接池
+有关的属性在Config中，而属性的设置在JedisPoolConfig中；
+JedisConnectionFactory在连接池配置和ip和port和密码等信息初始化后，
+初始化Jedis连接池（初始化连接池及Jedis连接客户端工厂），JedisConnectionFactory获取连接的方式
+如果使用连接池，则直接从连接池JedisPool中获取，否则直接创建一个Jedis连接。
+从StringRedisTemplate的构造中，主要初始化k-v，hash k-v的序列化工具，RedisTemplate
+执行redis回调接口，首先获取redis连接工厂，再通过RedisConnectionUtils获取连接句柄，实际
+是委托给TransactionSynchronizationManager，如果redis事务管理器中没有与redis连接工厂关联的
+redis连接，则创建连接并与redis工厂绑定，然后如果需要暴露连接，则返回连接，
+否则创建redis连接动态代理，默认为创建动态代理，最后调用redis回调接口的doInRedis方法，最后返回
+处理结果，释放连接与连接工厂的映射关系。redis事务管理器管理事务主要的思想使用
+ThreadLocal来管理连接工厂和连接的映射关系，事务级别和事务读写状态。
+
+//StringRedisSerializer
+public class StringRedisSerializer
+    implements RedisSerializer
+{
+
+    public StringRedisSerializer()
+    {
+        this(Charset.forName("UTF8"));
+    }
+
+    public StringRedisSerializer(Charset charset)
+    {
+        Assert.notNull(charset);
+        this.charset = charset;
+    }
+
+    public String deserialize(byte bytes[])
+    {
+        return bytes != null ? new String(bytes, charset) : null;
+    }
+
+    public byte[] serialize(String string)
+    {
+        return string != null ? string.getBytes(charset) : null;
+    }
+
+    public volatile Object deserialize(byte x0[])
+        throws SerializationException
+    {
+        return deserialize(x0);
+    }
+
+    public volatile byte[] serialize(Object x0)
+        throws SerializationException
+    {
+        return serialize((String)x0);
+    }
+    private final Charset charset;
+}

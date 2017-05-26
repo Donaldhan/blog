@@ -1,0 +1,213 @@
+CentOS6.4安装配置redis:http://www.centoscn.com/image-text/config/2015/0728/5928.html
+Redis安装部署:http://www.cnblogs.com/zhuhongbao/archive/2013/06/04/3117997.html
+Redis安装报错信息 :http://blog.csdn.net/oldmtn/article/details/44804643
+新建redis用户，并给以redis sudo权限，下载redis
+[redis@zabbix Downloads]$ ls
+redis-3.0.5  redis-3.0.5.tar.gz
+[redis@zabbix Downloads]$ tar -zxvf redis-3.0.5.tar.gz
+[redis@zabbix Downloads]$ cd redis-3.0.5/
+[redis@zabbix redis-3.0.5]$ ls
+00-RELEASENOTES  CONTRIBUTING  deps     Makefile   README      runtest          runtest-sentinel  src    utils
+BUGS             COPYING       INSTALL  MANIFESTO  redis.conf  runtest-cluster  sentinel.conf     tests
+###编译测试安装
+[redis@zabbix redis-3.0.5]$ make 
+
+Hint: It's a good idea to run 'make test' ;)
+make[1]: Leaving directory `/home/redis/Downloads/redis-3.0.5/src'
+[redis@zabbix redis-3.0.5]$ sudo make test
+\o/ All tests passed without errors!
+
+Cleanup: may take some time... OK
+make[1]: Leaving directory `/home/redis/Downloads/redis-3.0.5/src'
+##安装到指定文件夹
+[redis@zabbix redis-3.0.5]$ sudo make PREFIX=/usr/local/redis-3.0.5 install
+cd src && make install
+make[1]: Entering directory `/home/redis/Downloads/redis-3.0.5/src'
+
+Hint: It's a good idea to run 'make test' ;)
+
+    INSTALL install
+    INSTALL install
+    INSTALL install
+    INSTALL install
+    INSTALL install
+make[1]: Leaving directory `/home/redis/Downloads/redis-3.0.5/src'
+[redis@zabbix redis-3.0.5]$ ls /usr/local/redis-3.0.5/
+bin
+[redis@zabbix redis-3.0.5]$ cd bin
+bash: cd: bin: No such file or directory
+[redis@zabbix redis-3.0.5]$ ls /usr/local/redis-3.0.5/bin/
+redis-benchmark  redis-check-aof  redis-check-dump  redis-cli  redis-sentinel  redis-server
+
+##建立软连接文件夹
+[redis@zabbix redis-3.0.5]$ sudo ln -s /usr/local/redis-3.0.5/ /usr/local/redis
+[redis@zabbix redis-3.0.5]$ ls /usr/local/redis
+bin
+[redis@zabbix redis-3.0.5]$ ls /usr/local/redis/bin/
+redis-benchmark  redis-check-aof  redis-check-dump  redis-cli  redis-sentinel  redis-server
+###添加redis环境变量
+[redis@zabbix redis-3.0.5]$ su - root
+Password: 
+Last login: Mon Dec 19 17:52:07 CST 2016 on pts/0
+[root@zabbix ~]# echo 'PATH=$PATH:/usr/local/redis/bin' >> /etc/profile
+[root@zabbix ~]# source /etc/profile
+[root@zabbix ~]# tail -f /etc/profile
+            . "$i"
+        else
+            . "$i" >/dev/null
+        fi
+    fi
+done
+
+unset i
+unset -f pathmunge
+PATH=$PATH:/usr/local/redis/bin
+^C
+[root@zabbix ~]# echo $PATH
+/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/root/bin:/usr/local/redis/bin
+
+[root@zabbix ~]# su - redis 
+Last login: Mon Dec 19 17:47:48 CST 2016 on :0
+[redis@zabbix ~]$ which redis-server
+/usr/local/redis/bin/redis-server
+####配置redis配置文件
+[redis@zabbix ~]$ sudo mkdir /usr/local/redis/conf
+[redis@zabbix ~]$ sudo cp /home/redis/Downloads/redis-3.0.5/redis.conf /usr/local/redis/conf/
+[redis@zabbix ~]$ ls /usr/local/redis/conf/
+redis.conf
+[redis@zabbix ~]$ ls -al /usr/local/redis/conf/
+total 44
+drwxr-xr-x 2 root root    23 Dec 19 18:17 .
+drwxr-xr-x 4 root root    27 Dec 19 18:16 ..
+-rw-r--r-- 1 root root 41560 Dec 19 18:17 redis.conf
+
+####修改系统配置文件
+[redis@zabbix ~]$ exit
+logout
+[root@zabbix ~]# sudo echo vm.overcommit_memory=1 >> /etc/sysctl.conf 
+[root@zabbix ~]# tail -f /etc/sysctl.conf 
+# System default settings live in /usr/lib/sysctl.d/00-system.conf.
+# To override those settings, enter new settings here, or in an /etc/sysctl.d/<name>.conf file
+#
+# For more information, see sysctl.conf(5) and sysctl.d(5).
+vm.overcommit_memory=1
+
+[root@zabbix ~]# sysctl vm.overcommit_memory=1
+vm.overcommit_memory = 1
+
+使用数字含义：
+
+0，表示内核将检查是否有足够的可用内存供应用进程使用；如果有足够的可用内存，内存申请允许；否则，内存申请失败，并把错误返回给应用进程。
+
+1，表示内核允许分配所有的物理内存，而不管当前的内存状态如何。
+
+2，表示内核允许分配超过所有物理内存和交换空间总和的内存 
+
+###编辑redis启动脚本，
+root@zabbix ~]# vim redis.sh
+###添加可执行权限
+[root@zabbix ~]# chmod 744 redis.sh 
+###具体内容如下
+[root@zabbix ~]# cat redis.sh 
+ #!/bin/bash
+# chkconfig: 2345 50 30
+#
+# description: Redis service
+#
+#Script:Redis command
+ 
+Redisserver=/usr/local/redis/bin/redis-server
+Rediscli=/usr/local/redis/bin/redis-cli
+Redisconf=/usr/local/redis/conf/redis.conf
+ 
+function_start()
+{
+    printf "start redis-server..."
+    $Redisserver $Redisconf &>/dev/null  & 
+    if [ $? -eq 0 ];then
+        echo "runing"
+    fi
+}
+ 
+function_stop()
+{
+    printf "stop redis-server..."
+    $Rediscli -p 6379 shutdown
+    if [ $? -eq 0 ];then
+        echo "stop"
+    fi
+}
+ 
+function_restart()
+{
+    function_start
+    function_stop
+}
+ 
+function_kill()
+{
+    killall redis-server
+}
+ 
+function_status()
+{
+    a=`ps -A|grep "redis-server\>" -c`
+    if [ $a -ge 1 ];then
+        echo -e "The Redis is [\e[0;32;5m runing \e[0m]"
+    else
+        echo -e "The Redis is [\e[0;31;5m not run \e[0m]"
+    fi
+}
+ 
+case "$1" in
+        start)
+                function_start
+                ;;
+        stop)
+                function_stop
+                ;;
+        restart)
+                function_stop
+                function_start
+                ;;
+        kill)
+                function_kill
+                ;;
+        status)
+                function_status
+                ;;
+              *)
+              echo "Usage: /etc/init.d/redis {start|stop|restart|kill|status}"
+             
+esac
+ 
+exit
+
+###启动redis
+
+[root@zabbix ~]# ./redis.sh start
+start redis-server...runing
+
+###查看redis是否启动
+[root@zabbix ~]# netstat -ntlp | grep redis
+tcp        0      0 0.0.0.0:6379            0.0.0.0:*               LISTEN      11979/redis-server  
+tcp6       0      0 :::6379                 :::*                    LISTEN      11979/redis-server 
+[root@zabbix ~]# ps -ef  |grep 6379
+root      11979      1  0 18:27 pts/0    00:00:00 /usr/local/redis/bin/redis-server *:6379
+测试连接：
+[root@zabbix ~]# redis-cli 
+127.0.0.1:6379> set name donald
+OK
+127.0.0.1:6379> get name
+"donald"
+127.0.0.1:6379> exit
+###关闭redis
+[root@zabbix ~]# ./redis.sh stop
+stop redis-server...stop
+[root@zabbix ~]# netstat -ntlp | grep redis
+[root@zabbix ~]# ps -ef  |grep 6379
+root      12147  11853  0 18:34 pts/0    00:00:00 grep --color=auto 6379
+
+
+
+

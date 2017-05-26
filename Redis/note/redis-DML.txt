@@ -1,0 +1,523 @@
+Redis教程：
+http://www.runoob.com/redis/redis-commands.html
+http://www.yiibai.com/redis/redis_quick_guide.html
+##连接redis
+[root@zabbix redis]# redis-cli -h localhost -p 6379 -a redis
+##获取全局配置属性，日志级别
+localhost:6379> CONFIG GET loglevel
+1) "loglevel"
+2) "notice"
+##查看Server状态
+localhost:6379> ping
+PONG
+
+Redis键操作：
+
+##新建key设置为rain，如果存在则覆盖
+localhost:6379> get name
+"donald"
+localhost:6379> set name rain
+OK
+##获取key的值
+localhost:6379> get name
+"rain"
+##该命令返回存储在指定键的值的序列化版本。
+localhost:6379> dump name
+"\x00\x04rain\x06\x00\xdd\xd8YA\x0b\xa2K\t"
+##此命令检查该键是否存在。
+localhost:6379> exists name
+(integer) 1
+##指定键的过期时间
+localhost:6379> expire name 100
+(integer) 1
+##获取键到期的剩余时间
+localhost:6379> ttl name
+(integer) 97
+localhost:6379> ttl name
+(integer) 93
+localhost:6379> ttl name
+(integer) -2
+localhost:6379> get name
+(nil)
+localhost:6379> set name donald
+OK
+localhost:6379> get name
+"donald"
+##返回存储在键的数据类型的值
+localhost:6379> type name
+string
+##更改键的名称
+localhost:6379> rename name names
+OK
+localhost:6379> get name
+(nil)
+localhost:6379> get names
+"donald"
+##此命令删除键，如果存在
+localhost:6379> del names
+(integer) 1
+localhost:6379> get names
+(nil)
+localhost:6379> 
+
+
+
+Redis String操作
+
+
+
+#此命令用于在指定键设置值
+localhost:6379> set name donald
+OK
+localhost:6379> get name
+"donald"
+#设置键的字符串值，并返回旧值
+localhost:6379> getset name 1
+"donald"
+localhost:6379> get name
+"1"
+#得到存储在键的值的长度
+localhost:6379> strlen name
+(integer) 1
+#增加键的整数值一次
+localhost:6379> incr name
+(integer) 2
+localhost:6379> get name
+"2"
+localhost:6379> incr name
+(integer) 3
+#递减键一次的整数值
+localhost:6379> decr name
+(integer) 2
+localhost:6379> get name
+"2"
+#设置键的值，只有当该键不存在
+localhost:6379> setnx name rain
+(integer) 0
+localhost:6379> get name
+"2"
+localhost:6379> 
+#键到期时设置值
+localhost:6379> setex name 10 rain
+OK
+localhost:6379> get name
+"rain"
+localhost:6379> ttl name
+(integer) 5
+localhost:6379> ttl name
+(integer) -2
+localhost:6379> get name
+(nil)
+localhost:6379> 
+
+
+Redis哈希
+#设置多个哈希字段的多个值
+localhost:6379> hmset person name donald age 20 sex man
+OK
+#判断一个哈希字段存在与否
+localhost:6379> hexists person name
+(integer) 1
+#获取存储在指定的键散列字段的值
+localhost:6379> hget person name
+"donald"
+localhost:6379> hget person age
+"20"
+localhost:6379> hget person sex
+"man"
+#获取存储在指定的键所有散列字段的值
+localhost:6379> hgetall person
+1) "name"
+2) "donald"
+3) "age"
+4) "20"
+5) "sex"
+6) "man"
+#获取所有在哈希字段
+localhost:6379> hkeys person
+1) "name"
+2) "age"
+3) "sex"
+#获取哈希字段数
+localhost:6379> hlen person
+(integer) 3
+#获取在哈希中的所有值
+localhost:6379> hvals person
+1) "donald"
+2) "20"
+3) "man"
+#设置哈希字段的字符串值
+localhost:6379> hset person name rain
+(integer) 0
+localhost:6379> hget person name
+"rain"
+#设置哈希字段的值，仅当该字段不存在
+localhost:6379> hsetnx person name donald
+(integer) 0
+localhost:6379> hget person name
+"rain"
+localhost:6379> expire persion 100
+(integer) 0
+localhost:6379> expire person 100
+(integer) 1
+localhost:6379> ttl person
+(integer) 97
+localhost:6379> ttl person
+(integer) 94
+localhost:6379> 
+#删除哈希key的字段
+localhost:6379> hdel person name
+(integer) 1
+localhost:6379> hkeys person
+1) "age"
+2) "sex"
+localhost:6379> 
+
+Redis列表
+#在列表栈，添加一个或多个值入栈
+localhost:6379> lpush user donald
+(integer) 1
+localhost:6379> lpush user rain
+(integer) 2
+localhost:6379> lpush user jamel
+(integer) 3
+##获取列表栈中的值start， end，end为-1为取出所有
+localhost:6379> lrange user 0 -1
+1) "jamel"
+2) "rain"
+3) "donald"
+localhost:6379> lpush user done
+(integer) 4
+localhost:6379> lrange user 0 -1
+1) "done"
+2) "jamel"
+3) "rain"
+4) "donald"
+##将值添加到栈低
+localhost:6379> rpush user doing
+(integer) 5
+localhost:6379> lrange user 0 -1
+1) "done"
+2) "jamel"
+3) "rain"
+4) "donald"
+5) "doing"
+localhost:6379> 
+#获取列表的长度
+localhost:6379> llen user
+(integer) 5
+#获取并取出列表中的栈顶第一个元素，
+localhost:6379> lpop user
+"done"
+#取出并获取列表中的栈低最后一个元素，
+localhost:6379> rpop user
+"doing"
+localhost:6379> llen user
+(integer) 3
+localhost:6379> lrange user 0 -1
+1) "jamel"
+2) "rain"
+3) "donald"
+#从一个列表其索引获取对应的元素
+localhost:6379> lindex user 1
+"rain"
+#移出并获取列表的第一个元素， 如果列表没有元素会阻塞列表直到等待超时或发现可弹出元素为止。
+localhost:6379> blpop user 1000
+1) "user"
+2) "jamel"
+#移出并获取列表的最后一个元素， 如果列表没有元素会阻塞列表直到等待超时或发现可弹出元素为止
+localhost:6379> brpop user 1000
+1) "user"
+2) "donald"
+localhost:6379> 
+
+
+Redis 集合(Set)
+
+#向集合添加一个或多个成员
+localhost:6379> sadd user1 donald
+(integer) 1
+localhost:6379> sadd user1 jamel
+(integer) 1
+#获取集合的成员数
+localhost:6379> scard user1
+(integer) 2
+#返回集合中的所有成员
+localhost:6379> smembers user1
+1) "jamel"
+2) "donald"
+#移除并返回集合中的一个随机元素
+localhost:6379> spop user1
+"donald"
+localhost:6379> smembers user1
+1) "jamel"
+localhost:6379> sadd user1 donald
+(integer) 1
+localhost:6379> smembers user1
+1) "jamel"
+2) "donald"
+localhost:6379> sadd user2 rain
+(integer) 1
+localhost:6379> sadd user2 rain
+(integer) 0
+#判断 member 元素是否是集合 key 的成员
+localhost:6379> sismember user1 jamel
+(integer) 1
+##返回给定所有集合的差集
+localhost:6379> sdiff user1 user2
+1) "jamel"
+2) "donald"
+localhost:6379> sdiff user2 user1
+1) "rain"
+返回给定所有集合的差集并存储在 user3 中
+localhost:6379> sdiffstore user3 user1 user2
+(integer) 2
+localhost:6379> smembers user3
+1) "jamel"
+2) "donald"
+localhost:6379> sadd user2 doanld
+(integer) 1
+#返回给定所有集合的交集
+localhost:6379> sinter user1 user2
+(empty list or set)
+localhost:6379> sinter user1 user3
+1) "jamel"
+2) "donald"
+localhost:6379> smembers user2
+1) "doanld"
+2) "rain"
+localhost:6379> sinter uesr2 user1
+(empty list or set)
+#返回给定所有集合的交集并存储在 user4 中
+localhost:6379> sinterstore user4 user1 user3
+(integer) 2
+localhost:6379> smembers user4
+1) "jamel"
+2) "donald"
+
+
+Redis 有序集合(sorted set)
+
+#向有序集合添加一个或多个成员，或者更新已存在成员的分数
+localhost:6379> zadd user1 1 donald
+(integer) 1
+localhost:6379> zadd user1 2 jamel
+(integer) 1
+#获取有序集合的成员数
+localhost:6379> zcard user1
+(integer) 2
+#计算在有序集合中指定区间分数的成员数
+localhost:6379> zcount user 0 1
+(integer) 0
+localhost:6379> zcount user 1 2
+(integer) 0
+localhost:6379> zcount user1 1 2
+(integer) 2
+localhost:6379> zcount user1 0 1
+(integer) 1
+localhost:6379> zadd user1 0 rain
+(integer) 1
+localhost:6379> zcount user1 0 1
+(integer) 2
+#通过索引区间返回有序集合成指定区间内的成员
+localhost:6379> zrange user1 0 2 
+1) "rain"
+2) "donald"
+3) "jamel"
+localhost:6379> zrange user1 0 2 withscores
+1) "rain"
+2) "0"
+3) "donald"
+4) "1"
+5) "jamel"
+6) "2"
+#返回有序集合中指定成员的索引
+localhost:6379> zrank user1 donald
+(integer) 1
+#返回有序集中，成员的分数值
+localhost:6379> zscore user1 donald
+"1"
+localhost:6379> zscore user1 jamel
+"2"
+localhost:6379> 
+#移除有序集合中的一个或多个成员
+localhost:6379> zrem user1 jamel
+(integer) 1
+localhost:6379> zrange user1 0 2 withscores
+1) "rain"
+2) "0"
+3) "donald"
+4) "1"
+localhost:6379> 
+
+
+
+
+Redis HyperLogLog
+
+Redis 在 2.8.9 版本添加了 HyperLogLog 结构。
+Redis HyperLogLog 是用来做基数统计的算法，HyperLogLog 的优点是，
+在输入元素的数量或者体积非常非常大时，计算基数所需的空间总是固定 的、并且是很小的。
+在 Redis 里面，每个 HyperLogLog 键只需要花费 12 KB 内存，就可以计算接近 2^64 个不同元素的基 数。
+这和计算基数时，元素越多耗费内存就越多的集合形成鲜明对比。
+但是，因为 HyperLogLog 只会根据输入元素来计算基数，而不会储存输入元素本身，
+所以 HyperLogLog 不能像集合那样，返回输入的各个元素。
+什么是基数?
+比如数据集 {1, 3, 5, 7, 5, 7, 8}， 那么这个数据集的基数集为 {1, 3, 5 ,7, 8}, 基数(不重复元素)为5。 
+基数估计就是在误差可接受的范围内，快速计算基数。 
+#添加指定元素到 HyperLogLog 中
+localhost:6379> pfadd digital 1
+(integer) 1
+localhost:6379> pfadd digital 2
+(integer) 1
+localhost:6379> pfadd digital 4
+(integer) 1
+localhost:6379> pfadd digital 5
+(integer) 1
+localhost:6379> pfadd digital 5
+(integer) 0
+localhost:6379> pfadd digital 6
+(integer) 1
+localhost:6379> pfadd digital 7
+(integer) 1
+localhost:6379> pfadd digital 7
+(integer) 0
+#返回给定 HyperLogLog 的基数估算值。
+localhost:6379> pfcount digital
+(integer) 6
+localhost:6379> 
+
+
+##所有全局配置属性
+localhost:6379> CONFIG GET *
+  1) "dbfilename"
+  2) "dump.rdb"
+  3) "requirepass"
+  4) "redis"
+  5) "masterauth"
+  6) ""
+  7) "unixsocket"
+  8) ""
+  9) "logfile"
+ 10) "/redis/logs/redis.log"
+ 11) "pidfile"
+ 12) "/var/run/redis.pid"
+ 13) "maxmemory"
+ 14) "0"
+ 15) "maxmemory-samples"
+ 16) "5"
+ 17) "timeout"
+ 18) "0"
+ 19) "tcp-keepalive"
+ 20) "0"
+ 21) "auto-aof-rewrite-percentage"
+ 22) "100"
+ 23) "auto-aof-rewrite-min-size"
+ 24) "67108864"
+ 25) "hash-max-ziplist-entries"
+ 26) "512"
+ 27) "hash-max-ziplist-value"
+ 28) "64"
+ 29) "list-max-ziplist-entries"
+ 30) "512"
+ 31) "list-max-ziplist-value"
+ 32) "64"
+ 33) "set-max-intset-entries"
+ 34) "512"
+ 35) "zset-max-ziplist-entries"
+ 36) "128"
+ 37) "zset-max-ziplist-value"
+ 38) "64"
+ 39) "hll-sparse-max-bytes"
+ 40) "3000"
+ 41) "lua-time-limit"
+ 42) "5000"
+ 43) "slowlog-log-slower-than"
+ 44) "10000"
+ 45) "latency-monitor-threshold"
+ 46) "0"
+ 47) "slowlog-max-len"
+ 48) "128"
+ 49) "port"
+ 50) "6379"
+ 51) "tcp-backlog"
+ 52) "511"
+ 53) "databases"
+ 54) "16"
+ 55) "repl-ping-slave-period"
+ 56) "10"
+ 57) "repl-timeout"
+ 58) "60"
+ 59) "repl-backlog-size"
+ 60) "1048576"
+ 61) "repl-backlog-ttl"
+ 62) "3600"
+ 63) "maxclients"
+ 64) "10000"
+ 65) "watchdog-period"
+ 66) "0"
+ 67) "slave-priority"
+ 68) "100"
+ 69) "min-slaves-to-write"
+ 70) "0"
+ 71) "min-slaves-max-lag"
+ 72) "10"
+ 73) "hz"
+ 74) "10"
+ 75) "cluster-node-timeout"
+ 76) "15000"
+ 77) "cluster-migration-barrier"
+ 78) "1"
+ 79) "cluster-slave-validity-factor"
+ 80) "10"
+ 81) "repl-diskless-sync-delay"
+ 82) "5"
+ 83) "cluster-require-full-coverage"
+ 84) "yes"
+ 85) "no-appendfsync-on-rewrite"
+ 86) "no"
+ 87) "slave-serve-stale-data"
+ 88) "yes"
+ 89) "slave-read-only"
+ 90) "yes"
+ 91) "stop-writes-on-bgsave-error"
+ 92) "yes"
+ 93) "daemonize"
+ 94) "no"
+ 95) "rdbcompression"
+ 96) "yes"
+ 97) "rdbchecksum"
+ 98) "yes"
+ 99) "activerehashing"
+100) "yes"
+101) "repl-disable-tcp-nodelay"
+102) "no"
+103) "repl-diskless-sync"
+104) "no"
+105) "aof-rewrite-incremental-fsync"
+106) "yes"
+107) "aof-load-truncated"
+108) "yes"
+109) "appendonly"
+110) "yes"
+111) "dir"
+112) "/redis/data"
+113) "maxmemory-policy"
+114) "noeviction"
+115) "appendfsync"
+116) "everysec"
+117) "save"
+118) "900 1 300 10 60 10000"
+119) "loglevel"
+120) "notice"
+121) "client-output-buffer-limit"
+122) "normal 0 0 0 slave 268435456 67108864 60 pubsub 33554432 8388608 60"
+123) "unixsocketperm"
+124) "0"
+125) "slaveof"
+126) ""
+127) "notify-keyspace-events"
+128) ""
+129) "bind"
+130) ""
+localhost:6379> 

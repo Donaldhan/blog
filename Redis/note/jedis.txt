@@ -1,0 +1,941 @@
+Jedis获取Redis连接详解:http://donald-draper.iteye.com/blog/2347121
+redis协议：http://doc.redisfans.com/topic/protocol.html
+上一篇中，我们探究了一下Jedis获取Redis连接过程，具体如下：
+JedisPoolConfig的功能主要是配置连接最大空闲时间，存活数量，及等待时间；
+JedisPoolConfig的父类Config为GenericObjectPool的静态内部类，与连接池
+有关的属性在Config中，而属性的设置在JedisPoolConfig中；
+JedisPool的初始化主要是GenericObjectPool初始化，主要是初始化连接池，连接数，空闲时间，等待时间，
+连接池，候选连接池，初始化候选连接初始化执行器，JedisFactory。
+JedisFactory工厂为JedisPool的内部类，JedisFactory的属性有host，port，timeout，password和
+database；JedisFactory的主要功能为管理（创建，关闭，验证）redis连接jedis。
+从连接池获取jedis连接资源，实际上看是从JedisPool的父类pool中获取，而pool又委托给JedisFactory，
+最后由JedisFactory创建redis连接jedis。
+今天我们来看一下，jedis客户端如何操作redis服务器：
+public class Jedis extends BinaryJedis
+    implements JedisCommands
+{
+    //这个在前面JedisFactory创建jedis客户端时，所用的构造方法
+     public Jedis(String host, int port, int timeout)
+    {
+        super(host, port, timeout);
+    }
+    
+}
+来看其父类BinaryJedis
+//BinaryJedis
+public class BinaryJedis
+    implements BinaryJedisCommands
+{
+    protected Client client;//redis连接客户端
+      public BinaryJedis(String host, int port, int timeout)
+    {
+        client = null;
+        client = new Client(host, port);
+        client.setTimeout(timeout);
+    }
+}
+//再来看Client的构造
+public class Client extends BinaryClient
+    implements Commands
+{
+  public Client(String host, int port)
+    {
+        super(host, port);
+    }
+}
+再看BinaryClient
+public class BinaryClient extends Connection
+{
+    private boolean isInMulti;//是否是事务
+    private String password;//密码 
+    private long db;//数据库
+
+   public BinaryClient(String host, int port)
+    {
+        super(host, port);
+    }
+}
+再来看Connection
+public class Connection
+{
+    private String host;//ip
+    private int port;//端口
+    private Socket socket;//与redis连接socket
+    private RedisOutputStream outputStream;//输出流
+    private RedisInputStream inputStream;//输入流
+    private int pipelinedCommands;//管道命令数
+    private int timeout;//超时时间
+   
+       public Connection(String host, int port)
+    {
+        this.port = 6379;
+        pipelinedCommands = 0;
+        timeout = 2000;
+        this.host = host;
+        this.port = port;
+    }
+}
+从JedisFactory创建redis连接jedis的构造方法，来看Jedis构造所做的事情为，初始化
+BinaryJedis，即初始化Client的host和port，BinaryJedis有个Client，；Client初始化，其实
+是初始化BinaryClient，即初始化Connection，Connection为实际与redis通信的连接，
+BinaryClient有连三个属性分别为 isInMulti（是否是事务）password，db（数据库），
+Connection有几个内部变量分别为host,port,socket,outputStream,inputStream,pipelinedCommands,timeout
+
+下面再来看Jedis的另一种构造方式
+  public Jedis(JedisShardInfo shardInfo)
+    {
+        super(shardInfo);
+    }
+//JedisShardInfo
+public class JedisShardInfo extends ShardInfo
+{
+    private int timeout;
+    private String host;
+    private int port;
+    private String password;
+    private String name;
+      public JedisShardInfo(String host, int port, int timeout)
+    {
+        this(host, port, timeout, 1);
+    }
+     public Jedis createResource()
+    {
+        return new Jedis(this);
+    }
+    //创建jedis客户端
+    public volatile Object createResource()
+    {
+        return createResource();
+    }
+}
+//ShardInfo
+public abstract class ShardInfo
+{
+    public ShardInfo()
+    {
+    }
+    public ShardInfo(int weight)
+    {
+        this.weight = weight;
+    }
+    public int getWeight()
+    {
+        return weight;
+    }
+    protected abstract Object createResource();
+    public abstract String getName();
+    private int weight;
+}
+从JedisShardInfo可以看出，JedisShardInfo创建jedis客户端，实际上为Jedis，及JedisShardInfo
+依托于Jedis。
+下面看一jedis的验证
+jedis.auth("redis"); 
+//Jedis
+ public String auth(String password)
+    {
+        //检查是否是事务
+        checkIsInMulti();
+	//验证密码
+        client.auth(password);
+	//返回redis恢复字符串
+        return client.getStatusCodeReply();
+    }
+
+
+分3步来看：
+1.检查是否是事务
+checkIsInMulti();
+//Jedis
+ protected void checkIsInMulti()
+    {
+        if(client.isInMulti())
+            throw new JedisDataException("Cannot use Jedis when in Multi. Please use JedisTransaction instead.");
+        else
+            return;
+    }
+//Client
+    public boolean isInMulti()
+    {
+        return isInMulti;
+    }
+
+2.验证密码
+client.auth(password);
+//Client
+  public void auth(String password)
+    {
+        //设置密码
+        setPassword(password);
+	//发送命令
+        sendCommand(Protocol.Command.AUTH, new String[] {
+            password
+        });
+    }
+   //设置密码
+  public void setPassword(String password)
+    {
+        this.password = password;
+    }
+//发送命令
+  protected transient Connection sendCommand(Protocol.Command cmd, String args[])
+    {
+       //将发送内容，转换编码字节
+        byte bargs[][] = new byte[args.length][];
+        for(int i = 0; i < args.length; i++)
+            bargs[i] = SafeEncoder.encode(args[i]);
+        //发送字节流
+        return sendCommand(cmd, bargs);
+    }
+编码字符
+//SafeEncoder
+public static byte[] encode(String str)
+    {
+        if(str == null)
+            throw new JedisDataException("value sent to redis cannot be null");
+        return str.getBytes("UTF-8");
+    }
+发送字节流
+protected transient Connection sendCommand(Protocol.Command cmd, byte args[][])
+    {
+        //连接redis
+        connect();
+	//协议发送命令
+        Protocol.sendCommand(outputStream, cmd, args);
+        pipelinedCommands++;
+        return this;
+    }
+创建连接redis Socket
+ connect();
+//Connection
+  public void connect()
+    {
+        if(!isConnected())
+            try
+            {
+	        //如果没有redis建立连接则，则创建socket，并初始化RedisOutputStream，RedisInputStream
+                socket = new Socket();
+                socket.setReuseAddress(true);
+                socket.setKeepAlive(true);
+                socket.setTcpNoDelay(true);
+                socket.setSoLinger(true, 0);
+                socket.connect(new InetSocketAddress(host, port), timeout);
+                socket.setSoTimeout(timeout);
+                outputStream = new RedisOutputStream(socket.getOutputStream());
+                inputStream = new RedisInputStream(socket.getInputStream());
+            }
+            catch(IOException ex)
+            {
+                throw new JedisConnectionException(ex);
+            }
+    }
+
+协议发送命令
+Protocol.sendCommand(outputStream, cmd, args);
+//Protocol
+//发送验证命令和密码字节流
+public static transient void sendCommand(RedisOutputStream os, Command command, byte args[][])
+    {
+        sendCommand(os, command.raw, args);
+    }
+ private static transient void sendCommand(RedisOutputStream os, byte command[], byte args[][])
+    {
+        try
+        {    
+	   //发送内容长度
+            os.write((byte)42);
+            os.writeIntCrLf(args.length + 1);
+	     //发送命令长度
+            os.write((byte)36);
+            os.writeIntCrLf(command.length);
+	    //发送命令
+            os.write(command);
+	    //发送协议内容分割符
+            os.writeCrLf();
+            byte arr$[][] = args;
+            int len$ = arr$.length;
+            for(int i$ = 0; i$ < len$; i$++)
+            {
+	       //分字节发送内容
+                byte arg[] = arr$[i$];
+                os.write((byte)36);
+                os.writeIntCrLf(arg.length);
+                os.write(arg);
+                os.writeCrLf();
+            }
+
+        }
+        catch(IOException e)
+        {
+            throw new JedisConnectionException(e);
+        }
+    }
+再来看字节发送输出流
+public final class RedisOutputStream extends FilterOutputStream
+{
+    protected final byte buf[];//输出流缓冲区
+    protected int count;//缓冲区当前大小
+     private static final int sizeTable[] = {
+        9, 99, 999, 9999, 99999, 999999, 9999999, 99999999, 999999999, 2147483647
+    };
+    public RedisOutputStream(OutputStream out)
+    {
+        this(out, 8192);
+    }
+     public RedisOutputStream(OutputStream out, int size)
+    {
+        super(out);
+        if(size <= 0)
+        {
+            throw new IllegalArgumentException("Buffer size <= 0");
+        } else
+        {
+            buf = new byte[size];
+            return;
+        }
+    }
+    public void write(byte b)
+        throws IOException
+    {
+        buf[count++] = b;
+        if(count == buf.length)
+	    //如果缓存已满，则刷新缓冲区
+            flushBuffer();
+    }
+    //刷新缓冲区
+    private void flushBuffer()
+        throws IOException
+    {
+        if(count > 0)
+        {
+            out.write(buf, 0, count);
+            count = 0;
+        }
+    }
+    public void writeIntCrLf(int value)
+        throws IOException
+    {
+        if(value < 0)
+        {
+            write(45);
+            value = -value;
+        }
+        int size;
+        for(size = 0; value > sizeTable[size]; size++);
+	//如果缓冲区剩余大小不够用，则刷新缓存
+        if(++size >= buf.length - count)
+            flushBuffer();
+        int charPos = count + size;
+        while(value >= 65536) 
+        {
+            int q = value / 100;
+            int r = value - ((q << 6) + (q << 5) + (q << 2));
+            value = q;
+            buf[--charPos] = DigitOnes[r];
+            buf[--charPos] = DigitTens[r];
+        }
+        do
+        {
+            int q = value * 52429 >>> 19;
+            int r = value - ((q << 3) + (q << 1));
+            buf[--charPos] = digits[r];
+            value = q;
+        } while(value != 0);
+        count += size;
+        writeCrLf();
+    }
+    //协议内容分割符
+    public void writeCrLf()
+        throws IOException
+    {
+        if(2 >= buf.length - count)
+            flushBuffer();
+        buf[count++] = 13;
+        buf[count++] = 10;
+    }
+3.返回redis回复内容
+return client.getStatusCodeReply();
+//Connection
+ protected String getStatusCodeReply()
+    {
+        //刷新输出流
+        flush();
+        pipelinedCommands--;
+	//协议读取输入流
+        byte resp[] = (byte[])(byte[])Protocol.read(inputStream);
+        if(null == resp)
+            return null;
+        else
+	    //解码输入流
+            return SafeEncoder.encode(resp);
+    }
+//刷新输出流
+ protected void flush()
+    {
+        try
+        {
+            outputStream.flush();
+        }
+        catch(IOException e)
+        {
+            throw new JedisConnectionException(e);
+        }
+    }
+//RedisOutputStream
+public void flush()
+        throws IOException
+    {
+        flushBuffer();
+        out.flush();
+    }
+
+
+协议读取输入流
+byte resp[] = (byte[])(byte[])Protocol.read(inputStream);
+//Protocol
+ //协议读取输入流
+ public static Object read(RedisInputStream is)
+    {
+        return process(is);
+    }
+  private static Object process(RedisInputStream is)
+    {
+        byte b;
+        b = is.readByte();
+        if(b == 45)
+        { 
+	    //第一个字节为45则，redis返回错误
+            processError(is);
+            break MISSING_BLOCK_LABEL_103;
+        }
+        if(b == 42)
+	    //第一个字节为42则，事务返回
+            return processMultiBulkReply(is);
+        if(b == 58)
+	    //第一个字节为58则，返回为整数
+            return processInteger(is);
+        if(b == 36)
+	    //第一个字节为36则，返回为字符串
+            return processBulkReply(is);
+        if(b == 43)
+	    //第一个字节为43则，返回为状态码
+            return processStatusCodeReply(is);
+        try
+        {
+            throw new JedisConnectionException((new StringBuilder()).append("Unknown reply: ").append((char)b).toString());
+        }
+        catch(IOException e)
+        {
+            throw new JedisConnectionException(e);
+        }
+        return null;
+    }
+
+    //第一个字节为45则，redis返回错误
+       private static void processError(RedisInputStream is)
+    {
+        String message = is.readLine();
+        throw new JedisDataException(message);
+    }
+     //第一个字节为42则，事务返回
+     private static List processMultiBulkReply(RedisInputStream is)
+    {
+        //事务返回数量
+        int num = Integer.parseInt(is.readLine());
+        if(num == -1)
+            return null;
+        List ret = new ArrayList(num);
+        for(int i = 0; i < num; i++)
+            try
+            {
+                ret.add(process(is));
+            }
+            catch(JedisDataException e)
+            {
+                ret.add(e);
+            }
+
+        return ret;
+    }
+    //第一个字节为58则，返回为整数
+     private static Long processInteger(RedisInputStream is)
+    {
+        String num = is.readLine();
+        return Long.valueOf(num);
+    }
+    //第一个字节为36则，返回为字符串
+     private static byte[] processBulkReply(RedisInputStream is)
+    {   
+        //返回数量
+        int len = Integer.parseInt(is.readLine());
+        if(len == -1)
+            return null;
+        byte read[] = new byte[len];
+        int offset = 0;
+        try
+        {
+            while(offset < len) 
+                offset += is.read(read, offset, len - offset);
+            is.readByte();
+            is.readByte();
+        }
+        catch(IOException e)
+        {
+            throw new JedisConnectionException(e);
+        }
+        return read;
+    }
+     //第一个字节为43则，返回为状态码
+ private static byte[] processStatusCodeReply(RedisInputStream is)
+    {
+        return SafeEncoder.encode(is.readLine());
+    }
+
+解码输入流
+if(null == resp)
+       return null;
+else
+//解码输入流
+return SafeEncoder.encode(resp);
+ public static String encode(byte data[])
+    {
+        return new String(data, "UTF-8");
+        UnsupportedEncodingException e;
+        e;
+        throw new JedisException(e);
+    }
+至此密码验证完毕，我们来小节一下
+密码验证过程中，先Client检查是不是事务，然后由Client，设置密码，发送密码验证命令；在这个过程中，
+Connection创建与redis通信的socket，并初始化Connection的RedisOutputStream，RedisInputStream，然后由
+Protocol发送密码验证命令Command.AUTH和密码字节流到Redis；最后由Protocol从RedisInputStream中，
+读取redis的命令执行的结果。
+再来看看，jedis设置键的值
+jedis.set("name","donald");//向key-->name中放入了value-->donald  
+ public String set(String key, String value)
+    {
+        //检查是事务
+        checkIsInMulti();
+	//设置键的值
+        client.set(key, value);
+	//获取redis执行键设值Command.SET命令后的回复内容，这个我们在前面已分析过
+        return client.getStatusCodeReply();
+    }
+设置键的值
+client.set(key, value);
+ public void set(String key, String value)
+    {
+        //委托给BinaryClient
+        set(SafeEncoder.encode(key), SafeEncoder.encode(value));
+    }
+//BinaryClient
+public class BinaryClient extends Connection
+{
+ public void set(byte key[], byte value[])
+    {
+
+        //发送命令键设置命令
+        sendCommand(Protocol.Command.SET, new byte[][] {
+            key, value
+        });
+    }
+}
+//Connection
+protected transient Connection sendCommand(Protocol.Command cmd, byte args[][])
+    {
+        connect();
+        Protocol.sendCommand(outputStream, cmd, args);
+        pipelinedCommands++;
+        return this;
+    }
+再来看
+jedis.get("name")
+//Jedis
+  public String get(String key)
+    {
+        checkIsInMulti();
+        client.sendCommand(Protocol.Command.GET, new String[] {
+            key
+        });
+        return client.getBulkReply();
+    }
+//Connection
+ protected transient Connection sendCommand(Protocol.Command cmd, String args[])
+    {
+        byte bargs[][] = new byte[args.length][];
+        for(int i = 0; i < args.length; i++)
+            bargs[i] = SafeEncoder.encode(args[i]);
+
+        return sendCommand(cmd, bargs);
+    }
+总结：
+从JedisFactory创建redis连接jedis的构造方法，来看Jedis构造所做的事情为，初始化
+BinaryJedis，即初始化Client的host和port，BinaryJedis有个Client，；Client初始化，其实
+是初始化BinaryClient，即初始化Connection，Connection为实际与redis通信的连接，
+BinaryClient有连三个属性分别为 isInMulti（是否是事务）password，db（数据库），
+Connection有几个内部变量分别为host,port,socket,outputStream,inputStream,pipelinedCommands,timeout。
+Jedis执行命令的过程中，先Client检查是不是事务，然后由Client，执行命令及命令内容；在这个过程中，
+Connection创建与redis通信的socket，并初始化Connection的RedisOutputStream，RedisInputStream，然后由
+Protocol发送命令Command.*和内容字节串到Redis；最后由Protocol从RedisInputStream中，
+读取redis的命令执行的结果。从分析命令和内容字节串来看，redis发送命令的时候，先发送一个字节的长度，
+再发送内容字节串，最后以\r\n （CRLF）结束一次命令的发送。
+redis协议：http://doc.redisfans.com/topic/protocol.html
+
+//Protocol
+public final class Protocol
+{
+//从Command可以看出，其实一个Enum，从里面的命令枚举变量，我们是不是很熟悉。
+public static final class Command extends Enum
+    {
+
+        public static Command[] values()
+        {
+            return (Command[])$VALUES.clone();
+        }
+
+        public static Command valueOf(String name)
+        {
+            return (Command)Enum.valueOf(redis/clients/jedis/Protocol$Command, name);
+        }
+
+        public static final Command PING;
+        public static final Command SET;
+        public static final Command GET;
+        public static final Command QUIT;
+        public static final Command EXISTS;
+        public static final Command DEL;
+        public static final Command TYPE;
+        public static final Command FLUSHDB;
+        public static final Command KEYS;
+        public static final Command RANDOMKEY;
+        public static final Command RENAME;
+        public static final Command RENAMENX;
+        public static final Command RENAMEX;
+        public static final Command DBSIZE;
+        public static final Command EXPIRE;
+        public static final Command EXPIREAT;
+        public static final Command TTL;
+        public static final Command SELECT;
+        public static final Command MOVE;
+        public static final Command FLUSHALL;
+        public static final Command GETSET;
+        public static final Command MGET;
+        public static final Command SETNX;
+        public static final Command SETEX;
+        public static final Command MSET;
+        public static final Command MSETNX;
+        public static final Command DECRBY;
+        public static final Command DECR;
+        public static final Command INCRBY;
+        public static final Command INCR;
+        public static final Command APPEND;
+        public static final Command SUBSTR;
+        public static final Command HSET;
+        public static final Command HGET;
+        public static final Command HSETNX;
+        public static final Command HMSET;
+        public static final Command HMGET;
+        public static final Command HINCRBY;
+        public static final Command HEXISTS;
+        public static final Command HDEL;
+        public static final Command HLEN;
+        public static final Command HKEYS;
+        public static final Command HVALS;
+        public static final Command HGETALL;
+        public static final Command RPUSH;
+        public static final Command LPUSH;
+        public static final Command LLEN;
+        public static final Command LRANGE;
+        public static final Command LTRIM;
+        public static final Command LINDEX;
+        public static final Command LSET;
+        public static final Command LREM;
+        public static final Command LPOP;
+        public static final Command RPOP;
+        public static final Command RPOPLPUSH;
+        public static final Command SADD;
+        public static final Command SMEMBERS;
+        public static final Command SREM;
+        public static final Command SPOP;
+        public static final Command SMOVE;
+        public static final Command SCARD;
+        public static final Command SISMEMBER;
+        public static final Command SINTER;
+        public static final Command SINTERSTORE;
+        public static final Command SUNION;
+        public static final Command SUNIONSTORE;
+        public static final Command SDIFF;
+        public static final Command SDIFFSTORE;
+        public static final Command SRANDMEMBER;
+        public static final Command ZADD;
+        public static final Command ZRANGE;
+        public static final Command ZREM;
+        public static final Command ZINCRBY;
+        public static final Command ZRANK;
+        public static final Command ZREVRANK;
+        public static final Command ZREVRANGE;
+        public static final Command ZCARD;
+        public static final Command ZSCORE;
+        public static final Command MULTI;
+        public static final Command DISCARD;
+        public static final Command EXEC;
+        public static final Command WATCH;
+        public static final Command UNWATCH;
+        public static final Command SORT;
+        public static final Command BLPOP;
+        public static final Command BRPOP;
+        public static final Command AUTH;
+        public static final Command SUBSCRIBE;
+        public static final Command PUBLISH;
+        public static final Command UNSUBSCRIBE;
+        public static final Command PSUBSCRIBE;
+        public static final Command PUNSUBSCRIBE;
+        public static final Command ZCOUNT;
+        public static final Command ZRANGEBYSCORE;
+        public static final Command ZREVRANGEBYSCORE;
+        public static final Command ZREMRANGEBYRANK;
+        public static final Command ZREMRANGEBYSCORE;
+        public static final Command ZUNIONSTORE;
+        public static final Command ZINTERSTORE;
+        public static final Command SAVE;
+        public static final Command BGSAVE;
+        public static final Command BGREWRITEAOF;
+        public static final Command LASTSAVE;
+        public static final Command SHUTDOWN;
+        public static final Command INFO;
+        public static final Command MONITOR;
+        public static final Command SLAVEOF;
+        public static final Command CONFIG;
+        public static final Command STRLEN;
+        public static final Command SYNC;
+        public static final Command LPUSHX;
+        public static final Command PERSIST;
+        public static final Command RPUSHX;
+        public static final Command ECHO;
+        public static final Command LINSERT;
+        public static final Command DEBUG;
+        public static final Command BRPOPLPUSH;
+        public static final Command SETBIT;
+        public static final Command GETBIT;
+        public static final Command SETRANGE;
+        public static final Command GETRANGE;
+        public static final Command EVAL;
+        public static final Command EVALSHA;
+        public static final Command SCRIPT;
+        public static final Command SLOWLOG;
+        public static final Command OBJECT;
+	//命令字节串
+        public final byte raw[] = SafeEncoder.encode(name());
+        private static final Command $VALUES[];
+
+        static 
+        {
+            PING = new Command("PING", 0);
+            SET = new Command("SET", 1);
+            GET = new Command("GET", 2);
+            QUIT = new Command("QUIT", 3);
+            EXISTS = new Command("EXISTS", 4);
+            DEL = new Command("DEL", 5);
+            TYPE = new Command("TYPE", 6);
+            FLUSHDB = new Command("FLUSHDB", 7);
+            KEYS = new Command("KEYS", 8);
+            RANDOMKEY = new Command("RANDOMKEY", 9);
+            RENAME = new Command("RENAME", 10);
+            RENAMENX = new Command("RENAMENX", 11);
+            RENAMEX = new Command("RENAMEX", 12);
+            DBSIZE = new Command("DBSIZE", 13);
+            EXPIRE = new Command("EXPIRE", 14);
+            EXPIREAT = new Command("EXPIREAT", 15);
+            TTL = new Command("TTL", 16);
+            SELECT = new Command("SELECT", 17);
+            MOVE = new Command("MOVE", 18);
+            FLUSHALL = new Command("FLUSHALL", 19);
+            GETSET = new Command("GETSET", 20);
+            MGET = new Command("MGET", 21);
+            SETNX = new Command("SETNX", 22);
+            SETEX = new Command("SETEX", 23);
+            MSET = new Command("MSET", 24);
+            MSETNX = new Command("MSETNX", 25);
+            DECRBY = new Command("DECRBY", 26);
+            DECR = new Command("DECR", 27);
+            INCRBY = new Command("INCRBY", 28);
+            INCR = new Command("INCR", 29);
+            APPEND = new Command("APPEND", 30);
+            SUBSTR = new Command("SUBSTR", 31);
+            HSET = new Command("HSET", 32);
+            HGET = new Command("HGET", 33);
+            HSETNX = new Command("HSETNX", 34);
+            HMSET = new Command("HMSET", 35);
+            HMGET = new Command("HMGET", 36);
+            HINCRBY = new Command("HINCRBY", 37);
+            HEXISTS = new Command("HEXISTS", 38);
+            HDEL = new Command("HDEL", 39);
+            HLEN = new Command("HLEN", 40);
+            HKEYS = new Command("HKEYS", 41);
+            HVALS = new Command("HVALS", 42);
+            HGETALL = new Command("HGETALL", 43);
+            RPUSH = new Command("RPUSH", 44);
+            LPUSH = new Command("LPUSH", 45);
+            LLEN = new Command("LLEN", 46);
+            LRANGE = new Command("LRANGE", 47);
+            LTRIM = new Command("LTRIM", 48);
+            LINDEX = new Command("LINDEX", 49);
+            LSET = new Command("LSET", 50);
+            LREM = new Command("LREM", 51);
+            LPOP = new Command("LPOP", 52);
+            RPOP = new Command("RPOP", 53);
+            RPOPLPUSH = new Command("RPOPLPUSH", 54);
+            SADD = new Command("SADD", 55);
+            SMEMBERS = new Command("SMEMBERS", 56);
+            SREM = new Command("SREM", 57);
+            SPOP = new Command("SPOP", 58);
+            SMOVE = new Command("SMOVE", 59);
+            SCARD = new Command("SCARD", 60);
+            SISMEMBER = new Command("SISMEMBER", 61);
+            SINTER = new Command("SINTER", 62);
+            SINTERSTORE = new Command("SINTERSTORE", 63);
+            SUNION = new Command("SUNION", 64);
+            SUNIONSTORE = new Command("SUNIONSTORE", 65);
+            SDIFF = new Command("SDIFF", 66);
+            SDIFFSTORE = new Command("SDIFFSTORE", 67);
+            SRANDMEMBER = new Command("SRANDMEMBER", 68);
+            ZADD = new Command("ZADD", 69);
+            ZRANGE = new Command("ZRANGE", 70);
+            ZREM = new Command("ZREM", 71);
+            ZINCRBY = new Command("ZINCRBY", 72);
+            ZRANK = new Command("ZRANK", 73);
+            ZREVRANK = new Command("ZREVRANK", 74);
+            ZREVRANGE = new Command("ZREVRANGE", 75);
+            ZCARD = new Command("ZCARD", 76);
+            ZSCORE = new Command("ZSCORE", 77);
+            MULTI = new Command("MULTI", 78);
+            DISCARD = new Command("DISCARD", 79);
+            EXEC = new Command("EXEC", 80);
+            WATCH = new Command("WATCH", 81);
+            UNWATCH = new Command("UNWATCH", 82);
+            SORT = new Command("SORT", 83);
+            BLPOP = new Command("BLPOP", 84);
+            BRPOP = new Command("BRPOP", 85);
+            AUTH = new Command("AUTH", 86);
+            SUBSCRIBE = new Command("SUBSCRIBE", 87);
+            PUBLISH = new Command("PUBLISH", 88);
+            UNSUBSCRIBE = new Command("UNSUBSCRIBE", 89);
+            PSUBSCRIBE = new Command("PSUBSCRIBE", 90);
+            PUNSUBSCRIBE = new Command("PUNSUBSCRIBE", 91);
+            ZCOUNT = new Command("ZCOUNT", 92);
+            ZRANGEBYSCORE = new Command("ZRANGEBYSCORE", 93);
+            ZREVRANGEBYSCORE = new Command("ZREVRANGEBYSCORE", 94);
+            ZREMRANGEBYRANK = new Command("ZREMRANGEBYRANK", 95);
+            ZREMRANGEBYSCORE = new Command("ZREMRANGEBYSCORE", 96);
+            ZUNIONSTORE = new Command("ZUNIONSTORE", 97);
+            ZINTERSTORE = new Command("ZINTERSTORE", 98);
+            SAVE = new Command("SAVE", 99);
+            BGSAVE = new Command("BGSAVE", 100);
+            BGREWRITEAOF = new Command("BGREWRITEAOF", 101);
+            LASTSAVE = new Command("LASTSAVE", 102);
+            SHUTDOWN = new Command("SHUTDOWN", 103);
+            INFO = new Command("INFO", 104);
+            MONITOR = new Command("MONITOR", 105);
+            SLAVEOF = new Command("SLAVEOF", 106);
+            CONFIG = new Command("CONFIG", 107);
+            STRLEN = new Command("STRLEN", 108);
+            SYNC = new Command("SYNC", 109);
+            LPUSHX = new Command("LPUSHX", 110);
+            PERSIST = new Command("PERSIST", 111);
+            RPUSHX = new Command("RPUSHX", 112);
+            ECHO = new Command("ECHO", 113);
+            LINSERT = new Command("LINSERT", 114);
+            DEBUG = new Command("DEBUG", 115);
+            BRPOPLPUSH = new Command("BRPOPLPUSH", 116);
+            SETBIT = new Command("SETBIT", 117);
+            GETBIT = new Command("GETBIT", 118);
+            SETRANGE = new Command("SETRANGE", 119);
+            GETRANGE = new Command("GETRANGE", 120);
+            EVAL = new Command("EVAL", 121);
+            EVALSHA = new Command("EVALSHA", 122);
+            SCRIPT = new Command("SCRIPT", 123);
+            SLOWLOG = new Command("SLOWLOG", 124);
+            OBJECT = new Command("OBJECT", 125);
+            $VALUES = (new Command[] {
+                PING, SET, GET, QUIT, EXISTS, DEL, TYPE, FLUSHDB, KEYS, RANDOMKEY, 
+                RENAME, RENAMENX, RENAMEX, DBSIZE, EXPIRE, EXPIREAT, TTL, SELECT, MOVE, FLUSHALL, 
+                GETSET, MGET, SETNX, SETEX, MSET, MSETNX, DECRBY, DECR, INCRBY, INCR, 
+                APPEND, SUBSTR, HSET, HGET, HSETNX, HMSET, HMGET, HINCRBY, HEXISTS, HDEL, 
+                HLEN, HKEYS, HVALS, HGETALL, RPUSH, LPUSH, LLEN, LRANGE, LTRIM, LINDEX, 
+                LSET, LREM, LPOP, RPOP, RPOPLPUSH, SADD, SMEMBERS, SREM, SPOP, SMOVE, 
+                SCARD, SISMEMBER, SINTER, SINTERSTORE, SUNION, SUNIONSTORE, SDIFF, SDIFFSTORE, SRANDMEMBER, ZADD, 
+                ZRANGE, ZREM, ZINCRBY, ZRANK, ZREVRANK, ZREVRANGE, ZCARD, ZSCORE, MULTI, DISCARD, 
+                EXEC, WATCH, UNWATCH, SORT, BLPOP, BRPOP, AUTH, SUBSCRIBE, PUBLISH, UNSUBSCRIBE, 
+                PSUBSCRIBE, PUNSUBSCRIBE, ZCOUNT, ZRANGEBYSCORE, ZREVRANGEBYSCORE, ZREMRANGEBYRANK, ZREMRANGEBYSCORE, ZUNIONSTORE, ZINTERSTORE, SAVE, 
+                BGSAVE, BGREWRITEAOF, LASTSAVE, SHUTDOWN, INFO, MONITOR, SLAVEOF, CONFIG, STRLEN, SYNC, 
+                LPUSHX, PERSIST, RPUSHX, ECHO, LINSERT, DEBUG, BRPOPLPUSH, SETBIT, GETBIT, SETRANGE, 
+                GETRANGE, EVAL, EVALSHA, SCRIPT, SLOWLOG, OBJECT
+            });
+        }
+
+        private Command(String s, int i)
+        {
+            super(s, i);
+        }
+    }
+}
+//SafeEncoder
+package redis.clients.util;
+
+import java.io.UnsupportedEncodingException;
+import redis.clients.jedis.exceptions.JedisDataException;
+import redis.clients.jedis.exceptions.JedisException;
+
+public class SafeEncoder
+{
+
+    public SafeEncoder()
+    {
+    }
+
+    public static transient byte[][] encodeMany(String strs[])
+    {
+        byte many[][] = new byte[strs.length][];
+        for(int i = 0; i < strs.length; i++)
+            many[i] = encode(strs[i]);
+
+        return many;
+    }
+
+    public static byte[] encode(String str)
+    {
+        if(str == null)
+            throw new JedisDataException("value sent to redis cannot be null");
+        return str.getBytes("UTF-8");
+        UnsupportedEncodingException e;
+        e;
+        throw new JedisException(e);
+    }
+
+    public static String encode(byte data[])
+    {
+        return new String(data, "UTF-8");
+        UnsupportedEncodingException e;
+        e;
+        throw new JedisException(e);
+    }
+}
+//FilterOutputStream
+package java.io;
+
+/**
+ * This class is the superclass of all classes that filter output
+ * streams. These streams sit on top of an already existing output
+ * stream (the <i>underlying</i> output stream) which it uses as its
+ * basic sink of data, but possibly transforming the data along the
+ * way or providing additional functionality.
+ * <p>
+ * The class <code>FilterOutputStream</code> itself simply overrides
+ * all methods of <code>OutputStream</code> with versions that pass
+ * all requests to the underlying output stream. Subclasses of
+ * <code>FilterOutputStream</code> may further override some of these
+ * methods as well as provide additional methods and fields.
+ *
+ * @author  Jonathan Payne
+ * @since   JDK1.0
+ */
+public
+class FilterOutputStream extends OutputStream 
