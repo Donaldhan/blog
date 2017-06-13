@@ -1,0 +1,347 @@
+上一篇我们在通过一个实例，来看一个用到编码器与解码器的示例，示例作用为服务器提供客户端计算请求，
+并将结果返回给客户端。之前实例的编解码器都是我们自己实现的，今天来看一个Netty基于textline编解码器通信示例：
+服务端：
+package netty.main.telnet;
+
+import java.net.InetSocketAddress;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
+import netty.initializer.telnet.TelnetServerInitializer;
+
+/**
+ * textline通信server
+ * @author donald
+ * 2017年6月30日
+ * 上午11:07:08
+ */
+public final class TelnetServer {
+	private static final Logger log = LoggerFactory.getLogger(TelnetServer.class);
+	private static final boolean SSL = System.getProperty("ssl") != null;
+    private static final  String ip = "192.168.31.153";
+    private static final int port = Integer.parseInt(System.getProperty("port", SSL? "10010" : "10020"));
+    public static void main(String[] args) throws Exception {
+        // Configure SSL.
+        final SslContext sslCtx;
+        if (SSL) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        } else {
+            sslCtx = null;
+        }
+        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        try {
+            ServerBootstrap serverBoot = new ServerBootstrap();
+            serverBoot.group(bossGroup, workerGroup)
+             .channel(NioServerSocketChannel.class)
+             .handler(new LoggingHandler(LogLevel.INFO))
+             .childHandler(new TelnetServerInitializer(sslCtx));
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+            ChannelFuture f = serverBoot.bind(inetSocketAddress).sync();
+            log.info("=========Server is start=========");
+            f.channel().closeFuture().sync();
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+}
+服务端处理器Initializer：
+package netty.initializer.telnet;
+
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.Delimiters;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.ssl.SslContext;
+import netty.handler.telnet.TelnetServerHandler;
+
+/**
+ * Creates a newly configured {@link ChannelPipeline} for a new channel.
+ */
+public class TelnetServerInitializer extends ChannelInitializer<SocketChannel> {
+    private static final StringDecoder DECODER = new StringDecoder();
+    private static final StringEncoder ENCODER = new StringEncoder();
+    private static final TelnetServerHandler SERVER_HANDLER = new TelnetServerHandler();
+    private final SslContext sslCtx;
+    public TelnetServerInitializer(SslContext sslCtx) {
+        this.sslCtx = sslCtx;
+    }
+    @Override
+    public void initChannel(SocketChannel ch) throws Exception {
+        ChannelPipeline pipeline = ch.pipeline();
+        if (sslCtx != null) {
+            pipeline.addLast(sslCtx.newHandler(ch.alloc()));
+        }
+        // Add the text line codec combination first,
+        pipeline.addLast(new DelimiterBasedFrameDecoder(8192, Delimiters.lineDelimiter()));
+        // the encoder and decoder are static as these are sharable
+        pipeline.addLast(DECODER);
+        pipeline.addLast(ENCODER);
+        // and then business logic.
+        pipeline.addLast(SERVER_HANDLER);
+    }
+}
+服务端handler：
+package netty.handler.telnet;
+
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler.Sharable;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+
+import java.net.InetAddress;
+import java.util.Date;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * 
+ * @author donald
+ * 2017年6月30日
+ * 上午11:02:29
+ * Sharable表示此对象在channel间共享
+ */
+@Sharable
+public class TelnetServerHandler extends SimpleChannelInboundHandler<String> {
+	private static final Logger log = LoggerFactory.getLogger(TelnetServerHandler.class);
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        // Send greeting for a new connection.
+        ctx.write("Welcome to " + InetAddress.getLocalHost().getHostName() + "!\r\n");
+        ctx.write("It is " + new Date() + " now.\r\n");
+        ctx.flush();
+    }
+
+    @Override
+    public void channelRead0(ChannelHandlerContext ctx, String request) throws Exception {
+        // Generate and write a response.
+        String response;
+        boolean close = false;
+        log.info("========recieve message from client:"+request);
+        if (request.isEmpty()) {
+            response = "Please type something.\r\n";
+        } else if ("bye".equals(request.toLowerCase())) {
+            response = "Have a good day!\r\n";
+            close = true;
+        } else {
+            response = "Did you say '" + request + "'?\r\n";
+        }
+
+        // We do not need to write a ChannelBuffer here.
+        // We know the encoder inserted at TelnetPipelineFactory will do the conversion.
+        ChannelFuture future = ctx.write(response);
+
+        // Close the connection after sending 'Have a good day!'
+        // if the client has sent 'bye'.
+        if (close) {
+            future.addListener(ChannelFutureListener.CLOSE);
+        }
+    }
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) {
+        ctx.flush();
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+
+客户端：
+package netty.main.telnet;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import netty.initializer.telnet.TelnetClientInitializer;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * textline通信Client
+ * @author donald
+ * 2017年6月30日
+ * 上午11:26:30
+ */
+public final class TelnetClient {
+	private static final Logger log = LoggerFactory.getLogger(TelnetServer.class);
+    static final boolean SSL = System.getProperty("ssl") != null;
+    public static final String ip = System.getProperty("host", "192.168.31.153");
+    public static final int port = Integer.parseInt(System.getProperty("port", SSL? "10010" : "10020"));
+
+    public static void main(String[] args) throws Exception {
+        // Configure SSL.
+        final SslContext sslCtx;
+        if (SSL) {
+            sslCtx = SslContextBuilder.forClient()
+                .trustManager(InsecureTrustManagerFactory.INSTANCE).build();
+        } else {
+            sslCtx = null;
+        }
+
+        EventLoopGroup group = new NioEventLoopGroup();
+        try {
+            Bootstrap b = new Bootstrap();
+            b.group(group)
+             .channel(NioSocketChannel.class)
+             .handler(new TelnetClientInitializer(sslCtx));
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+            // Start the connection attempt.
+            Channel ch = b.connect(inetSocketAddress).sync().channel();
+            log.info("=========Client is start=========");
+            // Read commands from the stdin.
+            ChannelFuture lastWriteFuture = null;
+            BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+            for (;;) {
+                String line = in.readLine();
+                if (line == null) {
+                    break;
+                }
+                // Sends the received line to the server.
+                lastWriteFuture = ch.writeAndFlush(line + "\r\n");
+
+                // If user typed the 'bye' command, wait until the server closes
+                // the connection.
+                if ("bye".equals(line.toLowerCase())) {
+                    ch.closeFuture().sync();
+                    break;
+                }
+            }
+            // Wait until all messages are flushed before closing the channel.
+            if (lastWriteFuture != null) {
+                lastWriteFuture.sync();
+            }
+        } finally {
+            group.shutdownGracefully();
+        }
+    }
+}
+
+
+客户端处理器Initializer：
+package netty.initializer.telnet;
+
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.DelimiterBasedFrameDecoder;
+import io.netty.handler.codec.Delimiters;
+import io.netty.handler.codec.string.StringDecoder;
+import io.netty.handler.codec.string.StringEncoder;
+import io.netty.handler.ssl.SslContext;
+import netty.handler.telnet.TelnetClientHandler;
+import netty.main.telnet.TelnetClient;
+
+/**
+ * Creates a newly configured {@link ChannelPipeline} for a new channel.
+ */
+public class TelnetClientInitializer extends ChannelInitializer<SocketChannel> {
+    private static final StringDecoder DECODER = new StringDecoder();
+    private static final StringEncoder ENCODER = new StringEncoder();
+    private static final TelnetClientHandler CLIENT_HANDLER = new TelnetClientHandler();
+    private final SslContext sslCtx;
+    public TelnetClientInitializer(SslContext sslCtx) {
+        this.sslCtx = sslCtx;
+    }
+    @Override
+    public void initChannel(SocketChannel ch) {
+        ChannelPipeline pipeline = ch.pipeline();
+
+        if (sslCtx != null) {
+            pipeline.addLast(sslCtx.newHandler(ch.alloc(), TelnetClient.ip, TelnetClient.port));
+        }
+        // Add the text line codec combination first,
+        pipeline.addLast(new DelimiterBasedFrameDecoder(8192, Delimiters.lineDelimiter()));
+        pipeline.addLast(DECODER);
+        pipeline.addLast(ENCODER);
+
+        // and then business logic.
+        pipeline.addLast(CLIENT_HANDLER);
+    }
+}
+
+客户端处理器：
+
+package netty.handler.telnet;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.channel.ChannelHandler.Sharable;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+
+/**
+ * 
+ * @author donald
+ * 2017年6月30日
+ * 上午10:59:47
+ * Sharable表示此对象在channel间共享
+ */
+@Sharable
+public class TelnetClientHandler extends SimpleChannelInboundHandler<String> {
+    private static final Logger log = LoggerFactory.getLogger(TelnetClientHandler.class);
+    @Override
+    protected void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+    	log.info("====recieve message from server:"+msg);
+    }
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+
+启动服务端与客户端，在客户端控制台输入hello server，换行输入bye,
+服务端：
+[INFO ] 2017-07-06 12:56:52 io.netty.handler.logging.LoggingHandler [id: 0x1ee25138] REGISTERED
+[INFO ] 2017-07-06 12:56:52 io.netty.handler.logging.LoggingHandler [id: 0x1ee25138] BIND: /192.168.31.153:10020
+[INFO ] 2017-07-06 12:56:52 netty.main.telnet.TelnetServer =========Server is start=========
+[INFO ] 2017-07-06 12:56:52 io.netty.handler.logging.LoggingHandler [id: 0x1ee25138, L:/192.168.31.153:10020] ACTIVE
+[INFO ] 2017-07-06 12:56:58 io.netty.handler.logging.LoggingHandler [id: 0x1ee25138, L:/192.168.31.153:10020] READ: [id: 0x4c1ab5f9, L:/192.168.31.153:10020 - R:/192.168.31.153:13357]
+[INFO ] 2017-07-06 12:56:58 io.netty.handler.logging.LoggingHandler [id: 0x1ee25138, L:/192.168.31.153:10020] READ COMPLETE
+[INFO ] 2017-07-06 12:57:13 netty.handler.telnet.TelnetServerHandler ========recieve message from client:hello server
+[INFO ] 2017-07-06 12:57:19 netty.handler.telnet.TelnetServerHandler ========recieve message from client:yes
+[INFO ] 2017-07-06 12:57:22 netty.handler.telnet.TelnetServerHandler ========recieve message from client:bye
+客户端：
+[INFO ] 2017-07-06 12:56:58 netty.main.telnet.TelnetServer =========Client is start=========
+[INFO ] 2017-07-06 12:56:59 netty.handler.telnet.TelnetClientHandler ====recieve message from server:Welcome to donaldHP!
+[INFO ] 2017-07-06 12:56:59 netty.handler.telnet.TelnetClientHandler ====recieve message from server:It is Thu Jul 06 12:56:59 CST 2017 now.
+hello server
+[INFO ] 2017-07-06 12:57:13 netty.handler.telnet.TelnetClientHandler ====recieve message from server:Did you say 'hello server'?
+yes
+[INFO ] 2017-07-06 12:57:19 netty.handler.telnet.TelnetClientHandler ====recieve message from server:Did you say 'yes'?
+bye
+[INFO ] 2017-07-06 12:57:22 netty.handler.telnet.TelnetClientHandler ====recieve message from server:Have a good day!

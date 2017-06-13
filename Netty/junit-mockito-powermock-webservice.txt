@@ -1,0 +1,126 @@
+前段时间写了一些Netty通信简单实例相关的文章，本身打算读一下netty的源码呢，下载netty源码后，看了Netty的测试类，
+不止到如何运行，最近恶补了这方面的知识，这篇文章主要是对最近工作的总结。主要涉及的Junit，Mockito和PowerMock；
+WebService(JAX-WS,Apache CXF),本身打算写成博客总结一下，时间不充足，上面提到相关概念的测试项目，已经上传的github，
+有兴趣的可以检出，看看，具体的项目中都有说明和注意事项。
+
+Junit简介
+引用：http://huihai.iteye.com/blog/1986568
+http://blog.csdn.net/chenleixing/article/details/44259453
+	在junit3中，如果某个类是测试类，必须将其继承类TestCase，如果某个方法是测试方法，必须让这个方法以testXX开头，
+如果希望指定某个测试方法运行之前运行某个初始化方法，这个方法的名称必须是setUp，
+如果希望在某个测试方法运行之后运行某个释放资源的方法，这个方法的名称必须是tearDown。
+junit4与junit3的区别还是比较明显的，在junit4中，基本上依赖于注解，测试方法通过@Test来标识，
+初始化方法通过@Before来标识，释放资源的方法通过@After来标识，但是为了让junit4的测试类在junit3中也可以使用，
+习惯于把初始化方法命名为setUp，释放资源的方法命名为tearDown。Test中的测试方法一般以Test来开始。
+其中标识为Before注解的方法，每次运行测试类，都会执行标识为@After与@Before的方法。
+如果我们想一次运行多个测试实例，可写将实例添加到一个TestSuite中。
+JUnit4注解解释
+1. @Test : 测试方法，测试程序会运行的方法，后边可以跟参数代表不同的测试，如(expected=XXException.class) 异常测试，(timeout=xxx)超时测试
+2. @Ignore : 被忽略的测试方法
+3. @Before: 每一个测试方法之前运行
+4. @After : 每一个测试方法之后运行
+5. @BeforeClass: 所有测试开始之前运行
+6. @AfterClass: 所有测试结束之后运行
+7. @RunWith(Suite.class)：测试类运行方式
+8. @SuiteClasses：测试套件注解
+
+junit测试项目地址：https://github.com/Donaldhan/junit-demo
+
+Mockito简介
+引用：http://www.jianshu.com/p/77db26b4fb54
+    什么是mock？
+    在软件开发的世界之外, "mock"一词是指模仿或者效仿。 因此可以将“mock”理解为一个替身，
+替代者. 在软件开发中提及"mock"，通常理解为模拟对象或者Fake。
+    为什么需要Mock?
+    Mock是为了解决units之间由于耦合而难于被测试的问题。所以mock object是unit test的一部分。
+Mock的好处是什么?
+
+    提前创建测试，TDD（测试驱动开发）
+        这是个最大的好处吧。如果你创建了一个Mock那么你就可以在service接口创建之前写Service Tests了，
+这样你就能在开发过程中把测试添加到你的自动化测试环境中了。换句话说，模拟使你能够使用测试驱动开发。 
+    团队可以并行工作
+        这类似于上面的那点；为不存在的代码创建测试。但前面讲的是开发人员编写测试程序，
+这里说的是测试团队来创建。当还没有任何东西要测的时候测试团队如何来创建测试呢？模拟并针对模拟测试！
+这意味着当service借口需要测试时，实际上QA团队已经有了一套完整的测试组件；没有出现一个团队等待另一个团队完成的情况。
+这使得模拟的效益型尤为突出了。
+    你可以创建一个验证或者演示程序。
+        由于Mocks非常高效，Mocks可以用来创建一个概念证明，作为一个示意图，或者作为一个你正考虑构建项目的演示程序。
+这为你决定项目接下来是否要进行提供了有力的基础，但最重要的还是提供了实际的设计决策。 
+    为无法访问的资源编写测试
+        这个好处不属于实际效益的一种，而是作为一个必要时的“救生圈”。有没有遇到这样的情况？
+当你想要测试一个service接口，但service需要经过防火墙访问，防火墙不能为你打开或者你需要认证才能访问。
+遇到这样情况时，你可以在你能访问的地方使用MockService替代，这就是一个“救生圈”功能。 
+    Mock 可以交给用户
+        在有些情况下，某种原因你需要允许一些外部来源访问你的测试系统，像合作伙伴或者客户。
+这些原因导致别人也可以访问你的敏感信息，而你或许只是想允许访问部分测试环境。
+在这种情况下，如何向合作伙伴或者客户提供一个测试系统来开发或者做测试呢？
+最简单的就是提供一个mock，无论是来自于你的网络或者客户的网络。
+soapUI mock非常容易配置，他可以运行在soapUI或者作为一个war包发布到你的java服务器里面。
+    隔离系统
+        有时，你希望在没有系统其他部分的影响下测试系统单独的一部分。由于其他系统部分会给测试数据造成干扰，
+影响根据数据收集得到的测试结论。使用mock你可以移除掉除了需要测试部分的系统依赖的模拟。当隔离这些mocks后，
+mocks就变得非常简单可靠，快速可预见。这为你提供了一个移除了随机行为，有重复模式并且可以监控特殊系统的测试环境。
+
+
+PowerMock简介
+引用：http://www.jianshu.com/p/60309d71002d
+为什么要使用Mock工具
+	在做单元测试的时候，我们会发现我们要测试的方法会引用很多外部依赖的对象，
+比如：（发送邮件，网络通讯，远程服务, 文件系统等等）。 而我们没法控制这些外部依赖的对象，
+为了解决这个问题，我们就需要用到Mock工具来模拟这些外部依赖的对象，来完成单元测试。
+PowerMock是什么？
+	PowerMock 也是一个单元测试模拟框架，它是在其它单元测试模拟框架的基础上做出的扩展。
+通过提供定制的类加载器以及一些字节码篡改技巧的应用，PowerMock 现了对静态方法、构造方法、私有方法以及 Final 方法的模拟支持，
+对静态初始化过程的移除等强大的功能。因为 PowerMock 在扩展功能时完全采用和被扩展的框架相同的 API, 
+熟悉 PowerMock 所支持的模拟框架的开发者会发现 PowerMock 非常容易上手。
+PowerMock 的目的就是在当前已经被大家所熟悉的接口上通过添加极少的方法和注释来实现额外的功能。
+
+Mock和PowerMock测试项目地址：https://github.com/Donaldhan/mockito-demo
+
+WebService：
+引用：
+http://www.cnblogs.com/firstdream/p/5575928.html，
+https://my.oschina.net/u/1757458/blog/365588，
+https://my.oschina.net/xpbug/blog/224912，
+
+JAVA6（JAX-WS）规范：
+JAX-WS2.0 (JSR 224)是Sun新的web services协议栈。JAVA中有三种WebService规范，分别是JAX-WS（JAX-RPC）、JAX-RS、JAXM&SAAJ。
+JAX-WS（Java API For XML-WebService），JDK1.6 自带的版本为JAX-WS2.1，其底层支持为JAXB。
+早期的JAVA Web服务规范JAX-RPC（Java API ForXML-Remote Procedure Call）目前已经被JAX-WS 规范取代，
+JAX-WS 是JAX-RPC 的演进版本，但JAX-WS 并不完全向后兼容JAX-RPC。JAX-RS是JAVA EE6 引入的一个新技术。
+JAX-RS即Java API for RESTful Web Services，是一个Java 编程语言的应用程序接口，支持按照表述性状态转移（REST）架构风格创建Web服务。
+JAX-RS使用了Java SE5引入的Java注解来简化Web服务的客户端和服务端的开发和部署。Spring boot为JAX-RS轻量级的实现。
+JAX-WS的构成
+1.SEI，全称Service Endpoint Interface或Service Endpoint Implemention。是服务器端和客户端开发真正要接触的类。
+2.JAX-WS RI，全称JAX-WS Reference Implementation。这是JAX-WS的实现。与之相对立的应该是JAX-WS和JAXB API。
+3.JAXB，全称Java Architecture for XML Binding。这是将Java类和XML schema相互映射的标准，此标准可以将Java实例转为XML，也可以将XML转为Java实例。
+4.SAAJ，全称SOAP with Attachment API for Java。这是用于解析和生成SOAP协议数据的类库。
+
+WEB SERVICE（SOAP）
+	Webservice的一个最基本的目的就是提供在各个不同平台的不同应用系统的协同工作能力。
+Web service 就是一个应用程序，它向外界暴露出一个能够通过Web进行调用的API。
+SOAP是一种简单基于xml的轻量协议，用户web上交换结构化信息和类型信息。
+soap请求是HTTP POST的一个专用版本，遵循一种特殊的xml消息格式Content-type设置为: text/xml任何数据都可以xml化。
+RESTFUL
+	REST(Representational State Transfer)一种轻量级的Web Service架构，可以完全通过HTTP协议实现。其实现和操作比SOAP和XML-RPC更为简洁，还可以利用缓存Cache来提高响应速度，性能、效率和易用性上都优于SOAP协议。
+REST架构对资源的操作包括获取、创建、修改和删除资源的操作正好对应HTTP协议提供的GET、POST、PUT和DELETE方法(Verb)
+SOAP与HTTP的区别
+	为什么要学习web service？大多数对外接口会实现web service方法而不是http方法，如果你不会，那就没有办法对接。
+web service相对http (post/get)有好处吗？
+1.接口中实现的方法和要求参数一目了然
+2.不用担心大小写问题
+3.不用担心中文urlencode问题
+4.代码中不用多次声明认证(账号,密码)参数
+5.传递参数可以为数组，对象等...
+web service相对http（post/get）快吗？
+由于要进行xml解析，速度可能会有所降低。 
+web service 可以被http（post/get）替代吗？
+完全可以，而且现在的开放平台都是用的HTTP（post/get）实现的。
+Restful与SOAP的区别
+安全性：SOAP会好于restful
+效率和易用性(REST更胜一筹)
+成熟度(总的来说SOAP在成熟度上优于REST) 
+JAX-WS测试项目地址：https://github.com/Donaldhan/jws-demo
+Apache CXF 测试项目地址：https://github.com/Donaldhan/cxf-demo
+
+

@@ -1,0 +1,507 @@
+Netty 通道处理器ChannelHandler和适配器定义ChannelHandlerAdapter：
+[url]http://donald-draper.iteye.com/blog/2386891[/url]
+引言：
+前面一篇文章我们看了通道处理器及适配器的定义，先来回顾一下：
+    通道处理器ChannelHandler，主要有两个事件方法分别为handlerAdded和handlerRemoved，handlerAdded在通道处理器添加到实际上下文后调用，通道处理器准备处理IO事件；handlerRemoved在通道处理器从实际上下文中移除后调用，通道处理器不再处理IO事件。
+一个通道处理器关联一个通道处理器上下文ChannelHandlerContext。通道处理器通过一个上下文对象，与它所属的通道管道线交互。通道上下文对象，通道处理器上行或下行传递的事件，动态修改管道，或通过AttributeKey存储特殊的信息。通道处理器内部定义了一个共享注解Sharable，默认访问类型为Protected；添加共享注解的通道处理器，说明通道处理器中的变量可以共享，可以创建一个通道处理器实例，多次添加到通道管道线ChannlePipeline;对于没有共享注解的通道器，在每次添加到管道线上时，都要重新创建一个通道处理器实例。通道处理器只定义了简单的通道处理器添加到通道处理器上下文或从上下文移除的事件操作，没有具体定义读操作（上行UpStream，输入流Inbound，字节流到消息对象ByteToMessage），写操作（下行DownStream，输出流Outbound，消息到字节流MessageToByte）。这操作分别定义在，输入流处理器ChannelInboundHandler，输出流处理器ChannelOutboundHandler，并提供了处理的相应适配器，输入流处理器适配器ChannelInboundHandlerAdapter，输出流通道适配器ChannelOutboundHandlerAdapter，多路复用适配器ChannelDuplexHandler。
+    通道处理器适配器ChannelHandlerAdapter的设计模式为适配器，这个适配器模式中的 handlerAdded和handlerRemoved事件默认处理器，不做任何事情，这个与MINA中的适配器模式相同。处理IO操作异常，则调用ChannelHandlerContext#fireExceptionCaught方法，触发异常事件，并转发给通道管道线的下一个通道处理器。
+    看通道处理器适配器的判断通道处理器是否共享注解，首先获取线程的本地变量，从线程本地变量获取线程本地共享注解通道处理器探测结果缓存，如果缓存中存在通道处理器clazz，则返回缓存结果，否则
+将探测结果添加到缓存中。 
+今天来看一下Inbound处理器
+/**
+ * {@link ChannelHandler} which adds callbacks for state changes. This allows the user
+ * to hook in to state changes easily.
+ ChannelInboundHandler在通道处理器状态改变时，回调。允许用户hook处理器的状态改变
+ */
+public interface ChannelInboundHandler extends ChannelHandler {
+
+    /**
+     * The {@link Channel} of the {@link ChannelHandlerContext} was registered with its {@link EventLoop}
+     通道处理器上下文关联的通道注册到事件循环EventLoop时，触发
+     */
+    void channelRegistered(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * The {@link Channel} of the {@link ChannelHandlerContext} was unregistered from its {@link EventLoop}
+     通道处理器上下文关联的通道从事件循环EventLoop移除时，触发
+     */
+    void channelUnregistered(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * The {@link Channel} of the {@link ChannelHandlerContext} is now active
+      通道处理器上下文关联的通道激活时，触发
+     */
+    void channelActive(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * The {@link Channel} of the {@link ChannelHandlerContext} was registered is now inactive and reached its
+     * end of lifetime.
+      通道处理器上下文关联的通道注册到事件循环EventLoop，但处于非激活状态，达到生命周期的末端时，触发
+     */
+    void channelInactive(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Invoked when the current {@link Channel} has read a message from the peer.
+     通道从peer读取消息时，触发
+     */
+    void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception;
+
+    /**
+     * Invoked when the last message read by the current read operation has been consumed by
+     * {@link #channelRead(ChannelHandlerContext, Object)}.  If {@link ChannelOption#AUTO_READ} is off, no further
+     * attempt to read an inbound data from the current {@link Channel} will be made until
+     * {@link ChannelHandlerContext#read()} is called.
+     当上一消息通过#channelRead方法，并被当先读操作消费时，触发。如果通道配置项#AUTO_READ为关闭状态，没有进一步
+     尝试从当前通道读取inbound数据时，直到ChannelHandlerContext#read调用，触发。
+     */
+    void channelReadComplete(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Gets called if an user event was triggered.
+     当用户事件发生时，触发
+     */
+    void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception;
+
+    /**
+     * Gets called once the writable state of a {@link Channel} changed. You can check the state with
+     * {@link Channel#isWritable()}.
+     当通道可写状态改变时，触发
+     */
+    void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Gets called if a {@link Throwable} was thrown.
+     异常抛出时，触发
+     */
+    @Override
+    @SuppressWarnings("deprecation")
+    void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception;
+}
+从通道Inbound处理器来看，主要是处理从peer发送过来的字节流；
+通道处理器上下文关联的通道注册到事件循环EventLoop时，触发channelRegistered方法；
+通道处理器上下文关联的通道激活时，触发channelActive方法；
+通道从peer读取消息时，触发channelRead方法；
+当上一消息通过#channelRead方法，并被当先读操作消费时，触发channelReadComplete方法，
+如果通道配置项#AUTO_READ为关闭状态，没有进一步尝试从当前通道读取inbound数据时，
+直到ChannelHandlerContext#read调用，触发；
+当用户事件发生时，触发userEventTriggered方法；
+异常抛出时，触发exceptionCaught方法；
+当通道可写状态改变时，触发channelWritabilityChanged方法；
+通道处理器上下文关联的通道注册到事件循环EventLoop，但处于非激活状态，
+达到生命周期的末端时，触发channelInactive方法；
+通道处理器上下文关联的通道从事件循环EventLoop移除时，触发channelUnregistered方法。
+
+再来看通道Inbound处理器适配器ChannelInboundHandlerAdapter
+
+package io.netty.channel;
+
+/**
+ * Abstract base class for {@link ChannelInboundHandler} implementations which provide
+ * implementations of all of their methods.
+ *
+ 通道Inbound处理器抽象实现，提供了所有方法的实现。
+ * <p>
+ * This implementation just forward the operation to the next {@link ChannelHandler} in the
+ * {@link ChannelPipeline}. Sub-classes may override a method implementation to change this.
+ * </p>
+ Inbound通道handler适配器的实现，仅仅转发操作给Channel管道线的下一个通道处理器。子类必须重写方法。
+ * <p>
+ * Be aware that messages are not released after the {@link #channelRead(ChannelHandlerContext, Object)}
+ * method returns automatically. If you are looking for a {@link ChannelInboundHandler} implementation that
+ * releases the received messages automatically, please see {@link SimpleChannelInboundHandler}.
+ 需要注意的是，在#channelRead方法自动返回后，消息并没有释放。如果你寻找ChannelInboundHandler的实现，可以自动
+ 释放接受的到消息可以使用SimpleChannelInboundHandler。
+ * </p>
+ */
+public class ChannelInboundHandlerAdapter extends ChannelHandlerAdapter implements ChannelInboundHandler {
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelRegistered()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelRegistered();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelUnregistered()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelUnregistered(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelUnregistered();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelActive()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelActive();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelInactive()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelInactive();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelRead(Object)} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        ctx.fireChannelRead(msg);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelReadComplete()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelReadComplete();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireUserEventTriggered(Object)} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+        ctx.fireUserEventTriggered(evt);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireChannelWritabilityChanged()} to forward
+     * to the next {@link ChannelInboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+        ctx.fireChannelWritabilityChanged();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireExceptionCaught(Throwable)} to forward
+     * to the next {@link ChannelHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause)
+            throws Exception {
+        ctx.fireExceptionCaught(cause);
+    }
+}
+从上面来看Inbound通道handler适配器ChannelInboundHandlerAdapter，提供的Inbound通道处理器的
+所有方法的实现，但实现仅仅是，转发操作给Channel管道线的下一个通道处理器，子类必须重写方法。
+需要注意的是，在#channelRead方法自动返回后，消息并没有释放。如果你寻找ChannelInboundHandler的实现，可以自动
+ 释放接受的到消息可以使用SimpleChannelInboundHandler。
+public abstract class SimpleChannelInboundHandler<I> extends ChannelInboundHandlerAdapter 
+
+在前面的Netty实例文章中，消息解码器一般要继承ByteToMessageDecoder，我们来看一下ByteToMessageDecoder继承树
+public abstract class ByteToMessageDecoder extends ChannelInboundHandlerAdapter
+实际上消息解码继承与ChannelInboundHandlerAdapter，可以简单理解为一个Inbound通道处理器。
+
+消息编码器一般为继承MessageToByteEncoder，我们从MessageToByteEncoder来看Outbound通道处理器；
+public abstract class MessageToByteEncoder<I> extends ChannelOutboundHandlerAdapter 
+实际上消息编码器为Outbound通道处理器，下面我们来看一下Outbound处理器的定义。
+package io.netty.channel;
+
+import java.net.SocketAddress;
+
+/**
+ * {@link ChannelHandler} which will get notified for IO-outbound-operations.
+Outbound通道处理器处理outbound IO操作。
+ */
+public interface ChannelOutboundHandler extends ChannelHandler {
+    /**
+     * Called once a bind operation is made.
+     *当绑定操作发生时，调用
+     * @param ctx           the {@link ChannelHandlerContext} for which the bind operation is made
+     通道处理器上下文
+     * @param localAddress  the {@link SocketAddress} to which it should bound
+     绑定的本地socket地址
+     * @param promise       the {@link ChannelPromise} to notify once the operation completes
+     通知一个操作是否完成
+     * @throws Exception    thrown if an error occurs
+     */
+    void bind(ChannelHandlerContext ctx, SocketAddress localAddress, ChannelPromise promise) throws Exception;
+
+    /**
+     * Called once a connect operation is made.
+     *当连接操作完成时，调用
+     * @param ctx               the {@link ChannelHandlerContext} for which the connect operation is made
+     通道处理器上下文
+     * @param remoteAddress     the {@link SocketAddress} to which it should connect
+     远端socket地址
+     * @param localAddress      the {@link SocketAddress} which is used as source on connect
+     本地Socket地址
+     * @param promise           the {@link ChannelPromise} to notify once the operation completes
+    通知一个操作是否完成
+     * @throws Exception        thrown if an error occurs
+     */
+    void connect(
+            ChannelHandlerContext ctx, SocketAddress remoteAddress,
+            SocketAddress localAddress, ChannelPromise promise) throws Exception;
+
+    /**
+     * Called once a disconnect operation is made.
+     *当断开连接时，调用
+     * @param ctx               the {@link ChannelHandlerContext} for which the disconnect operation is made
+     * @param promise           the {@link ChannelPromise} to notify once the operation completes
+     * @throws Exception        thrown if an error occurs
+     */
+    void disconnect(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception;
+
+    /**
+     * Called once a close operation is made.
+     *当关闭操作发生时，调用
+     * @param ctx               the {@link ChannelHandlerContext} for which the close operation is made
+     * @param promise           the {@link ChannelPromise} to notify once the operation completes
+     * @throws Exception        thrown if an error occurs
+     */
+    void close(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception;
+
+    /**
+     * Called once a deregister operation is made from the current registered {@link EventLoop}.
+     当通道处理器，从当前注册的事件循环EventLoop，反注册时，调用
+     *
+     * @param ctx               the {@link ChannelHandlerContext} for which the close operation is made
+     * @param promise           the {@link ChannelPromise} to notify once the operation completes
+     * @throws Exception        thrown if an error occurs
+     */
+    void deregister(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception;
+
+    /**
+     * Intercepts {@link ChannelHandlerContext#read()}.
+     拦截通道处理器上下文读操作
+     */
+    void read(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+    * Called once a write operation is made. The write operation will write the messages through the
+     * {@link ChannelPipeline}. Those are then ready to be flushed to the actual {@link Channel} once
+     * {@link Channel#flush()} is called
+     *当写操发生时，调用。写操作通过Channel管道线写消息。当通道调用#flush方法时，消息将会被刷新，发送出去。
+     * @param ctx               the {@link ChannelHandlerContext} for which the write operation is made
+     * @param msg               the message to write 写消息
+     * @param promise           the {@link ChannelPromise} to notify once the operation completes
+     * @throws Exception        thrown if an error occurs
+     */
+    void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception;
+
+    /**
+     * Called once a flush operation is made. The flush operation will try to flush out all previous written messages
+     * that are pending.
+     *当一个刷新操作发生，调用。刷新操作将会刷新所有先前已经写，待发送的消息。
+     * @param ctx               the {@link ChannelHandlerContext} for which the flush operation is made
+     * @throws Exception        thrown if an error occurs
+     */
+    void flush(ChannelHandlerContext ctx) throws Exception;
+}
+从上面来看，Outbound通道处理器ChannelOutboundHandler主要处理outbound IO操作。
+当绑定操作发生时，调用bind方法；
+当连接操作发生时，调用connect方法；
+read方法拦截通道处理器上下文读操作；
+当写操发生时，调用write方法，写操作通过Channel管道线写消息，
+当通道调用#flush方法时，消息将会被刷新，发送出去；
+当一个刷新操作发生时，调用flush方法，刷新操作将会刷新所有先前已经写，待发送的消息。
+
+再来看Outbound通道Handler适配器：
+package io.netty.channel;
+
+import java.net.SocketAddress;
+/**
+ * Skeleton implementation of a {@link ChannelOutboundHandler}. This implementation just forwards each method call via
+ * the {@link ChannelHandlerContext}.
+ ChannelOutboundHandlerAdapter为Outbound通道处理器的基本实现，这个实现仅仅通过通道处理器上下文转发方法的调用
+ */
+public class ChannelOutboundHandlerAdapter extends ChannelHandlerAdapter implements ChannelOutboundHandler {
+
+    /**
+     * Calls {@link ChannelHandlerContext#bind(SocketAddress, ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *bind方法仅仅转发操作给Channel管道线下一个Outbound处理，子类必须重写此方法。
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void bind(ChannelHandlerContext ctx, SocketAddress localAddress,
+            ChannelPromise promise) throws Exception {
+        ctx.bind(localAddress, promise);
+    }
+    //其他的方法，处理行为与Bind相同
+    /**
+     * Calls {@link ChannelHandlerContext#connect(SocketAddress, SocketAddress, ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void connect(ChannelHandlerContext ctx, SocketAddress remoteAddress,
+            SocketAddress localAddress, ChannelPromise promise) throws Exception {
+        ctx.connect(remoteAddress, localAddress, promise);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#disconnect(ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void disconnect(ChannelHandlerContext ctx, ChannelPromise promise)
+            throws Exception {
+        ctx.disconnect(promise);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#close(ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void close(ChannelHandlerContext ctx, ChannelPromise promise)
+            throws Exception {
+        ctx.close(promise);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#deregister(ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void deregister(ChannelHandlerContext ctx, ChannelPromise promise) throws Exception {
+        ctx.deregister(promise);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#read()} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void read(ChannelHandlerContext ctx) throws Exception {
+        ctx.read();
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#write(Object, ChannelPromise)} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
+        ctx.write(msg, promise);
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#flush()} to forward
+     * to the next {@link ChannelOutboundHandler} in the {@link ChannelPipeline}.
+     *
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void flush(ChannelHandlerContext ctx) throws Exception {
+        ctx.flush();
+    }
+}
+Outbound通道Handler适配器ChannelOutboundHandlerAdapter为Outbound通道处理器的基本实现，这个实现仅仅通过通道处理器上下文转发方法的调用。
+子类必须重写Outbound通道Handler适配器的相关方法。
+
+
+总结：
+通道Inbound处理器，主要是处理从peer发送过来的字节流；
+通道处理器上下文关联的通道注册到事件循环EventLoop时，触发channelRegistered方法；
+通道处理器上下文关联的通道激活时，触发channelActive方法；
+通道从peer读取消息时，触发channelRead方法；
+当上一消息通过#channelRead方法，并被当先读操作消费时，触发channelReadComplete方法，
+如果通道配置项#AUTO_READ为关闭状态，没有进一步尝试从当前通道读取inbound数据时，
+直到ChannelHandlerContext#read调用，触发；
+当用户事件发生时，触发userEventTriggered方法；
+异常抛出时，触发exceptionCaught方法；
+当通道可写状态改变时，触发channelWritabilityChanged方法；
+通道处理器上下文关联的通道注册到事件循环EventLoop，但处于非激活状态，
+达到生命周期的末端时，触发channelInactive方法；
+通道处理器上下文关联的通道从事件循环EventLoop移除时，触发channelUnregistered方法。
+
+Inbound通道handler适配器ChannelInboundHandlerAdapter，提供的Inbound通道处理器的
+所有方法的实现，但实现仅仅是，转发操作给Channel管道线的下一个通道处理器，子类必须重写方法。
+需要注意的是，在#channelRead方法自动返回后，消息并没有释放。如果你寻找ChannelInboundHandler的实现，可以自动
+ 释放接受的到消息可以使用SimpleChannelInboundHandler。
+
+
+Outbound通道处理器ChannelOutboundHandler主要处理outbound IO操作。
+当绑定操作发生时，调用bind方法；
+当连接操作发生时，调用connect方法；
+read方法拦截通道处理器上下文读操作；
+当写操发生时，调用write方法，写操作通过Channel管道线写消息，
+当通道调用#flush方法时，消息将会被刷新，发送出去；
+当一个刷新操作发生时，调用flush方法，刷新操作将会刷新所有先前已经写，待发送的消息。
+
+Outbound通道Handler适配器ChannelOutboundHandlerAdapter为Outbound通道处理器的基本实现，这个实现仅仅通过通道处理器上下文转发方法的调用。
+子类必须重写Outbound通道Handler适配器的相关方法。
+在Mina中通道读写，全部在一个通道Handler，Mina提供的通道Handler适配器，我们在使用通道处理器时继承它，实现我们需要关注的读写事件。
+而Netty使用InBound和OutBound将通道的读写分离，同时提供了InBound和OutBound通道Handler的适配器。
+附：
+我们这里简单看一ChannelPromise继承树，有机会我们在后面在详讲
+
+/**
+ * Special {@link ChannelFuture} which is writable.
+ */
+public interface ChannelPromise extends ChannelFuture, Promise<Void> {
+
+
+public interface ChannelFuture extends Future<Void> {
+
+/**
+ * Special {@link Future} which is writable.
+ */
+public interface Promise<V> extends Future<V> {
+
+
+事件循环组EventExecutorGroup
+
+/**
+ * Special {@link EventExecutorGroup} which allows registering {@link Channel}s that get
+ * processed for later selection during the event loop.
+ EventExecutorGroup允许注册通道到EventLoop，以便在事件循环选择过程中处理通道事件
+ *
+ */
+public interface EventLoopGroup extends EventExecutorGroup {
+
+/**
+ * The {@link EventExecutorGroup} is responsible for providing the {@link EventExecutor}'s to use
+ * via its {@link #next()} method. Besides this, it is also responsible for handling their
+ * life-cycle and allows shutting them down in a global fashion.
+ EventExecutorGroup负责事件的执行
+ *
+ */
+public interface EventExecutorGroup extends ScheduledExecutorService, Iterable<EventExecutor> {

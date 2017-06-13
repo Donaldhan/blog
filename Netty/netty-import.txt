@@ -1,0 +1,269 @@
+Maven学习记录3——创建、编译、打包、运行项目 ：http://blog.csdn.net/yaya1943/article/details/48464371
+使用maven编译Java项目：http://www.tuicool.com/articles/YfIfIrq
+netty github 导入 Eclipse：http://www.th7.cn/Program/java/201502/389732.shtml
+netty源码编译环境搭建 ：http://blog.csdn.net/wuyinxian/article/details/46382051
+Plugin error: execution not covered by lifecycle configuration：
+https://stackoverflow.com/questions/7391201/plugin-error-execution-not-covered-by-lifecycle-configuration
+Execution Not Covered：http://www.eclipse.org/m2e/documentation/m2e-execution-not-covered.html
+netty项目github地址：https://github.com/netty/netty.git
+由于netty在github中的项目没有.project和.classpath文件，所以不能够直接转换为Maven项目，要手动去转换，具体可参考
+netty源码编译环境搭建和netty github导入Eclipse这两篇文章。
+我们总结一下从github检出netty项目，编译maven项目，主要遇到的问题：
+1.Failure to transfer io.netty:netty-tcnative:jar:${tcnative.classifier}:2.0.3.Final
+这个问题主要是tcnative jar在netty-parent：
+<groupId>io.netty</groupId>
+<artifactId>netty-parent</artifactId>
+<packaging>pom</packaging>
+<version>4.1.13.Final-SNAPSHOT</version>
+的POM中定义了如下片段：
+<tcnative.artifactId>netty-tcnative</tcnative.artifactId>
+<tcnative.version>2.0.3.Final</tcnative.version>
+<tcnative.classifier>${os.detected.classifier}</tcnative.classifier>
+根据操作系统探测tcnative的classifier，我们只需要将上面这句话注释掉如下：
+<!-- <tcnative.classifier>${os.detected.classifier}</tcnative.classifier> -->
+同时在相应子模块项目中，tcnative包依赖中将：
+<dependency>
+  <groupId>${project.groupId}</groupId>
+  <artifactId>${tcnative.artifactId}</artifactId>
+  <classifier>${tcnative.classifier}</classifier>
+  <optional>true</optional>
+</dependency>
+改为：
+<dependency>
+  <groupId>${project.groupId}</groupId>
+  <artifactId>${tcnative.artifactId}</artifactId>
+  <!-- <classifier>${tcnative.classifier}</classifier> -->
+  <version>${tcnative.version}</version>
+  <optional>true</optional>
+</dependency>
+这里我们是以netty-handler子模块为例：
+<parent>
+  <groupId>io.netty</groupId>
+  <artifactId>netty-parent</artifactId>
+  <version>4.1.13.Final-SNAPSHOT</version>
+</parent>
+<artifactId>netty-handler</artifactId>
+<packaging>jar</packaging>
+2.Plugin execution not covered by lifecycle configuration:
+org.codehaus.mojo:build-helper-maven-plugin:1.10:add-source 
+(execution: add-source, phase: generate-sources)
+这个问题主要是执行不能被声明周期配置覆盖导致，我们以netty-common子模块为例:
+  <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>1.10</version>
+        <executions>
+          <execution>
+            <id>add-source</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <configuration>
+              <sources>
+                <source>${collection.src.dir}</source>
+              </sources>
+            </configuration>
+          </execution>
+ </plugin>
+groupId为org.codehaus.mojo，artifactId为build-helper-maven-plugin的add-source执行不行被
+生命周期覆盖，解决方式：
+<build>
+  <pluginManagement>
+	    <plugins>
+	       <plugin>
+		     <groupId>org.eclipse.m2e</groupId>
+		     <artifactId>lifecycle-mapping</artifactId>
+		     <version>1.0.0</version>
+		     <configuration>
+		       <lifecycleMappingMetadata>
+		         <pluginExecutions>
+		          <!-- plugin执行器过滤器 -->
+		           <pluginExecution>
+		             <!-- plugin执行器过滤器 -->
+		             <pluginExecutionFilter>
+			       <!-- 这里的groupId和artifactId和上面的相对应 -->
+		               <groupId>org.codehaus.mojo</groupId>
+		               <artifactId>build-helper-maven-plugin</artifactId>
+			       <!--  版本大于等于1.0.0 -->
+		               <versionRange>[1.0.0,)</versionRange>
+		               <goals>
+			          <!--  目标与上面对应者execution goals中goal -->
+		                  <goal>add-source</goal>
+		                  <goal>add-test-source</goal>
+		               </goals>
+		             </pluginExecutionFilter>
+		               <!-- plugin执行器忽略 groupId，artifactId 对应的goals中goal -->
+		             <action>
+			        <!--忽略执行 -->
+		               <ignore/>
+		             </action>
+		           </pluginExecution>
+		          <!-- plugin执行器过滤器 -->
+		           <pluginExecution>
+		             <!-- plugin执行器过滤器 -->
+		             <pluginExecutionFilter>
+		               <groupId>org.codehaus.mojo</groupId>
+		               <artifactId>xml-maven-plugin</artifactId>
+		               <versionRange>[1.0.0,)</versionRange>
+		               <goals>
+		                  <goal>parse-version</goal>
+		                  <goal>check-style</goal>
+		               </goals>
+		             </pluginExecutionFilter>
+		               <!-- plugin执行器忽略 groupId，artifactId 对应的goals中goal -->
+		             <action>
+		               <ignore/>
+		             </action>
+		           </pluginExecution>
+		           <!-- plugin执行器过滤器 -->
+		           <pluginExecution>
+		             <!-- plugin执行器过滤器 -->
+		             <pluginExecutionFilter>
+		               <groupId>org.codehaus.gmaven</groupId>
+		               <artifactId>groovy-maven-plugin</artifactId>
+		               <versionRange>[1.0.0,)</versionRange>
+		               <goals>
+		                  <goal>execute</goal>
+		               </goals>
+		             </pluginExecutionFilter>
+		               <!-- plugin执行器忽略 groupId，artifactId 对应的goals中goal -->
+		             <action>
+		               <ignore/>
+		             </action>
+		           </pluginExecution>
+		         </pluginExecutions>
+		       </lifecycleMappingMetadata>
+		     </configuration>
+		    </plugin>
+		   </plugins>
+	   </pluginManagement>
+</build>
+还有一种方式为配置Maven -> Lifecycle mapping->lifecycle-mapping-metadata.xml ，
+官方显示这种方法针对Eclipse 4.2，具体配置在
+Windows -> Preferences -> Maven -> Lifecycle mapping ，
+文件（eclipse/plugins/org.eclipse.m2e.lifecyclemapping.defaults_1.2.0.20120903-1050.jar/lifecycle-mapping-metadata.xml）内容如下：
+<?xml version="1.0" encoding="UTF-8"?>
+<lifecycleMappingMetadata>
+  <pluginExecutions>
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>buildnumber-maven-plugin</artifactId>
+        <goals>
+          <goal>create-timestamp</goal>
+        </goals>
+        <versionRange>[0.0,)</versionRange>
+      </pluginExecutionFilter>
+      <action>
+        <ignore />
+      </action>
+    </pluginExecution>
+
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <goals>
+          <goal>list</goal>
+        </goals>
+        <versionRange>[0.0,)</versionRange>
+      </pluginExecutionFilter>
+      <action>
+        <ignore />
+      </action>
+    </pluginExecution>
+
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>org.zeroturnaround</groupId>
+        <artifactId>jrebel-maven-plugin</artifactId>
+        <goals>
+          <goal>generate</goal>
+        </goals>
+        <versionRange>[0.0,)</versionRange>
+      </pluginExecutionFilter>
+      <action>
+        <ignore />
+      </action>
+    </pluginExecution>
+
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>gwt-maven-plugin</artifactId>
+        <goals>
+          <goal>compile</goal>
+        </goals>
+        <versionRange>[0.0,)</versionRange>
+      </pluginExecutionFilter>
+      <action>
+        <ignore />
+      </action>
+    </pluginExecution>
+
+    <pluginExecution>
+      <pluginExecutionFilter>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <goals>
+          <goal>copy-dependencies</goal>
+          <goal>unpack</goal>
+        </goals>
+        <versionRange>[0.0,)</versionRange>
+      </pluginExecutionFilter>
+      <action>
+        <ignore />
+      </action>
+    </pluginExecution>
+  </pluginExecutions>
+</lifecycleMappingMetadata>
+注意pluginExecutionFilter中的groupId，artifactId，goal的对应关系。
+
+ 在配置完后记得要重新加载。如果你有多个Eclipse工作空间或者为一个团队项目，强烈建立使用配置POM文件的方式，
+，即第一种方式。
+
+如果还有问题，看看是不是JRE的原因(JRE6-8)，一般为JRE7，
+然后项目模块（maven-》update勾选force online update）。
+
+如果项目没有maven依赖包（Maven Dependencies），查看项目的.class
+和.project文件
+
+.class文件是否包含如下信息：
+<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/jdk1.7.0_17">
+	<attributes>
+		<attribute name="maven.pomderived" value="true"/>
+	</attributes>
+</classpathentry>
+<classpathentry kind="con" path="org.eclipse.m2e.MAVEN2_CLASSPATH_CONTAINER">
+	<attributes>
+		<attribute name="maven.pomderived" value="true"/>
+	</attributes>
+</classpathentry>
+不包括，则添加上，不同，则修改。
+
+.project文件是否为如下：
+<?xml version="1.0" encoding="UTF-8"?>
+<projectDescription>
+	<name>netty_trunk</name>
+	<comment></comment>
+	<projects>
+	</projects>
+	<buildSpec>
+		<buildCommand>
+			<name>org.eclipse.jdt.core.javabuilder</name>
+			<arguments>
+			</arguments>
+		</buildCommand>
+		<buildCommand>
+			<name>org.eclipse.m2e.core.maven2Builder</name>
+			<arguments>
+			</arguments>
+		</buildCommand>
+	</buildSpec>
+	<natures>
+		<nature>org.eclipse.m2e.core.maven2Nature</nature>
+		<nature>org.eclipse.jdt.core.javanature</nature>
+	</natures>
+</projectDescription>
+对于没有含有项，则添加上，不同，则修改。

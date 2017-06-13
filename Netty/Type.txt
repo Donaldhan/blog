@@ -1,0 +1,11 @@
+Type Java类型 ：http://blog.csdn.net/a327369238/article/details/52621043
+菜鸟学Java（十四）——Java反射机制（一） ：http://blog.csdn.net/liushuijinger/article/details/14223459
+我眼中的Java-Type体系(2)：http://www.jianshu.com/p/e8eeff12c306
+详解Java泛型type体系整理：http://developer.51cto.com/art/201103/250028.htm
+
+泛型与反射的使用总结之反射篇：http://www.blogjava.net/bolo/archive/2014/05/06/413323.html
+
+黑马程序员--Java基础加强--13.利用反射操作泛型II【TypeVariable】
+【GenericArrayType】【WildcardType】【Type及其子接口的来历】【个人总结】 
+：http://blog.csdn.net/benjaminzhang666/article/details/9839007
+

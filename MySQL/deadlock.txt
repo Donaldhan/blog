@@ -1,0 +1,472 @@
+MySQL 事务的学习整理：http://blog.csdn.net/mchdba/article/details/12242685
+mysql事务处理用法与实例详解：http://www.cnblogs.com/ymy124/p/3718439.html
+常见的表死锁情况及解决方法：http://www.cnblogs.com/jeffry/p/6014881.html
+MySQL事务autocommit自动提交：http://www.qttc.net/201208175.html
+MySql 死锁时的一种解决办法：http://www.cnblogs.com/farb/p/MySqlDeadLockOneOfSolutions.html
+Mysql并发时经典常见的死锁原因及解决方法:http://www.cnblogs.com/zejin2008/p/5262751.html
+mysql死锁几种情况的测试：http://www.2cto.com/database/201605/507289.html
+http://blog.csdn.net/aoerqileng/article/details/51354357
+Mysql中那些锁机制之InnoDB：http://www.2cto.com/database/201508/429967.html
+InnoDB Record, Gap, and Next-Key Locks:http://www.cnblogs.com/zemliu/p/3503496.html
+
+准备工作：
+建表，初始化数据，
+
+SET FOREIGN_KEY_CHECKS=0;
+
+-- ----------------------------
+-- Table structure for user
+-- ----------------------------
+DROP TABLE IF EXISTS `user`;
+CREATE TABLE `user` (
+  `id` int(11) NOT NULL auto_increment COMMENT 'id',
+  `name` varchar(10) default NULL,
+  `age` int(11) default NULL,
+  `registerTime` timestamp NULL default NULL on update CURRENT_TIMESTAMP,
+  PRIMARY KEY  (`id`),
+  KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ----------------------------
+-- Records of user
+-- ----------------------------
+INSERT INTO `user` VALUES ('1', 'jack', '23', null);
+INSERT INTO `user` VALUES ('2', 'mark', '67', null);
+INSERT INTO `user` VALUES ('3', 'donald', null, '2017-06-13 16:23:23');
+
+模拟死锁：
+开启会话A,开启一个事务
+Session A:
+mysql> begin;
+Query OK, 0 rows affected
+
+mysql> select * from user where id=1 lock in share mode;;
++----+------+-----+--------------+
+| id | name | age | registerTime |
++----+------+-----+--------------+
+|  1 | jack |  23 | NULL         |
++----+------+-----+--------------+
+1 row in set
+
+开启会话B,删除用户id为1的用户
+Session B：
+mysql> delete from user where id = 1;
+
+回到会话A,删除用户id为1的用户
+Session A：
+mysql> mysql> delete from user where id = 1;
+1213 - Deadlock found when trying to get lock; try restarting transaction
+
+
+0.查看MySQL当前连接线程
+
+mysql> show processlist;
++---------+-----------------+-------------------+------+---------+---------+------------------------+------------------------------+
+| Id      | User            | Host              | db   | Command | Time    | State                  | Info                         |
++---------+-----------------+-------------------+------+---------+---------+------------------------+------------------------------+
+|       1 | event_scheduler | localhost         | NULL | Daemon  | 3031152 | Waiting on empty queue | NULL                         |
+| 1019932 | donald         | 192.168.31.153:15217 | NULL | Sleep   |    1872 |                        | NULL                         |
+| 1019933 | donald         | 192.168.31.153:15218 | test | Sleep   |     188 |                        | NULL                         |
+| 1020542 | donald         | 192.168.31.153:16735 | test | Sleep   |     179 |                        | NULL                         |
+| 1020543 | donald         | 192.168.31.153:16748 | test | Sleep   |      14 |                        | NULL                         |
+| 1020544 | donald         | 192.168.31.153:16751 | test | Query   |      72 | updating               | delete from user where id =1 |
+| 1020545 | donald         | 192.168.31.153:16753 | test | Query   |       0 | init                   | show processlist             |
++---------+-----------------+-------------------+------+---------+---------+------------------------+------------------------------+
+7 rows in set
+
+
+mysql> 
+1.查看引擎日志分析死锁的原因：
+show engine innodb status\G，查看死锁信息
+
+| InnoDB |      |
+=====================================
+2017-07-18 18:25:02 650ceb70 INNODB MONITOR OUTPUT
+=====================================
+Per second averages calculated from the last 6 seconds
+-----------------
+BACKGROUND THREAD 后台线程
+-----------------
+srv_master_thread loops: 530 srv_active, 0 srv_shutdown, 3056084 srv_idle
+srv_master_thread log flush and writes: 3027072
+----------
+SEMAPHORES  信号量
+----------
+OS WAIT ARRAY INFO: reservation count 1059
+OS WAIT ARRAY INFO: signal count 1047
+Mutex spin waits 1035, rounds 8167, OS waits 165
+RW-shared spins 870, rounds 26073, OS waits 867
+RW-excl spins 33, rounds 1021, OS waits 25
+Spin rounds per wait: 7.89 mutex, 29.97 RW-shared, 30.94 RW-excl
+------------------------
+LATEST DETECTED DEADLOCK  上次探测到死锁的状态
+------------------------ 
+2017-07-18 18:16:22 698d9b70
+*** (1) TRANSACTION:事务1035410，MySQL事务线程1020087
+TRANSACTION 1035410, ACTIVE 73 sec starting index read
+mysql tables in use 1, locked 1
+LOCK WAIT 2 lock struct(s), heap size 312, 1 row lock(s)
+MySQL thread id 1020087, OS thread handle 0x69879b70, query id 195420 192.168.31.153 donald updating
+delete from user where id = 1
+*** (1) WAITING FOR THIS LOCK TO BE GRANTED:等待锁行级锁RECORD LOCKS，X锁，
+RECORD LOCKS space id 7405 page no 3 n bits 72 index `PRIMARY` of table `test`.`user` 
+trx id 1035410 lock_mode X locks rec but not gap waiting
+Record lock, heap no 2 PHYSICAL RECORD: n_fields 6; compact format; info bits 32
+ 0: len 4; hex 80000001; asc     ;;
+ 1: len 6; hex 0000000fcc91; asc       ;;
+ 2: len 7; hex 68000080210a23; asc h   ! #;;
+ 3: len 4; hex 6a61636b; asc jack;;
+ 4: len 4; hex 80000017; asc     ;;
+ 5: SQL NULL;
+
+*** (2) TRANSACTION:事务1035409，MySQL事务线程1020088
+TRANSACTION 1035409, ACTIVE 107 sec starting index read
+mysql tables in use 1, locked 1
+3 lock struct(s), heap size 312, 2 row lock(s), undo log entries 1
+MySQL thread id 1020088, OS thread handle 0x698d9b70, query id 195422 192.168.31.153 donald Sending data
+select * from user where id =1 lock in share mode
+*** (2) HOLDS THE LOCK(S):当前事务持有锁，S锁，
+RECORD LOCKS space id 7405 page no 3 n bits 72 index `PRIMARY` of table `test`.`user` 
+trx id 1035409 lock_mode X locks rec but not gapRecord lock, 非gap锁
+heap no 2 PHYSICAL RECORD: n_fields 6; compact format; info bits 32
+ 0: len 4; hex 80000001; asc     ;;
+ 1: len 6; hex 0000000fcc91; asc       ;;
+ 2: len 7; hex 68000080210a23; asc h   ! #;;
+ 3: len 4; hex 6a61636b; asc jack;;
+ 4: len 4; hex 80000017; asc     ;;
+ 5: SQL NULL;
+
+*** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+RECORD LOCKS space id 7405 page no 3 n bits 72 index `PRIMARY` of table `test`.`user` 
+trx id 1035409 lock mode S waiting Record lock, heap no 2 PHYSICAL RECORD:
+n_fields 6; compact format; info bits 32
+ 0: len 4; hex 80000001; asc     ;;
+ 1: len 6; hex 0000000fcc91; asc       ;;
+ 2: len 7; hex 68000080210a23; asc h   ! #;;
+ 3: len 4; hex 6a61636b; asc jack;;
+ 4: len 4; hex 80000017; asc     ;;
+ 5: SQL NULL;
+
+*** WE ROLL BACK TRANSACTION (1)
+------------
+TRANSACTIONS 回滚事务1035425
+------------
+Trx id counter 1035425
+Purge done for trx's n:o < 1035408 undo n:o < 0 state: running but idle
+History list length 1046
+LIST OF TRANSACTIONS FOR EACH SESSION:每个会话的事务
+---TRANSACTION 0, not started，
+MySQL thread id 1020076, OS thread handle 0x650ceb70, query id 195466 192.168.31.153 donald init
+show engine innodb status
+---TRANSACTION 1035423, not started
+MySQL thread id 1020089, OS thread handle 0x6503bb70, query id 195454 192.168.31.153 donald cleaning up
+---TRANSACTION 1035424, not started
+MySQL thread id 1020087, OS thread handle 0x69879b70, query id 195455 192.168.31.153 donald cleaning up
+---TRANSACTION 0, not started 
+MySQL thread id 1019933, OS thread handle 0x6506cb70, query id 195428 192.168.31.153 donald cleaning up
+---TRANSACTION 1035409, ACTIVE 627 sec 事务1035409，激活状态，MySQL线程id，1020088
+3 lock struct(s), heap size 312, 5 row lock(s), undo log entries 1
+MySQL thread id 1020088, OS thread handle 0x698d9b70, query id 195456 192.168.31.153 donald cleaning up
+--------
+FILE I/O
+--------
+I/O thread 0 state: waiting for completed aio requests (insert buffer thread)
+I/O thread 1 state: waiting for completed aio requests (log thread)
+I/O thread 2 state: waiting for completed aio requests (read thread)
+I/O thread 3 state: waiting for completed aio requests (read thread)
+I/O thread 4 state: waiting for completed aio requests (read thread)
+I/O thread 5 state: waiting for completed aio requests (read thread)
+I/O thread 6 state: waiting for completed aio requests (write thread)
+I/O thread 7 state: waiting for completed aio requests (write thread)
+I/O thread 8 state: waiting for completed aio requests (write thread)
+I/O thread 9 state: waiting for completed aio requests (write thread)
+Pending normal aio reads: 0 [0, 0, 0, 0] , aio writes: 0 [0, 0, 0, 0] ,
+ ibuf aio reads: 0, log i/o's: 0, sync i/o's: 0
+Pending flushes (fsync) log: 0; buffer pool: 0
+3034 OS file reads, 46735 OS file writes, 12238 OS fsyncs
+0.00 reads/s, 0 avg bytes/read, 0.00 writes/s, 0.00 fsyncs/s
+-------------------------------------
+INSERT BUFFER AND ADAPTIVE HASH INDEX
+-------------------------------------
+Ibuf: size 1, free list len 26781, seg size 26783, 0 merges
+merged operations:
+ insert 0, delete mark 0, delete 0
+discarded operations:
+ insert 0, delete mark 0, delete 0
+Hash table size 9239933, node heap has 24 buffer(s)
+0.00 hash searches/s, 0.00 non-hash searches/s
+---
+LOG
+---
+Log sequence number 709253455618
+Log flushed up to   709253455618
+Pages flushed up to 709253455618
+Last checkpoint at  709253455618
+0 pending log writes, 0 pending chkp writes
+3279 log i/o's done, 0.00 log i/o's/second
+----------------------
+BUFFER POOL AND MEMORY
+----------------------
+Total memory allocated 2136604672; in additional pool allocated 0
+Dictionary memory allocated 745414
+Buffer pool size   128000
+Free buffers       93253
+Database pages     34723
+Old database pages 12657
+Modified db pages  0
+Pending reads 0
+Pending writes: LRU 0, flush list 0, single page 0
+Pages made young 1, not young 0
+0.00 youngs/s, 0.00 non-youngs/s
+Pages read 2779, created 31944, written 37451
+0.00 reads/s, 0.00 creates/s, 0.00 writes/s
+No buffer pool page gets since the last printout
+Pages read ahead 0.00/s, evicted without access 0.00/s, Random read ahead 0.00/s
+LRU len: 34723, unzip_LRU len: 0
+I/O sum[0]:cur[0], unzip sum[0]:cur[0]
+----------------------
+INDIVIDUAL BUFFER POOL INFO
+----------------------
+---BUFFER POOL 0
+Buffer pool size   16000
+Free buffers       11538
+Database pages     4459
+Old database pages 1625
+Modified db pages  0
+Pending reads 0
+Pending writes: LRU 0, flush list 0, single page 0
+Pages made young 0, not young 0
+0.00 youngs/s, 0.00 non-youngs/s
+Pages read 387, created 4072, written 5592
+0.00 reads/s, 0.00 creates/s, 0.00 writes/s
+No buffer pool page gets since the last printout
+Pages read ahead 0.00/s, evicted without access 0.00/s, Random read ahead 0.00/s
+LRU len: 4459, unzip_LRU len: 0
+I/O sum[0]:cur[0], unzip sum[0]:cur[0]
+---BUFFER POOL 1
+Buffer pool size   16000
+Free buffers       11712
+Database pages     4285
+Old database pages 1563
+Modified db pages  0
+Pending reads 0
+Pending writes: LRU 0, flush list 0, single page 0
+Pages made young 0, not young 0
+0.00 youngs/s, 0.00 non-youngs/s
+Pages read 373, created 3912, written 4091
+0.00 reads/s, 0.00 creates/s, 0.00 writes/s
+No buffer pool page gets since the last printout
+Pages read ahead 0.00/s, evicted without access 0.00/s, Random read ahead 0.00/s
+LRU len: 4285, unzip_LRU len: 0
+I/O sum[0]:cur[0], unzip sum[0]:cur[0]
+---BUFFER POOL 2
+Buffer pool size   16000
+Free buffers       11728
+Database pages     4269
+Old database pages 1557
+Modified db pages  0
+Pending reads 0
+Pending writes: LRU 0, flush list 0, single page 0
+Pages made young 0, not young 0
+0.00 youngs/s, 0.00 non-youngs/s
+Pages read 283, created 3986, written 4206
+0.00 reads/s, 0.00 creates/s, 0.00 writes/s
+No buffer pool page gets since the last printout
+Pages read ahead 0.00/s, evicted without access 0.00/s, Random read ahead 0.00/s
+LRU len: 4269, unzip_LRU len: 0
+I/O sum[0]:cur[0], unzip sum[0]:cur[0]
+---BUFFER POOL 3
+...
+I/O sum[0]:cur[0], unzip sum[0]:cur[0]
+---BUFFER POOL 4
+....
+---BUFFER POOL 5
+...
+---BUFFER POOL 6
+....
+---BUFFER POOL 7
+....
+--------------
+ROW OPERATIONS
+--------------
+0 queries inside InnoDB, 0 queries in queue
+0 read views open inside InnoDB
+Main thread process no. 4472, id 1741499248, state: sleeping
+Number of rows inserted 1222447, updated 48, deleted 1745, read 61951636
+0.00 inserts/s, 0.00 updates/s, 0.00 deletes/s, 0.00 reads/s
+----------------------------
+END OF INNODB MONITOR OUTPUT
+============================
+
+2.查看Mysql事务
+2.a 查看当前事务：
+
+mysql> select * from information_schema.INNODB_TRX;
++---------+-----------+---------------------+-----------------------+---------------------+------------+---------------------+-------------------------------+---------------------+-------------------+-------------------+------------------+-----------------------+-----------------+-------------------+-------------------------+---------------------+-------------------+------------------------+----------------------------+---------------------------+---------------------------+------------------+----------------------------+
+| trx_id  | trx_state | trx_started         | trx_requested_lock_id | trx_wait_started    | trx_weight | trx_mysql_thread_id | trx_query                     | trx_operation_state | trx_tables_in_use | trx_tables_locked | trx_lock_structs | trx_lock_memory_bytes | trx_rows_locked | trx_rows_modified | trx_concurrency_tickets | trx_isolation_level | trx_unique_checks | trx_foreign_key_checks | trx_last_foreign_key_error | trx_adaptive_hash_latched | trx_adaptive_hash_timeout | trx_is_read_only | trx_autocommit_non_locking |
++---------+-----------+---------------------+-----------------------+---------------------+------------+---------------------+-------------------------------+---------------------+-------------------+-------------------+------------------+-----------------------+-----------------+-------------------+-------------------------+---------------------+-------------------+------------------------+----------------------------+---------------------------+---------------------------+------------------+----------------------------+
+| 1035424 | LOCK WAIT | 2017-07-18 18:17:43 | 1035424:7405:3:2      | 2017-07-18 18:17:43 |          2 |             1020087 | delete from user where id = 1 | starting index read |                 1 |                 1 |                2 |                   312 |               1 |                 0 |                       0 | REPEATABLE READ     |                 1 |                      1 | NULL                       |                         0 |                     10000 |                0 |                          0 |
+| 1035409 | RUNNING   | 2017-07-18 18:14:35 | NULL                  | NULL                |          4 |             1020088 | NULL                          | NULL                |                 0 |                 0 |                3 |                   312 |               5 |                 1 |                       0 | REPEATABLE READ     |                 1 |                      1 | NULL                       |                         0 |                     10000 |                0 |                          0 |
++---------+-----------+---------------------+-----------------------+---------------------+------------+---------------------+-------------------------------+---------------------+-------------------+-------------------+------------------+-----------------------+-----------------+-------------------+-------------------------+---------------------+-------------------+------------------------+----------------------------+---------------------------+---------------------------+------------------+----------------------------+
+2 rows in set
+
+mysql> 
+2.b 查看当前锁定的事务
+
+mysql> SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCKS;
++------------------+-------------+-----------+-----------+---------------+------------+------------+-----------+----------+-----------+
+| lock_id          | lock_trx_id | lock_mode | lock_type | lock_table    | lock_index | lock_space | lock_page | lock_rec | lock_data |
++------------------+-------------+-----------+-----------+---------------+------------+------------+-----------+----------+-----------+
+| 1035424:7405:3:2 | 1035424     | X         | RECORD    | `test`.`user` | PRIMARY    |       7405 |         3 |        2 | 1         |
+| 1035409:7405:3:2 | 1035409     | S         | RECORD    | `test`.`user` | PRIMARY    |       7405 |         3 |        2 | 1         |
++------------------+-------------+-----------+-----------+---------------+------------+------------+-----------+----------+-----------+
+2 rows in set
+
+2.c 查看当前等锁的事务
+mysql> SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCK_WAITS; 
++-------------------+-------------------+-----------------+------------------+
+| requesting_trx_id | requested_lock_id | blocking_trx_id | blocking_lock_id |
++-------------------+-------------------+-----------------+------------------+
+| 1035424           | 1035424:7405:3:2  | 1035409         | 1035409:7405:3:2 |
+| 1035424           | 1035424:7405:3:2  | 1035409         | 1035409:7405:3:2 |
++-------------------+-------------------+-----------------+------------------+
+2 rows in set
+
+
+找出死锁关联的事务线程id（trx_mysql_thread_id），从上面的分析得出，持有锁的MySQL事务线程id为1020088
+
+
+3.Kill 关联事务线程
+
+mysql> kill 1020088;
+Query OK, 0 rows affected
+
+4.再次查看当前等待锁的事务及当前事务：
+
+mysql> SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCK_WAITS; 
+Empty set
+
+mysql> 
+SELECT * FROM INFORMATION_SCHEMA.INNODB_LOCKS;
+Empty set
+
+mysql> select * from information_schema.INNODB_TRX;
+Empty set
+
+
+在分析之前先来看一下MySQL的锁机制，MySQLl锁机制有行级锁和表级锁
+InnoDB实现了两种类型的行锁。
+共享锁（S）：允许一个事务去读一行，阻止其他事务获得相同的数据集的排他锁。
+排他锁（X）：允许获得排他锁的事务更新数据，但是组织其他事务获得相同数据集的共享锁和排他锁。
+
+共享锁就是我读的时候，你可以读，但是不能写。排他锁就是我写的时候，你不能读也不能写。
+其实就是MyISAM的读锁和写锁，但是针对的对象不同了而已。
+
+除此之外InnoDB还有两个表锁：
+意向共享锁（IS）：表示事务准备给数据行加入共享锁，也就是说一个数据行加共享锁前必须先取得该表的IS锁
+意向排他锁（IX）：类似上面，表示事务准备给数据行加入排他锁，说明事务在一个数据行加排他锁前必须先取得该表的IX锁。
+
+InnoDB行锁模式兼容列表，见下这篇文章
+InnoDB的行锁模式及加锁方法：http://lib.csdn.net/article/mysql/8747
+
+注意：
+当一个事务请求的锁模式与当前的锁兼容，InnoDB就将请求的锁授予该事务；反之如果请求不兼容，则该事务就等待锁释放。
+意向锁是InnoDB自动加的，不需要用户干预。
+
+对于insert、update、delete，InnoDB会自动给涉及的数据加排他锁（X）；
+对于一般的Select语句，InnoDB不会加任何锁，事务可以通过以下语句给显示加共享锁或排他锁。
+
+共享锁：select * from table_name where .....lock in share mode
+排他锁：select * from table_name where .....for update
+分析死锁原因:
+出现死锁的原因，是因为会话A开启一个事务，以共享锁S锁，获取user表id为1的一行记录；
+会话B，删除user表id为1记录，请求排他锁X锁，由于SX锁互斥，会话B等待会话A释放共享锁S锁，进入请求队列等待；
+这时，会话A删除user表id为1记录,请求排他锁X锁，但会话B在请求队列中，还轮不到会话A，
+会话A就等待，这种循环等待出现，死锁就出现了。
+
+附：
+这部分与上面无关，只作为记录
+检查数据库表状态：
+mysql> show table status from test_db;
++---------------+--------+---------+------------+------+----------------+-------------+-----------------+--------------+-----------+----------------+---------------------+-------------+------------+-----------------+----------+----------------+----------------------------------------------------------------------+
+| Name          | Engine | Version | Row_format | Rows | Avg_row_length | Data_length | Max_data_length | Index_length | Data_free | Auto_increment | Create_time         | Update_time | Check_time | Collation       | Checksum | Create_options | Comment                                                              |
++---------------+--------+---------+------------+------+----------------+-------------+-----------------+--------------+-----------+----------------+---------------------+-------------+------------+-----------------+----------+----------------+----------------------------------------------------------------------+
+| user   | InnoDB |      10 | Compact    |    0 |              0 |       16384 |               0 |            0 |         0 | NULL           | 2017-07-17 19:39:33 | NULL        | NULL       | utf8_general_ci | NULL     |                | 企业信息表（企业查询接口查询，查询到的企业信息结果，保证到此表中）。 |
+| tb_message     | InnoDB |      10 | Compact    |    0 |              0 |       16384 |               0 |            0 |         0 |             14 | 2017-07-17 19:14:02 | NULL        | NULL       | utf8_general_ci | NULL     |                | 企业信息查询接口，查询请求产生的大查询                               |
+| tb_log | InnoDB |      10 | Compact    |    1 |          16384 |       16384 |               0 |            0 |         0 |              2 | 2017-07-18 02:00:31 | NULL        | NULL       | utf8_general_ci | NULL     |                | 企业信息查询接口，查询请求产生的小查询                               |
++---------------+--------+---------+------------+------+----------------+-------------+-----------------+--------------+-----------+----------------+---------------------+-------------+------------+-----------------+----------+----------------+----------------------------------------------------------------------+
+3 rows in set
+
+mysql> 
+
+检查指定表状态：
+mysql> check table user;
++----------------------------+-------+----------+----------+
+| Table                      | Op    | Msg_type | Msg_text |
++----------------------------+-------+----------+----------+
+| test_db.user | check | status   | OK       |
++----------------------------+-------+----------+----------+
+1 row in set
+
+如果表状态不OK，则修复：
+mysql>  repair table user;
+
+
+查看数据库当前事务提交状态：
+mysql> show variables like 'autocommit';  
++---------------+-------+
+| Variable_name | Value |
++---------------+-------+
+| autocommit    | ON    |
++---------------+-------+
+1 row in set
+
+查看数据库事务隔离级别：
+mysql> select @@tx_isolation;
++-----------------+
+| @@tx_isolation  |
++-----------------+
+| REPEATABLE-READ |
++-----------------+
+1 row in set
+
+mysql> 
+
+MySQL的线程状态快照：
+快照1：
+mysql> show processlist
+    -> ;
++------+---------+-------------------+----------------+---------+------+---------------------------------+----------------------------------------------------------------------------------------------------+
+| Id   | User    | Host              | db             | Command | Time | State                           | Info                                                                                               |
++------+---------+-------------------+----------------+---------+------+---------------------------------+----------------------------------------------------------------------------------------------------+
+| 2721 | donald | 192.168.31.153:50725 | test_db | Query   | 1070 | Waiting for table metadata lock | ALTER TABLE `user`
+CHANGE COLUMN `REGISTRER_NUM` `REGISTER_NUM`  varchar(13) CHARACTER SET u |
+| 2724 | donald | 192.168.31.153:57376 | NULL           | Sleep   | 2432 |                                 | NULL                                                                                               |
+| 2725 | donald | 192.168.31.153:57381 | test_db | Sleep   | 2423 |                                 | NULL                                                                                               |
+| 2727 | donald | 192.168.31.153:51135 | test_db  | Sleep   |    0 |                                 | NULL                                                                                               |
+| 2728 | donald | 192.168.31.153:51156 | test_db | Sleep   | 2017 |                                 | NULL                                                                                               |
+| 2731 | donald | 192.168.31.153:51789 | test_db | Query   |  647 | Waiting for table metadata lock | CREATE TABLE `user` (
+  `COM_ID` bigint(20) NOT NULL,
+  `BUSI_NO` varchar(32) DEFAULT NULL    |
+| 2735 | donald | 192.168.31.153:51813 | test_db | Query   |  546 | Waiting for table metadata lock | CREATE TABLE `user` (
+  `COM_ID` bigint(20) NOT NULL,
+  `BUSI_NO` varchar(32) DEFAULT NULL    |
+| 2736 | donald | 192.168.31.153:58929 | test_db | Query   |    0 | init                            | show processlist                                                                                   |
++------+---------+-------------------+----------------+---------+------+---------------------------------+----------------------------------------------------------------------------------------------------+
+8 rows in set
+
+快照2：
+mysql> show processlist;
++---------+-----------------+-------------------+------+---------+---------+------------------------+---------------------------------------------------------------------+
+| Id      | User            | Host              | db   | Command | Time    | State                  | Info                                                                |
++---------+-----------------+-------------------+------+---------+---------+------------------------+---------------------------------------------------------------------+
+|       1 | event_scheduler | localhost         | NULL | Daemon  | 3030806 | Waiting on empty queue | NULL                                                                |
+| 1019932 | donald         | 192.168.31.153:15217 | NULL | Sleep   |    1526 |                        | NULL                                                                |
+| 1019933 | donald         | 192.168.31.153:15218 | test | Sleep   |    1174 |                        | NULL                                                                |
+| 1020076 | donald         | 192.168.31.153:15254 | test | Query   |       0 | init                   | show processlist                                                    |
+| 1020087 | donald         | 192.168.31.153:15262 | test | Sleep   |      14 |                        | NULL                                                                |
+| 1020089 | donald         | 192.168.31.153:15612 | test | Query   |      41 | update                 | INSERT INTO `user` (`id`, `name`, `age`) VALUES ('1', 'jack', '23') |
+| 1020540 | donald         | 192.168.31.153:16592 | test | Sleep   |      64 |                        | NULL                                                                |
++---------+-----------------+-------------------+------+---------+---------+------------------------+---------------------------------------------------------------------+
+7 rows in set
+

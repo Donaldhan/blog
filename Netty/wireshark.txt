@@ -1,0 +1,62 @@
+Wireshark入门教程 :http://blog.csdn.net/wangjianno2/article/details/52097785
+wireshark如何抓取本机包:http://www.cnblogs.com/lvdongjie/p/6110183.html
+windows下如何用wireshark抓本地回路抓包:http://www.tuicool.com/articles/j6VZBzV
+RawCap抓取本地回环接口数据包:http://www.cnblogs.com/milantgh/p/4284165.html
+
+在进行网络通信的开发的时候，需要查看通信的具体内容，一般是用wireshark进行抓包，
+但是我们调试的时候，往往在一台机上需要启动服务端和客户端，而wireshark无法抓取本地环路数据包，
+这是由于wireshark抓取的是通过网卡的数据包，而本地环路数据包是不同通过网卡，所有抓取不到。
+网上找了很多资料，大体可以说有三种方式，这里整理一下：
+方式1：
+1.以管理员身份运行cmd
+2.route add 本机ip mask 255.255.255.255 网关ip
+如：route add 192.168.31.153 mask 255.255.255.255 192.168.31.1
+使用完毕后用route delete 192.168.31.153 mask 255.255.255.255 192.168.31.1 删除路由，否则所有本机报文都经过网卡出去走一圈回来很耗性能。
+此时再利用wireshark进行抓包便可以抓到本机自己同自己的通信包，这样配置的原因是将发往本机的包发送到网关，而此时wireshark可以捕获到网卡驱动的报文实现抓包。
+但这样有一个缺点，那就是本地请求的URL的IP只能写本地的IP地址，不能写localhost或127.0.0.1，写localhost或127.0.0.1还是抓不到包。
+
+注：这种方式用法必须已经移除路由设置，不然你会把发现，服务端启动时，客户端连接超时
+
+方式2：
+ windows系统没有提供本地回环网络的接口，用wireshark监控网络的话只能看到经过网卡的流量，看不到访问localhost的流量，
+ 因为wireshark在windows系统上默认使用的是WinPcap来抓包的，现在可以用Npcap来替换掉WinPcap，Npcap是基于WinPcap 4.1.3开发的，
+ api兼容WinPcap。
+ 如果在安装的wireshark已经安装了WinPcap，则卸载掉WinPcap，然后在安装Npcap(我用的版本为nmap-7.50)；
+ 如果没有安装wireshark，则先安装nmap-7.50，安装时勾选：
+ support loopback traffic（"Npcap Loopback adapter" will be created）
+ install npcap in winpcap api-compat mode
+ 这两个选项，
+ 启动wireshark, 可以看到在网络接口列表中，多了一项Npcap Loopback adapter，这个就是来抓本地回环包的网络接口了。
+
+ 注：这种方式试了，网络接口列表中并没有Npcap Loopback adapter（上面两个选项勾选了，重复安装了好多遍）
+
+ 方式3：
+使用RawCap，将抓到的包保存为pcap后缀的文件中,用wireshark打开,就可以继续分析了.
+a.首先下载RawCap，双击RawCap.exe执行文件，
+b.选择网络接口，
+c.设置抓取的数据包保存文件：
+d.开始抓取数据包：
+
+e.Crtl+C，中断RawCap抓取数据包
+还有另外一个本地回路数据包抓取软件commview，我没有试，有兴趣的可以试一下
+用wireshark打开RawCap抓取数据包文件，有如下三行：
+82	8.299589	192.168.31.153	192.168.31.153	TCP	52	7265→10010 [SYN] Seq=0 Win=8192 Len=0 MSS=1460 WS=256 SACK_PERM=1
+83	8.299589	192.168.31.153	192.168.31.153	TCP	52	10010→7265 [SYN, ACK] Seq=0 Ack=1 Win=8192 Len=0 MSS=1460 WS=256 SACK_PERM=1
+84	8.299589	192.168.31.153	192.168.31.153	TCP	40	7265→10010 [ACK] Seq=1 Ack=1 Win=525568 Len=0
+以上三行为tcp三次握手的数据包：
+第一次：
+
+第二次：
+
+第三次：
+
+
+
+
+ 
+
+
+
+
+
+

@@ -1,0 +1,641 @@
+netty 网络通信示例一 ：[url]http://donald-draper.iteye.com/blog/2383326[/url]
+netty 网络通信示例二：[url]http://donald-draper.iteye.com/blog/2383328[/url]
+netty 网络通信示例三：[url]http://donald-draper.iteye.com/blog/2383392[/url]
+netty 网络通信示例四：[url]http://donald-draper.iteye.com/blog/2383472[/url]
+Netty 构建HTTP服务器示例：[url]http://donald-draper.iteye.com/blog/2383527[/url]
+前面的文章我们看了Netty tcp，http协议通信实例，大部分项目用Netty一般用TCP协议，很少用UDP协议，
+官方文档中，UDP协议的实例都很少，我们在实例可以看到一个UDT的实例包，UDT协议是
+基于UDP的数据传输协议（UDP-based Data Transfer Protocol，简称UDT），是一种互联网数据传输协议。
+UDT的主要目的是支持高速广域网上的海量数据传输，而互联网上的标准数据传输协议TCP在高带宽长距离网络上性能很差。 
+顾名思义，UDT建于UDP之上，并引入新的拥塞控制和数据可靠性控制机制。UDT是面向连接的双向的应用层协议。
+它同时支持可靠的数据流传输和部分可靠的数据报传输。 由于UDT完全在UDP上实现，
+它也可以应用在除了高速数据传输之外的其它应用领域，例如点到点技术（P2P），防火墙穿透，多媒体数据传输等等。
+在netty实例中，UDT实例有UDT Byte Stream（TCP-like byte streaming mode） ,
+UDT Message Flow（UDP-like message delivery mode）
+及相关的对等Peer通信，测试结果UDT Message Flow类型的
+实例存在bug, see #https://github.com/netty/netty/issues/6934.  Netty官方显示UDT将被丢弃，不在维护。
+所以我们来看一下UDT Byte Stream的实例及Peer通信：
+服务端：
+package netty.main.udt.bytes;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.udt.UdtChannel;
+import io.netty.channel.udt.nio.NioUdtProvider;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import netty.handler.udt.bytes.ByteEchoServerHandler;
+
+import java.net.InetSocketAddress;
+import java.util.concurrent.ThreadFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * UDT Byte Stream Server
+ * use UDT in TCP-like byte streaming mode
+ * @author donald
+ * 2017年7月1日
+ * 下午4:11:20
+ */
+public final class ByteEchoServer {
+	private static final Logger log = LoggerFactory.getLogger(ByteEchoServer.class);
+	public static final String ip = System.getProperty("host", "192.168.31.153");
+    static final int port = Integer.parseInt(System.getProperty("port", "10020"));
+    @SuppressWarnings("deprecation")
+	public static void main(String[] args) throws Exception {
+        final ThreadFactory acceptFactory = new DefaultThreadFactory("accept");
+        final ThreadFactory connectFactory = new DefaultThreadFactory("connect");
+        final NioEventLoopGroup acceptGroup = new NioEventLoopGroup(1, acceptFactory, NioUdtProvider.BYTE_PROVIDER);
+        final NioEventLoopGroup connectGroup = new NioEventLoopGroup(1, connectFactory, NioUdtProvider.BYTE_PROVIDER);
+
+        // Configure the server.
+        try {
+            final ServerBootstrap boot = new ServerBootstrap();
+            boot.group(acceptGroup, connectGroup)
+                    .channelFactory(NioUdtProvider.BYTE_ACCEPTOR)
+                    .option(ChannelOption.SO_BACKLOG, 10)
+                    .handler(new LoggingHandler(LogLevel.INFO))
+                    .childHandler(new ChannelInitializer<UdtChannel>() {
+                        @Override
+                        public void initChannel(final UdtChannel ch)
+                                throws Exception {
+                            ch.pipeline().addLast(
+                                    new LoggingHandler(LogLevel.INFO),
+                                    new ByteEchoServerHandler());
+                        }
+                    });
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+            // Start the server.
+            final ChannelFuture future = boot.bind(inetSocketAddress).sync();
+            log.info("=========UDT Server is start=========");
+            // Wait until the server socket is closed.
+            future.channel().closeFuture().sync();
+        } finally {
+            // Shut down all event loops to terminate all threads.
+            acceptGroup.shutdownGracefully();
+            connectGroup.shutdownGracefully();
+        }
+    }
+}
+服务端处理器：
+package netty.handler.udt.bytes;
+
+import io.netty.channel.ChannelHandler.Sharable;
+
+import java.io.UnsupportedEncodingException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.udt.nio.NioUdtProvider;
+
+/**
+ * 
+ * @author donald
+ * 2017年7月1日
+ * 下午4:53:46
+ */
+@Sharable
+public class ByteEchoServerHandler extends ChannelInboundHandlerAdapter {
+	private static final Logger log = LoggerFactory.getLogger(ByteEchoServerHandler.class);
+
+	@SuppressWarnings("deprecation")
+	@Override
+	public void channelActive(final ChannelHandlerContext ctx) {
+		 log.info("ECHO active " +
+		 NioUdtProvider.socketUDT(ctx.channel()).toStringOptions());
+	}
+
+	@Override
+	public void channelRead(final ChannelHandlerContext ctx, Object msg) {
+		ByteBuf in = (ByteBuf)msg;
+    	byte[] bytes = new byte[in.writerIndex()];
+    	in.readBytes(bytes);
+    	//针对堆buf，direct buf不支持
+//    	byte[] bytes = in.array();
+    	String message = null;
+		try {
+			message = new String(bytes,"UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+    	try{
+    		log.info("===Server reciever message:" +message);
+    	}
+    	finally{
+    		//如果msg为引用计数对象，在使用后注意释放，一般在通道handler中释放
+//            ReferenceCountUtil.release(msg);
+    	}
+    	String ackMessage = "hello client ...";
+    	in.clear();
+    	try {
+			in.writeBytes(ackMessage.getBytes("UTF-8"));
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+    	ctx.write(in);
+	}
+
+	@Override
+	public void channelReadComplete(ChannelHandlerContext ctx) {
+		ctx.flush();
+	}
+
+	@Override
+	public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
+		cause.printStackTrace();
+		ctx.close();
+	}
+}
+客户端：
+package netty.main.udt.bytes;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.udt.UdtChannel;
+import io.netty.channel.udt.nio.NioUdtProvider;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import netty.handler.udt.bytes.ByteEchoClientHandler;
+
+import java.net.InetSocketAddress;
+import java.util.concurrent.ThreadFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * UDT Byte Stream Client
+ * use UDT in TCP-like byte streaming mode
+ * Sends one message when a connection is open and echoes back any received data
+ * to the server. Simply put, the echo client initiates the ping-pong traffic
+ * between the echo client and server by sending the first message to the
+ * server.
+ * @author donald
+ * 2017年7月1日
+ * 下午4:11:20
+ */
+public final class ByteEchoClient {
+	private static final Logger log = LoggerFactory.getLogger(ByteEchoClient.class);
+    public static final String ip = System.getProperty("host", "192.168.31.153");
+    static final int port = Integer.parseInt(System.getProperty("port", "10020"));
+    public static final int SIZE = Integer.parseInt(System.getProperty("size", "256"));
+
+    @SuppressWarnings("deprecation")
+	public static void main(String[] args) throws Exception {
+        // Configure the client.
+        final ThreadFactory connectFactory = new DefaultThreadFactory("connect");
+        final NioEventLoopGroup connectGroup = new NioEventLoopGroup(1,
+                connectFactory, NioUdtProvider.BYTE_PROVIDER);
+        try {
+            final Bootstrap boot = new Bootstrap();
+            boot.group(connectGroup)
+                    .channelFactory(NioUdtProvider.BYTE_CONNECTOR)
+                    .handler(new ChannelInitializer<UdtChannel>() {
+                        @Override
+                        public void initChannel(final UdtChannel ch)
+                                throws Exception {
+                            ch.pipeline().addLast(
+                                    new LoggingHandler(LogLevel.INFO),
+                                    new ByteEchoClientHandler());
+                        }
+                    });
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+            // Start the client.
+            final ChannelFuture f = boot.connect(inetSocketAddress).sync();
+            log.info("=========UDT Client is start=========");
+            // Wait until the connection is closed.
+            f.channel().closeFuture().sync();
+        } finally {
+            // Shut down the event loop to terminate all threads.
+            connectGroup.shutdownGracefully();
+        }
+    }
+}
+客户端处理器：
+package netty.handler.udt.bytes;
+
+import java.io.UnsupportedEncodingException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.udt.nio.NioUdtProvider;
+import netty.main.udt.bytes.ByteEchoClient;
+
+/**
+ * Handler implementation for the echo client. It initiates the ping-pong
+ * traffic between the echo client and server by sending the first message to
+ * the server on activation.
+ * @author donald
+ * 2017年7月1日
+ * 下午4:53:59
+ */
+public class ByteEchoClientHandler extends SimpleChannelInboundHandler<ByteBuf> {
+	private static final Logger log = LoggerFactory.getLogger(ByteEchoClientHandler.class);
+	private final ByteBuf message;
+	public ByteEchoClientHandler() {
+		super(false);
+		String hello = "Hello peer...";
+		message = Unpooled.buffer(ByteEchoClient.SIZE);//堆buffer
+        try {
+        	message.writeBytes(hello.getBytes("UTF-8"));
+        	message.retainedDuplicate();
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+	}
+
+	@SuppressWarnings("deprecation")
+	@Override
+	public void channelActive(final ChannelHandlerContext ctx) {
+		log.info("ECHO active " +
+		 NioUdtProvider.socketUDT(ctx.channel()).toStringOptions());
+		ctx.writeAndFlush(message);
+	}
+
+	@Override
+	public void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) {
+		ByteBuf in = (ByteBuf)msg;
+    	byte[] bytes = new byte[in.writerIndex()];
+    	in.readBytes(bytes);
+    	//针对堆buf，direct buf不支持
+//    	byte[] bytes = in.array();
+    	String message = null;
+		try {
+			message = new String(bytes,"UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+    	log.info("=== reciever ack message from peer:" +message);
+	}
+
+	@Override
+	public void channelReadComplete(ChannelHandlerContext ctx) {
+//		ctx.flush();
+	}
+
+	@Override
+	public void exceptionCaught(final ChannelHandlerContext ctx, final Throwable cause) {
+		cause.printStackTrace();
+		ctx.close();
+	}
+
+}
+启动服务端与客户端，控制台输出：
+服务端：
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.SocketUDT library location : ./lib/bin
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.SocketUDT loader provider  : com.barchart.udt.lib.LibraryLoaderUDT
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.lib.PluginPropsUDT ARCH/OS/LINK = amd64/Windows/gpp
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.lib.LibraryLoaderUDT Platform supported.
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.lib.LibraryLoaderUDT Loading release libraries.
+[INFO ] 2017-07-06 22:50:43 com.barchart.udt.lib.LibraryLoaderUDT Release libraries loaded.
+[INFO ] 2017-07-06 22:50:44 io.netty.handler.logging.LoggingHandler [id: 0xf9f14d4c] REGISTERED
+[INFO ] 2017-07-06 22:50:44 io.netty.handler.logging.LoggingHandler [id: 0xf9f14d4c] BIND: /192.168.31.153:10020
+[INFO ] 2017-07-06 22:50:44 netty.main.udt.bytes.ByteEchoServer =========UDT Server is start=========
+[INFO ] 2017-07-06 22:50:44 io.netty.handler.logging.LoggingHandler [id: 0xf9f14d4c, L:/192.168.31.153:10020] ACTIVE
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf9f14d4c, L:/192.168.31.153:10020] READ: [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767]
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf9f14d4c, L:/192.168.31.153:10020] READ COMPLETE
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] REGISTERED
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] ACTIVE
+[INFO ] 2017-07-06 22:50:54 netty.handler.udt.bytes.ByteEchoServerHandler ECHO active 
+	[id: 0x04f589e8]
+	0) Maximum_Transfer_Unit = 1,500
+	1) Is_Send_Synchronous = false
+	2) Is_Receive_Synchronous = false
+	3) Custom_Congestion_Control = null
+	4) Flight_Window_Size = 25,600 (25 K)
+	5) Protocol_Send_Buffer_Size = 12,058,624
+	6) Protocol_Receive_Buffer_Size = 12,058,624
+	7) Time_To_Linger_On_Close = 180
+	8) System_Send_Buffer_Size = 65,536
+	9) System_Receive_Buffer_Size = 12,288,000
+	12) Is_Randezvous_Connect_Enabled = false
+	13) Send_Timeout = -1
+	14) Receive_Timeout = -1
+	15) Is_Address_Reuse_Enabled = true
+	16) Maximum_Bandwidth = -1
+	17) Status_Code = 5
+	18) Epoll_Event_Mask = 4
+	19) Send_Buffer_Consumed = 0
+	20) Receive_Buffer_Available = 0
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] READ: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:50:54 netty.handler.udt.bytes.ByteEchoServerHandler ===Server reciever message:Hello peer...
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] WRITE: 16B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 20 63 6c 69 65 6e 74 20 2e 2e 2e |hello client ...|
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] READ COMPLETE
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xf515214b, L:/192.168.31.153:10020 - R:/192.168.31.153:53767] FLUSH
+
+客户端：
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.SocketUDT library location : ./lib/bin
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.SocketUDT loader provider  : com.barchart.udt.lib.LibraryLoaderUDT
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.lib.PluginPropsUDT ARCH/OS/LINK = amd64/Windows/gpp
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.lib.LibraryLoaderUDT Platform supported.
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.lib.LibraryLoaderUDT Loading release libraries.
+[INFO ] 2017-07-06 22:50:53 com.barchart.udt.lib.LibraryLoaderUDT Release libraries loaded.
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55] REGISTERED
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55] CONNECT: /192.168.31.153:10020
+[INFO ] 2017-07-06 22:50:54 netty.main.udt.bytes.ByteEchoClient =========UDT Client is start=========
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55, L:/192.168.31.153:53767 - R:/192.168.31.153:10020] ACTIVE
+[INFO ] 2017-07-06 22:50:54 netty.handler.udt.bytes.ByteEchoClientHandler ECHO active 
+	[id: 0x0d729ae4]
+	0) Maximum_Transfer_Unit = 1,500
+	1) Is_Send_Synchronous = false
+	2) Is_Receive_Synchronous = false
+	3) Custom_Congestion_Control = null
+	4) Flight_Window_Size = 25,600 (25 K)
+	5) Protocol_Send_Buffer_Size = 10,485,056
+	6) Protocol_Receive_Buffer_Size = 10,485,056
+	7) Time_To_Linger_On_Close = 0
+	8) System_Send_Buffer_Size = 1,048,576
+	9) System_Receive_Buffer_Size = 1,048,576
+	12) Is_Randezvous_Connect_Enabled = false
+	13) Send_Timeout = -1
+	14) Receive_Timeout = -1
+	15) Is_Address_Reuse_Enabled = true
+	16) Maximum_Bandwidth = -1
+	17) Status_Code = 5
+	18) Epoll_Event_Mask = 4
+	19) Send_Buffer_Consumed = 0
+	20) Receive_Buffer_Available = 0
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55, L:/192.168.31.153:53767 - R:/192.168.31.153:10020] WRITE: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55, L:/192.168.31.153:53767 - R:/192.168.31.153:10020] FLUSH
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55, L:/192.168.31.153:53767 - R:/192.168.31.153:10020] READ: 16B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 68 65 6c 6c 6f 20 63 6c 69 65 6e 74 20 2e 2e 2e |hello client ...|
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:50:54 netty.handler.udt.bytes.ByteEchoClientHandler === reciever ack message from peer:hello client ...
+[INFO ] 2017-07-06 22:50:54 io.netty.handler.logging.LoggingHandler [id: 0xa43a1a55, L:/192.168.31.153:53767 - R:/192.168.31.153:10020] READ COMPLETE
+
+再来看一个peer对等UDT Byte Stream示例：
+peer端：
+package netty.main.udt.peer;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.udt.UdtChannel;
+import io.netty.channel.udt.nio.NioUdtProvider;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.util.concurrent.DefaultThreadFactory;
+import netty.handler.udt.peer.ByteEchoPeerHandler;
+import java.net.SocketAddress;
+import java.util.concurrent.ThreadFactory;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * UDT Byte Stream Peer
+ * @author donald
+ * 2017年7月3日
+ * 上午9:01:35
+ */
+public class ByteEchoPeerBase {
+	private static final Logger log = LoggerFactory.getLogger(ByteEchoPeerBase.class);
+	protected final String peerName;
+    protected final int messageSize;
+    protected final SocketAddress myAddress;
+    protected final SocketAddress peerAddress;
+
+    public ByteEchoPeerBase(String peerName,int messageSize, SocketAddress myAddress, SocketAddress peerAddress) {
+        this.peerName = peerName; 
+    	this.messageSize = messageSize;
+        this.myAddress = myAddress;
+        this.peerAddress = peerAddress;
+    }
+
+    @SuppressWarnings("deprecation")
+	public void run() throws Exception {
+        final ThreadFactory connectFactory = new DefaultThreadFactory("rendezvous");
+        final NioEventLoopGroup connectGroup = new NioEventLoopGroup(1,
+                connectFactory, NioUdtProvider.BYTE_PROVIDER);
+        try {
+            final Bootstrap bootstrap = new Bootstrap();
+            bootstrap.group(connectGroup)
+                    .channelFactory(NioUdtProvider.BYTE_RENDEZVOUS)
+                    .handler(new ChannelInitializer<UdtChannel>() {
+                        @Override
+                        protected void initChannel(UdtChannel ch) throws Exception {
+                            ch.pipeline().addLast(
+                                    new LoggingHandler(LogLevel.INFO),
+                                    new ByteEchoPeerHandler(messageSize));
+                        }
+                    });
+            final ChannelFuture future = bootstrap.connect(peerAddress, myAddress).sync();
+            log.info("========="+peerName +" is start=========");
+            future.channel().closeFuture().sync();
+        } finally {
+            connectGroup.shutdownGracefully();
+        }
+    }
+}
+
+peer one：
+package netty.main.udt.peer;
+
+import io.netty.util.internal.SocketUtils;
+import netty.constant.udt.Config;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+
+/**
+ * UDT Byte Stream Peer one
+ * @author donald
+ * 2017年7月3日
+ * 上午9:01:58
+ */
+public class ByteEchoPeerOne extends ByteEchoPeerBase {
+    private static final String PEER_NAME = "peerOne";
+    public ByteEchoPeerOne(int messageSize, SocketAddress myAddress, SocketAddress peerAddress) {
+        super(PEER_NAME,messageSize, myAddress, peerAddress);
+    }
+
+    public static void main(String[] args) throws Exception {
+        final int messageSize = 64 * 1024;
+        final InetSocketAddress myAddress = SocketUtils.socketAddress(Config.hostOne, Config.portOne);
+        final InetSocketAddress peerAddress = SocketUtils.socketAddress(Config.hostTwo, Config.portTwo);
+        new ByteEchoPeerOne(messageSize, myAddress, peerAddress).run();
+    }
+}
+
+peer two：
+package netty.main.udt.peer;
+
+import io.netty.util.internal.SocketUtils;
+import netty.constant.udt.Config;
+
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+
+/**
+ * UDT Byte Stream Peer two
+ * @author donald
+ * 2017年7月3日
+ * 上午9:02:14
+ */
+public class ByteEchoPeerTwo extends ByteEchoPeerBase {
+	 private static final String PEER_NAME = "peerTwo";
+    public ByteEchoPeerTwo(int messageSize, SocketAddress myAddress, SocketAddress peerAddress) {
+        super(PEER_NAME,messageSize, myAddress, peerAddress);
+    }
+    public static void main(String[] args) throws Exception {
+        final int messageSize = 64 * 1024;
+        final InetSocketAddress myAddress = SocketUtils.socketAddress(Config.hostTwo, Config.portTwo);
+        final InetSocketAddress peerAddress = SocketUtils.socketAddress(Config.hostOne, Config.portOne);
+        new ByteEchoPeerTwo(messageSize, myAddress, peerAddress).run();
+    }
+}
+
+peer ip和port配置：
+package netty.constant.udt;
+
+/**
+ * Peer to Peer Config
+ * @author donald
+ * 2017年7月3日
+ * 上午9:22:01
+ */
+public final class Config {
+    private Config() {
+    }
+    public static final String hostOne = "192.168.31.153";
+    public static final int portOne = 10010;
+    public static final String hostTwo = "192.168.31.153";
+    public static final int portTwo = 10011;
+
+}
+
+启动peer one&two,控制台输出：
+peer one：
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.SocketUDT library location : ./lib/bin
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.SocketUDT loader provider  : com.barchart.udt.lib.LibraryLoaderUDT
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.lib.PluginPropsUDT ARCH/OS/LINK = amd64/Windows/gpp
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.lib.LibraryLoaderUDT Platform supported.
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.lib.LibraryLoaderUDT Loading release libraries.
+[INFO ] 2017-07-06 22:54:56 com.barchart.udt.lib.LibraryLoaderUDT Release libraries loaded.
+[INFO ] 2017-07-06 22:54:56 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89] REGISTERED
+[INFO ] 2017-07-06 22:54:56 io.netty.handler.logging.LoggingHandler 17CONNECT218218[id: 0xbd0fcb89] CONNECT: /192.168.31.153:10011, /192.168.31.153:10010
+[INFO ] 2017-07-06 22:55:03 netty.main.udt.peer.ByteEchoPeerBase =========peerOne is start=========
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89, L:/192.168.31.153:10010 - R:/192.168.31.153:10011] ACTIVE
+[INFO ] 2017-07-06 22:55:03 netty.handler.udt.peer.ByteEchoPeerHandler ECHO active 
+	[id: 0x1c7738ed]
+	0) Maximum_Transfer_Unit = 1,500
+	1) Is_Send_Synchronous = false
+	2) Is_Receive_Synchronous = false
+	3) Custom_Congestion_Control = null
+	4) Flight_Window_Size = 25,600 (25 K)
+	5) Protocol_Send_Buffer_Size = 10,485,056
+	6) Protocol_Receive_Buffer_Size = 10,485,056
+	7) Time_To_Linger_On_Close = 0
+	8) System_Send_Buffer_Size = 1,048,576
+	9) System_Receive_Buffer_Size = 1,048,576
+	12) Is_Randezvous_Connect_Enabled = true
+	13) Send_Timeout = -1
+	14) Receive_Timeout = -1
+	15) Is_Address_Reuse_Enabled = true
+	16) Maximum_Bandwidth = -1
+	17) Status_Code = 5
+	18) Epoll_Event_Mask = 4
+	19) Send_Buffer_Consumed = 0
+	20) Receive_Buffer_Available = 0
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89, L:/192.168.31.153:10010 - R:/192.168.31.153:10011] WRITE: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89, L:/192.168.31.153:10010 - R:/192.168.31.153:10011] FLUSH
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89, L:/192.168.31.153:10010 - R:/192.168.31.153:10011] READ: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:55:03 netty.handler.udt.peer.ByteEchoPeerHandler ===reciever message from UDT Byte Stream Peer:Hello peer...
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0xbd0fcb89, L:/192.168.31.153:10010 - R:/192.168.31.153:10011] READ COMPLETE
+
+peer two：
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.SocketUDT library location : ./lib/bin
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.SocketUDT loader provider  : com.barchart.udt.lib.LibraryLoaderUDT
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.lib.PluginPropsUDT ARCH/OS/LINK = amd64/Windows/gpp
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.lib.LibraryLoaderUDT Platform supported.
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.lib.LibraryLoaderUDT Loading release libraries.
+[INFO ] 2017-07-06 22:55:02 com.barchart.udt.lib.LibraryLoaderUDT Release libraries loaded.
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe] REGISTERED
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler 17CONNECT218218[id: 0x703f93fe] CONNECT: /192.168.31.153:10010, /192.168.31.153:10011
+[INFO ] 2017-07-06 22:55:03 netty.main.udt.peer.ByteEchoPeerBase =========peerTwo is start=========
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe, L:/192.168.31.153:10011 - R:/192.168.31.153:10010] ACTIVE
+[INFO ] 2017-07-06 22:55:03 netty.handler.udt.peer.ByteEchoPeerHandler ECHO active 
+	[id: 0x02f505e9]
+	0) Maximum_Transfer_Unit = 1,500
+	1) Is_Send_Synchronous = false
+	2) Is_Receive_Synchronous = false
+	3) Custom_Congestion_Control = null
+	4) Flight_Window_Size = 25,600 (25 K)
+	5) Protocol_Send_Buffer_Size = 10,485,056
+	6) Protocol_Receive_Buffer_Size = 10,485,056
+	7) Time_To_Linger_On_Close = 0
+	8) System_Send_Buffer_Size = 1,048,576
+	9) System_Receive_Buffer_Size = 1,048,576
+	12) Is_Randezvous_Connect_Enabled = true
+	13) Send_Timeout = -1
+	14) Receive_Timeout = -1
+	15) Is_Address_Reuse_Enabled = true
+	16) Maximum_Bandwidth = -1
+	17) Status_Code = 5
+	18) Epoll_Event_Mask = 4
+	19) Send_Buffer_Consumed = 0
+	20) Receive_Buffer_Available = 0
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe, L:/192.168.31.153:10011 - R:/192.168.31.153:10010] WRITE: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe, L:/192.168.31.153:10011 - R:/192.168.31.153:10010] FLUSH
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe, L:/192.168.31.153:10011 - R:/192.168.31.153:10010] READ: 13B
+         +-------------------------------------------------+
+         |  0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f |
++--------+-------------------------------------------------+----------------+
+|00000000| 48 65 6c 6c 6f 20 70 65 65 72 2e 2e 2e          |Hello peer...   |
++--------+-------------------------------------------------+----------------+
+[INFO ] 2017-07-06 22:55:03 netty.handler.udt.peer.ByteEchoPeerHandler ===reciever message from UDT Byte Stream Peer:Hello peer...
+[INFO ] 2017-07-06 22:55:03 io.netty.handler.logging.LoggingHandler [id: 0x703f93fe, L:/192.168.31.153:10011 - R:/192.168.31.153:10010] READ COMPLETE
+
+

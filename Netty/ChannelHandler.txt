@@ -1,0 +1,499 @@
+netty 网络通信示例一 ：[url]http://donald-draper.iteye.com/blog/2383326[/url]
+netty 网络通信示例二：[url]http://donald-draper.iteye.com/blog/2383328[/url]
+netty 网络通信示例三：[url]http://donald-draper.iteye.com/blog/2383392[/url]
+netty 网络通信示例四：[url]http://donald-draper.iteye.com/blog/2383472[/url]
+Netty 构建HTTP服务器示例：[url]http://donald-draper.iteye.com/blog/2383527[/url]
+Netty UDT网络通信示例：[url]http://donald-draper.iteye.com/blog/2383529[/url]
+前我们用几篇文章简单看了一下Netty的网络通信，从示例中可以看出，实际的数据处理都是交给
+通道处理器ChannelHandler去处理，包括上层消息对象转换底层字节流和字节流转换为上层消息对象。
+在简单的ECHO示例中服务端和客户端的IO操作Handler都是基于ChannelInboundHandlerAdapter，今天我们来看一下
+通道处理器。
+先看一下Inbound通道处理器的继承树结构
+//ChannelInboundHandlerAdapter
+public class ChannelInboundHandlerAdapter extends ChannelHandlerAdapter
+    implements ChannelInboundHandler
+{
+//ChannelInboundHandler
+public interface ChannelInboundHandler
+    extends ChannelHandler
+{
+//ChannelHandlerAdapter
+public abstract class ChannelHandlerAdapter
+    implements ChannelHandler
+{
+下面我们来看一下通道处理器接口ChannelHandler的定义
+
+package io.netty.channel;
+
+import io.netty.util.Attribute;
+import io.netty.util.AttributeKey;
+
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Handles an I/O event or intercepts an I/O operation, and forwards it to its next handler in
+ * its {@link ChannelPipeline}.
+ *处理IO事件或拦截IO操作，并转发事件到处理器管道的下一个通道处理器
+ * <h3>Sub-types</h3>
+ * <p>
+ * {@link ChannelHandler} itself does not provide many methods, but you usually have to implement one of its subtypes:
+ 通道处理器本身没有提供太多的方法，但是你可以实现它的子类型如下
+ * <ul>
+ * <li>{@link ChannelInboundHandler} to handle inbound I/O events, and</li>输入流通道处理器，处理流入的IO事件
+ * <li>{@link ChannelOutboundHandler} to handle outbound I/O operations.</li>输出流通道处理器，处理流出的IO操作
+ * </ul>
+ * </p>
+ * <p>
+ * Alternatively, the following adapter classes are provided for your convenience:
+ 另外还提供了如下结果适配器
+ * <ul>
+ * <li>{@link ChannelInboundHandlerAdapter} to handle inbound I/O events,</li>输入流处理器适配器，处理流入的IO事件
+ * <li>{@link ChannelOutboundHandlerAdapter} to handle outbound I/O operations, and</li>输出流通道适配器，处理流出的IO操作
+ * <li>{@link ChannelDuplexHandler} to handle both inbound and outbound events</li>多路复用适配器，可以处理流入和流出的IO事件
+ * </ul>
+ * </p>
+ * <p>
+ * For more information, please refer to the documentation of each subtype.
+ * </p>
+ *
+ * <h3>The context object</h3>
+ 上下文对象
+ * <p>
+ * A {@link ChannelHandler} is provided with a {@link ChannelHandlerContext}
+ * object.  A {@link ChannelHandler} is supposed to interact with the
+ * {@link ChannelPipeline} it belongs to via a context object.  Using the
+ * context object, the {@link ChannelHandler} can pass events upstream or
+ * downstream, modify the pipeline dynamically, or store the information
+ * (using {@link AttributeKey}s) which is specific to the handler.
+ *一个通道处理器关联一个通道处理器上下文。通道处理器通过一个上下文对象，与它所属的
+ 通道管道线交互。通道上一下对象，通道处理器上行或下行传递事件，动态修改管道，或通过
+ AttributeKey存储特殊的信息。
+ * <h3>State management</h3>
+ *状态管理
+ * A {@link ChannelHandler} often needs to store some stateful information.
+ * The simplest and recommended approach is to use member variables:
+ 通道处理器器通道通常需要存储一些状态信息，简单有效，并强烈的方法是用成员变量：
+ * <pre>
+ * public interface Message {
+ *     // your methods here
+ * }
+ *
+ * public class DataServerHandler extends {@link SimpleChannelInboundHandler}&lt;Message&gt; {
+ *
+ *     <b>private boolean loggedIn;</b>
+ *
+ *     {@code @Override}
+ *     public void channelRead0({@link ChannelHandlerContext} ctx, Message message) {
+ *         {@link Channel} ch = e.getChannel();
+ *         if (message instanceof LoginMessage) {
+ *             authenticate((LoginMessage) message);
+ *             <b>loggedIn = true;</b>
+ *         } else (message instanceof GetDataMessage) {
+ *             if (<b>loggedIn</b>) {
+ *                 ch.write(fetchSecret((GetDataMessage) message));
+ *             } else {
+ *                 fail();
+ *             }
+ *         }
+ *     }
+ *     ...
+ * }
+ * </pre>
+ * Because the handler instance has a state variable which is dedicated to
+ * one connection, you have to create a new handler instance for each new
+ * channel to avoid a race condition where a unauthenticated client can get
+ * the confidential information:
+ 因为通道处理器实例有一个用于表示连接的状态变量，为了避免没有认证的客户端获取机密的信息，
+ 这一个竞争条件，你不得不为每个新建的通道创建一个处理器实例。
+ * <pre>
+ * // Create a new handler instance per channel.
+ 每个通道创建一个处理器
+ * // See {@link ChannelInitializer#initChannel(Channel)}.
+ * public class DataServerInitializer extends {@link ChannelInitializer}&lt;{@link Channel}&gt; {
+ *     {@code @Override}
+ *     public void initChannel({@link Channel} channel) {
+ *         channel.pipeline().addLast("handler", <b>new DataServerHandler()</b>);
+ *     }
+ * }
+ *
+ * </pre>
+ *
+ * <h4>Using {@link AttributeKey}s</h4>
+ *使用AttributeKey
+ * Although it's recommended to use member variables to store the state of a
+ * handler, for some reason you might not want to create many handler instances.
+ * In such a case, you can use {@link AttributeKey}s which is provided by
+ * {@link ChannelHandlerContext}:
+ 尽管强烈建议使用成员变量来存储处理器状态，由于一些原因，你也许不想创建许多处理器实例。
+ 在这种情况，你可以使用通道处理器上下文提供的属性键AttributeKey。
+ * <pre>
+ * public interface Message {
+ *     // your methods here
+ * }
+ *
+ * {@code @Sharable}//共享通道处理器
+ * public class DataServerHandler extends {@link SimpleChannelInboundHandler}&lt;Message&gt; {
+ *     private final {@link AttributeKey}&lt;{@link Boolean}&gt; auth =
+ *           {@link AttributeKey#valueOf(String) AttributeKey.valueOf("auth")};
+ *
+ *     {@code @Override}
+ *     public void channelRead({@link ChannelHandlerContext} ctx, Message message) {
+ *         {@link Attribute}&lt;{@link Boolean}&gt; attr = ctx.attr(auth);
+ *         {@link Channel} ch = ctx.channel();
+ *         if (message instanceof LoginMessage) {
+ *             authenticate((LoginMessage) o);
+ *             <b>attr.set(true)</b>;
+ *         } else (message instanceof GetDataMessage) {
+ *             if (<b>Boolean.TRUE.equals(attr.get())</b>) {
+ *                 ch.write(fetchSecret((GetDataMessage) o));
+ *             } else {
+ *                 fail();
+ *             }
+ *         }
+ *     }
+ *     ...
+ * }
+ * </pre>
+ * Now that the state of the handler is attached to the {@link ChannelHandlerContext}, you can add the
+ * same handler instance to different pipelines:
+ 这种情况下，处理器附加在通道处理器上下文上，你可以添加相同的处理器实例到不同的管道上。
+ * <pre>
+ * public class DataServerInitializer extends {@link ChannelInitializer}&lt;{@link Channel}&gt; {
+ *
+ *     private static final DataServerHandler <b>SHARED</b> = new DataServerHandler();
+ *
+ *     {@code @Override}
+ *     public void initChannel({@link Channel} channel) {
+ *         channel.pipeline().addLast("handler", <b>SHARED</b>);
+ *     }
+ * }
+ * </pre>
+ *
+ *
+ * <h4>The {@code @Sharable} annotation</h4>
+ * <p>@Sharable注解
+ * In the example above which used an {@link AttributeKey},
+ * you might have noticed the {@code @Sharable} annotation.
+ 在上面属性键的实例中，你也许已经注意到共享注解的使用。
+ * <p>
+ * If a {@link ChannelHandler} is annotated with the {@code @Sharable}
+ * annotation, it means you can create an instance of the handler just once and
+ * add it to one or more {@link ChannelPipeline}s multiple times without
+ * a race condition.
+ 被@Sharable注解的通道处理器，意味着，你可以一次性创建一个通道处理器实例，在没有竞争
+ 条件的情况下，可以一次或多次到通道管道线。
+ * <p>
+ * If this annotation is not specified, you have to create a new handler
+ * instance every time you add it to a pipeline because it has unshared state
+ * such as member variables.
+如果通道处理器没有被@Sharable注解，由于通道处理器状态不共享，比如成员变量，
+你不得不在每次添加通道处理器到通道管道线时，创建一个新的通道处理器实例。
+ * <p>
+ * This annotation is provided for documentation purpose, just like
+ * <a href="http://www.javaconcurrencyinpractice.com/annotations/doc/">the JCIP annotations</a>.
+ *此注解的相关使用文档，参看如下链接。
+ * <h3>Additional resources worth reading</h3>
+ * <p>附加可读资源。
+ * Please refer to the {@link ChannelHandler}, and
+ * {@link ChannelPipeline} to find out more about inbound and outbound operations,
+ * what fundamental differences they have, how they flow in a  pipeline,  and how to handle
+ * the operation in your application.
+ 参见通道处理器和通道管道线，获取inbound和outbound更多的操作信息，两种操作的本质不同，在管道中的流向，
+ 以及如果在应用中处理操作
+ */
+public interface ChannelHandler {
+
+    /**
+     * Gets called after the {@link ChannelHandler} was added to the actual context and it's ready to handle events.
+     在通道处理器添加到实际上下文后调用，准备处理IO事件
+     */
+    void handlerAdded(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Gets called after the {@link ChannelHandler} was removed from the actual context and it doesn't handle events
+     * anymore.
+     在通道处理器从实际上下文中移除后调用，不再处理IO事件
+     */
+    void handlerRemoved(ChannelHandlerContext ctx) throws Exception;
+
+    /**
+     * Gets called if a {@link Throwable} was thrown.
+     *到处理IO事件，异常抛出时调用，已丢弃
+     * @deprecated is part of {@link ChannelInboundHandler}
+     */
+    @Deprecated
+    void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception;
+
+    /**
+     * Indicates that the same instance of the annotated {@link ChannelHandler}
+     * can be added to one or more {@link ChannelPipeline}s multiple times
+     * without a race condition.
+     Sharable注解表示一个被Sharable注解的通道处理器可以在没有竞争条件的情况下，一次或多次
+     添加到通道管道线上。
+     * <p>
+     * If this annotation is not specified, you have to create a new handler
+     * instance every time you add it to a pipeline because it has unshared
+     * state such as member variables.
+     如果通道处理器，没有被Sharable注解通道处理器，由于通道处理器成员变量为不共享状态，每次添加通道处理器到管道时，
+     必须创建一个新的处理器实例
+     * <p>
+     * This annotation is provided for documentation purpose, just like
+     * <a href="http://www.javaconcurrencyinpractice.com/annotations/doc/">the JCIP annotations</a>.
+     */
+    @Inherited
+    @Documented
+    @Target(ElementType.TYPE)
+    @Retention(RetentionPolicy.RUNTIME)
+    @interface Sharable {
+        // no value
+    }
+}
+小节：
+通道处理器ChannelHandler，主要有两个事件方法分别为handlerAdded和handlerRemoved，
+handlerAdded在通道处理器添加到实际上下文后调用，通道处理器准备处理IO事件；
+handlerRemoved在通道处理器从实际上下文中移除后调用，通道处理器不再处理IO事件。
+一个通道处理器关联一个通道处理器上下文ChannelHandlerContext。
+通道处理器通过一个上下文对象，与它所属的通道管道线交互。通道上下文对象，
+通道处理器上行或下行传递的事件，动态修改管道，或通过AttributeKey存储特殊的信息。
+通道处理器内部定义了一个共享注解Sharable，默认访问类型为Protected；添加共享注解的
+通道处理器，说明通道处理器中的变量可以共享，可以创建一个通道处理器实例，多次添加到
+通道管道线ChannlePipeline;对于没有共享注解的通道器，在每次添加到管道线上时，都要重新
+创建一个通道处理器实例。通道处理器只定义了简单的通道处理器添加到通道处理器上下文或从
+上下文移除的事件操作，没有具体定义读操作（上行UpStream，输入流Inbound，字节流到消息对象ByteToMessage），
+写操作（下行DownStream，输出流Outbound，消息到字节流MessageToByte）。
+这操作分别定义在，输入流处理器ChannelInboundHandler，输出流处理器ChannelOutboundHandler，并提供了处理的相应适配器，
+输入流处理器适配器ChannelInboundHandlerAdapter，输出流通道适配器ChannelOutboundHandlerAdapter，
+多路复用适配器ChannelDuplexHandler。这些我们在后面再讲。
+
+再来看一下通道处理器适配器：
+
+package io.netty.channel;
+
+import io.netty.util.internal.InternalThreadLocalMap;
+
+import java.util.Map;
+
+/**
+ * Skeleton implementation of a {@link ChannelHandler}.
+ 通道处理基本实现
+ */
+public abstract class ChannelHandlerAdapter implements ChannelHandler {
+
+    // Not using volatile because it's used only for a sanity check.
+    //没有使用volatile，因为此变量仅仅用于
+    boolean added;
+
+    /**
+     * Throws {@link IllegalStateException} if {@link ChannelHandlerAdapter#isSharable()} returns {@code true}
+     判断通道处理器是否开启共享
+     */
+    protected void ensureNotSharable() {
+        if (isSharable()) {
+            throw new IllegalStateException("ChannelHandler " + getClass().getName() + " is not allowed to be shared");
+        }
+    }
+
+    /**
+     * Return {@code true} if the implementation is {@link Sharable} and so can be added
+     * to different {@link ChannelPipeline}s.
+     如果通道处理器被Sharable注解，则返回true，你可以添加到不同的通道管道线。
+     */
+    public boolean isSharable() {
+        /**
+         * Cache the result of {@link Sharable} annotation detection to workaround a condition. We use a
+         * {@link ThreadLocal} and {@link WeakHashMap} to eliminate the volatile write/reads. Using different
+         * {@link WeakHashMap} instances per {@link Thread} is good enough for us and the number of
+         * {@link Thread}s are quite limited anyway.
+	 缓存通道处理器共享注解探测结果。我们用一个ThreadLocal和WeakHashMap来剔除可见的读写操作。
+	 每个线程一个WeakHashMap实例，同时线程数量是有限的
+         *
+         * See <a href="https://github.com/netty/netty/issues/2289">#2289</a>.
+         */
+        Class<?> clazz = getClass();
+	//获取线程共享注解通道处理器缓存
+        Map<Class<?>, Boolean> cache = InternalThreadLocalMap.get().handlerSharableCache();
+        Boolean sharable = cache.get(clazz);
+        if (sharable == null) {
+	    //判断通道处理器是否被Sharable注解
+            sharable = clazz.isAnnotationPresent(Sharable.class);
+            cache.put(clazz, sharable);
+        }
+        return sharable;
+    }
+
+    /**
+     * Do nothing by default, sub-classes may override this method.
+     handlerAdded事件默认处理器，不做任何事情
+     */
+    @Override
+    public void handlerAdded(ChannelHandlerContext ctx) throws Exception {
+        // NOOP
+    }
+
+    /**
+     * Do nothing by default, sub-classes may override this method.
+      handlerRemoved事件默认处理器，不做任何事情
+     */
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        // NOOP
+    }
+
+    /**
+     * Calls {@link ChannelHandlerContext#fireExceptionCaught(Throwable)} to forward
+     * to the next {@link ChannelHandler} in the {@link ChannelPipeline}.
+     *当IO操作出现异常时，调用ChannelHandlerContext#fireExceptionCaught方法，触发异常事件，并转发给
+     通道管道线的下一个通道处理器
+     * Sub-classes may override this method to change behavior.
+     */
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        ctx.fireExceptionCaught(cause);
+    }
+}
+从通道处理器适配的定义来看，这个适配器模式中的 handlerAdded和handlerRemoved事件默认处理器，不做任何事情
+，这个与MINA中的适配器模式相同。处理IO操作异常，则调用ChannelHandlerContext#fireExceptionCaught方法，触发异常事件，并转发给
+通道管道线的下一个通道处理器。
+我们来单独看一下，判断通道处理器是否为注解：
+ public boolean isSharable() {
+        /**
+         * Cache the result of {@link Sharable} annotation detection to workaround a condition. We use a
+         * {@link ThreadLocal} and {@link WeakHashMap} to eliminate the volatile write/reads. Using different
+         * {@link WeakHashMap} instances per {@link Thread} is good enough for us and the number of
+         * {@link Thread}s are quite limited anyway.
+	 缓存通道处理器共享注解探测结果。我们用一个ThreadLocal和WeakHashMap来剔除可见的读写操作。
+	 每个线程一个WeakHashMap实例，同时线程数量是有限的
+         *
+         * See <a href="https://github.com/netty/netty/issues/2289">#2289</a>.
+         */
+        Class<?> clazz = getClass();
+	//获取线程共享注解通道处理器缓存
+        Map<Class<?>, Boolean> cache = InternalThreadLocalMap.get().handlerSharableCache();
+        Boolean sharable = cache.get(clazz);
+        if (sharable == null) {
+	    //判断通道处理器是否被Sharable注解
+            sharable = clazz.isAnnotationPresent(Sharable.class);
+            cache.put(clazz, sharable);
+        }
+        return sharable;
+}
+来看这一句：
+//获取线程共享注解通道处理器缓存
+ Map<Class<?>, Boolean> cache = InternalThreadLocalMap.get().handlerSharableCache();
+
+ //InternalThreadLocalMap
+ /**
+ * The internal data structure that stores the thread-local variables for Netty and all {@link FastThreadLocal}s.
+ * Note that this class is for internal use only and is subject to change at any time.  Use {@link FastThreadLocal}
+ * unless you know what you are doing.
+InternalThreadLocalMap为存储Netty线程本地变量和FastThreadLocal的内部数据结构。注意此类仅内部使用，可能随时改变。
+除非你知道你在做什么，不然的话用FastThreadLocal
+ */
+public final class InternalThreadLocalMap extends UnpaddedInternalThreadLocalMap {
+  //获取线程本地变量InternalThreadLocalMap
+  public static InternalThreadLocalMap get() {
+        Thread thread = Thread.currentThread();
+        if (thread instanceof FastThreadLocalThread) {
+            return fastGet((FastThreadLocalThread) thread);
+        } else {
+            return slowGet();
+        }
+    }
+   private static InternalThreadLocalMap fastGet(FastThreadLocalThread thread) {
+        InternalThreadLocalMap threadLocalMap = thread.threadLocalMap();
+        if (threadLocalMap == null) {
+            thread.setThreadLocalMap(threadLocalMap = new InternalThreadLocalMap());
+        }
+        return threadLocalMap;
+    }
+
+    private static InternalThreadLocalMap slowGet() {
+        ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = UnpaddedInternalThreadLocalMap.slowThreadLocalMap;
+        InternalThreadLocalMap ret = slowThreadLocalMap.get();
+        if (ret == null) {
+            ret = new InternalThreadLocalMap();
+            slowThreadLocalMap.set(ret);
+        }
+        return ret;
+    }
+    //获取线程本地共享注解通道处理器探测结果缓存Map<Class<?>, Boolean>
+     public Map<Class<?>, Boolean> handlerSharableCache() {
+        Map<Class<?>, Boolean> cache = handlerSharableCache;
+        if (cache == null) {
+            // Start with small capacity to keep memory overhead as low as possible.
+            handlerSharableCache = cache = new WeakHashMap<Class<?>, Boolean>(4);
+        }
+        return cache;
+    }
+}
+从上面来看通道处理器适配器的判断通道处理器是否共享注解，首先获取线程的本地变量，从线程本地变量
+获取线程本地共享注解通道处理器探测结果缓存，如果缓存中存在通道处理器clazz，则返回缓存结果，否则
+将探测结果添加到缓存中。
+
+总结：
+
+通道处理器ChannelHandler，主要有两个事件方法分别为handlerAdded和handlerRemoved，
+handlerAdded在通道处理器添加到实际上下文后调用，通道处理器准备处理IO事件；
+handlerRemoved在通道处理器从实际上下文中移除后调用，通道处理器不再处理IO事件。
+一个通道处理器关联一个通道处理器上下文ChannelHandlerContext。
+通道处理器通过一个上下文对象，与它所属的通道管道线交互。通道上下文对象，
+通道处理器上行或下行传递的事件，动态修改管道，或通过AttributeKey存储特殊的信息。
+通道处理器内部定义了一个共享注解Sharable，默认访问类型为Protected；添加共享注解的
+通道处理器，说明通道处理器中的变量可以共享，可以创建一个通道处理器实例，多次添加到
+通道管道线ChannlePipeline;对于没有共享注解的通道器，在每次添加到管道线上时，都要重新
+创建一个通道处理器实例。通道处理器只定义了简单的通道处理器添加到通道处理器上下文或从
+上下文移除的事件操作，没有具体定义读操作（上行UpStream，输入流Inbound，字节流到消息对象ByteToMessage），
+写操作（下行DownStream，输出流Outbound，消息到字节流MessageToByte）。
+这操作分别定义在，输入流处理器ChannelInboundHandler，输出流处理器ChannelOutboundHandler，并提供了处理的相应适配器，
+输入流处理器适配器ChannelInboundHandlerAdapter，输出流通道适配器ChannelOutboundHandlerAdapter，
+多路复用适配器ChannelDuplexHandler。
+    通道处理器适配器ChannelHandlerAdapter的设计模式为适配器，这个适配器模式中的 handlerAdded和handlerRemoved事件默认处理器，不做任何事情
+，这个与MINA中的适配器模式相同。处理IO操作异常，则调用ChannelHandlerContext#fireExceptionCaught方法，触发异常事件，并转发给
+通道管道线的下一个通道处理器。
+     看通道处理器适配器的判断通道处理器是否共享注解，首先获取线程的本地变量，从线程本地变量
+获取线程本地共享注解通道处理器探测结果缓存，如果缓存中存在通道处理器clazz，则返回缓存结果，否则
+将探测结果添加到缓存中。
+
+
+//UnpaddedInternalThreadLocalMap
+/**
+ * The internal data structure that stores the thread-local variables for Netty and all {@link FastThreadLocal}s.
+ * Note that this class is for internal use only and is subject to change at any time.  Use {@link FastThreadLocal}
+ * unless you know what you are doing.
+UnpaddedInternalThreadLocalMap为存储Netty线程本地变量和FastThreadLocal的内部数据结构。注意此类仅内部使用，可能随时改变。
+除非你知道你在做什么，不然的话用FastThreadLocal
+ */
+class UnpaddedInternalThreadLocalMap {
+
+    static final ThreadLocal<InternalThreadLocalMap> slowThreadLocalMap = new ThreadLocal<InternalThreadLocalMap>();
+    static final AtomicInteger nextIndex = new AtomicInteger();
+
+    /** Used by {@link FastThreadLocal} */
+    Object[] indexedVariables;
+
+    // Core thread-locals
+    int futureListenerStackDepth;
+    int localChannelReaderStackDepth;
+    Map<Class<?>, Boolean> handlerSharableCache;
+    IntegerHolder counterHashCode;
+    ThreadLocalRandom random;
+    Map<Class<?>, TypeParameterMatcher> typeParameterMatcherGetCache;
+    Map<Class<?>, Map<String, TypeParameterMatcher>> typeParameterMatcherFindCache;
+
+    // String-related thread-locals
+    StringBuilder stringBuilder;
+    Map<Charset, CharsetEncoder> charsetEncoderCache;
+    Map<Charset, CharsetDecoder> charsetDecoderCache;
+
+    // ArrayList-related thread-locals
+    ArrayList<Object> arrayList;
+
+    UnpaddedInternalThreadLocalMap(Object[] indexedVariables) {
+        this.indexedVariables = indexedVariables;
+    }
+}

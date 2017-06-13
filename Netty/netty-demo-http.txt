@@ -1,0 +1,163 @@
+netty 网络通信示例一 ：[url]http://donald-draper.iteye.com/blog/2383326[/url]
+netty 网络通信示例二：[url]http://donald-draper.iteye.com/blog/2383328[/url]
+netty 网络通信示例三：[url]http://donald-draper.iteye.com/blog/2383392[/url]
+netty 网络通信示例四：[url]http://donald-draper.iteye.com/blog/2383472[/url]
+前面文章我们在编码器与解码器的示例，及基于textline编解码器通信示例，今天我们通过
+Netty来时实现一个简单的HTTP服务器：
+HTTP服务器：
+package netty.main.http;
+
+import java.net.InetSocketAddress;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
+import netty.initializer.http.HttpHelloWorldServerInitializer;
+
+/**
+ * An HTTP server that sends back the content of the received HTTP request
+ * in a pretty plaintext form.
+ * 
+ * @author donald
+ * 2017年6月30日
+ * 上午11:44:43
+ */
+public final class HttpHelloWorldServer {
+	private static final Logger log = LoggerFactory.getLogger(HttpHelloWorldServer.class);
+    static final boolean SSL = System.getProperty("ssl") != null;
+    private static final  String ip = "192.168.31.153";
+    static final int port = Integer.parseInt(System.getProperty("port", SSL? "8443" : "8080"));
+
+    public static void main(String[] args) throws Exception {
+        // Configure SSL.
+        final SslContext sslCtx;
+        if (SSL) {
+            SelfSignedCertificate ssc = new SelfSignedCertificate();
+            sslCtx = SslContextBuilder.forServer(ssc.certificate(), ssc.privateKey()).build();
+        } else {
+            sslCtx = null;
+        }
+
+        // Configure the server.
+        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        try {
+            ServerBootstrap b = new ServerBootstrap();
+            b.option(ChannelOption.SO_BACKLOG, 1024);
+            b.group(bossGroup, workerGroup)
+             .channel(NioServerSocketChannel.class)
+             .handler(new LoggingHandler(LogLevel.INFO))
+             .childHandler(new HttpHelloWorldServerInitializer(sslCtx));
+            InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+            Channel ch = b.bind(inetSocketAddress).sync().channel();
+            log.info("=========HttpServer is start=========");
+            System.err.println("Open your web browser and navigate to " +
+                    (SSL? "https" : "http") + "://"+ip+":" + port + '/');
+            ch.closeFuture().sync();
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+}
+Http服务器处理器Initializer：
+package netty.initializer.http;
+
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.handler.codec.http.HttpServerCodec;
+import io.netty.handler.codec.http.HttpServerExpectContinueHandler;
+import io.netty.handler.ssl.SslContext;
+import netty.handler.http.HttpHelloWorldServerHandler;
+/**
+ * 
+ * @author donald
+ * 2017年6月30日
+ * 上午11:42:49
+ */
+public class HttpHelloWorldServerInitializer extends ChannelInitializer<SocketChannel> {
+
+    private final SslContext sslCtx;
+
+    public HttpHelloWorldServerInitializer(SslContext sslCtx) {
+        this.sslCtx = sslCtx;
+    }
+
+    @Override
+    public void initChannel(SocketChannel ch) {
+        ChannelPipeline p = ch.pipeline();
+        if (sslCtx != null) {
+            p.addLast(sslCtx.newHandler(ch.alloc()));
+        }
+        p.addLast(new HttpServerCodec());
+        p.addLast(new HttpServerExpectContinueHandler());
+        p.addLast(new HttpHelloWorldServerHandler());
+    }
+}
+
+Http服务器处理器：
+package netty.handler.http;
+
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpUtil;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.util.AsciiString;
+import static io.netty.handler.codec.http.HttpResponseStatus.*;
+import static io.netty.handler.codec.http.HttpVersion.*;
+
+public class HttpHelloWorldServerHandler extends ChannelInboundHandlerAdapter {
+    private static final byte[] CONTENT = { 'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd' };
+    private static final AsciiString CONTENT_TYPE = new AsciiString("Content-Type");
+    private static final AsciiString CONTENT_LENGTH = new AsciiString("Content-Length");
+    private static final AsciiString CONNECTION = new AsciiString("Connection");
+    private static final AsciiString KEEP_ALIVE = new AsciiString("keep-alive");
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) {
+        ctx.flush();
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        if (msg instanceof HttpRequest) {
+            HttpRequest req = (HttpRequest) msg;
+
+            boolean keepAlive = HttpUtil.isKeepAlive(req);
+            FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK, Unpooled.wrappedBuffer(CONTENT));
+            response.headers().set(CONTENT_TYPE, "text/plain");
+            response.headers().setInt(CONTENT_LENGTH, response.content().readableBytes());
+
+            if (!keepAlive) {
+                ctx.write(response).addListener(ChannelFutureListener.CLOSE);
+            } else {
+                response.headers().set(CONNECTION, KEEP_ALIVE);
+                ctx.write(response);
+            }
+        }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+        cause.printStackTrace();
+        ctx.close();
+    }
+}
+打开浏览器，访问地址：http://192.168.31.153:8080/
+浏览器窗口显示Hello world!
