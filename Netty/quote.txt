@@ -20,3 +20,4 @@ Channel Pipeline
 #################################################################
 netty Inboudn/Outbound通道Invoker:[url]http://donald-draper.iteye.com/blog/2388233[/url]
 netty 异步任务-ChannelFuture：[url]http://donald-draper.iteye.com/blog/2388297[/url]
+ Netty 管道线定义-ChannelPipeline：[url]http://donald-draper.iteye.com/blog/2388453[/url]
