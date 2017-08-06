@@ -1,4 +1,4 @@
-#################################################################
+##################################################################
 demo
 #################################################################
 netty 网络通信示例一 ：[url]http://donald-draper.iteye.com/blog/2383326[/url]
@@ -20,4 +20,6 @@ Channel Pipeline
 #################################################################
 netty Inboudn/Outbound通道Invoker:[url]http://donald-draper.iteye.com/blog/2388233[/url]
 netty 异步任务-ChannelFuture：[url]http://donald-draper.iteye.com/blog/2388297[/url]
- Netty 管道线定义-ChannelPipeline：[url]http://donald-draper.iteye.com/blog/2388453[/url]
+netty 管道线定义-ChannelPipeline：[url]http://donald-draper.iteye.com/blog/2388453[/url]
+netty 默认Channel管道线初始化：[url]http://donald-draper.iteye.com/blog/2388613[/url]
+netty 默认Channel管道线-添加通道处理器：[url][/url]
