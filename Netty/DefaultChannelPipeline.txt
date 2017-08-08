@@ -51,12 +51,14 @@ public class DefaultChannelPipeline implements ChannelPipeline {
     final AbstractChannelHandlerContext tail;//管道线中通道处理器上下文的尾部
 
     private final Channel channel;//管道线所属Channel
-    private final ChannelFuture succeededFuture;
+    private final ChannelFuture succeededFuture;//通道异步成功完成任务结果
     private final VoidChannelPromise voidPromise;
+    //内存泄漏探测开关，当读取消息时，是否记录消息引用对象，以便
+    //内存泄漏时，调试消息的引用情况
     private final boolean touch = ResourceLeakDetector.isEnabled();
 
-    private Map<EventExecutorGroup, EventExecutor> childExecutors;
-    private MessageSizeEstimator.Handle estimatorHandle;
+    private Map<EventExecutorGroup, EventExecutor> childExecutors;//管道事件执行器组
+    private MessageSizeEstimator.Handle estimatorHandle;//消息大小估算Handler
     private boolean firstRegistration = true;//是否第一次注册通道处理器上下文
 
     /**
