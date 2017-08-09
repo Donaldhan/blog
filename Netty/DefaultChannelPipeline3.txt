@@ -1047,7 +1047,7 @@ public final ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
     return tail.writeAndFlush(msg, promise);
 }
 从上面可以看，管道处理Outbound相关事件，从尾部上下文到头部上下文，到达头部时，交由
-上限文所属管道关联的Channel的Unsafe处理。
+上下文所属管道关联的Channel的Unsafe处理。
 
 总结：
 
@@ -1055,7 +1055,7 @@ public final ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
 管道处理通道注册方法fireChannelRegistered，首先从
 头部上下文开始，如果上下文已经添加到管道，则触发上下文关联的通道处理器的
 channelRegistered事件，否则转发事件给上下文所属管道的下一个上下文;
-其他处罚Inbound事件的处理过程与fireChannelRegistered方法思路相同，
+其他Inbound事件的处理过程与fireChannelRegistered方法思路相同，
 只不过触发的通道处理器的相应事件;
 
 管道处理Inbound事件首先从头部上下文开始，直到尾部上下文，最后默认直接丢弃。
@@ -1068,7 +1068,7 @@ channelRegistered事件，否则转发事件给上下文所属管道的下一个上下文;
 
 
 管道处理Outbound相关事件，从尾部上下文到头部上下文，到达头部时，交由
-上限文所属管道关联的Channel的Unsafe处理。
+上下文所属管道关联的Channel的Unsafe处理。
 
 附：
 //DefaultChannelPipeline

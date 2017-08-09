@@ -1,0 +1,407 @@
+netty Inboudn/Outbound通道Invoker:[url]http://donald-draper.iteye.com/blog/2388233[/url]
+netty 异步任务-ChannelFuture：[url]http://donald-draper.iteye.com/blog/2388297[/url]
+netty 管道线定义-ChannelPipeline：[url]http://donald-draper.iteye.com/blog/2388453[/url]
+netty 默认Channel管道线初始化：[url]http://donald-draper.iteye.com/blog/2388613[/url]
+netty 默认Channel管道线-添加通道处理器：[url]http://donald-draper.iteye.com/blog/2388726[/url]
+netty 默认Channel管道线-通道处理器移除与替换：[url]http://donald-draper.iteye.com/blog/2388793[/url]
+netty 默认Channel管道线-Inbound和Outbound事件处理：[url]http://donald-draper.iteye.com/blog/2389148[/url]
+引言：
+在前面的几篇文章中我们看了Channle管道的默认实现，
+每个通道拥有一个Channel管道，管道用于管理通道处理器，管道以上下文模式管理通道处理器，
+每个通道上下文拥有一个前驱和后继上下文，可以说，即通道上下文在管道中是一个双向链表，
+上下文链表的头部为HeadContext，尾部为TailContext。管道主要通过上下文的inbound和oubound标志判断上下文类型。
+管道处理Inbound事件首先从头部上下文开始，直到尾部上下文，最后默认直接丢弃。 
+管道处理Outbound相关事件，从尾部上下文到头部上下文，到达头部时，交由上下文所属管道关联的Channel的Unsafe处理。
+今天我们来看一下通道处理器下文接口的定义：
+package io.netty.channel;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.Attribute;
+import io.netty.util.AttributeKey;
+import io.netty.util.AttributeMap;
+import io.netty.util.concurrent.EventExecutor;
+
+import java.nio.channels.Channels;
+
+/**
+ * Enables a {@link ChannelHandler} to interact with its {@link ChannelPipeline}
+ * and other handlers. Among other things a handler can notify the next {@link ChannelHandler} in the
+ * {@link ChannelPipeline} as well as modify the {@link ChannelPipeline} it belongs to dynamically.
+ *通道处理器上下文ChannelHandlerContext，使通道处理器可以与管道和管道中其他处理器进行交互。
+ 当IO事件发生时，处理可以将事件转发给所属管道的下一个通道处理器，同时可以动态修改处理器所属的管道。
+ * <h3>Notify</h3>
+ *通知
+ * You can notify the closest handler in the same {@link ChannelPipeline} by calling one of the various methods
+ * provided here.
+ *你可以使用提供的方法，通知邻近的通道处理器，事件触发。
+ * Please refer to {@link ChannelPipeline} to understand how an event flows.
+ *同时可以参考管道来理解事件流
+ * <h3>Modifying a pipeline</h3>
+ *修改管道
+ * You can get the {@link ChannelPipeline} your handler belongs to by calling
+ * {@link #pipeline()}.  A non-trivial application could insert, remove, or
+ * replace handlers in the pipeline dynamically at runtime.
+ *可以使用通道处理器上下文的#pipeline方法，获取处理器所属管道。引用在运行时环境
+ 下，可以插入移除替换管道中的处理器
+ * <h3>Retrieving for later use</h3>
+ *用于获取相关信息
+ * You can keep the {@link ChannelHandlerContext} for later use, such as
+ * triggering an event outside the handler methods, even from a different thread.
+ 在通道处理器方法之外的事件触发，甚至一个不同的线程中，你可以保存通道处理器上下文，以便使用。
+ * <pre>
+ 下面是一个保存上下文信息的实例
+ * public class MyHandler extends {@link ChannelDuplexHandler} {
+ *
+ *     <b>private {@link ChannelHandlerContext} ctx;</b>
+ *
+ *     public void beforeAdd({@link ChannelHandlerContext} ctx) {
+ *         <b>this.ctx = ctx;</b>
+ *     }
+ *
+ *     public void login(String username, password) {
+ *         ctx.write(new LoginMessage(username, password));
+ *     }
+ *     ...
+ * }
+ * </pre>
+ *
+ * <h3>Storing stateful information</h3>
+ *存储信息，不过当前已经被遗弃
+ * {@link #attr(AttributeKey)} allow you to
+ * store and access stateful information that is related with a handler and its
+ * context.  Please refer to {@link ChannelHandler} to learn various recommended
+ * ways to manage stateful information.
+ *#attr(AttributeKey)方法运行你存储与通道处理器和上下文关联的信息。参考通道处理器学习更多管理
+ 处理器和上下文属性方式。
+ * <h3>A handler can have more than one context</h3>
+ *一个处理可以有多个关联上下文
+ * Please note that a {@link ChannelHandler} instance can be added to more than
+ * one {@link ChannelPipeline}.  It means a single {@link ChannelHandler}
+ * instance can have more than one {@link ChannelHandlerContext} and therefore
+ * the single instance can be invoked with different
+ * {@link ChannelHandlerContext}s if it is added to one or more
+ * {@link ChannelPipeline}s more than once.
+ 需要注意的是，通道处理器实例可以添加到多个管道中。意味着一个通道处理器可以有多个上下文，
+ 如果通道处理器添加不止一个管道中，那么实例可以被多个上下文调用。
+ * <p>
+ * For example, the following handler will have as many independent {@link AttributeKey}s
+ * as how many times it is added to pipelines, regardless if it is added to the
+ * same pipeline multiple times or added to different pipelines multiple times:
+ 比如,下面一个处理器由于多次添加到通道中，可以有很多独立的属性，不管是添加一个通道多次，
+ 还是不同的管道多次。
+ * <pre>
+ * public class FactorialHandler extends {@link ChannelInboundHandlerAdapter} {
+ *
+ *   private final {@link AttributeKey}&lt;{@link Integer}&gt; counter = {@link AttributeKey}.valueOf("counter");
+ *
+ *   // This handler will receive a sequence of increasing integers starting
+ *   // from 1.
+ *   {@code @Override}
+ *   public void channelRead({@link ChannelHandlerContext} ctx, Object msg) {
+ *     Integer a = ctx.attr(counter).get();
+ *
+ *     if (a == null) {
+ *       a = 1;
+ *     }
+ *
+ *     attr.set(a * (Integer) msg);
+ *   }
+ * }
+ *
+ * // Different context objects are given to "f1", "f2", "f3", and "f4" even if
+ * // they refer to the same handler instance.  Because the FactorialHandler
+ * // stores its state in a context object (using an {@link AttributeKey}), the factorial is
+ * // calculated correctly 4 times once the two pipelines (p1 and p2) are active.
+ * FactorialHandler fh = new FactorialHandler();
+ *
+ 即使参考相同的处理器实例，但相应的上下文 "f1", "f2", "f3", and "f4"，并不相同。
+ 由于处理器存储着一个上下文属性，一旦管道线激活，将会调用4次。
+ * {@link ChannelPipeline} p1 = {@link Channels}.pipeline();
+ * p1.addLast("f1", fh);
+ * p1.addLast("f2", fh);
+ *
+ * {@link ChannelPipeline} p2 = {@link Channels}.pipeline();
+ * p2.addLast("f3", fh);
+ * p2.addLast("f4", fh);
+ * </pre>
+ *
+ * <h3>Additional resources worth reading</h3>
+ * <p>另外值得阅读的资源
+ * Please refer to the {@link ChannelHandler}, and
+ * {@link ChannelPipeline} to find out more about inbound and outbound operations,
+ * what fundamental differences they have, how they flow in a  pipeline,  and how to handle
+ * the operation in your application.
+ 请参考通道处理器和管道，获取更多的Inbound和Outbound操作信息，及两种操作的基本不同点，如何在管道中传输和
+ 在应用中如何处理操作。
+
+ */
+public interface ChannelHandlerContext extends AttributeMap, ChannelInboundInvoker, ChannelOutboundInvoker {
+
+    /**
+     * Return the {@link Channel} which is bound to the {@link ChannelHandlerContext}.
+     获取通道处理器上下文关联通道
+     */
+    Channel channel();
+
+    /**
+     * Returns the {@link EventExecutor} which is used to execute an arbitrary task.
+     获取上下文事件执行器，用于执行任务
+     */
+    EventExecutor executor();
+
+    /**
+     * The unique name of the {@link ChannelHandlerContext}.The name was used when then {@link ChannelHandler}
+     * was added to the {@link ChannelPipeline}. This name can also be used to access the registered
+     * {@link ChannelHandler} from the {@link ChannelPipeline}.
+     通道上下文的名字，即通道处理器添加到管道时的名字。此名字可以从管道获取对应的通道处理器
+     */
+    String name();
+
+    /**
+     * The {@link ChannelHandler} that is bound this {@link ChannelHandlerContext}.
+     获取上下文关联的通道处理器
+     */
+    ChannelHandler handler();
+
+    /**
+     * Return {@code true} if the {@link ChannelHandler} which belongs to this context was removed
+     * from the {@link ChannelPipeline}. Note that this method is only meant to be called from with in the
+     * {@link EventLoop}.
+     判断当前通道处理器关联上下文是否从管道移除。此方法在事件循环中调用
+     */
+    boolean isRemoved();
+   //触发Inbound事件方法
+    @Override
+    ChannelHandlerContext fireChannelRegistered();
+
+    @Override
+    ChannelHandlerContext fireChannelUnregistered();
+
+    @Override
+    ChannelHandlerContext fireChannelActive();
+
+    @Override
+    ChannelHandlerContext fireChannelInactive();
+
+    @Override
+    ChannelHandlerContext fireExceptionCaught(Throwable cause);
+
+    @Override
+    ChannelHandlerContext fireUserEventTriggered(Object evt);
+
+    @Override
+    ChannelHandlerContext fireChannelRead(Object msg);
+
+    @Override
+    ChannelHandlerContext fireChannelReadComplete();
+
+    @Override
+    ChannelHandlerContext fireChannelWritabilityChanged();
+
+    @Override
+    ChannelHandlerContext read();
+
+    @Override
+    ChannelHandlerContext flush();
+
+    /**
+     * Return the assigned {@link ChannelPipeline}
+     获取所属管道
+     */
+    ChannelPipeline pipeline();
+
+    /**
+     * Return the assigned {@link ByteBufAllocator} which will be used to allocate {@link ByteBuf}s.
+     获取通道上下文的字节buf分配器，用于分配buf
+     */
+    ByteBufAllocator alloc();
+
+    /**
+     * @deprecated Use {@link Channel#attr(AttributeKey)}
+     获取指定key的属性值，已丢弃
+     */
+    @Deprecated
+    @Override
+    <T> Attribute<T> attr(AttributeKey<T> key);
+
+    /**
+     * @deprecated Use {@link Channel#hasAttr(AttributeKey)}
+     判断是否拥有属性值
+     */
+    @Deprecated
+    @Override
+    <T> boolean hasAttr(AttributeKey<T> key);
+}
+总结：
+通道处理器上下文ChannelHandlerContext，使通道处理器可以与管道和管道中其他处理器进行交互。
+当IO事件发生时，处理可以将事件转发给所属管道的下一个通道处理器，同时可以动态修改处理器所属的管道。
+通过上下文可以获取关联通道，处理器，事件执行器，上下文名，所属管道等信息。同时可以通过AttributeKey存储
+上下文属性，用alloc方法获取通道上下文的字节buf分配器，用于分配buf。
+
+
+附：
+
+//AttributeMap
+package io.netty.util;
+
+/**
+ * Holds {@link Attribute}s which can be accessed via {@link AttributeKey}.
+ *
+ * Implementations must be Thread-safe.
+ */
+public interface AttributeMap {
+    /**
+     * Get the {@link Attribute} for the given {@link AttributeKey}. This method will never return null, but may return
+     * an {@link Attribute} which does not have a value set yet.
+     */
+    <T> Attribute<T> attr(AttributeKey<T> key);
+
+    /**
+     * Returns {@code} true if and only if the given {@link Attribute} exists in this {@link AttributeMap}.
+     */
+    <T> boolean hasAttr(AttributeKey<T> key);
+}
+//AttributeKey
+/**
+ * Key which can be used to access {@link Attribute} out of the {@link AttributeMap}. Be aware that it is not be
+ * possible to have multiple keys with the same name.
+ *
+ * @param <T>   the type of the {@link Attribute} which can be accessed via this {@link AttributeKey}.
+ */
+@SuppressWarnings("UnusedDeclaration") // 'T' is used only at compile time
+public final class AttributeKey<T> extends AbstractConstant<AttributeKey<T>> {
+
+    private static final ConstantPool<AttributeKey<Object>> pool = new ConstantPool<AttributeKey<Object>>() {
+ 
+
+/**
+ * A pool of {@link Constant}s.
+ *
+ * @param <T> the type of the constant
+ */
+public abstract class ConstantPool<T extends Constant<T>> {
+
+    private final ConcurrentMap<String, T> constants = PlatformDependent.newConcurrentHashMap();
+
+    private final AtomicInteger nextId = new AtomicInteger(1);
+
+//ByteBufAllocator
+/**
+ * Implementations are responsible to allocate buffers. Implementations of this interface are expected to be
+ * thread-safe.
+ */
+public interface ByteBufAllocator {
+
+    ByteBufAllocator DEFAULT = ByteBufUtil.DEFAULT_ALLOCATOR;
+
+    /**
+     * Allocate a {@link ByteBuf}. If it is a direct or heap buffer
+     * depends on the actual implementation.
+     */
+    ByteBuf buffer();
+
+    /**
+     * Allocate a {@link ByteBuf} with the given initial capacity.
+     * If it is a direct or heap buffer depends on the actual implementation.
+     */
+    ByteBuf buffer(int initialCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity. If it is a direct or heap buffer depends on the actual
+     * implementation.
+     */
+    ByteBuf buffer(int initialCapacity, int maxCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     */
+    ByteBuf ioBuffer();
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     */
+    ByteBuf ioBuffer(int initialCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     */
+    ByteBuf ioBuffer(int initialCapacity, int maxCapacity);
+
+    /**
+     * Allocate a heap {@link ByteBuf}.
+     */
+    ByteBuf heapBuffer();
+
+    /**
+     * Allocate a heap {@link ByteBuf} with the given initial capacity.
+     */
+    ByteBuf heapBuffer(int initialCapacity);
+
+    /**
+     * Allocate a heap {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity.
+     */
+    ByteBuf heapBuffer(int initialCapacity, int maxCapacity);
+
+    /**
+     * Allocate a direct {@link ByteBuf}.
+     */
+    ByteBuf directBuffer();
+
+    /**
+     * Allocate a direct {@link ByteBuf} with the given initial capacity.
+     */
+    ByteBuf directBuffer(int initialCapacity);
+
+    /**
+     * Allocate a direct {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity.
+     */
+    ByteBuf directBuffer(int initialCapacity, int maxCapacity);
+
+    /**
+     * Allocate a {@link CompositeByteBuf}.
+     * If it is a direct or heap buffer depends on the actual implementation.
+     */
+    CompositeByteBuf compositeBuffer();
+
+    /**
+     * Allocate a {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     * If it is a direct or heap buffer depends on the actual implementation.
+     */
+    CompositeByteBuf compositeBuffer(int maxNumComponents);
+
+    /**
+     * Allocate a heap {@link CompositeByteBuf}.
+     */
+    CompositeByteBuf compositeHeapBuffer();
+
+    /**
+     * Allocate a heap {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     */
+    CompositeByteBuf compositeHeapBuffer(int maxNumComponents);
+
+    /**
+     * Allocate a direct {@link CompositeByteBuf}.
+     */
+    CompositeByteBuf compositeDirectBuffer();
+
+    /**
+     * Allocate a direct {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     */
+    CompositeByteBuf compositeDirectBuffer(int maxNumComponents);
+
+    /**
+     * Returns {@code true} if direct {@link ByteBuf}'s are pooled
+     */
+    boolean isDirectBufferPooled();
+
+    /**
+     * Calculate the new capacity of a {@link ByteBuf} that is used when a {@link ByteBuf} needs to expand by the
+     * {@code minNewCapacity} with {@code maxCapacity} as upper-bound.
+     */
+    int calculateNewCapacity(int minNewCapacity, int maxCapacity);
+ }
+

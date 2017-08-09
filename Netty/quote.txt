@@ -25,3 +25,8 @@ netty 默认Channel管道线初始化：[url]http://donald-draper.iteye.com/blog/2388613[
 netty 默认Channel管道线-添加通道处理器：[url]http://donald-draper.iteye.com/blog/2388726[/url]
 netty 默认Channel管道线-通道处理器移除与替换：[url]http://donald-draper.iteye.com/blog/2388793[/url]
 netty 默认Channel管道线-Inbound和Outbound事件处理：[url]http://donald-draper.iteye.com/blog/2389148[/url]
+#################################################################
+ChannelHandlerContext
+#################################################################
+netty 通道处理器上下文定义：[url]http://donald-draper.iteye.com/blog/2389214[/url]
+netty 通道处理器上下文：[url][/url]
