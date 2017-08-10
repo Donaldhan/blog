@@ -29,4 +29,11 @@ netty 默认Channel管道线-Inbound和Outbound事件处理：[url]http://donald-draper.ite
 ChannelHandlerContext
 #################################################################
 netty 通道处理器上下文定义：[url]http://donald-draper.iteye.com/blog/2389214[/url]
-netty 通道处理器上下文：[url][/url]
+netty 通道处理器上下文：[url]http://donald-draper.iteye.com/blog/2389299[/url]
+#######################################################
+ChannelInitializer
+########################################################
+netty 通道初始化器ChannelInitializer:[url]http://donald-draper.iteye.com/blog/2389352[/url]
+#############################################################################################
+EventLoopGroup
+#############################################################################################

@@ -572,6 +572,10 @@ IO事件；通道处理器总共有四个状态，分别为初始化，正在添加到管道，已添加管道和从管
 如果在Outbound事件处理器过程中，出现异常则直接委托给异步任务结果通知工具PromiseNotificationUtil，通知异步任务
 失败，并log异常日志。
 
+netty的通道处理器上下文和mina的会话有点像，都拥有描述通道Handler的Context；
+不同的时mina中的会话与通道直接关联，而netty上下文与通道间是通过Channel管道关联起来，mina中的过滤链是依附于
+会话，而netty上下文依附于Channel管道，mina中的IO事件执行器为IoProcessor，netty中的IO事件的处理委托给事件循环
+或上下文的子事件执行器。
 
 附：
 /**
