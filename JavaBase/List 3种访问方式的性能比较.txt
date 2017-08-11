@@ -1,0 +1,467 @@
+List有3种访问方式分别为foreach，Iterator，i(Random Access)，
+那他们的性能如何呢？我们今天来比较一下。
+首席创建一个测试类：
+package test;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+/**
+ * 测试List 3种访问方式的性能，foreach，Iterator，i(Random Access)
+ * @author donald
+ * @date 2017-6-16
+ * @time 上午9:18:16
+ */
+public class TestListpeformance implements Runnable{
+	 private static List<String> list = null;
+	    public static void main(String[] args)  
+	    {  
+		    list = new ArrayList<String>();  
+	        long t1,t2;  
+	        for(int j = 0; j < 10000000; j++)  
+	        {  
+	            list.add("aaaaaa" + j);  
+	        }  
+	        System.out.println("List first visit method:");  
+	        t1=System.currentTimeMillis();  
+		//foreach方式
+	        for(String tmp:list)  
+	        {  
+	        	//foreach 实际是遍历List的迭代器：Iterator
+	        }  
+	        t2=System.currentTimeMillis();  
+	        System.out.println("Run Time:" + (t2 -t1) + "(ms)");  
+	        System.out.println("List second visit method time:");  
+	          
+	        t1=System.currentTimeMillis();  
+		//随机访问方式
+	        for(int i = 0; i < list.size(); i++)  
+	        {  
+	            list.get(i);  
+	        }  
+	        t2=System.currentTimeMillis();  
+	        System.out.println("Run Time:" + (t2 -t1) + "(ms)");  
+	          
+	        System.out.println("List Third visit method:");  
+	        Iterator<String> iter = list.iterator();  
+	          
+	        t1=System.currentTimeMillis();  
+		//迭代器方式
+	        while(iter.hasNext())  
+	        {  
+	            iter.next();  
+	        }  
+	        t2=System.currentTimeMillis();  
+	        System.out.println("Run Time:" + (t2 -t1) + "(ms)");  
+	        System.out.println("Finished!!!!!!!!");  
+	          
+	    }  
+	    private static void testAccessMode(){
+	    	
+	    }
+		@Override
+		public void run() {
+			
+		}
+}
+
+运行控制台输出：
+List first visit method:
+Run Time:106(ms)
+List second visit method time:
+Run Time:7(ms)
+List Third visit method:
+Run Time:16(ms)
+Finished!!!!!!!!
+
+从上面来看List的3方式遍历效率为i（Random Access） > Iterator > Foreach
+为什么是这样呢，主要是因为Random Access直接遍历List元素数组，Iteration需要将List的
+数组元素包装成Iterator，而Foreach遍历方式，是通过Iterator来时实现了，我们通过反汇编
+上述测试实例TestListpeformance来看一下Foreach的具体实现：
+
+首先介绍一下javap命令：
+
+javap是JDK自带的反汇编器，可以查看java编译器为我们生成的字节码。通过它，我们可以对照源代码和字节码，从而了解很多编译器内部的工作。
+语法：
+　　javap [ 命令选项 ] class. . .
+　　javap 命令用于解析类文件。其输出取决于所用的选项。若没有使用选项，javap 将输出传递给它的类的 public 域及方法。
+javap 将其输出到标准输出设备上。
+命令选项
+　　-help 输出 javap 的帮助信息。
+　　-l 输出行及局部变量表。
+　　-b 确保与 JDK 1.1 javap 的向后兼容性。
+　　-public 只显示 public 类及成员。
+　　-protected 只显示 protected 和 public 类及成员。
+　　-package 只显示包、protected 和 public 类及成员。这是缺省设置。
+　　-private 显示所有类和成员。
+　　-J[flag] 直接将 flag 传给运行时系统。
+　　-s 输出内部类型签名。
+　　-c 输出类中各方法的未解析的代码，即构成 Java 字节码的指令。
+　　-verbose 输出堆栈大小、各方法的 locals 及 args 数,以及class文件的编译版本
+　　-classpath[路径] 指定 javap 用来查找类的路径。如果设置了该选项，则它将覆盖缺省值或 CLASSPATH 环境变量。目录用冒号分隔。
+ 　 -bootclasspath[路径] 指定加载自举类所用的路径。缺省情况下，自举类是实现核心 Java 平台的类，位于 jrelib下面。
+
+　　-extdirs[dirs] 覆盖搜索安装方式扩展的位置。扩展的缺省位置是 jrelibext。
+
+
+英文说明：
+
+C:\>javap -help
+Usage: javap <options> <classes>...
+
+where options include:
+   -c                        Disassemble the code
+   -classpath <pathlist>     Specify where to find user class files
+   -extdirs <dirs>           Override location of installed extensions
+   -help                     Print this usage message
+   -J<flag>                  Pass <flag> directly to the runtime system
+   -l                        Print line number and local variable tables
+   -public                   Show only public classes and members
+   -protected                Show protected/public classes and members
+   -package                  Show package/protected/public classes
+                             and members (default)
+   -private                  Show all classes and members
+   -s                        Print internal type signatures
+   -bootclasspath <pathlist> Override location of class files loaded
+                             by the bootstrap class loader
+   -verbose                  Print stack size, number of locals and args for methods
+                             If verifying, print reasons for failure
+
+反汇编TestListpeformance Class,命令如下：
+javap -c TestListpeformance.class
+控制台输出：
+
+C:\Users\donald\git\test\test\WebRoot\WEB-INF\classes\test>javap -c TestListpeformance.class
+Compiled from "TestListpeformance.java"
+public class test.TestListpeformance implements java.lang.Runnable {
+  static {}; //初始化静态方法，主要是初始化静态变量
+    Code:
+       0: aconst_null
+       1: putstatic     #14                 // Field list:Ljava/util/List;
+       4: return
+
+  public test.TestListpeformance();
+    Code:
+       0: aload_0 
+       1: invokespecial #19                 // Method java/lang/Object."<init>":()V
+       4: return
+
+  public static void main(java.lang.String[]);
+    Code://创建List对象
+       0: new           #25                 // class java/util/ArrayList
+       3: dup
+       4: invokespecial #27                 // Method java/util/ArrayList."<init>":()V
+       7: putstatic     #14                 // Field list:Ljava/util/List;
+      10: iconst_0
+      11: istore        5
+      13: goto          45
+      16: getstatic     #14                 // Field list:Ljava/util/List;
+      19: new           #28                 // class java/lang/StringBuilder
+      22: dup
+      23: ldc           #30                 // String aaaaaa
+      25: invokespecial #32                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+      28: iload         5
+      30: invokevirtual #35                 // Method java/lang/StringBuilder.append:(I)Ljava/lang/StringBuilder;
+      33: invokevirtual #39                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      36: invokeinterface #43,  2           // InterfaceMethod java/util/List.add:(Ljava/lang/Object;)Z
+      41: pop
+      42: iinc          5, 1
+      45: iload         5
+      47: ldc           #49                 // int 10000000
+      49: if_icmplt     16
+      52: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+      55: ldc           #56                 // String List first visit method:
+      57: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+      60: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+      63: lstore_1                           //下面这一段可以看出ForEach，实际是通过Iterator来遍历
+      64: getstatic     #14                 // Field list:Ljava/util/List;
+      67: invokeinterface #67,  1           // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+      72: astore        6
+      74: goto          89
+      77: aload         6
+      79: invokeinterface #71,  1           // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+      84: checkcast     #77                 // class java/lang/String
+      87: astore        5
+      89: aload         6
+      91: invokeinterface #79,  1           // InterfaceMethod java/util/Iterator.hasNext:()Z
+      96: ifne          77
+      99: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+     102: lstore_3
+     103: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     106: new           #28                 // class java/lang/StringBuilder
+     109: dup
+     110: ldc           #83                 // String Run Time:
+     112: invokespecial #32                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+     115: lload_3
+     116: lload_1
+     117: lsub
+     118: invokevirtual #85                 // Method java/lang/StringBuilder.append:(J)Ljava/lang/StringBuilder;
+     121: ldc           #88                 // String (ms)
+     123: invokevirtual #90                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     126: invokevirtual #39                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+     129: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     132: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     135: ldc           #93                 // String List second visit method time:
+     137: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     140: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+     143: lstore_1
+     144: iconst_0
+     145: istore        5
+     147: goto          164                  //随机访问方式
+     150: getstatic     #14                 // Field list:Ljava/util/List;
+     153: iload         5
+     155: invokeinterface #95,  2           // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+     160: pop
+     161: iinc          5, 1
+     164: iload         5
+     166: getstatic     #14                 // Field list:Ljava/util/List;
+     169: invokeinterface #99,  1           // InterfaceMethod java/util/List.size:()I
+     174: if_icmplt     150
+     177: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+     180: lstore_3
+     181: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     184: new           #28                 // class java/lang/StringBuilder
+     187: dup
+     188: ldc           #83                 // String Run Time:
+     190: invokespecial #32                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+     193: lload_3
+     194: lload_1
+     195: lsub
+     196: invokevirtual #85                 // Method java/lang/StringBuilder.append:(J)Ljava/lang/StringBuilder;
+     199: ldc           #88                 // String (ms)
+     201: invokevirtual #90                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     204: invokevirtual #39                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+     207: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     210: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     213: ldc           #103                // String List Third visit method:
+     215: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     218: getstatic     #14                 // Field list:Ljava/util/List;
+     221: invokeinterface #67,  1           // InterfaceMethod java/util/List.iterator:()Ljava/util/Iterator;
+     226: astore        5
+     228: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+     231: lstore_1
+     232: goto          243             
+     235: aload         5                   //迭代器遍历方式
+     237: invokeinterface #71,  1           // InterfaceMethod java/util/Iterator.next:()Ljava/lang/Object;
+     242: pop
+     243: aload         5
+     245: invokeinterface #79,  1           // InterfaceMethod java/util/Iterator.hasNext:()Z
+     250: ifne          235
+     253: invokestatic  #63                 // Method java/lang/System.currentTimeMillis:()J
+     256: lstore_3
+     257: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     260: new           #28                 // class java/lang/StringBuilder
+     263: dup
+     264: ldc           #83                 // String Run Time:
+     266: invokespecial #32                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+     269: lload_3
+     270: lload_1
+     271: lsub
+     272: invokevirtual #85                 // Method java/lang/StringBuilder.append:(J)Ljava/lang/StringBuilder;
+     275: ldc           #88                 // String (ms)
+     277: invokevirtual #90                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     280: invokevirtual #39                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+     283: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     286: getstatic     #50                 // Field java/lang/System.out:Ljava/io/PrintStream;
+     289: ldc           #105                // String Finished!!!!!!!!
+     291: invokevirtual #58                 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+     294: return
+
+  public void run();
+    Code:
+       0: return
+}
+通过一个实例再来看一下javap反汇编Class文件：
+
+package util;
+
+import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.io.Writer;
+import java.util.Properties;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.fh.cachedb.constant.ComInfoConstant;
+
+/**
+ * 获取配置文件属性
+ * @author donald
+ * @date 2017-6-16
+ * @time 上午9:18:16
+ */
+public class PropUtil {
+	private static Logger log = LoggerFactory.getLogger(PropUtil.class);
+	private static final String CONFIG_FILE = "config.properties";
+	private static Properties prop;
+	public static Properties getInstance() {
+		if (prop == null) {
+			prop = new Properties();
+			try {
+		        String  path = Thread.currentThread().getContextClassLoader().getResource(CONFIG_FILE).getPath(); 
+		        InputStream inputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream(CONFIG_FILE); 
+		        log.info("==========congfig file path:"+path);  
+				prop.load(inputStream);
+				log.info("*****************************");
+				log.info("config.property文件加载成功！");
+				log.info("*****************************");
+			} catch (Exception e) {
+				final Writer eMessage = new StringWriter();
+				final PrintWriter printWriter = new PrintWriter(eMessage);
+				e.printStackTrace(printWriter);
+				e.printStackTrace();
+				log.error("property文件加载出错！"+eMessage.toString());
+			}
+		}
+		return prop;
+	}
+
+	public static String getValue(String name) {
+		Properties p = getInstance();
+		return p.getProperty(name);
+	}
+	public static void main(String[] args) {
+		String comInfoUrl = PropUtil.getValue(ComInfoConstant.COM_INFO_URL);
+		log.info("====接口地址:"+comInfoUrl);
+		String comInfoOperateName = PropUtil.getValue(ComInfoConstant.COM_INFO_OPERATE_NAME);
+		log.info("====接口操作:"+comInfoOperateName);
+	}
+}
+
+反汇编PropUtil工具类
+
+C:\Users\donald\git\test\test\WebRoot\WEB-INF\classes\util>javap -c PropUtil.class
+Compiled from "PropUtil.java"
+public class util.PropUtil {
+  static {};//静态方法
+    Code:
+       0: ldc           #1                  // class util/PropUtil
+       2: invokestatic  #17                 // Method org/slf4j/LoggerFactory.getLogger:(Ljava/lang/Class;)Lorg/slf4j/Logger;
+       5: putstatic     #23                 // Field log:Lorg/slf4j/Logger;
+       8: return
+
+  public util.PropUtil();
+    Code:
+       0: aload_0
+       1: invokespecial #28                 // Method java/lang/Object."<init>":()V
+       4: return
+
+  public static java.util.Properties getInstance();
+    Code:
+       0: getstatic     #34                 // Field prop:Ljava/util/Properties;
+       3: ifnonnull     161
+       6: new           #36                 // class java/util/Properties
+       9: dup
+      10: invokespecial #38                 // Method java/util/Properties."<init>":()V
+      13: putstatic     #34                 // Field prop:Ljava/util/Properties;
+      16: invokestatic  #39                 // Method java/lang/Thread.currentThread:()Ljava/lang/Thread;
+      19: invokevirtual #45                 // Method java/lang/Thread.getContextClassLoader:()Ljava/lang/ClassLoader;
+      22: ldc           #10                 // String config.properties
+      24: invokevirtual #49                 // Method java/lang/ClassLoader.getResource:(Ljava/lang/String;)Ljava/net/URL;
+      27: invokevirtual #55                 // Method java/net/URL.getPath:()Ljava/lang/String;
+      30: astore_0
+      31: invokestatic  #39                 // Method java/lang/Thread.currentThread:()Ljava/lang/Thread;
+      34: invokevirtual #45                 // Method java/lang/Thread.getContextClassLoader:()Ljava/lang/ClassLoader;
+      37: ldc           #10                 // String config.properties
+      39: invokevirtual #61                 // Method java/lang/ClassLoader.getResourceAsStream:(Ljava/lang/String;)Ljava/io/InputStream;
+      42: astore_1
+      43: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+      46: new           #65                 // class java/lang/StringBuilder
+      49: dup
+      50: ldc           #67                 // String ==========congfig file path:
+      52: invokespecial #69                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+      55: aload_0
+      56: invokevirtual #72                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      59: invokevirtual #76                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      62: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+      67: getstatic     #34                 // Field prop:Ljava/util/Properties;
+      70: aload_1
+      71: invokevirtual #84                 // Method java/util/Properties.load:(Ljava/io/InputStream;)V
+      74: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+      77: ldc           #88                 // String *****************************
+      79: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+      84: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+      87: ldc           #90                 // String config.property文件加载成功！
+      89: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+      94: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+      97: ldc           #88                 // String *****************************
+      99: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+     104: goto          161
+     107: astore_0
+     108: new           #92                 // class java/io/StringWriter
+     111: dup
+     112: invokespecial #94                 // Method java/io/StringWriter."<init>":()V
+     115: astore_1
+     116: new           #95                 // class java/io/PrintWriter
+     119: dup
+     120: aload_1
+     121: invokespecial #97                 // Method java/io/PrintWriter."<init>":(Ljava/io/Writer;)V
+     124: astore_2
+     125: aload_0
+     126: aload_2
+     127: invokevirtual #100                // Method java/lang/Exception.printStackTrace:(Ljava/io/PrintWriter;)V
+     130: aload_0
+     131: invokevirtual #106                // Method java/lang/Exception.printStackTrace:()V
+     134: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+     137: new           #65                 // class java/lang/StringBuilder
+     140: dup
+     141: ldc           #108                // String property文件加载出错！
+     143: invokespecial #69                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+     146: aload_1
+     147: invokevirtual #110                // Method java/lang/Object.toString:()Ljava/lang/String;
+     150: invokevirtual #72                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+     153: invokevirtual #76                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+     156: invokeinterface #111,  2          // InterfaceMethod org/slf4j/Logger.error:(Ljava/lang/String;)V
+     161: getstatic     #34                 // Field prop:Ljava/util/Properties;
+     164: areturn
+    Exception table:
+       from    to  target type
+          16   104   107   Class java/lang/Exception
+
+  public static java.lang.String getValue(java.lang.String);
+    Code:
+       0: invokestatic  #126                // Method getInstance:()Ljava/util/Properties;
+       3: astore_1
+       4: aload_1
+       5: aload_0
+       6: invokevirtual #128                // Method java/util/Properties.getProperty:(Ljava/lang/String;)Ljava/lang/String;
+       9: areturn
+
+  public static void main(java.lang.String[]);
+    Code:
+       0: ldc           #135                // String com_info_url
+       2: invokestatic  #137                // Method getValue:(Ljava/lang/String;)Ljava/lang/String;
+       5: astore_1
+       6: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+       9: new           #65                 // class java/lang/StringBuilder
+      12: dup
+      13: ldc           #139                // String ====接口地址:
+      15: invokespecial #69                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+      18: aload_1
+      19: invokevirtual #72                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      22: invokevirtual #76                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      25: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+      30: ldc           #141                // String com_info_operate_name
+      32: invokestatic  #137                // Method getValue:(Ljava/lang/String;)Ljava/lang/String;
+      35: astore_2
+      36: getstatic     #23                 // Field log:Lorg/slf4j/Logger;
+      39: new           #65                 // class java/lang/StringBuilder
+      42: dup
+      43: ldc           #143                // String ====接口操作:
+      45: invokespecial #69                 // Method java/lang/StringBuilder."<init>":(Ljava/lang/String;)V
+      48: aload_2
+      49: invokevirtual #72                 // Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;
+      52: invokevirtual #76                 // Method java/lang/StringBuilder.toString:()Ljava/lang/String;
+      55: invokeinterface #79,  2           // InterfaceMethod org/slf4j/Logger.info:(Ljava/lang/String;)V
+      60: return
+}
+
+C:\Users\donald\git\test\test\WebRoot\WEB-INF\classes\util>
+
+从上面两个反汇编实例来看，当目标类中有静态变量，将会创建一个静态方法语句块初始化
+静态变量；如下，
+static{
+}
+这是java编译器做的事情。
