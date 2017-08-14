@@ -1,6 +1,6 @@
 List有3种访问方式分别为foreach，Iterator，i(Random Access)，
 那他们的性能如何呢？我们今天来比较一下。
-首席创建一个测试类：
+首先创建一个测试类：
 package test;
 
 import java.util.ArrayList;
