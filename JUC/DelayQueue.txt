@@ -86,7 +86,7 @@ public class DelayQueue<E extends Delayed> extends AbstractQueue<E>
      */
     public DelayQueue() {}
   }
-从上面可以看出DelayQueue内在一个优先级队列，一个available条件（ReentrantLock）用于通知
+从上面可以看出DelayQueue内存有一个优先级队列，用于存放队列元素，一个available条件（ReentrantLock）用于通知
 一个队列头的元素可以用，或一个新线程成为leader事件。
 再来看相关操作：
      /**
@@ -437,7 +437,7 @@ size：
 
 
 总结：
-DelayQueue内在一个优先级队列，一个available条件（ReentrantLock）用于通知
+DelayQueue内有一个优先级队列，用于存放队列元素，一个available条件（ReentrantLock）用于通知
 一个队列头的元素可以用，或一个新线程成为leader事件。
 
 offer操作首先加锁，入队列操作委托给内部优先级队列的offer操作；
