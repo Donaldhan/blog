@@ -1,0 +1,599 @@
+Java Socket编程实例:http://donald-draper.iteye.com/blog/2356695
+java Socket读写缓存区Writer和Reader：http://donald-draper.iteye.com/blog/2356885
+Java NIO ByteBuffer详解：http://donald-draper.iteye.com/blog/2357084
+Java序列化与反序列化 ：http://blog.csdn.net/wangloveall/article/details/7992448/
+深入理解Java对象序列化：http://developer.51cto.com/art/201202/317181.htm
+前面几篇我们说了javaSocket，缓存区的读写和ByteBuffer，今天我们来看一下，序列化和
+在网络中传输对象。Java序列化的概念，就不说了上面两个链接有，就不重复造轮子了啦，直接测试。
+
+定义实体类：
+package Serializable;
+
+import java.io.Serializable;
+/**
+ * 
+ * @author donald
+ * 2017年2月16日
+ * 下午6:37:13
+ */
+public class Person implements Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -9122096642444363706L;
+	private String name;
+	private Integer age;
+	private transient String sex;
+	
+	public Person() {
+		super();
+		System.out.println("==========无参构造");
+	}
+	public Person(String name, Integer age, String sex) {
+		super();
+		this.name = name;
+		this.age = age;
+		this.sex = sex;
+		System.out.println("==========有参构造");
+	}
+	public String getName() {
+		return name;
+	}
+	public void setName(String name) {
+		this.name = name;
+	}
+	public Integer getAge() {
+		return age;
+	}
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+	public String getSex() {
+		return sex;
+	}
+	public void setSex(String sex) {
+		this.sex = sex;
+	}
+    public String toString(){
+    	return "["+this.name+","+this.age+","+this.sex+"]";
+    }
+}
+
+测试主类：
+package Serializable;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+/**
+ * 测试java序列化
+ * @author donald
+ * 2017年2月16日
+ * 下午6:37:33
+ */
+public class TestSerializable {
+	public static void main(String[] args) {
+		File file = new File("E:/person.out");
+		FileOutputStream outFile = null;
+		try {
+			outFile = new FileOutputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectOutputStream objectOutputStream = null;
+		try {
+			objectOutputStream = new ObjectOutputStream(outFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		Person person = new Person("donald", 27, "man");
+		try {
+			//写persion
+			objectOutputStream.writeObject(person);
+			//写int
+			objectOutputStream.writeInt(4);
+			//写UTF编码格式的字符串
+			objectOutputStream.writeUTF("it is a man");
+			objectOutputStream.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		FileInputStream inFile = null;
+		try {
+			inFile = new FileInputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectInputStream objectInputStream  = null;
+		try {
+			objectInputStream = new ObjectInputStream(inFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		Person getPerson = null;
+		try {
+			//读取对象
+			getPerson = (Person) objectInputStream.readObject();
+			//读取int
+			int int0 = objectInputStream.readInt();
+			System.out.println("=======read int after read object persion:"+int0);
+			//读取UTF格式的字符串
+			String str = objectInputStream.readUTF();
+			System.out.println("=======read UTF after read object persion and int:"+str);
+			objectInputStream.close();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println(getPerson);
+	}
+}
+控制台输出：
+
+==========有参构造
+=======read int after read object persion:4
+=======read UTF after read object persion and int:it is a man
+[donald,27,null]
+
+从上面来看，从文件中读取对象的时候，没有调用构造函数，而是使用字节流将对象属性，直接赋值。
+同时可以看sex（private transient String），由于有transient标识符，而没有被序列化 ;
+如何使transient标识符页序列化呢，我们可以重写writeObject()与readObject()方法；
+
+
+实体类：
+package Serializable;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+
+public class PersonX implements Serializable {
+    
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -7261964764908521302L;
+	private String name;
+	private Integer age;
+	private transient String sex;
+	
+	public PersonX() {
+		super();
+		System.out.println("==========无参构造");
+	}
+	public PersonX(String name, Integer age, String sex) {
+		super();
+		this.name = name;
+		this.age = age;
+		this.sex = sex;
+		System.out.println("==========有参构造");
+	}
+	public String getName() {
+		return name;
+	}
+	public void setName(String name) {
+		this.name = name;
+	}
+	public Integer getAge() {
+		return age;
+	}
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+	public String getSex() {
+		return sex;
+	}
+	public void setSex(String sex) {
+		this.sex = sex;
+	}
+    public String toString(){
+    	return "["+this.name+","+this.age+","+this.sex+"]";
+    }
+    /**
+     * 重写序列化方法
+     * @param out
+     * @throws IOException
+     */
+    private void writeObject(ObjectOutputStream out) throws IOException {  
+        out.defaultWriteObject();  
+        //关键在这里，在序列化obejct后，序列化sex属性
+        out.writeUTF(this.sex);  
+    }  
+    /**
+     * 重写反序列化方法
+     * @param in
+     * @throws IOException
+     * @throws ClassNotFoundException
+     */
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {  
+        in.defaultReadObject();  
+        //关键在这里，在反序列化obejct后，反序列化sex属性
+        this.sex = in.readUTF();  
+    }  
+}
+测试主类：
+package Serializable;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+/**
+ * 测试重写序列化与反序列化方法
+ * @author donald
+ * 2017年2月16日
+ * 下午6:48:58
+ */
+public class TestSerializableX {
+	public static void main(String[] args) {
+		File file = new File("E:/personx.out");
+		FileOutputStream outFile = null;
+		try {
+			outFile = new FileOutputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectOutputStream objectOutputStream = null;
+		try {
+			objectOutputStream = new ObjectOutputStream(outFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonX person = new PersonX("donald", 27, "man");
+		try {
+			objectOutputStream.writeObject(person);
+			objectOutputStream.writeInt(4);
+			objectOutputStream.writeUTF("it is a man");
+			objectOutputStream.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		FileInputStream inFile = null;
+		try {
+			inFile = new FileInputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectInputStream objectInputStream  = null;
+		try {
+			objectInputStream = new ObjectInputStream(inFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonX getPerson = null;
+		try {
+			getPerson = (PersonX) objectInputStream.readObject();
+			int int0 = objectInputStream.readInt();
+			System.out.println("=======read int after read object persion:"+int0);
+			String str = objectInputStream.readUTF();
+			System.out.println("=======read UTF after read object persion and int:"+str);
+			objectInputStream.close();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println(getPerson);
+	}
+}
+控制台输出：
+==========有参构造
+=======read int after read object persion:4
+=======read UTF after read object persion and int:it is a man
+[donald,27,man]
+
+从控制太输出可以看出，PersonX实体类完全序列化，即使字段有transient标识符
+
+无论是使用transient关键字，还是使用writeObject()和readObject()方法，
+其实都是基于Serializable接口的序列化。JDK中提供了另一个序列化接口--Externalizable，
+使用该接口之后，之前基于Serializable接口的序列化机制就将失效。
+
+
+实体类：
+package Serializable;
+
+import java.io.Externalizable;
+import java.io.IOException;
+import java.io.ObjectInput;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutput;
+import java.io.ObjectOutputStream;
+/**
+ * 继承Externalizable实体类
+ * @author donald
+ * 2017年2月16日
+ * 下午6:55:37
+ */
+public class PersonE implements Externalizable  {
+	
+	private String name;
+	private Integer age;
+	private transient String sex;
+	
+	public PersonE() {
+		super();
+		System.out.println("==========无参构造");
+	}
+	public PersonE(String name, Integer age, String sex) {
+		super();
+		this.name = name;
+		this.age = age;
+		this.sex = sex;
+		System.out.println("==========有参构造");
+	}
+	public String getName() {
+		return name;
+	}
+	public void setName(String name) {
+		this.name = name;
+	}
+	public Integer getAge() {
+		return age;
+	}
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+	public String getSex() {
+		return sex;
+	}
+	public void setSex(String sex) {
+		this.sex = sex;
+	}
+    public String toString(){
+    	return "["+this.name+","+this.age+","+this.sex+"]";
+    }
+    private void writeObject(ObjectOutputStream out) throws IOException {  
+        out.defaultWriteObject();  
+        out.writeUTF(this.sex);  
+    }  
+    private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {  
+        in.defaultReadObject();  
+        this.sex = in.readUTF();  
+    }
+	@Override
+	public void writeExternal(ObjectOutput out) throws IOException {
+		out.writeObject(this.name);  
+		out.writeInt(this.age);  
+	}
+	@Override
+	public void readExternal(ObjectInput in) throws IOException, ClassNotFoundException {
+		this.name = (String) in.readObject();  
+		this.age = in.readInt(); 
+	}  
+}
+
+测试主类:
+package Serializable;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+/**
+ * 测试Externalizable接口，序列化
+ * @author donald
+ * 2017年2月16日
+ * 下午6:56:27
+ */
+public class TestSerializableE {
+	public static void main(String[] args) {
+		File file = new File("E:/persone.out");
+		FileOutputStream outFile = null;
+		try {
+			outFile = new FileOutputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectOutputStream objectOutputStream = null;
+		try {
+			objectOutputStream = new ObjectOutputStream(outFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonE person = new PersonE("donald", 27, "man");
+		try {
+			objectOutputStream.writeObject(person);
+			objectOutputStream.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		FileInputStream inFile = null;
+		try {
+			inFile = new FileInputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectInputStream objectInputStream  = null;
+		try {
+			objectInputStream = new ObjectInputStream(inFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonE getPerson = null;
+		try {
+			getPerson = (PersonE) objectInputStream.readObject();
+			objectInputStream.close();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println("=====read Object from file"+getPerson);
+	}
+}
+控制台输出：
+==========有参构造
+==========无参构造
+=====read Object from file[donald,27,null]
+从控制输出来看：
+序列化和反序列化调用的分别是writeExternal，readExternal，而非writeObject和readObject，通是
+使用Externalizable进行序列化时，当读取对象时，会调用被序列化类的无参构造器去创建一个新的对象，
+然后再将被保存对象的字段的值分别填充到新对象中。
+这就是为什么在此次序列化过程中Person类的无参构造器会被调用。
+由于这个原因，实现Externalizable接口的类必须要提供一个无参的构造器，且它的访问权限为public。
+
+有了上面的测试，我们来看一下Socket对象传输：
+服务端：
+package Serializable;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+/**
+ * Server
+ * 
+ * @author donald 2017年2月13日 下午4:51:53
+ */
+public class TestServer {
+	public static final int PORT = 4003;
+
+	public static void main(String[] args) {
+		try {
+			startServer();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	// 服务端代码
+	public static void startServer() throws IOException, InterruptedException {
+		ServerSocket serverSocket = new ServerSocket(PORT);
+		System.out.println("服务器启动......");
+		while (true) {
+			Socket socket = serverSocket.accept();
+			// 获取输入流，并读取服务器端的响应信息
+			InputStream inputStream = socket.getInputStream();
+			ObjectInputStream objectInputStream = null;
+			objectInputStream = new ObjectInputStream(inputStream);
+			Person person = null;
+			try {
+				person = (Person) objectInputStream.readObject();
+				System.out.println("收到客户端用户信息：" + person);
+				int int0 = objectInputStream.readInt();
+				System.out.println("=======read int after read object persion:" + int0);
+			} catch (ClassNotFoundException e) {
+				e.printStackTrace();
+			}
+			// 这里向网络进行两次写入
+			OutputStream outputStream = socket.getOutputStream();
+			ObjectOutputStream objectOutputStream = null;
+			objectOutputStream = new ObjectOutputStream(outputStream);
+			objectOutputStream.writeUTF("it is a man");
+			objectOutputStream.flush();
+			objectInputStream.close();
+			objectOutputStream.close();
+			socket.close();
+
+		}
+	}
+}
+
+客户端：
+package Serializable;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.net.UnknownHostException;
+/**
+ * Client
+ * @author donald
+ * 2017年2月13日
+ * 下午4:52:27
+ */
+public class TestClient {
+	private static final int PORT = 4003;
+	private static final String ip = "10.16.7.107";
+
+	public static void main(String[] args) {
+		try {
+			client();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static void client() throws UnknownHostException, IOException {
+		// 创建socket连接
+		Socket socket = new Socket(ip, PORT);
+		System.out.println("连接服务器成功......");
+		// 这里向网络进行两次写入
+		OutputStream outputStream = socket.getOutputStream();
+		ObjectOutputStream objectOutputStream = null;
+		objectOutputStream = new ObjectOutputStream(outputStream);
+		Person person = new Person("donald", 27, "man");
+		try {
+			objectOutputStream.writeObject(person);
+			objectOutputStream.writeInt(4);
+			objectOutputStream.flush();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		// 获取输入流，并读取服务器端的响应信息
+		InputStream inputStream = socket.getInputStream();
+		ObjectInputStream objectInputStream  = null;
+		objectInputStream = new ObjectInputStream(inputStream);
+		String str = objectInputStream.readUTF();
+		System.out.println("收到服务端反馈信息：" + str);
+		objectOutputStream.close();
+		objectInputStream.close();
+		socket.close();
+
+	}
+}
+
+服务器控制台输出：
+
+服务器启动......
+收到客户端用户信息：[donald,27,null]
+=======read int after read object persion:4
+
+
+客户端控制台输出：
+
+
+连接服务器成功......
+==========有参构造
+收到服务端反馈信息：it is a man
+
+
+从控制台输出来看：
+使用ObjectOutputStream和ObjectInputStream，序列化对象及原始类型，在网络中传输，没有任何问题。
+
+
+
+总结：
+反序列对象的时候，没有调用构造函数，而是使用字节流将对象属性，直接赋值。
+同时可以看sex（private transient String），由于有transient标识符，而没有被序列化 。
+JDK中提供了另一个序列化接口Externalizable，使用该接口之后，之前基于Serializable接口的序列化机制就将失效。
+Externalizable序列化和反序列化调用的分别是对象的writeExternal，readExternal，而非writeObject和readObject，通是
+使用Externalizable进行序列化时，当读取对象时，会调用被序列化类的无参构造器去创建一个新的对象，
+然后再将被保存对象的字段的值分别填充到新对象中。这就是为什么在此次序列化过程中Person类的无参构造器会被调用。
+由于这个原因，实现Externalizable接口的类必须要提供一个无参的构造器，且它的访问权限为public。
+使用ObjectOutputStream和ObjectInputStream，序列化对象及原始类型，在网络中传输，没有任何问题。

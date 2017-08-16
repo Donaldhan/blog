@@ -1,0 +1,664 @@
+Java Socket编程实例:http://donald-draper.iteye.com/blog/2356695
+java Socket读写缓存区Writer和Reader：http://donald-draper.iteye.com/blog/2356885
+前一篇文章中，我们讲了java Socket io的Writer和Reader，在上一篇中，在流解码器和编码器中
+，经常用到字节缓冲ByteBuffer，今天我们就来看一ByteBuffer。
+ByteBuffer有两个实现一个为，HeapByteBuffer，另一个为DirectByteBuffer，这两个有什么区别呢?
+我们引入原文，不翻译以免都是原味；
+1.HeapByteBuffer
+//ByteBuffer,创建方法
+ public static ByteBuffer allocate(int capacity) {
+        if (capacity < 0)
+            throw new IllegalArgumentException();
+        return new HeapByteBuffer(capacity, capacity);
+    }
+HeapByteBuffer使用的java堆内存
+2.DirectByteBuffer
+//ByteBuffer,创建方法
+public static ByteBuffer allocateDirect(int capacity) {
+        return new DirectByteBuffer(capacity);
+    }
+* <p> A byte buffer is either <i>direct</i> or <i>non-direct</i>.  Given a
+ * direct byte buffer, the Java virtual machine will make a best effort to
+ * perform native I/O operations directly upon it.  That is, it will attempt to
+ * avoid copying the buffer's content to (or from) an intermediate buffer
+ * before (or after) each invocation of one of the underlying operating
+ * system's native I/O operations.
+ *
+ * <p> A direct byte buffer may be created by invoking the {@link
+ * #allocateDirect(int) allocateDirect} factory method of this class.  The
+ * buffers returned by this method typically have somewhat higher allocation
+ * and deallocation costs than non-direct buffers.  The contents of direct
+ * buffers may reside outside of the normal garbage-collected heap, and so
+ * their impact upon the memory footprint of an application might not be
+ * obvious.  It is therefore recommended that direct buffers be allocated
+ * primarily for large, long-lived buffers that are subject to the underlying
+ * system's native I/O operations.  In general it is best to allocate direct
+ * buffers only when they yield a measureable gain in program performance.
+ *
+ * <p> A direct byte buffer may also be created by {@link
+ * java.nio.channels.FileChannel#map </code>mapping<code>} a region of a file
+ * directly into memory.  An implementation of the Java platform may optionally
+ * support the creation of direct byte buffers from native code via JNI.  If an
+ * instance of one of these kinds of buffers refers to an inaccessible region
+ * of memory then an attempt to access that region will not change the buffer's
+ * content and will cause an unspecified exception to be thrown either at the
+ * time of the access or at some later time.
+ DirectByteBuffer使用的是：the Java virtual machine will make a best effort to
+ perform native I/O operations directly upon it.
+ 使用时要注意：It is therefore recommended that direct buffers be allocated
+ primarily for large, long-lived buffers that are subject to the underlying
+ system's native I/O operations
+
+
+ 今天我们只讲HeapByteBuffer，ByteBuffer，Buffer，我们先从测试实例来看
+ public abstract class Buffer {
+
+    // Invariants: mark <= position <= limit <= capacity
+    private int mark = -1;//标记，用于reset函数，是复位position到mark位置
+    private int position = 0;//Buffer缓冲区读写位置
+    private int limit;//读写上限
+    private int capacity;//缓冲区容量
+    }
+ mark,position,limit,capacity大小关系：
+ -1 <= mark <= position <= limit <= capacity;
+0<= position <= limit <= capacity;
+ 测试主类：
+
+
+ package socket;
+
+import java.nio.BufferOverflowException;
+import java.nio.ByteBuffer;
+/**
+ * 测试ByteBuffer
+ * @author donald
+ * 2017年2月14日
+ * 下午5:23:32
+ */
+public class TestByteBuffer {
+	private static ByteBuffer byteBuffer = null;
+	public  static void main(String[] args) {
+		    /* 以下顺序不要改变*/
+			initByteBuffer();
+			testByte(); 
+			testChar(); 
+			testMark();
+			testInt();
+			testFloat(); 
+			testDouble();
+			testLong();
+			testRemaining();
+			testOverFlow();
+			testReset();
+			testClear();
+//			testCompact();
+	}
+	/**
+	 * 初始化缓存空间
+	 */
+	 public static void initByteBuffer(){
+		 byteBuffer  = ByteBuffer.allocate(32);
+         System.out.println("===============init status============");
+         System.out.println("position:"+byteBuffer.position());
+         System.out.println("limit:"+byteBuffer.limit());
+         System.out.println("capacity:"+byteBuffer.capacity());
+	  }
+	 /**
+	  * 测试Byte，占用一个字节
+	  */
+	 public static void testByte(){
+   	  	 System.out.println("===============put byte============");
+         //字节
+         byte bbyte = 102;
+         byteBuffer.put(bbyte);//ByteBuffer
+         byteBuffer.get(0);//byte
+         System.out.println("position:"+byteBuffer.position());
+         System.out.println("limit:"+byteBuffer.limit());
+         System.out.println("capacity:"+byteBuffer.capacity());
+         System.out.println("======get byte:"+byteBuffer.get(0));
+     }
+	 /**
+	  * 测试Char，占用2个字节
+	  */
+	 public static void testChar(){
+   	  System.out.println("===============put char============");
+         //字符
+         char aChar= 'a';
+         byteBuffer.putChar(aChar);
+         System.out.println("position:"+byteBuffer.position());
+         System.out.println("limit:"+byteBuffer.limit());
+         System.out.println("capacity:"+byteBuffer.capacity());
+         System.out.println("======get Char:"+byteBuffer.getChar(1));
+     }
+	 /**
+	  * 标记位置，以便reset，返回这个标记位置
+	  */
+	  public static void testMark(){
+    	  //标记位置
+          byteBuffer.mark();
+          System.out.println("===============mark============");
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+      }
+	  /**
+	   * 测试int，占用4个字节
+	   */
+	  public static void testInt(){
+    	  System.out.println("===============put int============");
+          //int
+          int int4 = 4;
+          byteBuffer.putInt(int4);
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          //这里为什么从第三个字节开始读取，因为前面一个字节和一个字符总共三个字节
+          System.out.println("======get int:"+byteBuffer.getInt(3));
+      }
+	  /**
+	   * 测试float，占用4个字节
+	   */
+	  public static void testFloat(){
+    	  System.out.println("===============put float============");
+          //float
+          float float5 = 10;
+          byteBuffer.putFloat(float5);
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          //这里为什么从第7个字节开始读取，因为前面一个字节和一个字符，一个int总共7个字节
+          System.out.println("======get float:"+byteBuffer.getFloat(7));
+      }
+	  /**
+	   * 测试double，占用8个字节
+	   */
+	  public static void testDouble(){
+    	  System.out.println("===============put double============");
+          //double
+          double double6 = 20.0;
+          byteBuffer.putDouble(double6);
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          //这里为什么从第11个字节开始读取，因为前面一个字节和一个字符，一个int,一个float总共11个字节
+          System.out.println("======get double:"+byteBuffer.getDouble(11));
+      }
+	  /**
+	   * 测试Long，占用8个字节
+	   */
+	  public static void testLong(){
+    	  System.out.println("===============put long============");
+          //long
+          long long7 = (long) 30.0;
+          byteBuffer.putLong(long7);
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          //这里为什么从第19个字节开始读取，因为前面一个字节和一个字符，一个int,一个float，一个double总共19个字节
+          System.out.println("======get long:"+byteBuffer.getLong(19));
+      }
+	  /**
+	   * 测试字节缓冲的剩余空间函数
+	   */
+	  public static void testRemaining(){
+    	  System.out.println("======buffer 剩余空间大小:"+byteBuffer.remaining());
+      }
+	  /**
+	   * 测试添加元素字节长度，大于剩余空间时的情况
+	   */
+	  public static void testOverFlow(){
+    	  /*Exception in thread "main" java.nio.BufferOverflowException
+	      	at java.nio.Buffer.nextPutIndex(Buffer.java:519)
+	      	at java.nio.HeapByteBuffer.putLong(HeapByteBuffer.java:417)
+	      	at socket.TestByteBuffer.main(TestByteBuffer.java:60)
+	      	超出空间，则抛出BufferOverflowException异常
+	      	*/
+         try{
+      	   byteBuffer.putLong((long)30.0);
+         }
+         catch(BufferOverflowException e){
+      	   e.printStackTrace();
+         }
+      }
+	  /**
+	   * 测试回到标记，position为标记的mark
+	   */
+	  public static void testReset(){
+     	 System.out.println("===============reset============");
+          //回到mark标记位置，position为标记的mark
+          byteBuffer.reset();
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          System.out.println("======get  int from mark:"+byteBuffer.getInt(3));
+          //重新，从标记位置put一个int值，原来的内容被覆盖掉
+          int int5 = 5;
+          byteBuffer.putInt(int5);
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit());
+          System.out.println("capacity:"+byteBuffer.capacity());
+          System.out.println("======get int from mark after put new int value:"+byteBuffer.getInt(3));
+      }
+	  /**
+	   * clear重置position，mark，limit位置，原始缓存区内容并不清掉
+	   */
+	  public static void testClear(){
+    	  System.out.println("===============clear============");
+          //clear重置position，mark，limit位置，原始缓存区内容并不清掉
+          byteBuffer.clear();
+          System.out.println("position:"+byteBuffer.position());
+          System.out.println("limit:"+byteBuffer.limit()); 
+          System.out.println("capacity:"+byteBuffer.capacity());
+          System.out.println("======get int  after clear:"+byteBuffer.getInt(3));
+          
+      }
+	  
+	  public static void testCompact(){
+			 System.out.println("===============compact============");
+	            /*
+	             * compact操作用于当
+	             *  while (in.read(buf) >= 0 || buf.position != 0) {
+	             *     buf.flip();
+	             *     out.write(buf);
+	             *     buf.compact();    // In case of partial write
+	             *    }
+	             * 当out发送数据，即读取buf的数据，write方法可能只发送了部分数据，buf里还有剩余，
+	             * 这时调用buf.compact()函数将position与limit之间的数据，copy到buf的0到limit-position，进行压缩（非实际以压缩，只是移动），
+	             * 以便下次 向写入缓存。
+	             */
+	           
+	            byteBuffer.compact();
+	            System.out.println("position:"+byteBuffer.position());
+	            System.out.println("limit:"+byteBuffer.limit());
+	            System.out.println("capacity:"+byteBuffer.capacity());
+	            System.out.println("======get int:"+byteBuffer.getInt(3));
+	            System.out.println("===============flip============");
+	           /* 
+	            * buf.put(magic);    // Prepend header
+	            * in.read(buf);      // Read data into rest of buffer
+	            * buf.flip();        // Flip buffer
+	            * out.write(buf); 
+	            * 当in从缓冲中读取数据后，如果想要将缓存中的数据发送出去，则调用buf.flip()函数，limit为当前position，position为0，
+	            * /
+//	            byteBuffer.flip();
+	            System.out.println("===============rewind============");
+	            /* 
+	            * out.write(buf);    // Write remaining data
+	            * buf.rewind();      // Rewind buffer
+	            * buf.get(array);    // Copy data into array</pre></blockquote>
+	            * 当out写出数据，即读取buf的数据后，如果想要从缓存中，从0位置，获取缓存数据，则调用buf.rewind()
+	            */            
+//	            byteBuffer.rewind();
+	            
+		}
+      
+}
+注意 main里面方法的调用顺序不要变，第一次测试我们先注释掉testCompact方法，控制台输出：
+===============init status============
+position:0
+limit:32
+capacity:32
+===============put byte============
+position:1
+limit:32
+capacity:32
+======get byte:102
+===============put char============
+position:3
+limit:32
+capacity:32
+======get Char:a
+===============mark============
+position:3
+limit:32
+capacity:32
+===============put int============
+position:7
+limit:32
+capacity:32
+======get int:4
+===============put float============
+position:11
+limit:32
+capacity:32
+======get float:10.0
+===============put double============
+position:19
+limit:32
+capacity:32
+======get double:20.0
+===============put long============
+position:27
+limit:32
+capacity:32
+======get long:30
+======buffer 剩余空间大小:5
+java.nio.BufferOverflowException
+	at java.nio.Buffer.nextPutIndex(Buffer.java:519)
+	at java.nio.HeapByteBuffer.putLong(HeapByteBuffer.java:417)
+	at socket.TestByteBuffer.testOverFlow(TestByteBuffer.java:150)
+	at socket.TestByteBuffer.main(TestByteBuffer.java:24)
+===============reset============
+position:3
+limit:32
+capacity:32
+======get  int from mark:4
+position:7
+limit:32
+capacity:32
+======get int from mark after put new int value:5
+===============clear============
+position:0
+limit:32
+capacity:32
+======get int  after clear:5
+从控制台输出可看出，ByteBuffer的put*和
+get*（int index）方法不改变mark，limit和capacity的值;
+put则回改变position的位置，put操作后position的位置为，put操作之前position+length（put 操作数）；
+mark操作会改变mark的值，reset操作，则是将position定位到mark；clear操作并不会清空缓冲空间，而是将
+position复位0，limit为capacity，mark为-1；remain操作返回的是可用的空间大小为capacity-position；
+如put后，超出缓冲区大小，则抛出BufferOverflowException异常。
+
+
+下面我们将mark，reset和clear注释掉，测试Compact操作如下：
+
+	public  static void main(String[] args) {
+		    /* 以下顺序不要改变*/
+			initByteBuffer();
+			testByte(); 
+			testChar(); 
+//			testMark();
+			testInt();
+			testFloat(); 
+			testDouble();
+			testLong();
+			testRemaining();
+			testOverFlow();
+//			testReset();
+//			testClear();
+			testCompact();
+	}
+
+关注控制的compact部分输出：
+===============put long============
+position:27
+limit:32
+capacity:32
+======get long:30
+======buffer 剩余空间大小:5
+java.nio.BufferOverflowException
+	at java.nio.Buffer.nextPutIndex(Buffer.java:519)
+	at java.nio.HeapByteBuffer.putLong(HeapByteBuffer.java:417)
+	at socket.TestByteBuffer.testOverFlow(TestByteBuffer.java:150)
+	at socket.TestByteBuffer.main(TestByteBuffer.java:24)
+===============compact============
+position:5
+limit:32
+capacity:32
+======get int:4
+===============flip============
+===============rewind============
+从控制台输出可以看出，compact操作一般在一下情况调用，
+ /*
+ * compact操作用于当
+ *  while (in.read(buf) >= 0 || buf.position != 0) {
+ *     buf.flip();
+ *     out.write(buf);
+ *     buf.compact();    // In case of partial write
+ *    }
+ */
+当out发送数据，即读取buf的数据，write方法可能只发送了部分数据，buf里还有剩余，
+这时调用buf.compact()函数将position与limit之间的数据，copy到buf的0到limit-position，
+进行压缩（非实际以压缩，只是移动），以便下次 向写入缓存。当position与limit之间的数据为空时，
+则不改变原缓冲区，否则copy相应数据。
+//HeapByteBuffer
+public ByteBuffer compact() {
+
+        System.arraycopy(hb, ix(position()), hb, ix(0), remaining());
+        position(remaining());
+        limit(capacity());
+        discardMark();
+        return this;
+    }
+/*
+If <code>src</code> is <code>null</code>, then a
+* <code>NullPointerException</code> is thrown and the destination
+* array is not modified.
+*/
+//System
+ public static native void arraycopy(Object src,  int  srcPos,
+                                        Object dest, int destPos,
+                                        int length);
+
+
+线面我们来看一下Buffer的相关操作：
+public abstract class Buffer {
+
+    // Invariants: mark <= position <= limit <= capacity
+    private int mark = -1;
+    private int position = 0;
+    private int limit;
+    private int capacity;
+
+   //返回position
+    public final int position() {
+        return position;
+    }
+    //返回capacity
+    public final int capacity() {
+        return capacity;
+    }
+    //重新定义position位置，如mark位置大于新position，则废弃mark位置
+    public final Buffer position(int newPosition) {
+        if ((newPosition > limit) || (newPosition < 0))
+            throw new IllegalArgumentException();
+        position = newPosition;
+        if (mark > position) mark = -1;
+        return this;
+    }
+    //返回limit
+     public final int limit() {
+        return limit;
+    }
+    //标记位置
+    public final Buffer mark() {
+        mark = position;
+        return this;
+    }
+    //复位position到mark位置
+    public final Buffer reset() {
+        int m = mark;
+        if (m < 0)
+            throw new InvalidMarkException();
+        position = m;
+        return this;
+    }
+    //clear操作并不会清空缓冲空间，而是将
+    //position复位0，limit为capacity，mark为-1；
+    public final Buffer clear() {
+        position = 0;
+        limit = capacity;
+        mark = -1;
+        return this;
+    }
+   /* 
+    * buf.put(magic);    // Prepend header
+    * in.read(buf);      // Read data into rest of buffer
+    * buf.flip();        // Flip buffer
+    * out.write(buf); 
+    * 当in从缓冲中读取数据后，如果想要将缓存中的数据发送出去，
+    * 则调用buf.flip()函数，limit为当前position，position为0，
+    */
+    public final Buffer flip() {
+        limit = position;
+        position = 0;
+        mark = -1;
+        return this;
+    }
+    /* 
+     * out.write(buf);    // Write remaining data
+     * buf.rewind();      // Rewind buffer
+     * buf.get(array);    // Copy data into array</pre></blockquote>
+     * 当out写出数据，即读取buf的数据后，如果想要从缓存中，从0位置，获取缓存数据，则调用buf.rewind()
+     */      
+    public final Buffer rewind() {
+        position = 0;
+        mark = -1;
+        return this;
+    }
+    //返回可用空间
+    public final int remaining() {
+        return limit - position;
+    }
+    //废弃标记位置
+    final void discardMark() {                          // package-private
+        mark = -1;
+    }
+    Buffer(int mark, int pos, int lim, int cap) {       // package-private
+        if (cap < 0)
+            throw new IllegalArgumentException("Negative capacity: " + cap);
+        this.capacity = cap;
+        limit(lim);
+        position(pos);
+        if (mark >= 0) {
+            if (mark > pos)
+                throw new IllegalArgumentException("mark > position: ("
+                                                   + mark + " > " + pos + ")");
+            this.mark = mark;
+        }
+    }
+}
+再来看ByteBuffer
+public abstract class ByteBuffer
+    extends Buffer
+    implements Comparable<ByteBuffer>
+{
+
+    // These fields are declared here rather than in Heap-X-Buffer in order to
+    // reduce the number of virtual method invocations needed to access these
+    // values, which is especially costly when coding small buffers.
+    //
+    final byte[] hb;  // Non-null only for heap buffers，缓存空间
+    final int offset;
+    boolean isReadOnly; 
+     ByteBuffer(int mark, int pos, int lim, int cap,   // package-private
+                 byte[] hb, int offset)
+    {
+        super(mark, pos, lim, cap);
+        this.hb = hb;
+        this.offset = offset;
+    }
+}
+再来看
+class HeapByteBuffer
+    extends ByteBuffer
+{
+    HeapByteBuffer(byte[] buf, int off, int len) { // package-private
+        super(-1, off, off + len, buf.length, buf, 0);
+        /*
+        hb = buf;
+        offset = 0;
+        */
+    }
+}
+来看压缩函数
+/*
+ * compact操作用于当
+ *  while (in.read(buf) >= 0 || buf.position != 0) {
+ *     buf.flip();
+ *     out.write(buf);
+ *     buf.compact();    // In case of partial write
+ *    }
+ * 当out发送数据，即读取buf的数据，write方法可能只发送了部分数据，buf里还有剩余，
+ * 这时调用buf.compact()函数将position与limit之间的数据，copy到buf的0到limit-position，
+ * 进行压缩（非实际以压缩，只是移动），
+ * 以便下次 向写入缓存。
+ */
+public ByteBuffer compact() {
+        //将position与limit之间的数据，copy到buf的0到limit-position
+        System.arraycopy(hb, ix(position()), hb, ix(0), remaining());
+	//重新定位position
+        position(remaining());
+	//重新赋值limit
+        limit(capacity());
+	//废弃标记位置
+        discardMark();
+        return this;
+    }
+在来看一下put函数
+ public ByteBuffer putChar(char x) {
+        //Char，占两字节
+        Bits.putChar(this, ix(nextPutIndex(2)), x, bigEndian);
+        return this;
+    }
+
+ public ByteBuffer putInt(int x) {
+        //int占4个字节
+        Bits.putInt(this, ix(nextPutIndex(4)), x, bigEndian);
+        return this;
+    }
+我们，详看一下putInt
+//Buffer
+//判断是否有足够空间存放nb个字节，并返回position的原先位置，同时移动position
+ final int nextPutIndex(int nb) {                    // package-private
+        if (limit - position < nb)
+            throw new BufferOverflowException();
+        int p = position;
+        position += nb;
+        return p;
+    }
+  //定位到缓存写开始的位置
+  protected int ix(int i) {
+        return i + offset;
+    }
+//Bits
+将int值x，从bb的bi位置，写入
+ static void putInt(ByteBuffer bb, int bi, int x, boolean bigEndian) {
+        if (bigEndian)
+            putIntB(bb, bi, x);
+        else
+            putIntL(bb, bi, x);
+    }
+    
+    //由于int占4个字节，将int的每个字节，拆分放入缓存ByteBuffer中
+    static void putIntL(ByteBuffer bb, int bi, int x) {
+        bb._put(bi + 3, int3(x));
+        bb._put(bi + 2, int2(x));
+        bb._put(bi + 1, int1(x));
+        bb._put(bi    , int0(x));
+    }
+    private static byte int3(int x) { return (byte)(x >> 24); }
+    private static byte int2(int x) { return (byte)(x >> 16); }
+    private static byte int1(int x) { return (byte)(x >>  8); }
+    private static byte int0(int x) { return (byte)(x      ); }
+  
+从ByteBuffer bb的比位置获取int值
+ static int getIntL(ByteBuffer bb, int bi) {
+        return makeInt(bb._get(bi + 3),
+                       bb._get(bi + 2),
+                       bb._get(bi + 1),
+                       bb._get(bi    ));
+ static private int makeInt(byte b3, byte b2, byte b1, byte b0) {
+        return (((b3       ) << 24) |
+                ((b2 & 0xff) << 16) |
+                ((b1 & 0xff) <<  8) |
+                ((b0 & 0xff)      ));
+    }
+
+从上面可以看出向缓存中写入占多字节的原始类型Char，int，float等时，
+HeapByteBuffer，通过Bit将原始类型字节拆分存入到ByteBuffer的缓存中。
+
+
+总结：
+get*（int index）方法不改变mark，limit和capacity的值;
+put则回改变position的位置，put操作后position的位置为，put操作之前position+length（put 操作数）；
+mark操作会改变mark的值，reset操作，则是将position定位到mark；clear操作并不会清空缓冲空间，而是将
+position复位0，limit为capacity，mark为-1；remain操作返回的是可用的空间大小为capacity-position；
+如put后，超出缓冲区大小，则抛出BufferOverflowException异常。
+compact操作一般在一下情况调用，当out发送数据，即读取buf的数据，write方法可能只发送了部分数据，
+buf里还有剩余，这时调用buf.compact()函数将position与limit之间的数据，copy到buf的0到limit-position，
+进行压缩（非实际以压缩，只是移动），以便下次 向写入缓存。当position与limit之间的数据为空时，
+则不改变原缓冲区，否则copy相应数据。
+HeapByteBuffer向缓存中写入占多字节的原始类型Char，int，float等时，
+HeapByteBuffer，通过Bit将原始类型字节拆分存入到ByteBuffer的缓存中。
+

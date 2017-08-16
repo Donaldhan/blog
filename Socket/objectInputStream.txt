@@ -1,0 +1,202 @@
+2.反序列化
+ObjectInputStream objectInputStream  = null;
+try {
+	objectInputStream = new ObjectInputStream(inFile);
+} catch (IOException e) {
+	e.printStackTrace();
+}
+PersonX getPerson = null;
+try {
+	getPerson = (PersonX) objectInputStream.readObject();
+	int int0 = objectInputStream.readInt();
+	System.out.println("=======read int after read object persion:"+int0);
+	String str = objectInputStream.readUTF();
+	System.out.println("=======read UTF after read object persion and int:"+str);
+	objectInputStream.close();
+} catch (ClassNotFoundException e) {
+	e.printStackTrace();
+} catch (IOException e) {
+	e.printStackTrace();
+}
+看了序列化的过程，我们应该可以反推，反序列，这里不细讲，直接主要类的构造，属性
+public class ObjectInputStream
+    extends InputStream implements ObjectInput, ObjectStreamConstants
+{
+/** filter stream for handling block data conversion */
+    private final BlockDataInputStream bin;
+    /** validation callback list */
+    private final ValidationList vlist;
+    /** recursion depth */
+    private int depth;
+    /** whether stream is closed */
+    private boolean closed;
+
+    /** wire handle -> obj/exception map */
+    private final HandleTable handles;
+    /** scratch field for passing handle values up/down call stack */
+    private int passHandle = NULL_HANDLE;
+    /** flag set when at end of field value block with no TC_ENDBLOCKDATA */
+    private boolean defaultDataEnd = false;
+
+    /** buffer for reading primitive field values */
+    private byte[] primVals;
+
+    /** if true, invoke readObjectOverride() instead of readObject() */
+    private final boolean enableOverride;
+    /** if true, invoke resolveObject() */
+    private boolean enableResolve;
+
+    /**
+     * Context during upcalls to class-defined readObject methods; holds
+     * object currently being deserialized and descriptor for current class.
+     * Null when not during readObject upcall.
+     */
+    private SerialCallbackContext curContext;
+
+ }
+
+
+ // BlockDataInputStream
+ private class BlockDataInputStream
+        extends InputStream implements DataInput
+    {
+        /** maximum data block length */
+        private static final int MAX_BLOCK_SIZE = 1024;
+        /** maximum data block header length */
+        private static final int MAX_HEADER_SIZE = 5;
+        /** (tunable) length of char buffer (for reading strings) */
+        private static final int CHAR_BUF_SIZE = 256;
+        /** readBlockHeader() return value indicating header read may block */
+        private static final int HEADER_BLOCKED = -2;
+
+        /** buffer for reading general/block data */
+        private final byte[] buf = new byte[MAX_BLOCK_SIZE];
+        /** buffer for reading block data headers */
+        private final byte[] hbuf = new byte[MAX_HEADER_SIZE];
+        /** char buffer for fast string reads */
+        private final char[] cbuf = new char[CHAR_BUF_SIZE];
+
+        /** block data mode */
+        private boolean blkmode = false;
+
+        // block data state fields; values meaningful only when blkmode true
+        /** current offset into buf */
+        private int pos = 0;
+        /** end offset of valid data in buf, or -1 if no more block data */
+        private int end = -1;
+        /** number of bytes in current block yet to be read from stream */
+        private int unread = 0;
+
+        /** underlying stream (wrapped in peekable filter stream) */
+        private final PeekInputStream in;
+        /** loopback stream (for data reads that span data blocks) */
+        private final DataInputStream din;
+
+        /**
+         * Creates new BlockDataInputStream on top of given underlying stream.
+         * Block data mode is turned off by default.
+         */
+        BlockDataInputStream(InputStream in) {
+            this.in = new PeekInputStream(in);
+            din = new DataInputStream(this);
+        }
+}
+//PeekInputStream
+ /**
+     * Input stream supporting single-byte peek operations.
+     */
+    private static class PeekInputStream extends InputStream {
+
+        /** underlying stream */
+        private final InputStream in;
+        /** peeked byte */
+        private int peekb = -1;
+
+        /**
+         * Creates new PeekInputStream on top of given underlying stream.
+         */
+        PeekInputStream(InputStream in) {
+            this.in = in;
+        }
+
+        /**
+         * Peeks at next byte value in stream.  Similar to read(), except
+         * that it does not consume the read value.
+         */
+        int peek() throws IOException {
+            return (peekb >= 0) ? peekb : (peekb = in.read());
+        }
+
+        public int read() throws IOException {
+            if (peekb >= 0) {
+                int v = peekb;
+                peekb = -1;
+                return v;
+            } else {
+                return in.read();
+            }
+        }
+
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (len == 0) {
+                return 0;
+            } else if (peekb < 0) {
+                return in.read(b, off, len);
+            } else {
+                b[off++] = (byte) peekb;
+                len--;
+                peekb = -1;
+                int n = in.read(b, off, len);
+                return (n >= 0) ? (n + 1) : 1;
+            }
+        }
+
+        void readFully(byte[] b, int off, int len) throws IOException {
+            int n = 0;
+            while (n < len) {
+                int count = read(b, off + n, len - n);
+                if (count < 0) {
+                    throw new EOFException();
+                }
+                n += count;
+            }
+        }
+
+        public long skip(long n) throws IOException {
+            if (n <= 0) {
+                return 0;
+            }
+            int skipped = 0;
+            if (peekb >= 0) {
+                peekb = -1;
+                skipped++;
+                n--;
+            }
+            return skipped + skip(n);
+        }
+
+        public int available() throws IOException {
+            return in.available() + ((peekb >= 0) ? 1 : 0);
+        }
+
+        public void close() throws IOException {
+            in.close();
+        }
+    }
+来看一个readint
+//ObjectInputStream
+public int readInt()  throws IOException {
+        return bin.readInt();
+    }
+//BlockDataInputStream
+     public int readInt() throws IOException {
+            if (!blkmode) {
+                pos = 0;
+                in.readFully(buf, 0, 4);
+            } else if (end - pos < 4) {
+                return din.readInt();
+            }
+            int v = Bits.getInt(buf, pos);
+            pos += 4;
+            return v;
+        }

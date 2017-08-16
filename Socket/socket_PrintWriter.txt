@@ -1,0 +1,1123 @@
+Java Socket编程实例:http://donald-draper.iteye.com/blog/2356695
+在上一篇Java Socket编程实例，我们实战Java Socket编程中，用到
+BufferedInput/OutputStream去包装Input/OutputStream读写socket的缓冲区，这种是通过
+FilterInput/OutputStream方式；今天我们来看一下在HttpServletResponse中用的比较多的方式
+PrintWriter/BufferedReader，即Writer/Reader方式。
+服务器：
+
+package socket;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
+/**
+ * Server
+ * @author donald
+ * 2017年2月13日
+ * 下午4:51:53
+ */
+public class TestServer {
+	public static final int PORT = 4003;
+
+	public static void main(String[] args) {
+		try {
+			startServer();
+		} catch (IOException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+	}
+
+	// 服务端代码
+	public static void startServer() throws IOException, InterruptedException {
+		ServerSocket serverSocket = new ServerSocket(PORT);
+		System.out.println("服务器启动......");
+		while (true) {
+			Socket socket = serverSocket.accept();
+			// 获取输入流，并读取服务器端的响应信息
+			InputStream inputStream = socket.getInputStream();
+			BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+			String message = null;
+			while ((message = bufferedReader.readLine()) != null) {
+				System.out.println("收到客户端信息：" + message);
+			}
+			// 这里向网络进行两次写入
+			OutputStream outputStream = socket.getOutputStream();
+			// 将输出流包装为打印流
+			PrintWriter printWriter = new PrintWriter(outputStream);
+			printWriter.write("Welcome Client!");
+			printWriter.flush();
+			// 关闭输出流
+			socket.shutdownOutput();
+			// 关闭资源
+			bufferedReader.close();
+			inputStream.close();
+			printWriter.close();
+			outputStream.close();
+			socket.close();
+		}
+	}
+}
+
+
+客户端：
+
+package socket;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.net.Socket;
+import java.net.UnknownHostException;
+/**
+ * Client
+ * @author donald
+ * 2017年2月13日
+ * 下午4:52:27
+ */
+public class TestClient {
+	private static final int PORT = 4003;
+	private static final String ip = "10.16.7.107";
+
+	public static void main(String[] args) {
+		try {
+			client();
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	public static void client() throws UnknownHostException, IOException {
+		// 创建socket连接
+		Socket socket = new Socket(ip, PORT);
+		System.out.println("连接服务器成功......");
+		// 这里向网络进行两次写入
+		OutputStream outputStream = socket.getOutputStream();
+		// 将输出流包装为打印流
+		PrintWriter printWriter = new PrintWriter(outputStream);
+		printWriter.write("Hello Server!");
+		printWriter.flush();
+		// 关闭输出流
+		socket.shutdownOutput();
+		// 获取输入流，并读取服务器端的响应信息
+		InputStream inputStream = socket.getInputStream();
+		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+		String message = null;
+		while ((message = bufferedReader.readLine()) != null) {
+			System.out.println("收到服务端信息：" + message);
+		}
+		// 关闭资源
+		bufferedReader.close();
+		inputStream.close();
+		printWriter.close();
+		outputStream.close();
+		socket.close();
+
+	}
+}
+
+
+服务器端控制台输出：
+
+服务器启动......
+收到客户端信息：Hello Server!
+
+客户端控制台输出：
+连接服务器成功......
+收到服务端信息：Welcome Client!
+
+控制台的输出，不是我们今天所要探讨的，我们要关心的是下面这段代码
+// 这里向网络进行两次写入
+OutputStream outputStream = socket.getOutputStream();
+// 将输出流包装为打印流
+PrintWriter printWriter = new PrintWriter(outputStream);
+printWriter.write("Hello Server!");
+printWriter.flush();
+// 关闭输出流
+socket.shutdownOutput();
+// 获取输入流，并读取服务器端的响应信息
+InputStream inputStream = socket.getInputStream();
+BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+String message = null;
+while ((message = bufferedReader.readLine()) != null) {
+	System.out.println("收到服务端信息：" + message);
+}
+这个分两部分来看1.PrintWriter，写缓冲区，2.BufferedReader，读缓冲区
+第一部分：PrintWriter，写缓冲区
+// 这里向网络进行两次写入
+OutputStream outputStream = socket.getOutputStream();
+// 将输出流包装为打印流
+PrintWriter printWriter = new PrintWriter(outputStream);
+printWriter.write("Hello Server!");
+printWriter.flush();
+
+从下面这句话开始
+PrintWriter printWriter = new PrintWriter(outputStream);
+
+public class PrintWriter extends Writer {
+
+    /**
+     * The underlying character-output stream of this
+     * <code>PrintWriter</code>.
+     *
+     * @since 1.2
+     */
+    protected Writer out;//输出流
+
+    private final boolean autoFlush;//是否自动刷新缓冲区，默认为false
+    private boolean trouble = false;
+    private Formatter formatter;
+    private PrintStream psOut = null;
+    /**
+     * Line separator string.  This is the value of the line.separator
+     * property at the moment that the stream was created.
+     * 系统默认换行符
+     */
+    private final String lineSeparator;
+}
+构造PrintWriter
+    public PrintWriter (Writer out) {
+        //委托给PrintWriter(OutputStream out, boolean autoFlush)
+        this(out, false);
+    }
+根据OutputStream构造OutputStreamWriter，再包装成BufferedWriter
+  public PrintWriter(OutputStream out, boolean autoFlush) {
+        //委托给PrintWriter(Writer out,boolean autoFlush)
+        this(new BufferedWriter(new OutputStreamWriter(out)), autoFlush);
+        // save print stream for error propagation
+        if (out instanceof java.io.PrintStream) {
+            psOut = (PrintStream) out;
+        }
+    }
+根据Writer(BufferedWriter)和autoFlush构造PrintWriter
+  public PrintWriter(Writer out,boolean autoFlush) {
+        //初始化父类
+        super(out);
+        this.out = out;
+        this.autoFlush = autoFlush;
+	//初始化系统换行符
+        lineSeparator = java.security.AccessController.doPrivileged(
+            new sun.security.action.GetPropertyAction("line.separator"));
+    }
+//Writer
+public abstract class Writer implements Appendable, Closeable, Flushable {
+    /** Temporary buffer used to hold writes of strings and single characters */
+    private char[] writeBuffer;
+    /** Size of writeBuffer, must be >= 1*/
+    private final int writeBufferSize = 1024;
+    /**
+     * The object used to synchronize operations on this stream.  For
+     * efficiency, a character-stream object may use an object other than
+     * itself to protect critical sections.  A subclass should therefore use
+     * the object in this field rather than <tt>this</tt> or a synchronized
+     * method.
+     */
+    protected Object lock;
+    /**
+     * Creates a new character-stream writer whose critical sections will
+     * synchronize on the writer itself.
+     */
+    protected Writer() {
+        this.lock = this;
+    }
+
+    /**
+     * Creates a new character-stream writer whose critical sections will
+     * synchronize on the given object.
+     *
+     * @param  lock
+     *         Object to synchronize on
+     */
+    //初始化Writer的同步锁，控制缓冲区的写操作
+    protected Writer(Object lock) {
+        if (lock == null) {
+            throw new NullPointerException();
+        }
+        this.lock = lock;
+    }
+}
+回到PrintWriter(OutputStream out, boolean autoFlush)方法的这一句
+this(new BufferedWriter(new OutputStreamWriter(out)), autoFlush);
+先来看OutputStreamWriter
+//OutputStreamWriter
+
+public class OutputStreamWriter extends Writer {
+    private final StreamEncoder se;//输出字节流编码器
+    //构造OutputStreamWriter
+    public OutputStreamWriter(OutputStream out) {
+        //这个前面Writer看过
+        super(out);
+        try {
+	    //初始化输出字节流编码器
+            se = StreamEncoder.forOutputStreamWriter(out, this, (String)null);
+        } catch (UnsupportedEncodingException e) {
+            throw new Error(e);
+        }
+    }
+}
+//StreamEncoder
+public class StreamEncoder extends Writer
+{
+    private static final int DEFAULT_BYTE_BUFFER_SIZE = 8192;
+    private volatile boolean isOpen;//输出流是否打开
+    private Charset cs;//字节编码集
+    private CharsetEncoder encoder;//字节编码器
+    private ByteBuffer bb;//字节缓冲区
+    private final OutputStream out;//输出流，从Socket获取的
+    private WritableByteChannel ch;/字节流通道
+    private boolean haveLeftoverChar;
+    private char leftoverChar;
+    private CharBuffer lcb;
+    static final boolean $assertionsDisabled = !sun/nio/cs/StreamEncoder.desiredAssertionStatus();
+    //初始化字符集，及输出流
+    public static StreamEncoder forOutputStreamWriter(OutputStream outputstream, Object obj, String s)
+        throws UnsupportedEncodingException
+    {
+        String s1;
+        s1 = s;
+        if(s1 == null)
+            s1 = Charset.defaultCharset().name();
+        if(Charset.isSupported(s1))
+            return new StreamEncoder(outputstream, obj, Charset.forName(s1));
+        break MISSING_BLOCK_LABEL_39;
+        IllegalCharsetNameException illegalcharsetnameexception;
+        illegalcharsetnameexception;
+        throw new UnsupportedEncodingException(s1);
+    }
+     private StreamEncoder(OutputStream outputstream, Object obj, Charset charset)
+    {
+        this(outputstream, obj, charset.newEncoder().onMalformedInput(CodingErrorAction.REPLACE).onUnmappableCharacter(CodingErrorAction.REPLACE));
+    }
+    //初始化输出流是否打开状态，字节编码集，字节编码器,字节缓冲区,输出流
+    private StreamEncoder(OutputStream outputstream, Object obj, CharsetEncoder charsetencoder)
+    {
+        super(obj);
+        isOpen = true;
+        haveLeftoverChar = false;
+        lcb = null;
+        out = outputstream;
+        ch = null;
+        cs = charsetencoder.charset();
+        encoder = charsetencoder;
+        if(ch == null)
+            bb = ByteBuffer.allocate(8192);
+    }
+}
+在回到BufferedWriter的构造
+this(new BufferedWriter(new OutputStreamWriter(out)), autoFlush);
+//BufferedWriter
+public class BufferedWriter extends Writer {
+
+    private Writer out;
+    private char cb[];//缓存区
+    private int nChars, nextChar;//缓冲区大小，及写位置
+
+    private static int defaultCharBufferSize = 8192;//默认缓冲区大小
+
+    /**
+     * Line separator string.  This is the value of the line.separator
+     * property at the moment that the stream was created.
+     */
+    private String lineSeparator;
+
+    /**
+     * Creates a buffered character-output stream that uses a default-sized
+     * output buffer.
+     *
+     * @param  out  A Writer
+     */
+    public BufferedWriter(Writer out) {
+        this(out, defaultCharBufferSize);
+    }
+
+    /**
+     * Creates a new buffered character-output stream that uses an output
+     * buffer of the given size.
+     *
+     * @param  out  A Writer
+     * @param  sz   Output-buffer size, a positive integer
+     *
+     * @exception  IllegalArgumentException  If sz is <= 0
+     */
+    //初始化writer，缓冲区，缓冲区大小及位置和换行符
+    public BufferedWriter(Writer out, int sz) {
+        super(out);
+        if (sz <= 0)
+            throw new IllegalArgumentException("Buffer size <= 0");
+        this.out = out;
+        cb = new char[sz];
+        nChars = sz;
+        nextChar = 0;
+        lineSeparator = java.security.AccessController.doPrivileged(
+            new sun.security.action.GetPropertyAction("line.separator"));
+    }
+这里我们小节一下PrintWriter：
+构造PrintWriter实际为初始化writer和是否自动刷新缓存，及初始化换行符，同时
+通过父类Writer，初始化写缓存同步锁；在构造PrintWriter的过程中，writer实际为
+BufferedWriter，初始化BufferedWriter的过程，实际为初始化writer，
+缓冲区，缓冲区大小及位置和换行符，在构造BufferedWriter也需要传入writer，
+这个writer实际为OutputStreamWriter，OutputStreamWriter初始化主要是初始化字节流编码器，
+字节流编码器StreamEncoder初始化，实际为初始化输出流是否打开状态，字节编码集，
+字节编码器,字节缓冲区,输出流OutputStream（从socket获取）。
+
+构造PrintWriter到这里已经结束，下面来看一下如何发送字符串
+
+printWriter.write("Hello Server!");
+//PrintWriter
+public void write(String s) {
+        write(s, 0, s.length());
+    }
+public void write(String s, int off, int len) {
+        try {
+            synchronized (lock) {
+	        //确保输出流打开
+                ensureOpen();
+		//out为BufferedWriter
+                out.write(s, off, len);
+            }
+        }
+        catch (InterruptedIOException x) {
+            Thread.currentThread().interrupt();
+        }
+        catch (IOException x) {
+            trouble = true;
+        }
+    }
+//BufferedWriter
+//发送字符串
+public void write(String s, int off, int len) throws IOException {
+        synchronized (lock) {
+            ensureOpen();
+
+            int b = off, t = off + len;
+            while (b < t) {
+                int d = min(nChars - nextChar, t - b);
+		//将字符串发送字节流缓冲区中
+                s.getChars(b, b + d, cb, nextChar);
+                b += d;
+                nextChar += d;
+                if (nextChar >= nChars)
+		     //如果缓存区已满，则发送缓存区
+                    flushBuffer();
+            }
+        }
+    }
+//刷新缓存
+void flushBuffer() throws IOException {
+        synchronized (lock) {
+            ensureOpen();
+            if (nextChar == 0)
+                return;
+	    //将缓存中数据发送出去，out为OutputStreamWriter
+            out.write(cb, 0, nextChar);
+            nextChar = 0;
+        }
+    }
+//发送字节数组
+public void write(char cbuf[], int off, int len) throws IOException {
+        synchronized (lock) {
+            ensureOpen();
+            if ((off < 0) || (off > cbuf.length) || (len < 0) ||
+                ((off + len) > cbuf.length) || ((off + len) < 0)) {
+                throw new IndexOutOfBoundsException();
+            } else if (len == 0) {
+                return;
+            }
+
+            if (len >= nChars) {
+                /* If the request length exceeds the size of the output buffer,
+                   flush the buffer and then write the data directly.  In this
+                   way buffered streams will cascade harmlessly. */
+		//如果字节流长度大于缓冲区大小则，刷新缓存区
+                flushBuffer();
+		//将缓存中数据发送出去，out为OutputStreamWriter
+                out.write(cbuf, off, len);
+                return;
+            }
+
+            int b = off, t = off + len;
+            while (b < t) {
+                int d = min(nChars - nextChar, t - b);
+		//将发送字节流，写入缓存区
+                System.arraycopy(cbuf, b, cb, nextChar, d);
+                b += d;
+                nextChar += d;
+                if (nextChar >= nChars)
+		    //如果缓存区已满，则发送缓存区
+                    flushBuffer();
+            }
+        }
+    }
+
+
+//OutputStreamWriter
+
+ public void write(char cbuf[], int off, int len) throws IOException {
+        //委托个字节流编码器
+        se.write(cbuf, off, len);
+    }
+//StreamEncoder
+//写缓存
+public void write(char ac[], int i, int j)
+        throws IOException
+    {
+label0:
+        {
+            synchronized(lock)
+            {
+                ensureOpen();
+                if(i < 0 || i > ac.length || j < 0 || i + j > ac.length || i + j < 0)
+                    throw new IndexOutOfBoundsException();
+                if(j != 0)
+                    break label0;
+            }
+            return;
+        }
+	//委托给implWrite
+        implWrite(ac, i, j);
+        obj;
+        JVM INSTR monitorexit ;
+          goto _L1
+        exception;
+        throw exception;
+_L1:
+    }
+//编码字节流
+void implWrite(char ac[], int i, int j)
+        throws IOException
+    {
+        //将字节流，包装成CharBuffer
+        CharBuffer charbuffer = CharBuffer.wrap(ac, i, j);
+        if(haveLeftoverChar)
+            flushLeftoverChar(charbuffer, false);
+        do
+        {
+            if(!charbuffer.hasRemaining())
+                break;
+	    //将包装后的字节流缓冲区，编码到字节流缓冲区bb（ByteBuffer）
+            CoderResult coderresult = encoder.encode(charbuffer, bb, false);
+            if(coderresult.isUnderflow())
+            {
+                if(!$assertionsDisabled && charbuffer.remaining() > 1)
+                    throw new AssertionError(charbuffer.remaining());
+                if(charbuffer.remaining() == 1)
+                {
+                    haveLeftoverChar = true;
+                    leftoverChar = charbuffer.get();
+                }
+                break;
+            }
+            if(coderresult.isOverflow())
+            {
+                if(!$assertionsDisabled && bb.position() <= 0)
+                    throw new AssertionError();
+		//如果字节流缓冲区bb（ByteBuffer）已满，则发送缓存数据
+                writeBytes();
+            } else
+            {
+                coderresult.throwException();
+            }
+        } while(true);
+    }
+//发送缓存数据
+private void writeBytes()
+        throws IOException
+    {
+        bb.flip();
+        int i = bb.limit();
+        int j = bb.position();
+        if(!$assertionsDisabled && j > i)
+            throw new AssertionError();
+        int k = j > i ? 0 : i - j;
+        if(k > 0)
+            if(ch != null)
+            {
+                if(ch.write(bb) != k && !$assertionsDisabled)
+                    throw new AssertionError(k);
+            } else
+            {
+	       //通过OutputStream发送字节流
+                out.write(bb.array(), bb.arrayOffset() + j, k);
+            }
+        bb.clear();
+    }
+小节：
+PrintWriter发送字符串，实际为将字符串通过BufferedWriter发送，BufferedWriter现将
+字符串写入到其字节缓冲区中，如果缓冲区满，则发送缓存数据，发送委托给OutputStreamWriter，
+而OutputStreamWriter委托给StreamEncoder，有StreamEncoder将字节数组包装成CharBuffer，
+在通过编码器，编码字节到编码到字节流缓冲区bb（ByteBuffer），如果字节流缓冲区bb（ByteBuffer）已满，
+则发送缓存数据。
+
+再来看
+printWriter.flush();
+//PrintWriter
+ public void flush() {
+        try {
+            synchronized (lock) {
+                ensureOpen();
+                out.flush();
+            }
+        }
+        catch (IOException x) {
+            trouble = true;
+        }
+    }
+//BufferedWriter
+ public void flush() throws IOException {
+        synchronized (lock) {
+	    //发送缓冲数据
+            flushBuffer();
+            out.flush();
+        }
+    }
+//OutputStreamWriter
+
+public void flush() throws IOException {
+        se.flush();
+    }
+//StreamEncoder
+
+public void flush()
+        throws IOException
+    {
+        synchronized(lock)
+        {
+            ensureOpen();
+            implFlush();
+        }
+    }
+  void implFlush()
+        throws IOException
+    {
+        implFlushBuffer();
+        if(out != null)
+            out.flush();
+    }
+    void implFlushBuffer()
+        throws IOException
+    {
+        if(bb.position() > 0)
+	    //发送缓存数据
+            writeBytes();
+    }
+从上来看PrintWriter的flush为发送缓存数据
+最后来看一下
+//PrintWriter
+//新建一行
+private void newLine() {
+        try {
+            synchronized (lock) {
+                ensureOpen();
+		//发送换行符，委托给BufferedWriter
+                out.write(lineSeparator);
+                if (autoFlush)
+                    out.flush();
+            }
+        }
+        catch (InterruptedIOException x) {
+            Thread.currentThread().interrupt();
+        }
+        catch (IOException x) {
+            trouble = true;
+        }
+    }
+//BufferedWriter
+     public void newLine() throws IOException {
+        write(lineSeparator);
+    }
+
+再来看如何输入流InputStream读取数据
+第二部分：BufferedReader，读缓冲区
+
+// 获取输入流，并读取服务器端的响应信息
+InputStream inputStream = socket.getInputStream();
+BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+String message = null;
+while ((message = bufferedReader.readLine()) != null) {
+	System.out.println("收到服务端信息：" + message);
+}
+
+先看InputStreamReader的构造
+public class InputStreamReader extends Reader {
+    //流解码器
+    private final StreamDecoder sd;
+
+    /**
+     * Creates an InputStreamReader that uses the default charset.
+     *
+     * @param  in   An InputStream
+     */
+    public InputStreamReader(InputStream in) {
+        super(in);
+        try {
+	    //初始化流解码器
+            sd = StreamDecoder.forInputStreamReader(in, this, (String)null); // ## check lock object
+        } catch (UnsupportedEncodingException e) {
+            // The default encoding should always be available
+            throw new Error(e);
+        }
+    }
+}
+//StreamDecoder
+public class StreamDecoder extends Reader
+{
+    private static final int MIN_BYTE_BUFFER_SIZE = 32;//最小缓冲区大小
+    private static final int DEFAULT_BYTE_BUFFER_SIZE = 8192;//默认缓冲区大小
+    private volatile boolean isOpen;//输入流状态
+    private boolean haveLeftoverChar;
+    private char leftoverChar;
+    private static volatile boolean channelsAvailable = true;
+    private Charset cs;
+    private CharsetDecoder decoder;
+    private ByteBuffer bb;//字节流缓冲区
+    private InputStream in;//Socket 输入流
+    private ReadableByteChannel ch;
+    static final boolean $assertionsDisabled = !sun/nio/cs/StreamDecoder.desiredAssertionStatus();
+    //初始化字节集，构造StreamDecoder
+     public static StreamDecoder forInputStreamReader(InputStream inputstream, Object obj, String s)
+        throws UnsupportedEncodingException
+    {
+        String s1;
+        s1 = s;
+        if(s1 == null)
+            s1 = Charset.defaultCharset().name();
+        if(Charset.isSupported(s1))
+            return new StreamDecoder(inputstream, obj, Charset.forName(s1));
+    }
+    StreamDecoder(InputStream inputstream, Object obj, Charset charset)
+    {
+        this(inputstream, obj, charset.newDecoder().onMalformedInput(CodingErrorAction.REPLACE).onUnmappableCharacter(CodingErrorAction.REPLACE));
+    }
+   //初始化输入流状态，字节流缓冲区，输入流
+    StreamDecoder(InputStream inputstream, Object obj, CharsetDecoder charsetdecoder)
+    {
+        super(obj);
+        isOpen = true;
+        haveLeftoverChar = false;
+        cs = charsetdecoder.charset();
+        decoder = charsetdecoder;
+        if(ch == null)
+        {
+            in = inputstream;
+            ch = null;
+            bb = ByteBuffer.allocate(8192);
+        }
+        bb.flip();
+    }
+}
+再看BufferedReader的构造
+public class BufferedReader extends Reader {
+
+    private Reader in;//Reader
+
+    private char cb[];//缓冲区
+    private int nChars, nextChar;//缓冲区大小，及位置
+
+    private static final int INVALIDATED = -2;
+    private static final int UNMARKED = -1;
+    private int markedChar = UNMARKED;
+    private int readAheadLimit = 0; /* Valid only when markedChar > 0 */
+
+    /** If the next character is a line feed, skip it */
+    private boolean skipLF = false;
+
+    /** The skipLF flag when the mark was set */
+    private boolean markedSkipLF = false;
+
+    private static int defaultCharBufferSize = 8192;
+    private static int defaultExpectedLineLength = 80;
+     /**
+     * Creates a buffering character-input stream that uses a default-sized
+     * input buffer.
+     *
+     * @param  in   A Reader
+     */
+    public BufferedReader(Reader in) {
+        this(in, defaultCharBufferSize);
+    }
+    //初始化缓冲区，缓冲区大小，及位置
+     public BufferedReader(Reader in, int sz) {
+        super(in);
+        if (sz <= 0)
+            throw new IllegalArgumentException("Buffer size <= 0");
+        this.in = in;
+        cb = new char[sz];
+        nextChar = nChars = 0;
+    }
+
+   
+public abstract class Reader implements Readable, Closeable {
+
+    protected Object lock;
+
+    /**
+     * Creates a new character-stream reader whose critical sections will
+     * synchronize on the given object.
+     * 创建读缓冲区同步锁
+     * @param lock  The Object to synchronize on.
+     */
+    protected Reader(Object lock) {
+        if (lock == null) {
+            throw new NullPointerException();
+        }
+        this.lock = lock;
+    }
+
+小节：
+从InputStreamReader的构造实际上为初始化流解码器StreamDecoder，
+StreamDecoder初始化主要是，初始化输入流状态，字节流缓冲区，socket输入流；
+BufferedReader构造的主要是，初始化缓冲区，缓冲区大小，及位置和创建Reader读缓冲区同步锁
+
+下面来看从socket输入流缓冲区，读取数据
+String message = null;
+while ((message = bufferedReader.readLine()) != null) {
+	System.out.println("收到服务端信息：" + message);
+}
+//BufferedReader
+从缓冲区读取一行数据
+String readLine(boolean ignoreLF) throws IOException {
+        StringBuffer s = null;
+        int startChar;
+
+        synchronized (lock) {
+            ensureOpen();
+            boolean omitLF = ignoreLF || skipLF;
+
+        bufferLoop:
+            for (;;) {
+
+                if (nextChar >= nChars)
+		    //填充BufferedReader缓冲区
+                    fill();
+                if (nextChar >= nChars) { /* EOF */
+                    if (s != null && s.length() > 0)
+                        return s.toString();
+                    else
+                        return null;
+                }
+                boolean eol = false;
+                char c = 0;
+                int i;
+
+                /* Skip a leftover '\n', if necessary */
+                if (omitLF && (cb[nextChar] == '\n'))
+                    nextChar++;
+                skipLF = false;
+                omitLF = false;
+
+            charLoop:
+                for (i = nextChar; i < nChars; i++) {
+                    c = cb[i];
+                    if ((c == '\n') || (c == '\r')) {
+                        eol = true;
+                        break charLoop;
+                    }
+                }
+
+                startChar = nextChar;
+                nextChar = i;
+                //一行数据
+                if (eol) {
+                    String str;
+                    if (s == null) {
+                        str = new String(cb, startChar, i - startChar);
+                    } else {
+                        s.append(cb, startChar, i - startChar);
+                        str = s.toString();
+                    }
+                    nextChar++;
+                    if (c == '\r') {
+                        skipLF = true;
+                    }
+                    return str;
+                }
+
+                if (s == null)
+                    s = new StringBuffer(defaultExpectedLineLength);
+                s.append(cb, startChar, i - startChar);
+            }
+        }
+    }
+ //填充BufferedReader缓冲区
+  private void fill() throws IOException {
+        int dst;
+	//确定标记位置
+        if (markedChar <= UNMARKED) {
+            /* No mark */
+            dst = 0;
+        } else {
+            /* Marked */
+            int delta = nextChar - markedChar;
+            if (delta >= readAheadLimit) {
+                /* Gone past read-ahead limit: Invalidate mark */
+                markedChar = INVALIDATED;
+                readAheadLimit = 0;
+                dst = 0;
+            } else {
+                if (readAheadLimit <= cb.length) {
+                    /* Shuffle in the current buffer */
+                    System.arraycopy(cb, markedChar, cb, 0, delta);
+                    markedChar = 0;
+                    dst = delta;
+                } else {
+                    /* Reallocate buffer to accommodate read-ahead limit */
+                    char ncb[] = new char[readAheadLimit];
+                    System.arraycopy(cb, markedChar, ncb, 0, delta);
+                    cb = ncb;
+                    markedChar = 0;
+                    dst = delta;
+                }
+                nextChar = nChars = delta;
+            }
+        }
+
+        int n;
+        do {
+	    //从InputStreamReader，读取数据到BufferedReader缓存区cb
+            //private char cb[];缓冲区
+            n = in.read(cb, dst, cb.length - dst);
+        } while (n == 0);
+        if (n > 0) {
+            nChars = dst + n;
+            nextChar = dst;
+        }
+    }
+//InputStreamReader
+public int read(char cbuf[], int offset, int length) throws IOException {
+        //委托给StreamDecoder
+        return sd.read(cbuf, offset, length);
+    }
+//StreamDecoder
+//从输入流缓存读数据
+public int read(char ac[], int i, int j)
+        throws IOException
+    {
+        ...
+        i1 + implRead(ac, k, k + l);
+	...
+     }
+//
+int implRead(char ac[], int i, int j)
+        throws IOException
+    {
+        if(!$assertionsDisabled && j - i <= 1)
+            throw new AssertionError();
+	//包装socket输入流缓存数据为CharBuffer
+        CharBuffer charbuffer = CharBuffer.wrap(ac, i, j - i);
+        if(charbuffer.position() != 0)
+            charbuffer = charbuffer.slice();
+        boolean flag = false;
+        do
+        {
+	    //解码包装后的字节流到字节流缓冲区ByteBuffer bb
+            CoderResult coderresult = decoder.decode(bb, charbuffer, flag);
+            if(coderresult.isUnderflow())
+            {
+                if(flag || !charbuffer.hasRemaining() || charbuffer.position() > 0 && !inReady())
+                    break;
+		//读取缓存数据
+                int k = readBytes();
+                if(k >= 0)
+                    continue;
+                flag = true;
+                if(charbuffer.position() == 0 && !bb.hasRemaining())
+                    break;
+                decoder.reset();
+                continue;
+            }
+            if(coderresult.isOverflow())
+            {
+                if(!$assertionsDisabled && charbuffer.position() <= 0)
+                    throw new AssertionError();
+                break;
+            }
+            coderresult.throwException();
+        } while(true);
+        if(flag)
+            decoder.reset();
+        if(charbuffer.position() == 0)
+        {
+            if(flag)
+                return -1;
+            if(!$assertionsDisabled)
+                throw new AssertionError();
+        }
+        return charbuffer.position();
+    }
+
+//读取缓存数据
+
+ private int readBytes()
+        throws IOException
+    {
+       //这个我们放在以后说
+        bb.compact();
+        int l;
+        if(ch == null)
+            break MISSING_BLOCK_LABEL_48;
+        int i = ch.read(bb);
+        if(i >= 0)
+            break MISSING_BLOCK_LABEL_236;
+        l = i;
+        bb.flip();
+        return l;
+        int i1;
+        int j1;
+        int k1;
+	//获取缓存可读的字节数
+        int j = bb.limit();
+	//记录读取位置 
+        l = bb.position();
+        if(!$assertionsDisabled && l > j)
+            throw new AssertionError();
+        i1 = l > j ? 0 : j - l;
+        if(!$assertionsDisabled && i1 <= 0)
+            throw new AssertionError();
+	//
+        j1 = in.read(bb.array(), bb.arrayOffset() + l, i1);
+        if(j1 >= 0)
+            break MISSING_BLOCK_LABEL_160;
+        k1 = j1;
+	//转换读写状态
+        bb.flip();
+        return k1;
+        if(j1 == 0)
+            throw new IOException("Underlying input stream returned zero bytes");
+        if(!$assertionsDisabled && j1 > i1)
+            throw new AssertionError((new StringBuilder()).append("n = ").append(j1).append(", rem = ").append(i1).toString());
+        bb.position(l + j1);
+        bb.flip();
+    }
+
+从上面可以看出从缓存读取数据实际上，先从socket输入流缓冲区通过流解码器StreamDecoder读取数据，解码
+填充到BufferedReader缓冲区中，BufferedReader从缓冲区中，读取一行数据。
+
+总结：
+构造PrintWriter实际为初始化writer和是否自动刷新缓存，及初始化换行符，同时
+通过父类Writer，初始化写缓存同步锁；在构造PrintWriter的过程中，writer实际为
+BufferedWriter，初始化BufferedWriter的过程，实际为初始化writer，
+缓冲区，缓冲区大小及位置和换行符，在构造BufferedWriter也需要传入writer，
+这个writer实际为OutputStreamWriter，OutputStreamWriter初始化主要是初始化字节流编码器，
+字节流编码器StreamEncoder初始化，实际为初始化输出流是否打开状态，字节编码集，
+字节编码器,字节缓冲区,输出流OutputStream（从socket获取）。
+PrintWriter发送字符串，实际为将字符串通过BufferedWriter发送，BufferedWriter现将
+字符串写入到其字节缓冲区中，如果缓冲区满，则发送缓存数据，发送委托给OutputStreamWriter，
+而OutputStreamWriter委托给StreamEncoder，有StreamEncoder将字节数组包装成CharBuffer，
+在通过编码器，编码字节到编码到字节流缓冲区bb（ByteBuffer），如果字节流缓冲区bb（ByteBuffer）已满，
+则发送缓存数据。
+InputStreamReader的构造实际上为初始化流解码器StreamDecoder，
+StreamDecoder初始化主要是，初始化输入流状态，字节流缓冲区，socket输入流；
+BufferedReader构造的主要是，初始化缓冲区，缓冲区大小，及位置和创建Reader读缓冲区同步锁
+从缓存读取数据实际上，先从socket输入流缓冲区通过流解码器StreamDecoder读取数据，解码
+填充到BufferedReader缓冲区中，BufferedReader从缓冲区中，读取一行数据。
+
+
+
+
+
+/**
+ * Abstract class for writing to character streams.  The only methods that a
+ * subclass must implement are write(char[], int, int), flush(), and close().
+ * Most subclasses, however, will override some of the methods defined here in
+ * order to provide higher efficiency, additional functionality, or both.
+ *
+ * @see Writer
+ * @see   BufferedWriter
+ * @see   CharArrayWriter
+ * @see   FilterWriter
+ * @see   OutputStreamWriter
+ * @see     FileWriter
+ * @see   PipedWriter
+ * @see   PrintWriter
+ * @see   StringWriter
+ * @see Reader
+ *
+ * @author      Mark Reinhold
+ * @since       JDK1.1
+ */
+
+public abstract class Writer implements Appendable, Closeable, Flushable {
+
+
+
+package java.io;
+
+
+/**
+ * Abstract class for reading character streams.  The only methods that a
+ * subclass must implement are read(char[], int, int) and close().  Most
+ * subclasses, however, will override some of the methods defined here in order
+ * to provide higher efficiency, additional functionality, or both.
+ *
+ *
+ * @see BufferedReader
+ * @see   LineNumberReader
+ * @see CharArrayReader
+ * @see InputStreamReader
+ * @see   FileReader
+ * @see FilterReader
+ * @see   PushbackReader
+ * @see PipedReader
+ * @see StringReader
+ * @see Writer
+ *
+ * @author      Mark Reinhold
+ * @since       JDK1.1
+ */
+
+public abstract class Reader implements Readable, Closeable {
+
+
+
+public abstract class ByteBuffer
+    extends Buffer
+    implements Comparable<ByteBuffer>
+{
+
+    // These fields are declared here rather than in Heap-X-Buffer in order to
+    // reduce the number of virtual method invocations needed to access these
+    // values, which is especially costly when coding small buffers.
+    //
+    final byte[] hb;                  // Non-null only for heap buffers
+    final int offset;
+    boolean isReadOnly;      
+}
+
+public abstract class CharBuffer
+    extends Buffer
+    implements Comparable<CharBuffer>, Appendable, CharSequence, Readable
+{
+
+    // These fields are declared here rather than in Heap-X-Buffer in order to
+    // reduce the number of virtual method invocations needed to access these
+    // values, which is especially costly when coding small buffers.
+    //
+    final char[] hb;                  // Non-null only for heap buffers
+    final int offset;
+    boolean isReadOnly;                 // Valid only for heap buffers
+}
+
+public abstract class Buffer {
+
+    // Invariants: mark <= position <= limit <= capacity
+    private int mark = -1;
+    private int position = 0;
+    private int limit;
+    private int capacity;
+
+    // Used only by direct buffers
+    // NOTE: hoisted here for speed in JNI GetDirectBufferAddress
+    long address;
+    }
+

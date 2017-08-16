@@ -1,0 +1,161 @@
+当我们使用Singleton模式时，应该是期望某个类的实例应该是唯一的
+，但如果该类是可序列化的，那么情况可能略有不同：
+实体类：
+package Serializable;
+
+import java.io.ObjectStreamException;
+import java.io.Serializable;
+/**
+ * 
+ * @author donald
+ * 2017年2月16日
+ * 下午6:37:13
+ */
+public class PersonR implements Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = -9122096642444363706L;
+	private static volatile PersonR instance= null;
+	private String name;
+	private Integer age;
+	private String sex;
+	public static synchronized PersonR getInstance(){
+		if(instance == null){
+			instance = new PersonR("donald", 27, "man");
+		}
+		return instance;
+	}
+	public PersonR() {
+		super();
+		System.out.println("==========无参构造");
+	}
+	public PersonR(String name, Integer age, String sex) {
+		super();
+		this.name = name;
+		this.age = age;
+		this.sex = sex;
+		System.out.println("==========有参构造");
+	}
+	public String getName() {
+		return name;
+	}
+	public void setName(String name) {
+		this.name = name;
+	}
+	public Integer getAge() {
+		return age;
+	}
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+	public String getSex() {
+		return sex;
+	}
+	public void setSex(String sex) {
+		this.sex = sex;
+	}
+    public String toString(){
+    	return "["+this.name+","+this.age+","+this.sex+"]";
+    }
+  /*  private Object readResolve() throws ObjectStreamException {  
+        return getInstance();  
+    }  */
+}
+测试类：
+package Serializable;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+/**
+ * 测试java序列化
+ * @author donald
+ * 2017年2月16日
+ * 下午6:37:33
+ */
+public class TestSerializableR {
+	public static void main(String[] args) {
+		File file = new File("E:/person.out");
+		FileOutputStream outFile = null;
+		try {
+			outFile = new FileOutputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectOutputStream objectOutputStream = null;
+		try {
+			objectOutputStream = new ObjectOutputStream(outFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonR person = PersonR.getInstance();
+		try {
+			//写persion
+			objectOutputStream.writeObject(person);
+			//写int
+			objectOutputStream.writeInt(4);
+			//写UTF编码格式的字符串
+			objectOutputStream.writeUTF("it is a man");
+			objectOutputStream.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		FileInputStream inFile = null;
+		try {
+			inFile = new FileInputStream(file);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		}
+		ObjectInputStream objectInputStream  = null;
+		try {
+			objectInputStream = new ObjectInputStream(inFile);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		PersonR getPerson = null;
+		try {
+			//读取对象
+			getPerson = (PersonR) objectInputStream.readObject();
+			System.out.println("=======Person is equal the one from readObject:"+getPerson.equals(person));
+			//读取int
+			int int0 = objectInputStream.readInt();
+			System.out.println("=======read int after read object persion:"+int0);
+			//读取UTF格式的字符串
+			String str = objectInputStream.readUTF();
+			System.out.println("=======read UTF after read object persion and int:"+str);
+			objectInputStream.close();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println(getPerson);
+	}
+}
+控制台输出：
+==========有参构造
+=======Person is equal the one from readObject:false
+=======read int after read object persion:4
+=======read UTF after read object persion and int:it is a man
+[donald,27,man]
+
+值得注意的是，从文件person.out中获取的PersonR对象与PersonR类中的单例对象并不相等。
+为了能在序列化过程仍能保持单例的特性，可以在PersonR类中添加一个readResolve()方法，
+在该方法中直接返回PersonR的单例对象，将PersonR的readResolve的方法，注释解除，控制台
+输出：
+
+==========有参构造
+=======Person is equal the one from readObject:true
+=======read int after read object persion:4
+=======read UTF after read object persion and int:it is a man
+[donald,27,man]
+
+无论是实现Serializable接口，或是Externalizable接口，
+当从I/O流中读取对象时，readResolve()方法都会被调用到。
+实际上就是用readResolve()中返回的对象直接替换在反序列化过程中创建的对象。

@@ -1,0 +1,1364 @@
+Java Socket编程实例:[url]http://donald-draper.iteye.com/blog/2356695[/url]
+java Socket读写缓存区Writer和Reader：[url]http://donald-draper.iteye.com/blog/2356885[/url]
+Java NIO ByteBuffer详解：[url]http://donald-draper.iteye.com/blog/2357084[/url]
+Java序列化与反序列化实例分析：[url]http://donald-draper.iteye.com/blog/2357515[/url]
+Java序列化与反序列化详解：[url]http://donald-draper.iteye.com/blog/2357540[/url]
+在上一篇文章中，我们讲了java序列化的过程，今天有时间，我们来看一下反序列化过程，在看之前先回顾一下，序列
+化：
+ObjectOutputStream的构造，主要是构造对象，对象输出流BlockDataOutputStream
+，BlockDataOutputStream主要是写序列化的流数据，BlockDataOutputStream中有一个存放序列化数据
+的缓存区，头部数据缓冲区，原始类型数据缓冲区，其中关联一个原始类型输出流DataOutputStream，
+（DataOutput）主要用于写原始类型数据，int，float，String，double等;同时写流版本号和流魔数。
+然后，写类流对象描述，主要写类名，序列版本号，类型，属性个数，属性描述；然后写对象属性值，
+当对象父接口是Serializable，如果Serializable实现了WriteObject方法，则直接调用WriteObject
+序列化属性值，否则，通过反射获取对象属性的值，写到缓存中，如果对象父接口Externalizable，则
+直接调用对象writeExternal方法序列化对象。
+下面我们来看反序列化过程：
+
+从下面这段代码看起：
+ObjectInputStream objectInputStream  = null;
+try {
+	objectInputStream = new ObjectInputStream(inFile);
+} catch (IOException e) {
+	e.printStackTrace();
+}
+PersonX getPerson = null;
+try {
+	getPerson = (PersonX) objectInputStream.readObject();
+	int int0 = objectInputStream.readInt();
+	System.out.println("=======read int after read object persion:"+int0);
+	String str = objectInputStream.readUTF();
+	System.out.println("=======read UTF after read object persion and int:"+str);
+	objectInputStream.close();
+} catch (ClassNotFoundException e) {
+	e.printStackTrace();
+} catch (IOException e) {
+	e.printStackTrace();
+}
+先看一下构造：
+//ObjectInputStream
+public class ObjectInputStream
+    extends InputStream implements ObjectInput, ObjectStreamConstants
+{
+/** filter stream for handling block data conversion */
+    private final BlockDataInputStream bin;//数据输入流
+    /** validation callback list */
+    private final ValidationList vlist;
+    /** recursion depth */
+    private int depth;
+    /** whether stream is closed */
+    private boolean closed;
+
+    /** wire handle -> obj/exception map */
+    private final HandleTable handles;
+    /** scratch field for passing handle values up/down call stack */
+    private int passHandle = NULL_HANDLE;
+    /** flag set when at end of field value block with no TC_ENDBLOCKDATA */
+    private boolean defaultDataEnd = false;
+
+    /** buffer for reading primitive field values */
+    private byte[] primVals;//原始类型变量幻从去
+
+    /** if true, invoke readObjectOverride() instead of readObject() */
+    private final boolean enableOverride;
+    /** if true, invoke resolveObject() */
+    private boolean enableResolve;
+
+    /**
+     * Context during upcalls to class-defined readObject methods; holds
+     * object currently being deserialized and descriptor for current class.
+     * Null when not during readObject upcall.
+     */
+    private SerialCallbackContext curContext;
+    public ObjectInputStream(InputStream in) throws IOException {
+        verifySubclass();
+	//构造BlockDataInputStream
+        bin = new BlockDataInputStream(in);
+        handles = new HandleTable(10);
+        vlist = new ValidationList();
+        enableOverride = false;
+        //读取流魔数与版本号
+        readStreamHeader();
+        bin.setBlockDataMode(true);
+    }
+     //读取流魔数与版本号
+     protected void readStreamHeader()
+        throws IOException, StreamCorruptedException
+    {
+        short s0 = bin.readShort();
+        short s1 = bin.readShort();
+        if (s0 != STREAM_MAGIC || s1 != STREAM_VERSION) {
+            throw new StreamCorruptedException(
+                String.format("invalid stream header: %04X%04X", s0, s1));
+        }
+    }
+ }
+
+再来看BlockDataInputStream
+ // BlockDataInputStream
+ private class BlockDataInputStream
+        extends InputStream implements DataInput
+    {
+        /** maximum data block length */
+        private static final int MAX_BLOCK_SIZE = 1024;
+        /** maximum data block header length */
+        private static final int MAX_HEADER_SIZE = 5;
+        /** (tunable) length of char buffer (for reading strings) */
+        private static final int CHAR_BUF_SIZE = 256;
+        /** readBlockHeader() return value indicating header read may block */
+        private static final int HEADER_BLOCKED = -2;
+
+        /** buffer for reading general/block data */
+        private final byte[] buf = new byte[MAX_BLOCK_SIZE];//输入流缓存
+        /** buffer for reading block data headers */
+        private final byte[] hbuf = new byte[MAX_HEADER_SIZE];//头部缓存
+        /** char buffer for fast string reads */
+        private final char[] cbuf = new char[CHAR_BUF_SIZE];//字符缓存
+
+        /** block data mode */
+        private boolean blkmode = false;
+
+        // block data state fields; values meaningful only when blkmode true
+        /** current offset into buf */
+        private int pos = 0;//缓存读取位置
+        /** end offset of valid data in buf, or -1 if no more block data */
+        private int end = -1;
+        /** number of bytes in current block yet to be read from stream */
+        private int unread = 0;//缓存中还有，多少数据未读取
+
+        /** underlying stream (wrapped in peekable filter stream) */
+        private final PeekInputStream in;//从缓冲中取数据辅助流
+        /** loopback stream (for data reads that span data blocks) */
+        private final DataInputStream din;//原始类型解析辅助流
+
+        /**
+         * Creates new BlockDataInputStream on top of given underlying stream.
+         * Block data mode is turned off by default.
+         */
+        BlockDataInputStream(InputStream in) {
+            this.in = new PeekInputStream(in);
+            din = new DataInputStream(this);
+        }
+}
+//PeekInputStream，主要是从缓冲中去取字节流数据
+ /**
+     * Input stream supporting single-byte peek operations.
+     */
+    private static class PeekInputStream extends InputStream {
+
+        /** underlying stream */
+        private final InputStream in;
+        /** peeked byte */
+        private int peekb = -1;
+
+        /**
+         * Creates new PeekInputStream on top of given underlying stream.
+         */
+        PeekInputStream(InputStream in) {
+            this.in = in;
+        }
+
+        /**
+         * Peeks at next byte value in stream.  Similar to read(), except
+         * that it does not consume the read value.
+         */
+        int peek() throws IOException {
+            return (peekb >= 0) ? peekb : (peekb = in.read());
+        }
+
+        public int read() throws IOException {
+            if (peekb >= 0) {
+                int v = peekb;
+                peekb = -1;
+                return v;
+            } else {
+                return in.read();
+            }
+        }
+
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (len == 0) {
+                return 0;
+            } else if (peekb < 0) {
+                return in.read(b, off, len);
+            } else {
+                b[off++] = (byte) peekb;
+                len--;
+                peekb = -1;
+                int n = in.read(b, off, len);
+                return (n >= 0) ? (n + 1) : 1;
+            }
+        }
+
+        void readFully(byte[] b, int off, int len) throws IOException {
+            int n = 0;
+            while (n < len) {
+                int count = read(b, off + n, len - n);
+                if (count < 0) {
+                    throw new EOFException();
+                }
+                n += count;
+            }
+        }
+
+        public long skip(long n) throws IOException {
+            if (n <= 0) {
+                return 0;
+            }
+            int skipped = 0;
+            if (peekb >= 0) {
+                peekb = -1;
+                skipped++;
+                n--;
+            }
+            return skipped + skip(n);
+        }
+
+        public int available() throws IOException {
+            return in.available() + ((peekb >= 0) ? 1 : 0);
+        }
+
+        public void close() throws IOException {
+            in.close();
+        }
+    }
+从上面可以看出，ObjectInputStream初始化主要是，构造BlockDataInputStream，
+从缓冲中读取数据，然后读取流魔数与版本号；
+再来关键反序列化过程：
+//从缓冲中，反序列化对象
+ public final Object readObject()
+        throws IOException, ClassNotFoundException
+    {
+        if (enableOverride) {
+            return readObjectOverride();
+        }
+        // if nested read, passHandle contains handle of enclosing object
+        int outerHandle = passHandle;
+        try {
+	   //委托给readObject0
+            Object obj = readObject0(false);
+            ...
+            return obj;
+        } finally {
+            passHandle = outerHandle;
+            if (closed && depth == 0) {
+                clear();
+            }
+        }
+    }
+//根据反序列化对象类型，够到对象
+ private Object readObject0(boolean unshared) throws IOException {
+        boolean oldMode = bin.getBlockDataMode();
+        if (oldMode) {
+            int remain = bin.currentBlockRemaining();
+            if (remain > 0) {
+                throw new OptionalDataException(remain);
+            } else if (defaultDataEnd) {
+                /*
+                 * Fix for 4360508: stream is currently at the end of a field
+                 * value block written via default serialization; since there
+                 * is no terminating TC_ENDBLOCKDATA tag, simulate
+                 * end-of-custom-data behavior explicitly.
+                 */
+                throw new OptionalDataException(true);
+            }
+            bin.setBlockDataMode(false);
+        }
+
+        byte tc;
+	//读取反序列化对象类型
+        while ((tc = bin.peekByte()) == TC_RESET) {
+            bin.readByte();
+            handleReset();
+        }
+
+        depth++;
+        try {
+	    //根据反序列化对象类型，够到对象
+            switch (tc) {
+                case TC_NULL:
+                    return readNull();
+
+                case TC_REFERENCE:
+                    return readHandle(unshared);
+
+                case TC_CLASS:
+		   //反序列化Class对象
+                    return readClass(unshared);
+
+                case TC_CLASSDESC:
+                case TC_PROXYCLASSDESC:
+                    return readClassDesc(unshared);
+
+                case TC_STRING:
+                case TC_LONGSTRING:
+                    return checkResolve(readString(unshared));
+
+                case TC_ARRAY:
+                    return checkResolve(readArray(unshared));
+
+                case TC_ENUM:
+                    return checkResolve(readEnum(unshared));
+
+                case TC_OBJECT:
+		   //读取Object信息
+                    return checkResolve(readOrdinaryObject(unshared));
+
+                case TC_EXCEPTION:
+                    IOException ex = readFatalException();
+                    throw new WriteAbortedException("writing aborted", ex);
+
+                case TC_BLOCKDATA:
+                case TC_BLOCKDATALONG:
+                    if (oldMode) {
+                        bin.setBlockDataMode(true);
+                        bin.peek();             // force header read
+                        throw new OptionalDataException(
+                            bin.currentBlockRemaining());
+                    } else {
+                        throw new StreamCorruptedException(
+                            "unexpected block data");
+                    }
+
+                case TC_ENDBLOCKDATA:
+                    if (oldMode) {
+                        throw new OptionalDataException(true);
+                    } else {
+                        throw new StreamCorruptedException(
+                            "unexpected end of block data");
+                    }
+
+                default:
+                    throw new StreamCorruptedException(
+                        String.format("invalid type code: %02X", tc));
+            }
+        } finally {
+            depth--;
+            bin.setBlockDataMode(oldMode);
+        }
+    }
+
+反序列化Object对象
+
+
+
+    /**
+     * Reads and returns "ordinary" (i.e., not a String, Class,
+     * ObjectStreamClass, array, or enum constant) object, or null if object's
+     * class is unresolvable (in which case a ClassNotFoundException will be
+     * associated with object's handle).  Sets passHandle to object's assigned
+     * handle.
+     */
+    private Object readOrdinaryObject(boolean unshared)
+        throws IOException
+    {
+        
+        if (bin.readByte() != TC_OBJECT) {
+	    //如果非Object对象，抛出异常
+            throw new InternalError();
+        }
+        //获取对象类型描述信息
+        ObjectStreamClass desc = readClassDesc(false);
+        desc.checkDeserialize();
+        //加载Class
+        Class<?> cl = desc.forClass();
+        if (cl == String.class || cl == Class.class
+                || cl == ObjectStreamClass.class) {
+            throw new InvalidClassException("invalid class descriptor");
+        }
+
+        Object obj;
+        try {
+            obj = desc.isInstantiable() ? desc.newInstance() : null;
+        } catch (Exception ex) {
+            throw (IOException) new InvalidClassException(
+                desc.forClass().getName(),
+                "unable to create instance").initCause(ex);
+        }
+
+        passHandle = handles.assign(unshared ? unsharedMarker : obj);
+        ClassNotFoundException resolveEx = desc.getResolveException();
+        if (resolveEx != null) {
+            handles.markException(passHandle, resolveEx);
+        }
+        //如果是Externalizable
+        if (desc.isExternalizable()) {
+            readExternalData((Externalizable) obj, desc);
+        } else {
+	   //如果是Serializable
+            readSerialData(obj, desc);
+        }
+
+        handles.finish(passHandle);
+
+        if (obj != null &&
+            handles.lookupException(passHandle) == null &&
+            desc.hasReadResolveMethod())
+        {
+	    //如果对象有readResolve，则调用readResolve方法
+            Object rep = desc.invokeReadResolve(obj);
+            if (unshared && rep.getClass().isArray()) {
+                rep = cloneArray(rep);
+            }
+            if (rep != obj) {
+                handles.setObject(passHandle, obj = rep);
+            }
+        }
+
+        return obj;
+    }
+
+
+关键在下面两句：
+//获取对象类描述信息
+ObjectStreamClass desc = readClassDesc(false);
+
+
+先看
+//获取对象类描述信息
+ObjectStreamClass desc = readClassDesc(false);
+
+private ObjectStreamClass readClassDesc(boolean unshared)
+        throws IOException
+    {
+        byte tc = bin.peekByte();
+        switch (tc) {
+            case TC_NULL:
+                return (ObjectStreamClass) readNull();
+
+            case TC_REFERENCE:
+                return (ObjectStreamClass) readHandle(unshared);
+
+            case TC_PROXYCLASSDESC:
+	        //读取代理对象的信息
+                return readProxyDesc(unshared);
+
+            case TC_CLASSDESC:
+	        //读取非代理对象的信息
+                return readNonProxyDesc(unshared);
+
+            default:
+                throw new StreamCorruptedException(
+                    String.format("invalid type code: %02X", tc));
+        }
+    }
+
+
+
+/**
+     * Reads in and returns class descriptor for a class that is not a dynamic
+     * proxy class.  Sets passHandle to class descriptor's assigned handle.  If
+     * class descriptor cannot be resolved to a class in the local VM, a
+     * ClassNotFoundException is associated with the descriptor's handle.
+     */
+    private ObjectStreamClass readNonProxyDesc(boolean unshared)
+        throws IOException
+    {
+        if (bin.readByte() != TC_CLASSDESC) {
+	    //非对象流描述类，则抛出异常
+            throw new InternalError();
+        }
+
+        ObjectStreamClass desc = new ObjectStreamClass();
+        int descHandle = handles.assign(unshared ? unsharedMarker : desc);
+        passHandle = NULL_HANDLE;
+
+        ObjectStreamClass readDesc = null;
+        try {
+	    //读取对象描述信息
+            readDesc = readClassDescriptor();
+        } catch (ClassNotFoundException ex) {
+            throw (IOException) new InvalidClassException(
+                "failed to read class descriptor").initCause(ex);
+        }
+
+        Class cl = null;
+        ClassNotFoundException resolveEx = null;
+        bin.setBlockDataMode(true);
+        try {
+	    //先调用序列化类的resolveClass
+            if ((cl = resolveClass(readDesc)) == null) {
+                resolveEx = new ClassNotFoundException("null class");
+            }
+        } catch (ClassNotFoundException ex) {
+            resolveEx = ex;
+        }
+	//跳过非必要数据
+        skipCustomData();
+        //初始化对象
+        desc.initNonProxy(readDesc, cl, resolveEx, readClassDesc(false));
+
+        handles.finish(descHandle);
+        passHandle = descHandle;
+        return desc;
+    }
+来看读取对象描述信息
+ //读取对象描述信息
+readDesc = readClassDescriptor();
+
+
+ protected ObjectStreamClass readClassDescriptor()
+        throws IOException, ClassNotFoundException
+    {
+        ObjectStreamClass desc = new ObjectStreamClass();
+	//委托给ObjectStreamClass的readNonProxy方法
+        desc.readNonProxy(this);
+        return desc;
+    }
+
+//ObjectStreamClass
+
+void readNonProxy(ObjectInputStream in)
+        throws IOException, ClassNotFoundException
+    {
+       //读取类名
+        name = in.readUTF();
+	//读取类型序列号
+        suid = Long.valueOf(in.readLong());
+        isProxy = false;
+        //读取对象序列化的方式，writeObject方法，Serializable，Externalizable，还是SC_BLOCK_DATA
+        byte flags = in.readByte();
+        hasWriteObjectData =
+            ((flags & ObjectStreamConstants.SC_WRITE_METHOD) != 0);
+        hasBlockExternalData =
+            ((flags & ObjectStreamConstants.SC_BLOCK_DATA) != 0);
+        externalizable =
+            ((flags & ObjectStreamConstants.SC_EXTERNALIZABLE) != 0);
+        boolean sflag =
+            ((flags & ObjectStreamConstants.SC_SERIALIZABLE) != 0);
+        if (externalizable && sflag) {
+            throw new InvalidClassException(
+                name, "serializable and externalizable flags conflict");
+        }
+        serializable = externalizable || sflag;
+        isEnum = ((flags & ObjectStreamConstants.SC_ENUM) != 0);
+        if (isEnum && suid.longValue() != 0L) {
+            throw new InvalidClassException(name,
+                "enum descriptor has non-zero serialVersionUID: " + suid);
+        }
+        //读取对象属性个数
+        int numFields = in.readShort();
+        if (isEnum && numFields != 0) {
+            throw new InvalidClassException(name,
+                "enum descriptor has non-zero field count: " + numFields);
+        }
+        fields = (numFields > 0) ?
+            new ObjectStreamField[numFields] : NO_FIELDS;
+	//读取对象属性类型，及name
+        for (int i = 0; i < numFields; i++) {
+	    //读取对象属性，类型编码
+            char tcode = (char) in.readByte();
+	    //读取对象属性名
+            String fname = in.readUTF();
+            String signature = ((tcode == 'L') || (tcode == '[')) ?
+                in.readTypeString() : new String(new char[] { tcode });
+            try {
+                fields[i] = new ObjectStreamField(fname, signature, false);
+            } catch (RuntimeException e) {
+                throw (IOException) new InvalidClassException(name,
+                    "invalid descriptor for field " + fname).initCause(e);
+            }
+        }
+        //根据属性类型，初始化属性读取的缓存位置
+        computeFieldOffsets();
+    }
+//ObjectStreamField
+ObjectStreamField(String name, String signature, boolean unshared) {
+        if (name == null) {
+            throw new NullPointerException();
+        }
+        this.name = name;
+        this.signature = signature.intern();
+        this.unshared = unshared;
+        field = null;
+
+        switch (signature.charAt(0)) {
+            case 'Z': type = Boolean.TYPE; break;
+            case 'B': type = Byte.TYPE; break;
+            case 'C': type = Character.TYPE; break;
+            case 'S': type = Short.TYPE; break;
+            case 'I': type = Integer.TYPE; break;
+            case 'J': type = Long.TYPE; break;
+            case 'F': type = Float.TYPE; break;
+            case 'D': type = Double.TYPE; break;
+            case 'L':
+            case '[': type = Object.class; break;
+            default: throw new IllegalArgumentException("illegal signature");
+        }
+    }
+//根据属性类型，初始化属性读取的缓存位置
+private void computeFieldOffsets() throws InvalidClassException {
+        primDataSize = 0;
+        numObjFields = 0;
+        int firstObjIndex = -1;
+        //根据属性类型，初始化属性读取的缓存位置
+        for (int i = 0; i < fields.length; i++) {
+            ObjectStreamField f = fields[i];
+            switch (f.getTypeCode()) {
+	        //boolean，byte类型一个字节
+                case 'Z':
+                case 'B':
+                    f.setOffset(primDataSize++);
+                    break;
+                //char，short类型2个字节
+                case 'C':
+                case 'S':
+                    f.setOffset(primDataSize);
+                    primDataSize += 2;
+                    break;
+                //int，float类型4个字节
+                case 'I':
+                case 'F':
+                    f.setOffset(primDataSize);
+                    primDataSize += 4;
+                    break;
+                //long，double类型8个字节
+                case 'J':
+                case 'D':
+                    f.setOffset(primDataSize);
+                    primDataSize += 8;
+                    break;
+
+                case '[':
+                case 'L':
+                    f.setOffset(numObjFields++);
+                    if (firstObjIndex == -1) {
+                        firstObjIndex = i;
+                    }
+                    break;
+
+                default:
+                    throw new InternalError();
+            }
+        }
+        if (firstObjIndex != -1 &&
+            firstObjIndex + numObjFields != fields.length)
+        {
+            throw new InvalidClassException(name, "illegal field order");
+        }
+    }
+回到readNonProxyDesc的方法这一句：
+//加载类
+ if ((cl = resolveClass(readDesc)) == null) {
+                resolveEx = new ClassNotFoundException("null class");
+}
+  protected Class<?> resolveClass(ObjectStreamClass desc)
+        throws IOException, ClassNotFoundException
+    {
+        String name = desc.getName();
+        try {
+            return Class.forName(name, false, latestUserDefinedLoader());
+        } catch (ClassNotFoundException ex) {
+	   //如果非class类，从原始类型Map中获取
+            Class<?> cl = primClasses.get(name);
+            if (cl != null) {
+                return cl;
+            } else {
+                throw ex;
+            }
+        }
+    }
+ //ObjectInputStream
+public class ObjectInputStream
+    extends InputStream implements ObjectInput, ObjectStreamConstants
+{
+    /** handle value representing null */
+    private static final int NULL_HANDLE = -1;
+
+    /** marker for unshared objects in internal handle table */
+    private static final Object unsharedMarker = new Object();
+
+    /** table mapping primitive type names to corresponding class objects */
+    private static final HashMap<String, Class<?>> primClasses
+        = new HashMap<>(8, 1.0F);
+    static {
+        primClasses.put("boolean", boolean.class);
+        primClasses.put("byte", byte.class);
+        primClasses.put("char", char.class);
+        primClasses.put("short", short.class);
+        primClasses.put("int", int.class);
+        primClasses.put("long", long.class);
+        primClasses.put("float", float.class);
+        primClasses.put("double", double.class);
+        primClasses.put("void", void.class);
+    }
+}
+回到readNonProxyDesc的方法这一句：
+skipCustomData();
+
+/**
+     * Skips over all block data and objects until TC_ENDBLOCKDATA is
+     * encountered.
+     */
+    private void skipCustomData() throws IOException {
+        int oldHandle = passHandle;
+        for (;;) {
+            if (bin.getBlockDataMode()) {
+                bin.skipBlockData();
+                bin.setBlockDataMode(false);
+            }
+            switch (bin.peekByte()) {
+                case TC_BLOCKDATA:
+                case TC_BLOCKDATALONG:
+                    bin.setBlockDataMode(true);
+                    break;
+
+                case TC_ENDBLOCKDATA:
+                    bin.readByte();
+                    passHandle = oldHandle;
+                    return;
+
+                default:
+                    readObject0(false);
+                    break;
+            }
+        }
+    }
+回到readNonProxyDesc的方法这一句：
+desc.initNonProxy(readDesc, cl, resolveEx, readClassDesc(false));
+//ObjectStreamClass
+/**
+     * Initializes class descriptor representing a non-proxy class.
+     */
+    void initNonProxy(ObjectStreamClass model,
+                      Class<?> cl,
+                      ClassNotFoundException resolveEx,
+                      ObjectStreamClass superDesc)
+        throws InvalidClassException
+    {
+        this.cl = cl;
+        this.resolveEx = resolveEx;
+        this.superDesc = superDesc;
+	//类名
+        name = model.name;
+	//序列号
+        suid = Long.valueOf(model.getSerialVersionUID());
+        isProxy = false;
+	//是否为Enum
+        isEnum = model.isEnum;
+	//父接口类型serializable、externalizable
+        serializable = model.serializable;
+        externalizable = model.externalizable;
+        hasBlockExternalData = model.hasBlockExternalData;
+	//对象是否有WriteObject方法
+        hasWriteObjectData = model.hasWriteObjectData;
+	//属性
+        fields = model.fields;
+	//原始类型数据大小
+        primDataSize = model.primDataSize;
+	//属性书量
+        numObjFields = model.numObjFields;
+
+        if (cl != null) {
+            localDesc = lookup(cl, true);
+            if (localDesc.isProxy) {
+                throw new InvalidClassException(
+                    "cannot bind non-proxy descriptor to a proxy class");
+            }
+            if (isEnum != localDesc.isEnum) {
+                throw new InvalidClassException(isEnum ?
+                    "cannot bind enum descriptor to a non-enum class" :
+                    "cannot bind non-enum descriptor to an enum class");
+            }
+
+            if (serializable == localDesc.serializable &&
+                !cl.isArray() &&
+                suid.longValue() != localDesc.getSerialVersionUID())
+            {
+                throw new InvalidClassException(localDesc.name,
+                    "local class incompatible: " +
+                    "stream classdesc serialVersionUID = " + suid +
+                    ", local class serialVersionUID = " +
+                    localDesc.getSerialVersionUID());
+            }
+
+            if (!classNamesEqual(name, localDesc.name)) {
+                throw new InvalidClassException(localDesc.name,
+                    "local class name incompatible with stream class " +
+                    "name \"" + name + "\"");
+            }
+
+            if (!isEnum) {
+                if ((serializable == localDesc.serializable) &&
+                    (externalizable != localDesc.externalizable))
+                {
+                    throw new InvalidClassException(localDesc.name,
+                        "Serializable incompatible with Externalizable");
+                }
+
+                if ((serializable != localDesc.serializable) ||
+                    (externalizable != localDesc.externalizable) ||
+                    !(serializable || externalizable))
+                {
+                    deserializeEx = new ExceptionInfo(
+                        localDesc.name, "class invalid for deserialization");
+                }
+            }
+
+            cons = localDesc.cons;
+	    //初始化writeObjectMethod，readObjectMethod，readResolveMethod
+            writeObjectMethod = localDesc.writeObjectMethod;
+            readObjectMethod = localDesc.readObjectMethod;
+            readObjectNoDataMethod = localDesc.readObjectNoDataMethod;
+            writeReplaceMethod = localDesc.writeReplaceMethod;
+            readResolveMethod = localDesc.readResolveMethod;
+            if (deserializeEx == null) {
+                deserializeEx = localDesc.deserializeEx;
+            }
+        }
+	//获取对象属性反射器，这段我们在上一篇已将看过
+        fieldRefl = getReflector(fields, localDesc);
+
+        // reassign to matched fields so as to reflect local unshared settings
+        fields = fieldRefl.getFields();
+    }
+}
+/**
+     * Matches given set of serializable fields with serializable fields
+     * described by the given local class descriptor, and returns a
+     * FieldReflector instance capable of setting/getting values from the
+     * subset of fields that match (non-matching fields are treated as filler,
+     * for which get operations return default values and set operations
+     * discard given values).  Throws InvalidClassException if unresolvable
+     * type conflicts exist between the two sets of fields.
+     */
+//从ObjectStreamClass的获取Field对应的反射器
+private static FieldReflector getReflector(ObjectStreamField[] fields,
+                                               ObjectStreamClass localDesc)
+        throws InvalidClassException
+    {
+        // class irrelevant if no fields
+        Class<?> cl = (localDesc != null && fields.length > 0) ?
+            localDesc.cl : null;
+        processQueue(Caches.reflectorsQueue, Caches.reflectors);
+        FieldReflectorKey key = new FieldReflectorKey(cl, fields,
+                                                      Caches.reflectorsQueue);
+        Reference<?> ref = Caches.reflectors.get(key);
+        Object entry = null;
+        if (ref != null) {
+            entry = ref.get();
+        }
+        EntryFuture future = null;
+        if (entry == null) {
+            EntryFuture newEntry = new EntryFuture();
+            Reference<?> newRef = new SoftReference<>(newEntry);
+            do {
+                if (ref != null) {
+                    Caches.reflectors.remove(key, ref);
+                }
+                ref = Caches.reflectors.putIfAbsent(key, newRef);
+                if (ref != null) {
+                    entry = ref.get();
+                }
+            } while (ref != null && entry == null);
+            if (entry == null) {
+                future = newEntry;
+            }
+        }
+
+        if (entry instanceof FieldReflector) {  // check common case first
+            return (FieldReflector) entry;
+        } else if (entry instanceof EntryFuture) {
+            entry = ((EntryFuture) entry).get();
+        } else if (entry == null) {
+            try {
+                entry = new FieldReflector(matchFields(fields, localDesc));
+            } catch (Throwable th) {
+                entry = th;
+            }
+            future.set(entry);
+            Caches.reflectors.put(key, new SoftReference<Object>(entry));
+        }
+
+        if (entry instanceof FieldReflector) {
+            return (FieldReflector) entry;
+        } else if (entry instanceof InvalidClassException) {
+            throw (InvalidClassException) entry;
+        } else if (entry instanceof RuntimeException) {
+            throw (RuntimeException) entry;
+        } else if (entry instanceof Error) {
+            throw (Error) entry;
+        } else {
+            throw new InternalError("unexpected entry: " + entry);
+        }
+    }
+
+    /**
+
+ /**
+         * Returns list of ObjectStreamFields representing fields operated on
+         * by this reflector.  The shared/unshared values and Field objects
+         * contained by ObjectStreamFields in the list reflect their bindings
+         * to locally defined serializable fields.
+         */
+//ObjectStreamClass
+ ObjectStreamField[] getFields() {
+            return fields;
+        }
+
+回到readOrdinaryObject的这一句
+
+//加载Class
+Class<?> cl = desc.forClass();
+//ObjectStreamClass
+  /**
+     * Return the class in the local VM that this version is mapped to.  Null
+     * is returned if there is no corresponding local class.
+     *
+     * @return  the <code>Class</code> instance that this descriptor represents
+     */
+    public Class<?> forClass() {
+        return cl;
+    }
+
+回到readOrdinaryObject的这一句
+ //如果是Externalizable
+        if (desc.isExternalizable()) {
+            readExternalData((Externalizable) obj, desc);
+        } else {
+	   //如果是Serializable
+            readSerialData(obj, desc);
+        }
+
+先看
+readExternalData((Externalizable) obj, desc);
+
+ private void readExternalData(Externalizable obj, ObjectStreamClass desc)
+        throws IOException
+    {
+        SerialCallbackContext oldContext = curContext;
+        curContext = null;
+        try {
+            boolean blocked = desc.hasBlockExternalData();
+            if (blocked) {
+                bin.setBlockDataMode(true);
+            }
+            if (obj != null) {
+                try {
+		    //调用对象的readExternal
+                    obj.readExternal(this);
+                } catch (ClassNotFoundException ex) {
+                    /*
+                     * In most cases, the handle table has already propagated
+                     * a CNFException to passHandle at this point; this mark
+                     * call is included to address cases where the readExternal
+                     * method has cons'ed and thrown a new CNFException of its
+                     * own.
+                     */
+                     handles.markException(passHandle, ex);
+                }
+            }
+            if (blocked) {
+                skipCustomData();
+            }
+        } finally {
+            curContext = oldContext;
+        }
+再来看
+readSerialData(obj, desc);
+
+/**
+     * Reads (or attempts to skip, if obj is null or is tagged with a
+     * ClassNotFoundException) instance data for each serializable class of
+     * object in stream, from superclass to subclass.  Expects that passHandle
+     * is set to obj's handle before this method is called.
+     */
+    private void readSerialData(Object obj, ObjectStreamClass desc)
+        throws IOException
+    {
+        ObjectStreamClass.ClassDataSlot[] slots = desc.getClassDataLayout();
+        for (int i = 0; i < slots.length; i++) {
+            ObjectStreamClass slotDesc = slots[i].desc;
+
+            if (slots[i].hasData) {
+                if (obj != null &&
+                    slotDesc.hasReadObjectMethod() &&
+                    handles.lookupException(passHandle) == null)
+                {
+                    SerialCallbackContext oldContext = curContext;
+
+                    try {
+                        curContext = new SerialCallbackContext(obj, slotDesc);
+
+                        bin.setBlockDataMode(true);
+			//如果对象有ReadObject，则调用对象的Object方法
+                        slotDesc.invokeReadObject(obj, this);
+                    } catch (ClassNotFoundException ex) {
+                        /*
+                         * In most cases, the handle table has already
+                         * propagated a CNFException to passHandle at this
+                         * point; this mark call is included to address cases
+                         * where the custom readObject method has cons'ed and
+                         * thrown a new CNFException of its own.
+                         */
+                        handles.markException(passHandle, ex);
+                    } finally {
+                        curContext.setUsed();
+                        curContext = oldContext;
+                    }
+
+                    /*
+                     * defaultDataEnd may have been set indirectly by custom
+                     * readObject() method when calling defaultReadObject() or
+                     * readFields(); clear it to restore normal read behavior.
+                     */
+                    defaultDataEnd = false;
+                } else {
+		    //否则读取属性
+                    defaultReadFields(obj, slotDesc);
+                }
+                if (slotDesc.hasWriteObjectData()) {
+                    skipCustomData();
+                } else {
+                    bin.setBlockDataMode(false);
+                }
+            } else {
+                if (obj != null &&
+                    slotDesc.hasReadObjectNoDataMethod() &&
+                    handles.lookupException(passHandle) == null)
+                {
+                    slotDesc.invokeReadObjectNoData(obj);
+                }
+            }
+        }
+    }
+//否则读取属性
+ defaultReadFields(obj, slotDesc);
+
+
+  /**
+     * Reads in values of serializable fields declared by given class
+     * descriptor.  If obj is non-null, sets field values in obj.  Expects that
+     * passHandle is set to obj's handle before this method is called.
+     */
+    private void defaultReadFields(Object obj, ObjectStreamClass desc)
+        throws IOException
+    {
+        // REMIND: is isInstance check necessary?
+        Class cl = desc.forClass();
+        if (cl != null && obj != null && !cl.isInstance(obj)) {
+            throw new ClassCastException();
+        }
+        //获取原始类型个数
+        int primDataSize = desc.getPrimDataSize();
+        if (primVals == null || primVals.length < primDataSize) {
+            primVals = new byte[primDataSize];
+        }
+	//从缓冲区，读取所有属性数据
+        bin.readFully(primVals, 0, primDataSize, false);
+        if (obj != null) {
+	    //设置对象原始类型属性数据
+            desc.setPrimFieldValues(obj, primVals);
+        }
+
+        int objHandle = passHandle;
+        ObjectStreamField[] fields = desc.getFields(false);
+        Object[] objVals = new Object[desc.getNumObjFields()];
+        int numPrimFields = fields.length - objVals.length;
+	//遍历所有Field，并读取属性值
+        for (int i = 0; i < objVals.length; i++) {
+            ObjectStreamField f = fields[numPrimFields + i];
+            objVals[i] = readObject0(f.isUnshared());
+            if (f.getField() != null) {
+                handles.markDependency(objHandle, passHandle);
+            }
+        }
+        if (obj != null) {
+	    //设置所有属性值
+            desc.setObjFieldValues(obj, objVals);
+        }
+        passHandle = objHandle;
+    }
+//ObjectStreamClass
+/**
+     * Sets the serializable object fields of object obj using values from
+     * array vals starting at offset 0.  It is the responsibility of the caller
+     * to ensure that obj is of the proper type if non-null.
+     */
+    void setObjFieldValues(Object obj, Object[] vals) {
+        fieldRefl.setObjFieldValues(obj, vals);
+    }
+
+     /**
+     * Invokes the readObject method of the represented serializable class.
+     * Throws UnsupportedOperationException if this class descriptor is not
+     * associated with a class, or if the class is externalizable,
+     * non-serializable or does not define readObject.
+     */
+    void invokeReadObject(Object obj, ObjectInputStream in)
+        throws ClassNotFoundException, IOException,
+               UnsupportedOperationException
+    {
+        if (readObjectMethod != null) {
+            try {
+                readObjectMethod.invoke(obj, new Object[]{ in });
+        } else {
+            throw new UnsupportedOperationException();
+        }
+    }
+
+回到readOrdinaryObject的这一句
+//如果对象有readResolve，则调用readResolve方法
+Object rep = desc.invokeReadResolve(obj);
+//ObjectStreamClass
+ /**
+     * Invokes the writeReplace method of the represented serializable class and
+     * returns the result.  Throws UnsupportedOperationException if this class
+     * descriptor is not associated with a class, or if the class is
+     * non-serializable or does not define writeReplace.
+     */
+    Object invokeWriteReplace(Object obj)
+        throws IOException, UnsupportedOperationException
+    {
+        if (writeReplaceMethod != null) {
+            try {
+                return writeReplaceMethod.invoke(obj, (Object[]) null);
+            } 
+   }
+总结：
+ObjectInputStream初始化主要是，构造BlockDataInputStream，
+从缓冲中读取数据，然后读取流魔数与版本号；然后从缓冲中读取对象流描述信息，包括类型，
+属性名，及每个属性对应的读取位置；在加载流对象描述信息类；如果是Externalizable，则调用
+对象的readExternal的方法，如果是Serializable，有ReadObject，则通过反射调用ReadObject方法，
+没有从缓冲中读取属性数据，并给属性赋值；如果对象中有readResolve方法，则调用readResolve，并返回。
+
+来看一个readint
+//ObjectInputStream
+public int readInt()  throws IOException {
+        return bin.readInt();
+    }
+//BlockDataInputStream
+     public int readInt() throws IOException {
+            if (!blkmode) {
+                pos = 0;
+                in.readFully(buf, 0, 4);
+            } else if (end - pos < 4) {
+                return din.readInt();
+            }
+            int v = Bits.getInt(buf, pos);
+            pos += 4;
+            return v;
+        }
+
+//Double
+public final class Double extends Number implements Comparable<Double> {
+/**
+     * The {@code Class} instance representing the primitive type
+     * {@code double}.
+     *
+     * @since JDK1.1
+     */
+    public static final Class<Double>   TYPE = (Class<Double>) Class.getPrimitiveClass("double");
+}
+
+//ObjectStreamConstants
+package java.io;
+
+/**
+ * Constants written into the Object Serialization Stream.
+ *
+ * @author  unascribed
+ * @since JDK 1.1
+ */
+public interface ObjectStreamConstants {
+
+    /**
+     * Magic number that is written to the stream header.
+     */
+    final static short STREAM_MAGIC = (short)0xaced;
+
+    /**
+     * Version number that is written to the stream header.
+     */
+    final static short STREAM_VERSION = 5;
+
+    /* Each item in the stream is preceded by a tag
+     */
+
+    /**
+     * First tag value.
+     */
+    final static byte TC_BASE = 0x70;
+
+    /**
+     * Null object reference.
+     */
+    final static byte TC_NULL =         (byte)0x70;
+
+    /**
+     * Reference to an object already written into the stream.
+     */
+    final static byte TC_REFERENCE =    (byte)0x71;
+
+    /**
+     * new Class Descriptor.
+     */
+    final static byte TC_CLASSDESC =    (byte)0x72;
+
+    /**
+     * new Object.
+     */
+    final static byte TC_OBJECT =       (byte)0x73;
+
+    /**
+     * new String.
+     */
+    final static byte TC_STRING =       (byte)0x74;
+
+    /**
+     * new Array.
+     */
+    final static byte TC_ARRAY =        (byte)0x75;
+
+    /**
+     * Reference to Class.
+     */
+    final static byte TC_CLASS =        (byte)0x76;
+
+    /**
+     * Block of optional data. Byte following tag indicates number
+     * of bytes in this block data.
+     */
+    final static byte TC_BLOCKDATA =    (byte)0x77;
+
+    /**
+     * End of optional block data blocks for an object.
+     */
+    final static byte TC_ENDBLOCKDATA = (byte)0x78;
+
+    /**
+     * Reset stream context. All handles written into stream are reset.
+     */
+    final static byte TC_RESET =        (byte)0x79;
+
+    /**
+     * long Block data. The long following the tag indicates the
+     * number of bytes in this block data.
+     */
+    final static byte TC_BLOCKDATALONG= (byte)0x7A;
+
+    /**
+     * Exception during write.
+     */
+    final static byte TC_EXCEPTION =    (byte)0x7B;
+
+    /**
+     * Long string.
+     */
+    final static byte TC_LONGSTRING =   (byte)0x7C;
+
+    /**
+     * new Proxy Class Descriptor.
+     */
+    final static byte TC_PROXYCLASSDESC =       (byte)0x7D;
+
+    /**
+     * new Enum constant.
+     * @since 1.5
+     */
+    final static byte TC_ENUM =         (byte)0x7E;
+
+    /**
+     * Last tag value.
+     */
+    final static byte TC_MAX =          (byte)0x7E;
+
+    /**
+     * First wire handle to be assigned.
+     */
+    final static int baseWireHandle = 0x7e0000;
+
+
+    /******************************************************/
+    /* Bit masks for ObjectStreamClass flag.*/
+
+    /**
+     * Bit mask for ObjectStreamClass flag. Indicates a Serializable class
+     * defines its own writeObject method.
+     */
+    final static byte SC_WRITE_METHOD = 0x01;
+
+    /**
+     * Bit mask for ObjectStreamClass flag. Indicates Externalizable data
+     * written in Block Data mode.
+     * Added for PROTOCOL_VERSION_2.
+     *
+     * @see #PROTOCOL_VERSION_2
+     * @since 1.2
+     */
+    final static byte SC_BLOCK_DATA = 0x08;
+
+    /**
+     * Bit mask for ObjectStreamClass flag. Indicates class is Serializable.
+     */
+    final static byte SC_SERIALIZABLE = 0x02;
+
+    /**
+     * Bit mask for ObjectStreamClass flag. Indicates class is Externalizable.
+     */
+    final static byte SC_EXTERNALIZABLE = 0x04;
+
+    /**
+     * Bit mask for ObjectStreamClass flag. Indicates class is an enum type.
+     * @since 1.5
+     */
+    final static byte SC_ENUM = 0x10;
+
+
+    /* *******************************************************************/
+    /* Security permissions */
+
+    /**
+     * Enable substitution of one object for another during
+     * serialization/deserialization.
+     *
+     * @see java.io.ObjectOutputStream#enableReplaceObject(boolean)
+     * @see java.io.ObjectInputStream#enableResolveObject(boolean)
+     * @since 1.2
+     */
+    final static SerializablePermission SUBSTITUTION_PERMISSION =
+                           new SerializablePermission("enableSubstitution");
+
+    /**
+     * Enable overriding of readObject and writeObject.
+     *
+     * @see java.io.ObjectOutputStream#writeObjectOverride(Object)
+     * @see java.io.ObjectInputStream#readObjectOverride()
+     * @since 1.2
+     */
+    final static SerializablePermission SUBCLASS_IMPLEMENTATION_PERMISSION =
+                    new SerializablePermission("enableSubclassImplementation");
+   /**
+    * A Stream Protocol Version. <p>
+    *
+    * All externalizable data is written in JDK 1.1 external data
+    * format after calling this method. This version is needed to write
+    * streams containing Externalizable data that can be read by
+    * pre-JDK 1.1.6 JVMs.
+    *
+    * @see java.io.ObjectOutputStream#useProtocolVersion(int)
+    * @since 1.2
+    */
+    public final static int PROTOCOL_VERSION_1 = 1;
+
+
+   /**
+    * A Stream Protocol Version. <p>
+    *
+    * This protocol is written by JVM 1.2.
+    *
+    * Externalizable data is written in block data mode and is
+    * terminated with TC_ENDBLOCKDATA. Externalizable classdescriptor
+    * flags has SC_BLOCK_DATA enabled. JVM 1.1.6 and greater can
+    * read this format change.
+    *
+    * Enables writing a nonSerializable class descriptor into the
+    * stream. The serialVersionUID of a nonSerializable class is
+    * set to 0L.
+    *
+    * @see java.io.ObjectOutputStream#useProtocolVersion(int)
+    * @see #SC_BLOCK_DATA
+    * @since 1.2
+    */
+    public final static int PROTOCOL_VERSION_2 = 2;
+}

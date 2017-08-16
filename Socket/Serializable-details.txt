@@ -1,0 +1,1006 @@
+Java序列化与反序列化详解
+Java Socket编程实例:[url]http://donald-draper.iteye.com/blog/2356695[/url]
+java Socket读写缓存区Writer和Reader：[url]http://donald-draper.iteye.com/blog/2356885[/url]
+Java NIO ByteBuffer详解：[url]http://donald-draper.iteye.com/blog/2357084[/url]
+Java序列化与反序列化教程：[url]http://donald-draper.iteye.com/blog/2357515[/url]
+在上面一篇Java序列化与反序列化教程，我们通过实例，分析了Java序列化与反序列化，今天我们来更深入的
+去看一下ObjectOutputStream和ObjectInputStream是如何序列化与反序列化对象和原始类型的；
+1.序列化
+ObjectOutputStream objectOutputStream = null;
+try {
+	objectOutputStream = new ObjectOutputStream(outFile);
+} catch (IOException e) {
+	e.printStackTrace();
+}
+PersonX person = new PersonX("donald", 27, "man");
+try {
+	objectOutputStream.writeObject(person);
+	objectOutputStream.writeInt(4);
+	objectOutputStream.writeUTF("it is a man");
+	objectOutputStream.close();
+} catch (IOException e) {
+	e.printStackTrace();
+}
+
+序列化的关键在这几句
+objectOutputStream = new ObjectOutputStream(outFile);
+objectOutputStream.writeObject(person);
+objectOutputStream.writeInt(4);
+objectOutputStream.writeUTF("it is a man");
+我们一句一句的分析，先看构造ObjectOutputStream
+
+public class ObjectOutputStream
+    extends OutputStream implements ObjectOutput, ObjectStreamConstants
+{
+    /** filter stream for handling block data conversion */
+    private final BlockDataOutputStream bout;//对象数据输出流
+    /** stream protocol version */
+    private int protocol = PROTOCOL_VERSION_2;
+    ** buffer for writing primitive field values */
+    private byte[] primVals;
+    /** if true, invoke writeObjectOverride() instead of writeObject() */
+    private final boolean enableOverride;
+}
+先看构造
+ public ObjectOutputStream(OutputStream out) throws IOException {
+        verifySubclass();
+	//关键是这个，构建对象数据流
+        bout = new BlockDataOutputStream(out);
+        handles = new HandleTable(10, (float) 3.00);
+        subs = new ReplaceTable(10, (float) 3.00);
+        enableOverride = false;
+	//写流头部
+        writeStreamHeader();
+        bout.setBlockDataMode(true);
+        if (extendedDebugInfo) {
+            debugInfoStack = new DebugTraceInfoStack();
+        } else {
+            debugInfoStack = null;
+        }
+    }
+  /**
+     * The writeStreamHeader method is provided so subclasses can append or
+     * prepend their own header to the stream.  It writes the magic number and
+     * version to the stream.
+     *写流版本号和流魔数
+     * @throws  IOException if I/O errors occur while writing to the underlying
+     *          stream
+     */
+    protected void writeStreamHeader() throws IOException {
+        bout.writeShort(STREAM_MAGIC);
+        bout.writeShort(STREAM_VERSION);
+    }
+再来一下BlockDataOutputStream，BlockDataOutputStream为ObjectOutputStream的静态内部类
+ private static class BlockDataOutputStream
+        extends OutputStream implements DataOutput
+    {
+        /** maximum data block length */
+        private static final int MAX_BLOCK_SIZE = 1024;
+        /** maximum data block header length */
+        private static final int MAX_HEADER_SIZE = 5;
+        /** (tunable) length of char buffer (for writing strings) */
+        private static final int CHAR_BUF_SIZE = 256;
+
+        /** buffer for writing general/block data ，存放对象序列化数据*/
+        private final byte[] buf = new byte[MAX_BLOCK_SIZE];
+        /** buffer for writing block data headers，存放数据头部 */
+        private final byte[] hbuf = new byte[MAX_HEADER_SIZE];
+        /** char buffer for fast string writes ，这个用于直接写原始类型*/
+        private final char[] cbuf = new char[CHAR_BUF_SIZE];
+
+        /** block data mode */
+        private boolean blkmode = false;
+        /** current offset into buf */
+        private int pos = 0;
+
+        /** underlying output stream */
+        private final OutputStream out;
+        /** loopback stream (for data writes that span data blocks)，写原始数据的输出流 */
+        private final DataOutputStream dout;
+
+        /**
+         * Creates new BlockDataOutputStream on top of given underlying stream.
+         * Block data mode is turned off by default.
+         */
+        BlockDataOutputStream(OutputStream out) {
+            this.out = out;
+            dout = new DataOutputStream(this);
+        }
+再看DataOutputStream
+//DataOutputStream（DataOutput），主要用于写原始类型数据，int，float，String，double等
+public class DataOutputStream extends FilterOutputStream implements DataOutput {
+    /**
+     * The number of bytes written to the data output stream so far.
+     * If this counter overflows, it will be wrapped to Integer.MAX_VALUE.
+     */
+    protected int written;
+
+    /**
+     * bytearr is initialized on demand by writeUTF
+     */
+    private byte[] bytearr = null;
+
+    /**
+     * Creates a new data output stream to write data to the specified
+     * underlying output stream. The counter <code>written</code> is
+     * set to zero.
+     *
+     * @param   out   the underlying output stream, to be saved for later
+     *                use.
+     * @see     java.io.FilterOutputStream#out
+     */
+    public DataOutputStream(OutputStream out) {
+        super(out);
+    }
+
+从上面可以看出，ObjectOutputStream的构造，主要是构造对象，对象输出流BlockDataOutputStream
+，BlockDataOutputStream主要是写序列化的流数据，BlockDataOutputStream中有一个存放序列化数据
+的缓存区，头部数据缓冲区，原始类型数据缓冲区，其中关联一个原始类型输出流DataOutputStream，
+（DataOutput）主要用于写原始类型数据，int，float，String，double等;同时写流版本号和流魔数。
+
+现在来看一下如何对象序列化：
+public final void writeObject(Object obj) throws IOException {
+       ...
+        try {
+	    //委托给writeObject0
+            writeObject0(obj, false);
+        } 
+	...
+    }
+//序列化对象
+ private void writeObject0(Object obj, boolean unshared)
+        throws IOException
+    { 
+         try {
+            // handle previously written and non-replaceable objects
+            int h;
+            if ((obj = subs.lookup(obj)) == null) {
+                writeNull();
+                return;
+            } else if (!unshared && (h = handles.lookup(obj)) != -1) {
+                writeHandle(h);
+                return;
+            } else if (obj instanceof Class) {
+	        //如果是Class对象，则调用writeClass
+                writeClass((Class) obj, unshared);
+                return;
+            } else if (obj instanceof ObjectStreamClass) {
+	        //如果是对象序列化流类型writeClassDesc
+                writeClassDesc((ObjectStreamClass) obj, unshared);
+                return;
+            }
+	    ...
+	    // remaining cases
+            if (obj instanceof String) {
+	        //如果对象为String直接调用writeString
+                writeString((String) obj, unshared);
+            } else if (cl.isArray()) {
+	       //Array
+                writeArray(obj, desc, unshared);
+            } else if (obj instanceof Enum) {
+	    //枚举
+                writeEnum((Enum) obj, desc, unshared);
+            } else if (obj instanceof Serializable) {
+	    //序列化兑现跟这个是关键
+                writeOrdinaryObject(obj, desc, unshared);
+	    }
+	    ....     
+}
+//如果是Class对象，则调用writeClass
+writeClass((Class) obj, unshared);
+//序列化对象类型
+private void writeClass(Class cl, boolean unshared) throws IOException {
+        bout.writeByte(TC_CLASS);
+	//写流对象
+        writeClassDesc(ObjectStreamClass.lookup(cl, true), false);
+        handles.assign(unshared ? null : cl);
+    }
+来看这一句：
+ObjectStreamClass.lookup(cl, true)
+先看一下ObjectStreamClass对象
+public class ObjectStreamClass implements Serializable {
+
+    /** serialPersistentFields value indicating no serializable fields */
+    //序列化对象属相描述
+    public static final ObjectStreamField[] NO_FIELDS =
+        new ObjectStreamField[0];
+   /** reflection factory for obtaining serialization constructors */
+    private static final ReflectionFactory reflFactory =
+        AccessController.doPrivileged(
+            new ReflectionFactory.GetReflectionFactoryAction());  
+  private static class Caches {
+        /** cache mapping local classes -> descriptors,类描述缓存 */
+        static final ConcurrentMap<WeakClassKey,Reference<?>> localDescs =
+            new ConcurrentHashMap<>();
+
+        /** cache mapping field group/local desc pairs -> field reflectors */
+        static final ConcurrentMap<FieldReflectorKey,Reference<?>> reflectors =
+            new ConcurrentHashMap<>();
+
+        /** queue for WeakReferences to local classes */
+        private static final ReferenceQueue<Class<?>> localDescsQueue =
+            new ReferenceQueue<>();
+        /** queue for WeakReferences to field reflectors keys */
+        private static final ReferenceQueue<Class<?>> reflectorsQueue =
+            new ReferenceQueue<>();
+    }
+     /** class associated with this descriptor (if any) */
+    private Class<?> cl;
+    /** name of class represented by this descriptor */
+    private String name;
+    /** serialVersionUID of represented class (null if not computed yet) */
+    private volatile Long suid;
+
+    /** true if represents dynamic proxy class */
+    private boolean isProxy;
+    /** true if represents enum type */
+    private boolean isEnum;
+    /** true if represented class implements Serializable */
+    private boolean serializable;
+    /** true if represented class implements Externalizable */
+    private boolean externalizable;
+    /** true if desc has data written by class-defined writeObject method */
+    private boolean hasWriteObjectData;
+     /** exception (if any) thrown while attempting to resolve class */
+    private ClassNotFoundException resolveEx;
+    /** exception (if any) to throw if non-enum deserialization attempted */
+    private ExceptionInfo deserializeEx;
+    /** exception (if any) to throw if non-enum serialization attempted */
+    private ExceptionInfo serializeEx;
+    /** exception (if any) to throw if default serialization attempted */
+    private ExceptionInfo defaultSerializeEx;
+
+    /** serializable fields */
+    private ObjectStreamField[] fields;
+    /** aggregate marshalled size of primitive fields */
+    private int primDataSize;
+    /** number of non-primitive fields */
+    private int numObjFields;
+    /** reflector for setting/getting serializable field values */
+    private FieldReflector fieldRefl;
+    /** data layout of serialized objects described by this class desc */
+    private volatile ClassDataSlot[] dataLayout;
+
+    /** serialization-appropriate constructor, or null if none */
+    private Constructor cons;
+    /** class-defined writeObject method, or null if none */
+    private Method writeObjectMethod;
+    /** class-defined readObject method, or null if none */
+    private Method readObjectMethod;
+    /** class-defined readObjectNoData method, or null if none */
+    private Method readObjectNoDataMethod;
+    /** class-defined writeReplace method, or null if none */
+    private Method writeReplaceMethod;
+    /** class-defined readResolve method, or null if none */
+    private Method readResolveMethod;
+}
+
+回到这一句:
+ObjectStreamClass.lookup(cl, true)
+
+ static ObjectStreamClass lookup(Class<?> cl, boolean all) {
+        if (!(all || Serializable.class.isAssignableFrom(cl))) {
+            return null;
+        }
+       //从缓存中获取对象流描述
+        processQueue(Caches.localDescsQueue, Caches.localDescs);
+        WeakClassKey key = new WeakClassKey(cl, Caches.localDescsQueue);
+        Reference<?> ref = Caches.localDescs.get(key);
+	...
+	if (entry == null) {
+            try {
+	        //没有则，创建一个流对象
+                entry = new ObjectStreamClass(cl);
+            } catch (Throwable th) {
+                entry = th;
+            }
+            if (future.set(entry)) {
+                Caches.localDescs.put(key, new SoftReference<Object>(entry));
+            } else {
+                // nested lookup call already set future
+                entry = future.get();
+            }
+        }
+
+        if (entry instanceof ObjectStreamClass) {
+            return (ObjectStreamClass) entry;
+        } else if (entry instanceof RuntimeException) {
+            throw (RuntimeException) entry;
+        } else if (entry instanceof Error) {
+            throw (Error) entry;
+        } else {
+            throw new InternalError("unexpected entry: " + entry);
+        }
+    }
+
+回到
+//序列化对象类型
+private void writeClass(Class cl, boolean unshared) throws IOException {
+        bout.writeByte(TC_CLASS);
+	//写流对象
+        writeClassDesc(ObjectStreamClass.lookup(cl, true), false);
+        handles.assign(unshared ? null : cl);
+    }
+的这一句
+//写流对象
+writeClassDesc(ObjectStreamClass.lookup(cl, true), false);
+ private void writeClassDesc(ObjectStreamClass desc, boolean unshared)
+        throws IOException
+    {
+        int handle;
+        if (desc == null) {
+            writeNull();
+        } else if (!unshared && (handle = handles.lookup(desc)) != -1) {
+            writeHandle(handle);
+        } else if (desc.isProxy()) {
+            writeProxyDesc(desc, unshared);
+        } else {
+	   //写非代理对象描述
+            writeNonProxyDesc(desc, unshared);
+        }
+    }
+//写非代理对象描述
+  /* Writes class descriptor representing a standard (i.e., not a dynamic
+     * proxy) class to stream.
+     */
+    private void writeNonProxyDesc(ObjectStreamClass desc, boolean unshared)
+        throws IOException
+    {
+        bout.writeByte(TC_CLASSDESC);
+        handles.assign(unshared ? null : desc);
+
+        if (protocol == PROTOCOL_VERSION_1) {
+            // do not invoke class descriptor write hook with old protocol
+            desc.writeNonProxy(this);
+        } else {
+	    //从前面可以看出，协议版本为PROTOCOL_VERSION_2
+            writeClassDescriptor(desc);
+        }
+
+        Class cl = desc.forClass();
+        bout.setBlockDataMode(true);
+        annotateClass(cl);
+        bout.setBlockDataMode(false);
+        bout.writeByte(TC_ENDBLOCKDATA);
+        //写父类的类描述
+        writeClassDesc(desc.getSuperDesc(), false);
+    }
+
+protected void writeClassDescriptor(ObjectStreamClass desc)
+        throws IOException
+    {
+        //委托给writeNonProxy
+        desc.writeNonProxy(this);
+    }
+//ObjectStreamClass
+void writeNonProxy(ObjectOutputStream out) throws IOException {
+        //写类名
+        out.writeUTF(name);
+	//写序列版本号
+        out.writeLong(getSerialVersionUID());
+
+        byte flags = 0;
+        if (externalizable) {
+            flags |= ObjectStreamConstants.SC_EXTERNALIZABLE;
+            int protocol = out.getProtocolVersion();
+            if (protocol != ObjectStreamConstants.PROTOCOL_VERSION_1) {
+                flags |= ObjectStreamConstants.SC_BLOCK_DATA;
+            }
+        } else if (serializable) {
+            flags |= ObjectStreamConstants.SC_SERIALIZABLE;
+        }
+        if (hasWriteObjectData) {
+            flags |= ObjectStreamConstants.SC_WRITE_METHOD;
+        }
+        if (isEnum) {
+            flags |= ObjectStreamConstants.SC_ENUM;
+        }
+	//写类型
+        out.writeByte(flags);
+        //写属性个数
+        out.writeShort(fields.length);
+	//遍历属性
+        for (int i = 0; i < fields.length; i++) {
+            ObjectStreamField f = fields[i];
+	    //写属性类型
+            out.writeByte(f.getTypeCode());
+	    //写属性名
+            out.writeUTF(f.getName());
+            if (!f.isPrimitive()) {
+	        //如果是原始类型，写原始类型的字符串 
+                out.writeTypeString(f.getTypeString());
+            }
+        }
+    }
+//ObjectStreamField
+public class ObjectStreamField
+    implements Comparable<Object>
+{
+
+    /** field name */
+    private final String name;
+    /** canonical JVM signature of field type */
+    private final String signature;
+    /** field type (Object.class if unknown non-primitive type) */
+    private final Class<?> type;
+    /** whether or not to (de)serialize field values as unshared */
+    private final boolean unshared;
+    /** corresponding reflective field object, if any */
+    private final Field field;
+    /** offset of field value in enclosing field group */
+    private int offset = 0;
+}
+到这类写流对象描述完毕，主要写类名，序列版本号，类型，属性个数，属性描述；
+
+回到写对象属性值；
+//序列化兑现跟这个是关键
+ writeOrdinaryObject(obj, desc, unshared);
+ //写对象属性值
+  private void writeOrdinaryObject(Object obj,
+                                     ObjectStreamClass desc,
+                                     boolean unshared)
+        throws IOException
+    {
+        if (extendedDebugInfo) {
+            debugInfoStack.push(
+                (depth == 1 ? "root " : "") + "object (class \"" +
+                obj.getClass().getName() + "\", " + obj.toString() + ")");
+        }
+        try {
+            desc.checkSerialize();
+
+            bout.writeByte(TC_OBJECT);
+            writeClassDesc(desc, false);
+            handles.assign(unshared ? null : obj);
+            if (desc.isExternalizable() && !desc.isProxy()) {
+	        //如果是Externalizable接口则，调用writeExternalData
+                writeExternalData((Externalizable) obj);
+            } else {
+	        //如果是Serializable接口则，调用writeSerialData
+                writeSerialData(obj, desc);
+            }
+        } finally {
+            if (extendedDebugInfo) {
+                debugInfoStack.pop();
+            }
+        }
+    }
+分两步
+//如果是Externalizable接口则，调用writeExternalData
+writeExternalData((Externalizable) obj);
+//如果是Serializable接口则，调用writeSerialData
+writeSerialData(obj, desc);
+先看
+//如果是Serializable接口则，调用writeSerialData
+writeSerialData(obj, desc);
+
+ private void writeSerialData(Object obj, ObjectStreamClass desc)
+        throws IOException
+    {
+        ObjectStreamClass.ClassDataSlot[] slots = desc.getClassDataLayout();
+        for (int i = 0; i < slots.length; i++) {
+            ObjectStreamClass slotDesc = slots[i].desc;
+            if (slotDesc.hasWriteObjectMethod()) {
+                PutFieldImpl oldPut = curPut;
+                curPut = null;
+                SerialCallbackContext oldContext = curContext;
+
+                if (extendedDebugInfo) {
+                    debugInfoStack.push(
+                        "custom writeObject data (class \"" +
+                        slotDesc.getName() + "\")");
+                }
+                try {
+                    curContext = new SerialCallbackContext(obj, slotDesc);
+                    bout.setBlockDataMode(true);
+		    //如果对象实现了WriteObject方法，则调用WriteObject方法
+                    slotDesc.invokeWriteObject(obj, this);
+                    bout.setBlockDataMode(false);
+                    bout.writeByte(TC_ENDBLOCKDATA);
+                } finally {
+                    curContext.setUsed();
+                    curContext = oldContext;
+                    if (extendedDebugInfo) {
+                        debugInfoStack.pop();
+                    }
+                }
+
+                curPut = oldPut;
+            } else {
+	         //否则，写Field
+                defaultWriteFields(obj, slotDesc);
+            }
+        }
+    }
+//否则，写Field
+defaultWriteFields(obj, slotDesc);
+
+ private void defaultWriteFields(Object obj, ObjectStreamClass desc)
+        throws IOException
+    {
+        // REMIND: perform conservative isInstance check here?
+        desc.checkDefaultSerialize();
+
+        int primDataSize = desc.getPrimDataSize();
+        if (primVals == null || primVals.length < primDataSize) {
+            primVals = new byte[primDataSize];
+        }
+        desc.getPrimFieldValues(obj, primVals);
+	//写对象原始类型数
+        bout.write(primVals, 0, primDataSize, false);
+        //获取对象属性描述队形
+        ObjectStreamField[] fields = desc.getFields(false);
+	//创建属性值数组，存放属性值
+        Object[] objVals = new Object[desc.getNumObjFields()];
+        int numPrimFields = fields.length - objVals.length;
+	//通过反射，获取属性值
+        desc.getObjFieldValues(obj, objVals);
+        for (int i = 0; i < objVals.length; i++) {
+            if (extendedDebugInfo) {
+                debugInfoStack.push(
+                    "field (class \"" + desc.getName() + "\", name: \"" +
+                    fields[numPrimFields + i].getName() + "\", type: \"" +
+                    fields[numPrimFields + i].getType() + "\")");
+            }
+            try {
+	        //写属性值，原始类型，直接写
+                writeObject0(objVals[i],
+                             fields[numPrimFields + i].isUnshared());
+            } finally {
+                if (extendedDebugInfo) {
+                    debugInfoStack.pop();
+                }
+            }
+        }
+    }
+来看一下这个：
+//通过反射，获取属性值
+desc.getObjFieldValues(obj, objVals);
+//ObjectStreamClass
+
+/**
+     * Fetches the serializable object field values of object obj and stores
+     * them in array vals starting at offset 0.  It is the responsibility of
+     * the caller to ensure that obj is of the proper type if non-null.
+     */
+    void getObjFieldValues(Object obj, Object[] vals) {
+       //** reflector for setting/getting serializable field values */
+       //private FieldReflector fieldRefl;
+       //属性对应的set&get方法反射器
+        fieldRefl.getObjFieldValues(obj, vals);
+    }
+
+      /**
+         * Fetches the serializable object field values of object obj and
+         * stores them in array vals starting at offset 0.  The caller is
+         * responsible for ensuring that obj is of the proper type.
+         */
+        void getObjFieldValues(Object obj, Object[] vals) {
+            if (obj == null) {
+                throw new NullPointerException();
+            }
+            /* assuming checkDefaultSerialize() has been called on the class
+             * descriptor this FieldReflector was obtained from, no field keys
+             * in array should be equal to Unsafe.INVALID_FIELD_OFFSET.
+             */
+            for (int i = numPrimFields; i < fields.length; i++) {
+                switch (typeCodes[i]) {
+                    case 'L':
+                    case '[':
+                        vals[offsets[i]] = unsafe.getObject(obj, readKeys[i]);
+                        break;
+
+                    default:
+                        throw new InternalError();
+                }
+            }
+        }
+//FieldReflector
+    private static class FieldReflector {
+
+        /** handle for performing unsafe operations */
+        private static final Unsafe unsafe = Unsafe.getUnsafe();
+
+        /** fields to operate on */
+        private final ObjectStreamField[] fields;
+        /** number of primitive fields */
+        private final int numPrimFields;
+        /** unsafe field keys for reading fields - may contain dupes */
+        private final long[] readKeys;
+        /** unsafe fields keys for writing fields - no dupes */
+        private final long[] writeKeys;
+        /** field data offsets */
+        private final int[] offsets;
+        /** field type codes */
+        private final char[] typeCodes;
+        /** field types */
+        private final Class<?>[] types;
+	}
+再看
+//如果是Externalizable接口则，调用writeExternalData
+writeExternalData((Externalizable) obj);
+
+
+ private void writeExternalData(Externalizable obj) throws IOException {
+        PutFieldImpl oldPut = curPut;
+        curPut = null;
+
+        if (extendedDebugInfo) {
+            debugInfoStack.push("writeExternal data");
+        }
+        SerialCallbackContext oldContext = curContext;
+        try {
+            curContext = null;
+            if (protocol == PROTOCOL_VERSION_1) {
+                obj.writeExternal(this);
+            } else {
+                bout.setBlockDataMode(true);
+		//直接调用obj的writeExternal方法
+                obj.writeExternal(this);
+                bout.setBlockDataMode(false);
+                bout.writeByte(TC_ENDBLOCKDATA);
+            }
+        } finally {
+            curContext = oldContext;
+            if (extendedDebugInfo) {
+                debugInfoStack.pop();
+            }
+        }
+
+        curPut = oldPut;
+    }
+从上面当对象父接口是Serializable，如果Serializable实现了WriteObject方法，则直接调用WriteObject
+序列化属性值，否则，通过反射获取对象属性的值，写到缓存中，如果对象父接口Externalizable，则
+直接调用对象writeExternal方法序列化对象。
+
+再看看一下原始类型的序列化
+//ObjectOutputStream
+public void writeInt(int val)  throws IOException {
+        //直接委托给bout
+        bout.writeInt(val);
+    }
+//BlockDataOutputStream
+  public void writeInt(int v) throws IOException {
+            if (pos + 4 <= MAX_BLOCK_SIZE) {
+	        //这个前面文章已说，这一不在说了
+                Bits.putInt(buf, pos, v);
+                pos += 4;
+            } else {
+                dout.writeInt(v);
+            }
+        }
+再来看写UTF字符串
+//ObjectOutputStream
+public void writeUTF(String str) throws IOException {
+        bout.writeUTF(str);
+    }
+//BlockDataOutputStream
+public void writeUTF(String s) throws IOException {
+            writeUTF(s, getUTFLength(s));
+        }
+ void writeUTF(String s, long utflen) throws IOException {
+            if (utflen > 0xFFFFL) {
+                throw new UTFDataFormatException();
+            }
+	    //先写字符串长度
+            writeShort((int) utflen);
+            if (utflen == (long) s.length()) {
+                writeBytes(s);
+            } else {
+	        //写内容
+                writeUTFBody(s);
+            }
+        }
+/**
+         * Writes the "body" (i.e., the UTF representation minus the 2-byte or
+         * 8-byte length header) of the UTF encoding for the given string.
+         */
+        private void writeUTFBody(String s) throws IOException {
+            int limit = MAX_BLOCK_SIZE - 3;
+            int len = s.length();
+            for (int off = 0; off < len; ) {
+                int csize = Math.min(len - off, CHAR_BUF_SIZE);
+                s.getChars(off, off + csize, cbuf, 0);
+                for (int cpos = 0; cpos < csize; cpos++) {
+                    char c = cbuf[cpos];
+                    if (pos <= limit) {
+                        if (c <= 0x007F && c != 0) {
+                            buf[pos++] = (byte) c;
+                        } else if (c > 0x07FF) {
+                            buf[pos + 2] = (byte) (0x80 | ((c >> 0) & 0x3F));
+                            buf[pos + 1] = (byte) (0x80 | ((c >> 6) & 0x3F));
+                            buf[pos + 0] = (byte) (0xE0 | ((c >> 12) & 0x0F));
+                            pos += 3;
+                        } else {
+                            buf[pos + 1] = (byte) (0x80 | ((c >> 0) & 0x3F));
+                            buf[pos + 0] = (byte) (0xC0 | ((c >> 6) & 0x1F));
+                            pos += 2;
+                        }
+                    } else {    // write one byte at a time to normalize block
+                        if (c <= 0x007F && c != 0) {
+                            write(c);
+                        } else if (c > 0x07FF) {
+                            write(0xE0 | ((c >> 12) & 0x0F));
+                            write(0x80 | ((c >> 6) & 0x3F));
+                            write(0x80 | ((c >> 0) & 0x3F));
+                        } else {
+                            write(0xC0 | ((c >> 6) & 0x1F));
+                            write(0x80 | ((c >> 0) & 0x3F));
+                        }
+                    }
+                }
+                off += csize;
+            }
+        }
+//刷新缓存
+//ObjectOutputStream
+ public void flush() throws IOException {
+        bout.flush();
+    }
+//BlockDataOutputStream
+      public void flush() throws IOException {
+            drain();
+            out.flush();
+        }
+总结：
+ObjectOutputStream的构造，主要是构造对象，对象输出流BlockDataOutputStream
+，BlockDataOutputStream主要是写序列化的流数据，BlockDataOutputStream中有一个存放序列化数据
+的缓存区，头部数据缓冲区，原始类型数据缓冲区，其中关联一个原始类型输出流DataOutputStream，
+（DataOutput）主要用于写原始类型数据，int，float，String，double等;同时写流版本号和流魔数。
+然后，写类流对象描述，主要写类名，序列版本号，类型，属性个数，属性描述；然后写对象属性值，
+当对象父接口是Serializable，如果Serializable实现了WriteObject方法，则直接调用WriteObject
+序列化属性值，否则，通过反射获取对象属性的值，写到缓存中，如果对象父接口Externalizable，则
+直接调用对象writeExternal方法序列化对象。
+
+
+2.反序列化
+ObjectInputStream objectInputStream  = null;
+try {
+	objectInputStream = new ObjectInputStream(inFile);
+} catch (IOException e) {
+	e.printStackTrace();
+}
+PersonX getPerson = null;
+try {
+	getPerson = (PersonX) objectInputStream.readObject();
+	int int0 = objectInputStream.readInt();
+	System.out.println("=======read int after read object persion:"+int0);
+	String str = objectInputStream.readUTF();
+	System.out.println("=======read UTF after read object persion and int:"+str);
+	objectInputStream.close();
+} catch (ClassNotFoundException e) {
+	e.printStackTrace();
+} catch (IOException e) {
+	e.printStackTrace();
+}
+看了序列化的过程，我们应该可以反推，反序列，这里不细讲，直接主要类的构造，属性
+public class ObjectInputStream
+    extends InputStream implements ObjectInput, ObjectStreamConstants
+{
+/** filter stream for handling block data conversion */
+    private final BlockDataInputStream bin;
+    /** validation callback list */
+    private final ValidationList vlist;
+    /** recursion depth */
+    private int depth;
+    /** whether stream is closed */
+    private boolean closed;
+
+    /** wire handle -> obj/exception map */
+    private final HandleTable handles;
+    /** scratch field for passing handle values up/down call stack */
+    private int passHandle = NULL_HANDLE;
+    /** flag set when at end of field value block with no TC_ENDBLOCKDATA */
+    private boolean defaultDataEnd = false;
+
+    /** buffer for reading primitive field values */
+    private byte[] primVals;
+
+    /** if true, invoke readObjectOverride() instead of readObject() */
+    private final boolean enableOverride;
+    /** if true, invoke resolveObject() */
+    private boolean enableResolve;
+
+    /**
+     * Context during upcalls to class-defined readObject methods; holds
+     * object currently being deserialized and descriptor for current class.
+     * Null when not during readObject upcall.
+     */
+    private SerialCallbackContext curContext;
+
+ }
+
+
+ // BlockDataInputStream
+ private class BlockDataInputStream
+        extends InputStream implements DataInput
+    {
+        /** maximum data block length */
+        private static final int MAX_BLOCK_SIZE = 1024;
+        /** maximum data block header length */
+        private static final int MAX_HEADER_SIZE = 5;
+        /** (tunable) length of char buffer (for reading strings) */
+        private static final int CHAR_BUF_SIZE = 256;
+        /** readBlockHeader() return value indicating header read may block */
+        private static final int HEADER_BLOCKED = -2;
+
+        /** buffer for reading general/block data */
+        private final byte[] buf = new byte[MAX_BLOCK_SIZE];
+        /** buffer for reading block data headers */
+        private final byte[] hbuf = new byte[MAX_HEADER_SIZE];
+        /** char buffer for fast string reads */
+        private final char[] cbuf = new char[CHAR_BUF_SIZE];
+
+        /** block data mode */
+        private boolean blkmode = false;
+
+        // block data state fields; values meaningful only when blkmode true
+        /** current offset into buf */
+        private int pos = 0;
+        /** end offset of valid data in buf, or -1 if no more block data */
+        private int end = -1;
+        /** number of bytes in current block yet to be read from stream */
+        private int unread = 0;
+
+        /** underlying stream (wrapped in peekable filter stream) */
+        private final PeekInputStream in;
+        /** loopback stream (for data reads that span data blocks) */
+        private final DataInputStream din;
+
+        /**
+         * Creates new BlockDataInputStream on top of given underlying stream.
+         * Block data mode is turned off by default.
+         */
+        BlockDataInputStream(InputStream in) {
+            this.in = new PeekInputStream(in);
+            din = new DataInputStream(this);
+        }
+}
+//PeekInputStream
+ /**
+     * Input stream supporting single-byte peek operations.
+     */
+    private static class PeekInputStream extends InputStream {
+
+        /** underlying stream */
+        private final InputStream in;
+        /** peeked byte */
+        private int peekb = -1;
+
+        /**
+         * Creates new PeekInputStream on top of given underlying stream.
+         */
+        PeekInputStream(InputStream in) {
+            this.in = in;
+        }
+
+        /**
+         * Peeks at next byte value in stream.  Similar to read(), except
+         * that it does not consume the read value.
+         */
+        int peek() throws IOException {
+            return (peekb >= 0) ? peekb : (peekb = in.read());
+        }
+
+        public int read() throws IOException {
+            if (peekb >= 0) {
+                int v = peekb;
+                peekb = -1;
+                return v;
+            } else {
+                return in.read();
+            }
+        }
+
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (len == 0) {
+                return 0;
+            } else if (peekb < 0) {
+                return in.read(b, off, len);
+            } else {
+                b[off++] = (byte) peekb;
+                len--;
+                peekb = -1;
+                int n = in.read(b, off, len);
+                return (n >= 0) ? (n + 1) : 1;
+            }
+        }
+
+        void readFully(byte[] b, int off, int len) throws IOException {
+            int n = 0;
+            while (n < len) {
+                int count = read(b, off + n, len - n);
+                if (count < 0) {
+                    throw new EOFException();
+                }
+                n += count;
+            }
+        }
+
+        public long skip(long n) throws IOException {
+            if (n <= 0) {
+                return 0;
+            }
+            int skipped = 0;
+            if (peekb >= 0) {
+                peekb = -1;
+                skipped++;
+                n--;
+            }
+            return skipped + skip(n);
+        }
+
+        public int available() throws IOException {
+            return in.available() + ((peekb >= 0) ? 1 : 0);
+        }
+
+        public void close() throws IOException {
+            in.close();
+        }
+    }
+来看一个readint
+//ObjectInputStream
+public int readInt()  throws IOException {
+        return bin.readInt();
+    }
+//BlockDataInputStream
+     public int readInt() throws IOException {
+            if (!blkmode) {
+                pos = 0;
+                in.readFully(buf, 0, 4);
+            } else if (end - pos < 4) {
+                return din.readInt();
+            }
+            int v = Bits.getInt(buf, pos);
+            pos += 4;
+            return v;
+        }
+
+
+//DataOutputStream
+public
+class DataOutputStream extends FilterOutputStream implements DataOutput {
+    /**
+     * The number of bytes written to the data output stream so far.
+     * If this counter overflows, it will be wrapped to Integer.MAX_VALUE.
+     */
+    protected int written;
+
+    /**
+     * bytearr is initialized on demand by writeUTF
+     */
+    private byte[] bytearr = null;
+
+    /**
+     * Creates a new data output stream to write data to the specified
+     * underlying output stream. The counter <code>written</code> is
+     * set to zero.
+     *
+     * @param   out   the underlying output stream, to be saved for later
+     *                use.
+     * @see     java.io.FilterOutputStream#out
+     */
+    public DataOutputStream(OutputStream out) {
+        super(out);
+    }
+ }
+
+ public
+class DataInputStream extends FilterInputStream implements DataInput {
+
+    /**
+     * Creates a DataInputStream that uses the specified
+     * underlying InputStream.
+     *
+     * @param  in   the specified input stream
+     */
+    public DataInputStream(InputStream in) {
+        super(in);
+    }
+
+    /**
+     * working arrays initialized on demand by readUTF
+     */
+    private byte bytearr[] = new byte[80];
+    private char chararr[] = new char[80];
+ }

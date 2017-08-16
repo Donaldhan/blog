@@ -1,0 +1,679 @@
+ 关于cmd命令的重定向输出 ：http://blog.csdn.net/jw72jw/article/details/7404255
+jstack和线程dump分析：http://jameswxx.iteye.com/blog/1041173
+Java自带的性能监测工具用法简介：http://blog.csdn.net/feihong247/article/details/7874063
+linux下查看虚拟机的状态：http://blog.sina.com.cn/s/blog_472b9eb20100nhy5.html
+JVM:查看java内存情况命令：http://www.cnblogs.com/zzck/archive/2016/07/26/5707168.html
+查看JAVA状态的命令主要有一下几种，jps,jinfo,jmap,jstack，jstat，jconsole，jVisualVM；jconsole，
+jVisualVM是界面化的工具，这里们就不讲了，用用就知道，注意与JDK的版本问题；下面我们来看以下几个命令
+jps（查看java进程）,jinfo（查看JVM启动参数）,jmap（查看堆内存状态）,jstack（查看JVM线程运行状态），
+jstat（查看虚拟机垃圾回收状态）。
+
+jps：查看Java进程
+Donald_Draper@Centos7>jps
+42548 JConsole
+10868 Jps
+29136 Bootstrap
+2692 org.eclipse.equinox.launcher_1.3.100.v20150511-1540.jar
+37412
+
+jinfo -flags：查看java进程参数参数
+
+Donald_Draper@Centos7>jinfo -flags 2692
+Attaching to process ID 2692, please wait...
+Debugger attached successfully.
+Server compiler detected.
+JVM version is 23.7-b01
+
+-Dosgi.requiredJavaVersion=1.7 -Xms512m -Xmx1380m -Xss3m -XX:+UseParallelGC -Xverify:none
+ -XX:+DisableExplicitGC -Xnoclassgc -XX:CMSInitiatingOccupancyFraction=85 -XX:ReservedCod
+eCacheSize=256m -XX:MaxPermSize=256m
+
+jmap -heap：查看堆状况
+
+Donald_Draper@Centos7>jmap -heap 2692
+Attaching to process ID 2692, please wait...
+Debugger attached successfully.
+Server compiler detected.
+JVM version is 23.7-b01
+
+using thread-local object allocation.
+Parallel GC with 4 thread(s)
+
+Heap Configuration:
+   MinHeapFreeRatio = 40
+   MaxHeapFreeRatio = 70
+   MaxHeapSize      = 1447034880 (1380.0MB) //最大堆空间
+   NewSize          = 1310720 (1.25MB)
+   MaxNewSize       = 17592186044415 MB
+   OldSize          = 5439488 (5.1875MB)
+   NewRatio         = 2
+   SurvivorRatio    = 8
+   PermSize         = 21757952 (20.75MB)
+   MaxPermSize      = 268435456 (256.0MB)
+   G1HeapRegionSize = 0 (0.0MB)
+
+Heap Usage:
+PS Young Generation //年轻代
+Eden Space:
+   capacity = 387448832 (369.5MB)
+   used     = 337520592 (321.8847198486328MB)
+   free     = 49928240 (47.61528015136719MB)
+   87.11359129868276% used
+From Space:
+   capacity = 47448064 (45.25MB)
+   used     = 29189704 (27.83747100830078MB)
+   free     = 18258360 (17.41252899169922MB)
+   61.51927294652106% used
+To Space:
+   capacity = 47448064 (45.25MB)
+   used     = 0 (0.0MB)
+   free     = 47448064 (45.25MB)
+   0.0% used
+PS Old Generation //老年代
+   capacity = 357957632 (341.375MB)
+   used     = 217899800 (207.8054428100586MB)
+   free     = 140057832 (133.5695571899414MB)
+   60.873070028578134% used
+PS Perm Generation //永久代
+   capacity = 245891072 (234.5MB)
+   used     = 122883168 (117.19052124023438MB)
+   free     = 123007904 (117.30947875976562MB)
+   49.974635923340884% used
+
+39279 interned Strings occupying 3731248 bytes.
+
+jmap -dump:live,format=b,file=F:/heap.bin pid:dump java heap in hprof binary format
+导出堆二进制信息
+
+Donald_Draper@Centos7>jmap -dump:live,format=b,file=heap.bin 29136
+Dumping heap to heap.bin ...
+Heap dump file created
+我们可以用MemoryAnalyzer分析文件，界面如下：
+
+
+具体如何分析我们就不说,网上很多相关文章
+
+Donald_Draper@Centos7>jps
+42548 JConsole
+30708 Jps
+29136 Bootstrap
+2692 org.eclipse.equinox.launcher_1.3.100.v20150511-1540.jar
+37412
+
+jmap -histo:live pid查看堆中活动的对象以及大小 
+
+Donald_Draper@Centos7>jmap -histo:live 29136 > F:/jmap-histo.txt
+
+
+jmap-histo.txt的先关信息：
+ num     #instances         #bytes  class name
+----------------------------------------------
+   1:        104389       15407704  <constMethodKlass>
+   2:        105675       14934912  [C
+   3:        104389       13377904  <methodKlass>
+   4:         29296       11657864  [B
+   5:          8286       10644280  <constantPoolKlass>
+   6:          6968        6312896  <constantPoolCacheKlass>
+   7:          8286        6266968  <instanceKlassKlass>
+   8:        102853        2468472  java.lang.String
+   9:          3293        1912896  <methodDataKlass>
+  10:          9804        1328400  [I
+  11:         15433        1234640  java.lang.reflect.Method
+  12:         27893         892576  java.util.concurrent.ConcurrentHashMap$HashEntry
+  13:          9045         892056  java.lang.Class
+  14:           108         852304  [J
+  15:         12221         851448  [S
+  16:         18896         755840  java.util.LinkedHashMap$Entry
+  17:         13262         748464  [[I
+  18:         12725         624784  [Ljava.lang.Object;
+  19:          5072         580528  [Ljava.util.HashMap$Entry;
+  20:         17520         560640  java.util.HashMap$Entry
+  21:          7618         487552  java.net.URL
+  22:           742         403648  <objArrayKlassKlass>
+  23:         12033         385056  java.lang.ref.WeakReference
+  24:         14549         349176  java.util.ArrayList
+  25:          5488         307328  java.util.LinkedHashMap
+  26:          2225         298408  [Ljava.util.concurrent.ConcurrentHashMap$HashEntry;
+  27:          5571         267408  org.apache.catalina.loader.ResourceEntry
+  28:          4921         236208  org.aspectj.weaver.reflect.ShadowMatchImpl
+  29:          6530         208600  [Ljava.lang.String;
+  30:         13015         208240  java.lang.Object
+  31:          4923         196920  java.lang.ref.SoftReference
+  32:          7706         164344  [Ljava.lang.Class;
+  33:          5002         160064  java.util.Hashtable$Entry
+  34:          4921         157472  org.aspectj.weaver.patterns.ExposedState
+  35:          3236         155328  java.util.HashMap
+  36:          5972         143328  java.beans.MethodRef
+  37:          2034         113904  java.beans.MethodDescriptor
+  38:          2334         112032  org.springframework.util.ConcurrentReferenceHashMap$SoftEntryReference
+  39:          1010          96960  org.springframework.beans.GenericTypeAwarePropertyDescriptor
+  40:          5285          94912  [Z
+  41:          3938          94512  java.util.Collections$UnmodifiableRandomAccessList
+  42:          1269          91368  java.lang.reflect.Constructor
+  43:          2225          89000  java.util.concurrent.ConcurrentHashMap$Segment
+  44:           981          86328  org.apache.ibatis.mapping.MappedStatement
+  45:          2570          82240  java.util.LinkedList
+  46:          2513          80416  java.util.concurrent.locks.ReentrantLock$NonfairSync
+  47:          4921          78736  [Lorg.aspectj.weaver.ast.Var;
+  48:          1025          73800  org.apache.jasper.compiler.Node$TemplateText
+  49:           957          68904  java.beans.PropertyDescriptor
+  50:           473          68112  org.aspectj.weaver.ReferenceType
+  51:          1179          66024  org.apache.jasper.compiler.Mark
+  52:           506          65504  [Ljava.util.Hashtable$Entry;
+  53:           111          63288  [Ljava.util.WeakHashMap$Entry;
+  54:          3734          59744  org.apache.ibatis.scripting.xmltags.TextSqlNode
+  55:          1816          58112  com.kingbase.util.Oid
+  56:          1441          57640  java.util.WeakHashMap$Entry
+  57:           784          56448  java.lang.reflect.Field
+  58:           940          52640  org.springframework.core.annotation.AnnotationAttributes
+  59:           804          51456  com.kingbase.core.Field
+  60:          1251          50040  org.apache.log4j.Logger
+  61:          2027          48648  java.util.LinkedList$Node
+  62:           304          48640  org.aspectj.weaver.BoundedReferenceType
+  63:           598          46832  [Ljava.util.concurrent.ConcurrentHashMap$Segment;
+  64:          1128          45120  java.util.TreeMap$Entry
+  65:          1841          44184  org.springframework.cglib.core.Signature
+  66:           898          43104  org.apache.tomcat.util.modeler.AttributeInfo
+  67:          1201          38432  java.util.Stack
+  68:          1559          37416  org.apache.log4j.CategoryKey
+  69:          2324          37184  java.util.LinkedHashSet
+  70:          2168          34688  java.util.HashMap$KeySet
+  71:          2069          33104  org.apache.ibatis.scripting.xmltags.MixedSqlNode
+  72:           687          32976  org.apache.tomcat.util.buf.ByteChunk
+  73:           575          32200  java.lang.Package
+  74:           639          30672  java.util.concurrent.locks.ReentrantReadWriteLock$NonfairSync
+  75:           221          30624  [[C
+  76:           195          29640  org.springframework.beans.factory.support.RootBeanDefinition
+  77:           598          28704  java.util.concurrent.ConcurrentHashMap
+  78:           137          28496  com.kingbase.jdbc4.Jdbc4Statement
+  79:           885          28320  org.springframework.cglib.proxy.MethodProxy
+  80:          1738          27808  java.util.Collections$UnmodifiableSet
+  81:           863          27616  org.springframework.cglib.proxy.MethodProxy$CreateInfo
+  82:           143          27456  com.kingbase.jdbc4.Jdbc4ResultSet
+  83:            13          26832  [Lorg.apache.ibatis.ognl.OgnlRuntime$ClassCache$Entry;
+  84:           552          26496  org.apache.tomcat.util.buf.MessageBytes
+  85:           222          26448  [Ljava.beans.MethodDescriptor;
+  86:          1074          25776  org.slf4j.impl.Log4jLoggerAdapter
+  87:           447          25032  org.apache.ibatis.mapping.ResultMap
+  88:           602          24080  org.apache.tomcat.util.buf.CharChunk
+  89:           981          23544  org.apache.ibatis.scripting.xmltags.DynamicSqlSource
+  90:           981          23544  org.apache.ibatis.mapping.ParameterMap
+  91:          1461          23376  java.util.HashSet
+  92:           724          23168  javax.management.MBeanAttributeInfo
+  93:           964          23136  org.apache.ibatis.scripting.xmltags.IfSqlNode
+  94:           453          21744  java.util.Hashtable
+...
+...n
+416:             1             16  org.springframework.aop.support.annotation.AnnotationMethodMatcher
+3417:             1             16  java.util.ResourceBundle$Control
+3418:             1             16  sun.reflect.GeneratedMethodAccessor38
+3419:             1             16  [Lcom.sun.org.apache.xerces.internal.impl.xs.SubstitutionGroupHandler$OneSubGroup;
+3420:             1             16  sun.nio.ch.Util$1
+3421:             1             16  org.springframework.web.servlet.FrameworkServlet$ContextRefreshListener
+3422:             1             16  org.apache.ibatis.ognl.ObjectPropertyAccessor
+3423:             1             16  sun.reflect.GeneratedMethodAccessor8
+3424:             1             16  com.sun.org.apache.xerces.internal.impl.dv.xs.IntegerDV
+3425:             1             16  sun.reflect.GeneratedMethodAccessor30
+3426:             1             16  org.springframework.beans.factory.parsing.FailFastProblemReporter
+3427:             1             16  org.aspectj.util.FuzzyBoolean$NeverFuzzyBoolean
+3428:             1             16  org.apache.catalina.connector.Request$5
+3429:             1             16  org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration$1
+3430:             1             16  com.fh.cachedb.CodeTableHolder
+3431:             1             16  sun.reflect.GeneratedConstructorAccessor47
+3432:             1             16  java.lang.String$CaseInsensitiveComparator
+3433:             1             16  sun.reflect.GeneratedConstructorAccessor42
+3434:             1             16  sun.reflect.GeneratedConstructorAccessor38
+Total        946918      105239816
+
+
+Donald_Draper@Centos7>jps
+42548 JConsole
+30708 Jps
+29136 Bootstrap
+2692 org.eclipse.equinox.launcher_1.3.100.v20150511-1540.jar
+37412
+
+jstack pid ：查看jvm线程运行状态，是否有死锁现象等等信息)
+
+Donald_Draper@Centos7>jstack 29136 > F:/jstack.txt
+jstack.txt先关内容
+2017-02-23 18:44:50
+Full thread dump Java HotSpot(TM) 64-Bit Server VM (24.79-b02 mixed mode):
+
+"Attach Listener" daemon prio=10 tid=0x0000000000705800 nid=0x5e66 runnable [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+//线程池中的线程3正在运行
+"pool-2-thread-3" prio=10 tid=0x0000000000867800 nid=0x5e04 runnable [0x00007fce9710f000]
+   java.lang.Thread.State: RUNNABLE
+	at java.util.HashMap.createEntry(HashMap.java:897)
+	at java.util.HashMap.addEntry(HashMap.java:884)
+	at java.util.HashMap.put(HashMap.java:505)
+	at com.fh.util.PageData.put(PageData.java:73)
+	at com.fh.util.network.SqlTypeUtil.getCityData(SqlTypeUtil.java:37)
+	at com.fh.thread.CityDataToUpdateCallble.call(CityDataToUpdateCallble.java:109)
+	at com.fh.thread.CityDataToUpdateCallble.call(CityDataToUpdateCallble.java:1)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+	at java.lang.Thread.run(Thread.java:745)
+//线程池中线程2，正在运行，在等待waiting on condition  [0x00007fce97210000]
+"pool-2-thread-2" prio=10 tid=0x0000000000855000 nid=0x5e01 waiting on condition [0x00007fce97210000]
+   java.lang.Thread.State: RUNNABLE
+	at com.fh.util.network.SqlTypeUtil.getCityData(SqlTypeUtil.java:35)
+	at com.fh.thread.CityDataToUpdateCallble.call(CityDataToUpdateCallble.java:109)
+	at com.fh.thread.CityDataToUpdateCallble.call(CityDataToUpdateCallble.java:1)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:262)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1145)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+	at java.lang.Thread.run(Thread.java:745)
+//tomcat bio 线程处于等待状态waiting on condition [0x00007fce960f1000]
+"http-bio-8080-exec-10" daemon prio=10 tid=0x0000000000713000 nid=0x5dff waiting on condition [0x00007fce960f1000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000c71fe5e8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:186)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:2043)
+	at java.util.concurrent.LinkedBlockingQueue.take(LinkedBlockingQueue.java:442)
+	at org.apache.tomcat.util.threads.TaskQueue.take(TaskQueue.java:104)
+	at org.apache.tomcat.util.threads.TaskQueue.take(TaskQueue.java:32)
+	at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1068)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)
+	at java.lang.Thread.run(Thread.java:745)
+	...
+"http-bio-8080-exec-1" daemon prio=10 tid=0x0000000000997800 nid=0x5df5 waiting on condition [0x00007fce9e05c000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000c71fe5e8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:186)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:2043)
+	at java.util.concurrent.LinkedBlockingQueue.take(LinkedBlockingQueue.java:442)
+	at org.apache.tomcat.util.threads.TaskQueue.take(TaskQueue.java:104)
+	at org.apache.tomcat.util.threads.TaskQueue.take(TaskQueue.java:32)
+	at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1068)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:61)
+	at java.lang.Thread.run(Thread.java:745)
+//线程Java2D Disposer处于等待状态：in Object.wait() [0x00007fce976b9000]
+	"Java2D Disposer" daemon prio=10 tid=0x0000000000e0f000 nid=0x5df8 in Object.wait() [0x00007fce976b9000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c758fa40> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
+	- locked <0x00000000c758fa40> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:151)
+	at sun.java2d.Disposer.run(Disposer.java:145)
+	at java.lang.Thread.run(Thread.java:745)
+
+	"ajp-bio-8009-Acceptor-0" daemon prio=10 tid=0x00007fce904a8000 nid=0x5df3 runnable [0x00007fce9c162000]
+   java.lang.Thread.State: RUNNABLE
+	at java.net.PlainSocketImpl.socketAccept(Native Method)
+	at java.net.AbstractPlainSocketImpl.accept(AbstractPlainSocketImpl.java:398)
+	at java.net.ServerSocket.implAccept(ServerSocket.java:530)
+	at java.net.ServerSocket.accept(ServerSocket.java:498)
+	at org.apache.tomcat.util.net.DefaultServerSocketFactory.acceptSocket(DefaultServerSocketFactory.java:60)
+	at org.apache.tomcat.util.net.JIoEndpoint$Acceptor.run(JIoEndpoint.java:222)
+	at java.lang.Thread.run(Thread.java:745)
+//处于睡眠状态
+"http-bio-8080-AsyncTimeout" daemon prio=10 tid=0x00007fce90793000 nid=0x5df2 sleeping[0x00007fce9dc58000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at org.apache.tomcat.util.net.JIoEndpoint$AsyncTimeout.run(JIoEndpoint.java:152)
+	at java.lang.Thread.run(Thread.java:745)
+
+"http-bio-8080-Acceptor-0" daemon prio=10 tid=0x0000000000810000 nid=0x5df1 runnable [0x00007fce9dd59000]
+   java.lang.Thread.State: RUNNABLE
+	at java.net.PlainSocketImpl.socketAccept(Native Method)
+	at java.net.AbstractPlainSocketImpl.accept(AbstractPlainSocketImpl.java:398)
+	at java.net.ServerSocket.implAccept(ServerSocket.java:530)
+	at java.net.ServerSocket.accept(ServerSocket.java:498)
+	at org.apache.tomcat.util.net.DefaultServerSocketFactory.acceptSocket(DefaultServerSocketFactory.java:60)
+	at org.apache.tomcat.util.net.JIoEndpoint$Acceptor.run(JIoEndpoint.java:222)
+	at java.lang.Thread.run(Thread.java:745)
+
+"ContainerBackgroundProcessor[StandardEngine[Catalina]]" daemon prio=10 tid=0x0000000001ec3800 nid=0x5df0 runnable [0x00007fce9de5a000]
+   java.lang.Thread.State: RUNNABLE
+	at java.io.UnixFileSystem.getBooleanAttributes0(Native Method)
+	at java.io.UnixFileSystem.getBooleanAttributes(UnixFileSystem.java:242)
+	at java.io.File.isDirectory(File.java:843)
+	at org.apache.catalina.startup.HostConfig.deployDirectories(HostConfig.java:1151)
+	at org.apache.catalina.startup.HostConfig.deployApps(HostConfig.java:497)
+	at org.apache.catalina.startup.HostConfig.check(HostConfig.java:1757)
+	at org.apache.catalina.startup.HostConfig.lifecycleEvent(HostConfig.java:333)
+	at org.apache.catalina.util.LifecycleSupport.fireLifecycleEvent(LifecycleSupport.java:117)
+	at org.apache.catalina.util.LifecycleBase.fireLifecycleEvent(LifecycleBase.java:90)
+	at org.apache.catalina.core.ContainerBase.backgroundProcess(ContainerBase.java:1370)
+	at org.apache.catalina.core.ContainerBase$ContainerBackgroundProcessor.processChildren(ContainerBase.java:1542)
+	at org.apache.catalina.core.ContainerBase$ContainerBackgroundProcessor.processChildren(ContainerBase.java:1552)
+	at org.apache.catalina.core.ContainerBase$ContainerBackgroundProcessor.run(ContainerBase.java:1520)
+	at java.lang.Thread.run(Thread.java:745)
+//Druid线程池处理睡眠，等待waiting on condition [0x00007fce9c263000]
+"Druid-ConnectionPool-Destroy-1086652952" daemon prio=10 tid=0x00007fce904ef800 nid=0x5def waiting on condition [0x00007fce9c263000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at com.alibaba.druid.pool.DruidDataSource$DestroyConnectionThread.run(DruidDataSource.java:1898)
+
+"Druid-ConnectionPool-Create-1086652952" daemon prio=10 tid=0x00007fce90015800 nid=0x5dee waiting on condition [0x00007fce9c364000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000c633d178> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:186)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:2043)
+	at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:1824)
+
+
+"%0055ser%0058%004dapper.data" prio=10 tid=0x00007fce904cf800 nid=0x5dec waiting on condition [0x00007fce9c882000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000c6196fe8> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:226)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.awaitNanos(AbstractQueuedSynchronizer.java:2082)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:1090)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$DelayedWorkQueue.take(ScheduledThreadPoolExecutor.java:807)
+	at java.util.concurrent.ThreadPoolExecutor.getTask(ThreadPoolExecutor.java:1068)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1130)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:615)
+	at java.lang.Thread.run(Thread.java:745)
+
+"net.sf.ehcache.CacheManager@1c2ae2cd" daemon prio=10 tid=0x00007fce904bf800 nid=0x5dea in Object.wait() [0x00007fce9c983000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c61bed80> (a java.util.TaskQueue)
+	at java.lang.Object.wait(Object.java:503)
+	at java.util.TimerThread.mainLoop(Timer.java:526)
+	- locked <0x00000000c61bed80> (a java.util.TaskQueue)
+	at java.util.TimerThread.run(Timer.java:505)
+
+"Druid-ConnectionPool-Destroy-1795695054" daemon prio=10 tid=0x00007fce904b7000 nid=0x5de9 waiting on condition [0x00007fce9ccc2000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+	at java.lang.Thread.sleep(Native Method)
+	at com.alibaba.druid.pool.DruidDataSource$DestroyConnectionThread.run(DruidDataSource.java:1898)
+
+"Druid-ConnectionPool-Create-1795695054" daemon prio=10 tid=0x00007fce90537800 nid=0x5de8 waiting on condition [0x00007fce9cdc3000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000c627f1d0> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:186)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:2043)
+	at com.alibaba.druid.pool.DruidDataSource$CreateConnectionThread.run(DruidDataSource.java:1824)
+
+"Abandoned connection cleanup thread" daemon prio=10 tid=0x00007fce90419000 nid=0x5de6 in Object.wait() [0x00007fce9cec4000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f208> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
+	- locked <0x00000000c627f208> (a java.lang.ref.ReferenceQueue$Lock)
+	at com.mysql.jdbc.AbandonedConnectionCleanupThread.run(AbandonedConnectionCleanupThread.java:43)
+
+"Timer-0" daemon prio=10 tid=0x00007fce90351800 nid=0x5de5 in Object.wait() [0x00007fce9cfc5000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f2a8> (a java.util.TaskQueue)
+	at java.util.TimerThread.mainLoop(Timer.java:552)
+	- locked <0x00000000c627f2a8> (a java.util.TaskQueue)
+	at java.util.TimerThread.run(Timer.java:505)
+//定时任务调度线程，初始化10个线程，
+"schedulerFactoryBean_QuartzSchedulerThread" prio=10 tid=0x00007fce9034c000 nid=0x5de4 runnable [0x00007fce9d0c6000]
+   java.lang.Thread.State: RUNNABLE
+	at org.quartz.utils.Key.compareTo(Key.java:152)
+	at org.quartz.Trigger$TriggerTimeComparator.compare(Trigger.java:321)
+	at org.quartz.Trigger$TriggerTimeComparator.compare(Trigger.java:326)
+	at org.quartz.simpl.TriggerWrapperComparator.compare(RAMJobStore.java:1705)
+	at org.quartz.simpl.TriggerWrapperComparator.compare(RAMJobStore.java:1698)
+	at java.util.TreeMap.getEntryUsingComparator(TreeMap.java:369)
+	at java.util.TreeMap.getEntry(TreeMap.java:340)
+	at java.util.TreeMap.remove(TreeMap.java:595)
+	at java.util.TreeSet.remove(TreeSet.java:276)
+	at org.quartz.simpl.RAMJobStore.acquireNextTriggers(RAMJobStore.java:1403)
+	- locked <0x00000000c62cd9e8> (a java.lang.Object)
+	at org.quartz.core.QuartzSchedulerThread.run(QuartzSchedulerThread.java:272)
+//RUNNABLE
+"schedulerFactoryBean_Worker-10" prio=10 tid=0x00007fce90348000 nid=0x5de3 runnable [0x00007fce9d1c7000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f420> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627f420> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-9" prio=10 tid=0x00007fce90346800 nid=0x5de2 in Object.wait() [0x00007fce9d2c8000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f4b0> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627f4b0> (a java.lang.Object)
+//RUNNABLE
+"schedulerFactoryBean_Worker-8" prio=10 tid=0x00007fce90335800 nid=0x5de1 runnable [0x00007fce9d3c9000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f540> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627f540> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-7" prio=10 tid=0x00007fce90333800 nid=0x5de0 in Object.wait() [0x00007fce9d4ca000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f5d0> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627f5d0> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-6" prio=10 tid=0x00007fce90331800 nid=0x5ddf in Object.wait() [0x00007fce9d5cb000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627f660> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627f660> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-5" prio=10 tid=0x00007fce90330000 nid=0x5dde in Object.wait() [0x00007fce9d6cc000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c62804c0> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c62804c0> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-4" prio=10 tid=0x00007fce9032e000 nid=0x5ddd in Object.wait() [0x00007fce9d7cd000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c62802f0> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c62802f0> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-3" prio=10 tid=0x00007fce9032c800 nid=0x5ddc in Object.wait() [0x00007fce9d8ce000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c6280120> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c6280120> (a java.lang.Object)
+//TIMED_WAITING
+"schedulerFactoryBean_Worker-2" prio=10 tid=0x00007fce9032b000 nid=0x5ddb in Object.wait() [0x00007fce9d9cf000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627ff50> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627ff50> (a java.lang.Object)
+//RUNNABLE
+"schedulerFactoryBean_Worker-1" prio=10 tid=0x00007fce90327000 nid=0x5dda runnable [0x00007fce9dad0000]
+   java.lang.Thread.State: RUNNABLE
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c627fd80> (a java.lang.Object)
+	at org.quartz.simpl.SimpleThreadPool$WorkerThread.run(SimpleThreadPool.java:568)
+	- locked <0x00000000c627fd80> (a java.lang.Object)
+
+//GC
+"GC Daemon" daemon prio=10 tid=0x00000000008a1000 nid=0x5dd7 in Object.wait() [0x00007fce9e5f6000]
+   java.lang.Thread.State: TIMED_WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c5628bf0> (a sun.misc.GC$LatencyLock)
+	at sun.misc.GC$Daemon.run(GC.java:117)
+	- locked <0x00000000c5628bf0> (a sun.misc.GC$LatencyLock)
+
+"Service Thread" daemon prio=10 tid=0x00007fce98035800 nid=0x5dd5 runnable [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+//编译线程
+"C2 CompilerThread1" daemon prio=10 tid=0x00007fce98033000 nid=0x5dd4 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"C2 CompilerThread0" daemon prio=10 tid=0x00007fce98030000 nid=0x5dd3 waiting on condition [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Signal Dispatcher" daemon prio=10 tid=0x00007fce9802d800 nid=0x5dd2 runnable [0x0000000000000000]
+   java.lang.Thread.State: RUNNABLE
+
+"Finalizer" daemon prio=10 tid=0x00007fce98001000 nid=0x5dd1 in Object.wait() [0x00007fce9f41e000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c5842558> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:135)
+	- locked <0x00000000c5842558> (a java.lang.ref.ReferenceQueue$Lock)
+	at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:151)
+	at java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:209)
+
+"Reference Handler" daemon prio=10 tid=0x0000000000677800 nid=0x5dd0 in Object.wait() [0x00007fce9f51f000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(Native Method)
+	- waiting on <0x00000000c56a9438> (a java.lang.ref.Reference$Lock)
+	at java.lang.Object.wait(Object.java:503)
+	at java.lang.ref.Reference$ReferenceHandler.run(Reference.java:133)
+	- locked <0x00000000c56a9438> (a java.lang.ref.Reference$Lock)
+//主线程
+"main" prio=10 tid=0x000000000060a800 nid=0x5dc6 runnable [0x00007fcea9817000]
+   java.lang.Thread.State: RUNNABLE
+	at java.net.PlainSocketImpl.socketAccept(Native Method)
+	at java.net.AbstractPlainSocketImpl.accept(AbstractPlainSocketImpl.java:398)
+	at java.net.ServerSocket.implAccept(ServerSocket.java:530)
+	at java.net.ServerSocket.accept(ServerSocket.java:498)
+	at org.apache.catalina.core.StandardServer.await(StandardServer.java:470)
+	at org.apache.catalina.startup.Catalina.await(Catalina.java:781)
+	at org.apache.catalina.startup.Catalina.start(Catalina.java:727)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:606)
+	at org.apache.catalina.startup.Bootstrap.start(Bootstrap.java:294)
+	at org.apache.catalina.startup.Bootstrap.main(Bootstrap.java:428)
+//虚拟机线程
+"VM Thread" prio=10 tid=0x0000000000673000 nid=0x5dcf runnable 
+//GC任务线程
+"GC task thread#0 (ParallelGC)" prio=10 tid=0x0000000000620800 nid=0x5dc7 runnable 
+
+"GC task thread#1 (ParallelGC)" prio=10 tid=0x0000000000622800 nid=0x5dc8 runnable 
+
+"GC task thread#2 (ParallelGC)" prio=10 tid=0x0000000000624000 nid=0x5dc9 runnable 
+
+"GC task thread#3 (ParallelGC)" prio=10 tid=0x0000000000626000 nid=0x5dca runnable 
+
+"GC task thread#4 (ParallelGC)" prio=10 tid=0x0000000000628000 nid=0x5dcb runnable 
+
+"GC task thread#5 (ParallelGC)" prio=10 tid=0x0000000000629800 nid=0x5dcc runnable 
+
+"GC task thread#6 (ParallelGC)" prio=10 tid=0x000000000062b800 nid=0x5dcd runnable 
+
+"GC task thread#7 (ParallelGC)" prio=10 tid=0x000000000062d800 nid=0x5dce runnable 
+
+"VM Periodic Task Thread" prio=10 tid=0x00007fce98040800 nid=0x5dd6 waiting on condition 
+
+JNI global references: 478
+
+
+
+jstat -gc pid:可以显示gc的信息，查看gc的次数，及时间。
+
+Donald_Draper@Centos7>jstat -gc 29136
+ S0C    S1C    S0U    S1U      EC       EU        OC         OU       PC     PU    YGC     YGCT    FGC    FGCT     GCT
+4288.0 4288.0 1639.1  0.0   34688.0  33781.3   86336.0    45491.6   83968.0 59198.3     96    0.521   6      0.714    1.235
+其中最后五项，分别是young gc的次数，young gc的时间，full gc的次数，full gc的时间，gc的总时间。
+
+jstat -util pid:统计gc信息统计与-gc合用。
+
+jstat -gcutil PID 1000（刷新频率） 3（次数）:查看jvm的gc情况和内存使用情况
+
+Donald_Draper@Centos7> jstat -gcutil 29136 1000 3
+  S0     S1     E      O      P     YGC     YGCT    FGC    FGCT     GCT
+  0.00  35.42  55.86  50.93  70.10     87    0.491     6    0.714    1.205
+  0.00  35.42  57.56  50.93  70.10     87    0.491     6    0.714    1.205
+  0.00  35.42  58.04  50.93  70.10     87    0.491     6    0.714    1.205
+
+S0：Heap上的 Survivor space 0 段已使用空间的百分比
+S1：Heap上的 Survivor space 1 段已使用空间的百分比
+E： Heap上的 Eden space 段已使用空间的百分比
+O：Heap上的 Old space 段已使用空间的百分比
+P： Perm space 已使用空间的百分比
+YGC：从程序启动到采样时发生Young GC的次数
+YGCT：Young GC所用的时间(单位秒)
+FGC：从程序启动到采样时发生Full GC的次数
+FGCT：Full GC所用的时间(单位秒)
+GCT：用于垃圾回收的总时间(单位秒)
+
+
+
+
+
+jstat -class pid:显示加载class的数量，及所占空间等信息
+
+Donald_Draper@Centos7>jstat -class 29136
+Loaded  Bytes  Unloaded  Bytes     Time
+  8735 18805.4       85   137.6       7.86
+
+
+jstat -compiler pid:显示VM实时编译的数量等信息。 
+
+Donald_Draper@Centos7>jstat -compiler 29136
+Compiled Failed Invalid   Time   FailedType FailedMethod
+    2093      1       0    24.51          1 org/apache/catalina/loader/WebappClassLoaderBase findResourceInternal
+
+
+jstat -gccapacity pid:可以显示，VM内存中三代（young,old,perm）对象的使用和占用大小，
+Donald_Draper@Centos7>jstat -gccapacity 29136
+ NGCMN    NGCMX     NGC     S0C   S1C       EC      OGCMN      OGCMX       OGC         OC      PGCMN    PGCMX     PGC       PC     YGC    FGC
+
+ 43136.0 340736.0  43264.0 4288.0 4288.0  34688.0    86336.0  1731840.0    86336.0    86336.0  21248.0  83968.0  83968.0  83968.0     98     6
+
+如：PGCMN显示的是最小perm的内存使用量，PGCMX显示的是perm的内存最大使用量，
+PGC是当前新生成的perm内存占用量，PC是但前perm内存占用量。其他的可以根据这个类推， OC是old内纯的占用量。 
+
+jstat -gcnew pid:new对象的信息。 
+
+Donald_Draper@Centos7>jstat -gcnew 29136
+ S0C    S1C    S0U    S1U   TT MTT  DSS      EC       EU     YGC     YGCT
+4288.0 4288.0    0.0 3512.2  6   6 2144.0  34688.0  28683.1    101    0.553
+
+
+jstat -gcnewcapacity pid:new对象的信息及其占用量。 
+Donald_Draper@Centos7>jstat -gcnewcapacity 29136
+  NGCMN      NGCMX       NGC      S0CMX     S0C     S1CMX     S1C       ECMX        EC      YGC   FGC
+   43136.0   340736.0    43264.0  34048.0   4288.0  34048.0   4288.0   272640.0    34688.0   102     6
+
+jstat -gcold pid:old对象的信息。 
+Donald_Draper@Centos7>jstat -gcold 29136
+   PC       PU        OC          OU       YGC    FGC    FGCT     GCT
+ 83968.0  59291.3     86336.0     50136.9    102     6    0.714    1.270
+
+jstat -gcoldcapacity pid:old对象的信息及其占用量。 
+
+
+Donald_Draper@Centos7>jstat -gcoldcapacity 29136
+   OGCMN       OGCMX        OGC         OC       YGC   FGC    FGCT     GCT
+    86336.0   1731840.0     86336.0     86336.0   102     6    0.714    1.270
+
+
+jstat -gcpermcapacity pid: perm对象的信息及其占用量。
+
+
+
+Donald_Draper@Centos7>jstat -gcpermcapacity 29136
+  PGCMN      PGCMX       PGC         PC      YGC   FGC    FGCT     GCT
+   21248.0    83968.0    83968.0    83968.0   103     6    0.714    1.272
+
+
+ 
+
+jstat -printcompilation pid:当前VM执行的信息
+
+
+Donald_Draper@Centos7>jstat -printcompilation 29136
+Compiled  Size  Type Method
+    2162    141    1 com/kingbase/core/KB_Stream_Tcpip Receive
+
+
+
