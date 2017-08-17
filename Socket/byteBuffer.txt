@@ -3,7 +3,7 @@ java Socket读写缓存区Writer和Reader：http://donald-draper.iteye.com/blog/2356885
 前一篇文章中，我们讲了java Socket io的Writer和Reader，在上一篇中，在流解码器和编码器中
 ，经常用到字节缓冲ByteBuffer，今天我们就来看一ByteBuffer。
 ByteBuffer有两个实现一个为，HeapByteBuffer，另一个为DirectByteBuffer，这两个有什么区别呢?
-我们引入原文，不翻译以免都是原味；
+我们引入原文，不翻译以免失去原味；
 1.HeapByteBuffer
 //ByteBuffer,创建方法
  public static ByteBuffer allocate(int capacity) {
@@ -431,7 +431,7 @@ If <code>src</code> is <code>null</code>, then a
                                         int length);
 
 
-线面我们来看一下Buffer的相关操作：
+下面我们来看一下Buffer的相关操作：
 public abstract class Buffer {
 
     // Invariants: mark <= position <= limit <= capacity
