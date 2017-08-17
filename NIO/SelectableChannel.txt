@@ -1,14 +1,14 @@
-Channel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369111[/url]
-AbstractInterruptibleChannel½Ó¿Ú¶¨Òå£ºhttp://donald-draper.iteye.com/blog/2369238
-ÉÏÒ»ÆªÎÄÕÂÎÒÃÇ½²µ½¿ÉÒÔÒì²½ÖĞ¶ÏºÍ¹Ø±ÕÍ¨µÀ½Ó¿ÚµÄ¶¨Òå¡£ÏÈÀ´»Ø¹ËÒ»ÏÂ£º
-AbstractInterruptibleChannelÊÇÒ»¸ö¿ÉÒÔÒì²½¹Ø±ÕºÍÖĞ¶ÏIO×èÈûÏß³ÌµÄÍ¨µÀ£¬ËùÓĞ¾ßÌåµÄÍ¨µÀÊµÏÖ£¬Èç¹û
-ÏëÒª¿ÉÒÔÒì²½¹Ø±ÕºÍÖĞ¶Ï£¬±ØĞëÊµÏÖ´ËÀà¡£AbstractInterruptibleChannelÄÚ²¿ÓĞÒ»¸öOpen²¼¶ûÖµÓÃÓÚ±íÊ¾
-Í¨µÀÊÇ·ñ´ò¿ª¡£ÔÚÍ¨µÀ¹Ø±ÕÊ±µ÷ÓÃimplCloseChannel£¬implCloseChannel·½·¨Íê³ÉÊµ¼ÊµÄ¹Ø±ÕÍ¨µÀ¹¤×÷¡£
-ÓĞ¸öÖĞ¶Ï´¦ÀíÆ÷ÓÃÓÚ¼ÇÂ¼ÖĞ¶Ï×èÈûIO²Ù×÷Ïß³ÌµÄÏß³Ì£¬Íê³ÉÊµ¼ÊµÄ¹Ø±ÕÍ¨µÀ¹¤×÷¡£ÓĞÒ»×éĞ­µ÷·½·¨ÎªbeginºÍend·½·¨
-£¬Ò»°ãÔÚÒ»¸ö¿ÉÄÜ×èÈûµÄIO²Ù×÷µÄ¿ªÊ¼µ÷ÓÃbegin£¬Ö®ºóµ÷ÓÃend·½·¨£¬ÕâĞ©²Ù×÷Ò»°ãÓÃÒ»¸ötryÓï¾ä¿é£¬×éºÏÊ¹ÓÃ¡£
-begin·½·¨Ö÷Òª³õÊ¼»¯ÖĞ¶Ï´¦ÀíÆ÷£¬end·½·¨¸ù¾İIO²Ù×÷ÊÇ·ñÍê³ÉºÍOpen×´Ì¬£¬¼°ÖĞ¶ÏÏß³Ì´¦ÀíÆ÷£¬ÖĞ¶ÏÏß³ÌÅĞ¶ÏÊÇÅ×³ö
-AsynchronousCloseExceptionÒì³£»¹ÊÇClosedByInterruptException¡£
-ServerSocketChannel¸¸Àà½á¹¹Ê÷£º
+Channelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannelæ¥å£å®šä¹‰ï¼šhttp://donald-draper.iteye.com/blog/2369238
+ä¸Šä¸€ç¯‡æ–‡ç« æˆ‘ä»¬è®²åˆ°å¯ä»¥å¼‚æ­¥ä¸­æ–­å’Œå…³é—­é€šé“æ¥å£çš„å®šä¹‰ã€‚å…ˆæ¥å›é¡¾ä¸€ä¸‹ï¼š
+AbstractInterruptibleChannelæ˜¯ä¸€ä¸ªå¯ä»¥å¼‚æ­¥å…³é—­å’Œä¸­æ–­IOé˜»å¡çº¿ç¨‹çš„é€šé“ï¼Œæ‰€æœ‰å…·ä½“çš„é€šé“å®ç°ï¼Œå¦‚æœ
+æƒ³è¦å¯ä»¥å¼‚æ­¥å…³é—­å’Œä¸­æ–­ï¼Œå¿…é¡»å®ç°æ­¤ç±»ã€‚AbstractInterruptibleChannelå†…éƒ¨æœ‰ä¸€ä¸ªOpenå¸ƒå°”å€¼ç”¨äºè¡¨ç¤º
+é€šé“æ˜¯å¦æ‰“å¼€ã€‚åœ¨é€šé“å…³é—­æ—¶è°ƒç”¨implCloseChannelï¼ŒimplCloseChannelæ–¹æ³•å®Œæˆå®é™…çš„å…³é—­é€šé“å·¥ä½œã€‚
+æœ‰ä¸ªä¸­æ–­å¤„ç†å™¨ç”¨äºè®°å½•ä¸­æ–­é˜»å¡IOæ“ä½œçº¿ç¨‹çš„çº¿ç¨‹ï¼Œå®Œæˆå®é™…çš„å…³é—­é€šé“å·¥ä½œã€‚æœ‰ä¸€ç»„åè°ƒæ–¹æ³•ä¸ºbeginå’Œendæ–¹æ³•
+ï¼Œä¸€èˆ¬åœ¨ä¸€ä¸ªå¯èƒ½é˜»å¡çš„IOæ“ä½œçš„å¼€å§‹è°ƒç”¨beginï¼Œä¹‹åè°ƒç”¨endæ–¹æ³•ï¼Œè¿™äº›æ“ä½œä¸€èˆ¬ç”¨ä¸€ä¸ªtryè¯­å¥å—ï¼Œç»„åˆä½¿ç”¨ã€‚
+beginæ–¹æ³•ä¸»è¦åˆå§‹åŒ–ä¸­æ–­å¤„ç†å™¨ï¼Œendæ–¹æ³•æ ¹æ®IOæ“ä½œæ˜¯å¦å®Œæˆå’ŒOpençŠ¶æ€ï¼ŒåŠä¸­æ–­çº¿ç¨‹å¤„ç†å™¨ï¼Œä¸­æ–­çº¿ç¨‹åˆ¤æ–­æ˜¯æŠ›å‡º
+AsynchronousCloseExceptionå¼‚å¸¸è¿˜æ˜¯ClosedByInterruptExceptionã€‚
+ServerSocketChannelçˆ¶ç±»ç»“æ„æ ‘ï¼š
 //ServerSocketChannel
 public abstract class ServerSocketChannel
     extends AbstractSelectableChannel
@@ -22,7 +22,7 @@ public abstract class AbstractSelectableChannel
 public abstract class SelectableChannel
     extends AbstractInterruptibleChannel
     implements Channel
-½ñÌìÎÒÃÇÀ´¿´Ò»ÏÂ¿ÉÑ¡ÔñÍ¨µÀSelectableChannelµÄ¶¨Òå:
+ä»Šå¤©æˆ‘ä»¬æ¥çœ‹ä¸€ä¸‹å¯é€‰æ‹©é€šé“SelectableChannelçš„å®šä¹‰:
 package java.nio.channels;
 
 import java.io.IOException;
@@ -33,21 +33,21 @@ import java.nio.channels.spi.SelectorProvider;
 /**
  * A channel that can be multiplexed via a {@link Selector}.
  *
- SelectableChannelÊÇ¿ÉÒÔÍ¨¹ıÑ¡ÔñÆ÷¶àÂ·¸´ÓÃµÄÍ¨µÀ¡£
+ SelectableChannelæ˜¯å¯ä»¥é€šè¿‡é€‰æ‹©å™¨å¤šè·¯å¤ç”¨çš„é€šé“ã€‚
  * <p> In order to be used with a selector, an instance of this class must
  * first be <i>registered</i> via the {@link #register(Selector,int,Object)
  * register} method.  This method returns a new {@link SelectionKey} object
  * that represents the channel's registration with the selector.
  *
- Èç¹ûÏëÒª±»Ñ¡ÔñÆ÷selectorÊ¹ÓÃ£¬Í¨µÀµÄÊµÌåÀà±ØĞëÏÈÍ¨µÀregister(Selector,int,Object)
- ·½·¨£¬½«Í¨µÀ¹Ø×¢µÄÊÂ¼şSelectionKeyºÍAttachingµÄObject×¢²áµ½Ñ¡ÔñÆ÷ÖĞ¡£×¢²á·½·¨·µ»ØÒ»¸ö
-SelectionKey¶ÔÏó£¬±íÊ¾Í¨µÀ×¢²áµ½Ñ¡ÔñÆ÷ÖĞµÄ×¢²áÆ÷¡£
+ å¦‚æœæƒ³è¦è¢«é€‰æ‹©å™¨selectorä½¿ç”¨ï¼Œé€šé“çš„å®ä½“ç±»å¿…é¡»å…ˆé€šé“register(Selector,int,Object)
+ æ–¹æ³•ï¼Œå°†é€šé“å…³æ³¨çš„äº‹ä»¶SelectionKeyå’ŒAttachingçš„Objectæ³¨å†Œåˆ°é€‰æ‹©å™¨ä¸­ã€‚æ³¨å†Œæ–¹æ³•è¿”å›ä¸€ä¸ª
+SelectionKeyå¯¹è±¡ï¼Œè¡¨ç¤ºé€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨ä¸­çš„æ³¨å†Œå™¨ã€‚
  * <p> Once registered with a selector, a channel remains registered until it
  * is <i>deregistered</i>.  This involves deallocating whatever resources were
  * allocated to the channel by the selector.
  *
- Ö»ÒªÍ¨µÀ×¢²áµ½Ñ¡ÔñÆ÷ÖĞ£¬Ö±µ½µ÷ÓÃderegistered·½·¨£¬²ÅÄÜ½«Í¨µÀ´ÓÑ¡ÔñÆ÷ÒÆ³ı¡£
- ÎŞÂÛÑ¡ÔñÆ÷·ÖÅäÊ²Ã´×ÊÔ´¸øÍ¨µÀ£¬deregistered·½·¨±»µ÷ÓÃÊ±£¬Ïà¹Ø×ÊÔ´½«»á±»ÊÕ»Ø¡£
+ åªè¦é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨ä¸­ï¼Œç›´åˆ°è°ƒç”¨deregisteredæ–¹æ³•ï¼Œæ‰èƒ½å°†é€šé“ä»é€‰æ‹©å™¨ç§»é™¤ã€‚
+ æ— è®ºé€‰æ‹©å™¨åˆ†é…ä»€ä¹ˆèµ„æºç»™é€šé“ï¼Œderegisteredæ–¹æ³•è¢«è°ƒç”¨æ—¶ï¼Œç›¸å…³èµ„æºå°†ä¼šè¢«æ”¶å›ã€‚
  * <p> A channel cannot be deregistered directly; instead, the key representing
  * its registration must be <i>cancelled</i>.  Cancelling a key requests that
  * the channel be deregistered during the selector's next selection operation.
@@ -57,32 +57,32 @@ SelectionKey¶ÔÏó£¬±íÊ¾Í¨µÀ×¢²áµ½Ñ¡ÔñÆ÷ÖĞµÄ×¢²áÆ÷¡£
  * Channel#close close} method or by interrupting a thread blocked in an I/O
  * operation upon the channel.
  *
- Í¨µÀ²»ÄÜÖ±½Ó´ÓÑ¡ÔñÆ÷·´×¢²á£»È¡¶ø´úÖ®µÄÊÇ£¬Í¨¹ı×¢²áÊ±·µ»ØµÄSelectionKey£¬SelectionKey
- ÊÇ±ØĞë¿ÉÒÔ±»cancelledµÄ¡£SelectionKeyÈ¡Ïûºó£¬ÔÚÑ¡ÔñÆ÷ÏÂÒ»´ÎÑ¡Ôñ²Ù×÷ÖĞ£¬Í¨µÀ½«»á±»·´×¢²á¡£
- ¿ÉÒÔÍ¨µÀSelectionKey#cancelµÄ·½·¨ÏÔÊ¾µØÈ¡ÏûSelectionKey¡£ÔÚÍ¨µÀ¹Ø±ÕÊ±£¬ÎŞÂÛÊÇ·ñµ÷ÓÃ
-Channel#close£¬×èÈûIO²Ù×÷Ïß³ÌÊÇ·ñ±»ÖĞ¶Ï£¬ËùÓĞ¸úÍ¨µÀÏà¹ØÁªµÄSelectionKey½«»á±»È¡Ïû¡£
+ é€šé“ä¸èƒ½ç›´æ¥ä»é€‰æ‹©å™¨åæ³¨å†Œï¼›å–è€Œä»£ä¹‹çš„æ˜¯ï¼Œé€šè¿‡æ³¨å†Œæ—¶è¿”å›çš„SelectionKeyï¼ŒSelectionKey
+ æ˜¯å¿…é¡»å¯ä»¥è¢«cancelledçš„ã€‚SelectionKeyå–æ¶ˆåï¼Œåœ¨é€‰æ‹©å™¨ä¸‹ä¸€æ¬¡é€‰æ‹©æ“ä½œä¸­ï¼Œé€šé“å°†ä¼šè¢«åæ³¨å†Œã€‚
+ å¯ä»¥é€šé“SelectionKey#cancelçš„æ–¹æ³•æ˜¾ç¤ºåœ°å–æ¶ˆSelectionKeyã€‚åœ¨é€šé“å…³é—­æ—¶ï¼Œæ— è®ºæ˜¯å¦è°ƒç”¨
+Channel#closeï¼Œé˜»å¡IOæ“ä½œçº¿ç¨‹æ˜¯å¦è¢«ä¸­æ–­ï¼Œæ‰€æœ‰è·Ÿé€šé“ç›¸å…³è”çš„SelectionKeyå°†ä¼šè¢«å–æ¶ˆã€‚
  * <p> If the selector itself is closed then the channel will be deregistered,
  * and the key representing its registration will be invalidated, without
  * further delay.
  *
- Èç¹ûÑ¡ÔñÆ÷×Ô¼º¹Ø±Õ£¬ËùÓĞ×¢²áµ½Ñ¡ÔñÆ÷µÄÍ¨µÀ½«»á±»·´×¢²á£¬Í¬Ê±ÓëÍ¨µÀÏà¹ØµÄSelectionKey£¬
- ½«»áÁ¢¼´ÎŞĞ§¡£
+ å¦‚æœé€‰æ‹©å™¨è‡ªå·±å…³é—­ï¼Œæ‰€æœ‰æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„é€šé“å°†ä¼šè¢«åæ³¨å†Œï¼ŒåŒæ—¶ä¸é€šé“ç›¸å…³çš„SelectionKeyï¼Œ
+ å°†ä¼šç«‹å³æ— æ•ˆã€‚
  * <p> A channel may be registered at most once with any particular selector.
  *
- Ò»¸öÍ¨µÀ¿ÉÒÔ±»¶à´Î×¢²áµ½Ò»¸öÌØÊâµÄÑ¡ÔñÆ÷ÖĞ¡£
+ ä¸€ä¸ªé€šé“å¯ä»¥è¢«å¤šæ¬¡æ³¨å†Œåˆ°ä¸€ä¸ªç‰¹æ®Šçš„é€‰æ‹©å™¨ä¸­ã€‚
  * <p> Whether or not a channel is registered with one or more selectors may be
  * determined by invoking the {@link #isRegistered isRegistered} method.
  *
- ÅĞ¶ÏÒ»¸öÏß³ÌÊÇ·ñÒ»´Î»ò¶à´Î×¢²áµ½Ñ¡ÔñÆ÷£¬ÎÒÃÇ¿ÉÒÔÍ¨¹ıisRegistered·½·¨À´È·¶¨¡£
+ åˆ¤æ–­ä¸€ä¸ªçº¿ç¨‹æ˜¯å¦ä¸€æ¬¡æˆ–å¤šæ¬¡æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œæˆ‘ä»¬å¯ä»¥é€šè¿‡isRegisteredæ–¹æ³•æ¥ç¡®å®šã€‚
  * <p> Selectable channels are safe for use by multiple concurrent
  * threads. </p>
  *
- ¿ÉÑ¡ÔñµÄÍ¨µÀÔÚ¶àÏß³Ì²¢·¢·ÃÎÊµÄÇé¿öÏÂ£¬±ØĞëÊÇÏß³Ì°²È«µÄ¡£
+ å¯é€‰æ‹©çš„é€šé“åœ¨å¤šçº¿ç¨‹å¹¶å‘è®¿é—®çš„æƒ…å†µä¸‹ï¼Œå¿…é¡»æ˜¯çº¿ç¨‹å®‰å…¨çš„ã€‚
  *
  * <a name="bm">
  * <h4>Blocking mode</h4>
  *
- ×èÈûÄ£Ê½
+ é˜»å¡æ¨¡å¼
  * A selectable channel is either in <i>blocking</i> mode or in
  * <i>non-blocking</i> mode.  In blocking mode, every I/O operation invoked
  * upon the channel will block until it completes.  In non-blocking mode an I/O
@@ -90,17 +90,17 @@ Channel#close£¬×èÈûIO²Ù×÷Ïß³ÌÊÇ·ñ±»ÖĞ¶Ï£¬ËùÓĞ¸úÍ¨µÀÏà¹ØÁªµÄSelectionKey½«»á±»È¡Ï
  * or possibly no bytes at all.  The blocking mode of a selectable channel may
  * be determined by invoking its {@link #isBlocking isBlocking} method.
  *
- Ò»¸ö¿ÉÑ¡ÔñµÄÍ¨µÀÒªÃ´ÊÇ¿É×èÈûµÄ£¬ÒªÃ´ÊÇ²»¿É×èÈûµÄ¡£ÔÚ×èÈûÄ£Ê½ÏÂ£¬Í¨µÀµÄIO²Ù×÷½«»á×èÈû£¬Ö±µ½
- Æ÷Íê³É¡£ÔÚ·Ç×èÈûÄ£Ê½ÏÂ£¬IO²Ù×÷¾ø¶Ô²»»á±»×èÈû£¬IO²Ù×÷¿ÉÄÜ½ÓÊÜÉÙÓÚÇëÇóµÄÊı¾İ»òÕß¾ÍÃ»ÓĞ¡£
- Í¨µÀµÄ×èÈûÄ£Ê½£¬ÎÒÃÇ¿ÉÒÔÍ¨¹ı#isBlocking·½·¨À´ÅĞ¶Ï¡£
+ ä¸€ä¸ªå¯é€‰æ‹©çš„é€šé“è¦ä¹ˆæ˜¯å¯é˜»å¡çš„ï¼Œè¦ä¹ˆæ˜¯ä¸å¯é˜»å¡çš„ã€‚åœ¨é˜»å¡æ¨¡å¼ä¸‹ï¼Œé€šé“çš„IOæ“ä½œå°†ä¼šé˜»å¡ï¼Œç›´åˆ°
+ å™¨å®Œæˆã€‚åœ¨éé˜»å¡æ¨¡å¼ä¸‹ï¼ŒIOæ“ä½œç»å¯¹ä¸ä¼šè¢«é˜»å¡ï¼ŒIOæ“ä½œå¯èƒ½æ¥å—å°‘äºè¯·æ±‚çš„æ•°æ®æˆ–è€…å°±æ²¡æœ‰ã€‚
+ é€šé“çš„é˜»å¡æ¨¡å¼ï¼Œæˆ‘ä»¬å¯ä»¥é€šè¿‡#isBlockingæ–¹æ³•æ¥åˆ¤æ–­ã€‚
  * <p> Newly-created selectable channels are always in blocking mode.
  * Non-blocking mode is most useful in conjunction with selector-based
  * multiplexing.  A channel must be placed into non-blocking mode before being
  * registered with a selector, and may not be returned to blocking mode until
  * it has been deregistered.
  *
- Ò»¸öĞÂ´´½¨µÄ¿ÉÑ¡ÔñÍ¨µÀ×ÜÊÇ×èÈûÄ£Ê½¡£·Ç×èÈûÄ£Ê½ÔÚ»ùÓÚ¶àÂ·¸´ÓÃµÄÑ¡ÔñÆ÷ÖĞ·Ç³£ÓĞÓÃ£¬
- Ò»¸öÍ¨µÀÔÚ×¢²áµ½Ñ¡ÔñÆ÷Ç°£¬±ØĞëÊÇ·Ç×èÈûÄ£Ê½£¬Ö±µ½·´×¢²áÖ®Ç°£¬¶¼´¦ÓÚ·Ç×èÈûÄ£Ê½ÖĞ¡£
+ ä¸€ä¸ªæ–°åˆ›å»ºçš„å¯é€‰æ‹©é€šé“æ€»æ˜¯é˜»å¡æ¨¡å¼ã€‚éé˜»å¡æ¨¡å¼åœ¨åŸºäºå¤šè·¯å¤ç”¨çš„é€‰æ‹©å™¨ä¸­éå¸¸æœ‰ç”¨ï¼Œ
+ ä¸€ä¸ªé€šé“åœ¨æ³¨å†Œåˆ°é€‰æ‹©å™¨å‰ï¼Œå¿…é¡»æ˜¯éé˜»å¡æ¨¡å¼ï¼Œç›´åˆ°åæ³¨å†Œä¹‹å‰ï¼Œéƒ½å¤„äºéé˜»å¡æ¨¡å¼ä¸­ã€‚
  *
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
@@ -123,7 +123,7 @@ public abstract class SelectableChannel
     /**
      * Returns the provider that created this channel.
      *
-     ·µ»Ø´´½¨Í¨µÀµÄÌá¹©Õß£¬Õâ¸öÔÚÒÔºóÎÒÃÇÓöµ½Ê±£¬²Å¾ßÌåµØ½«
+     è¿”å›åˆ›å»ºé€šé“çš„æä¾›è€…ï¼Œè¿™ä¸ªåœ¨ä»¥åæˆ‘ä»¬é‡åˆ°æ—¶ï¼Œæ‰å…·ä½“åœ°å°†
      * @return  The provider that created this channel
      */
     public abstract SelectorProvider provider();
@@ -135,8 +135,8 @@ public abstract class SelectableChannel
      * this channel.  This method always returns the same value for a given
      * concrete channel class. </p>
      *
-     ·µ»ØÍ¨µÀÖ§³ÖµÄSelectionKey²Ù×÷opsets¡£integerÖµÖĞµÄbitÎ»±íÊ¾Ïà¹ØµÄ²Ù×÷£¬¶ÔÓÚ
-     ±¾Í¨µÀÓĞĞ§¡£±¾·½·¨×ÜÊÇ·µ»ØÏàÍ¬µÄÖµ£¬ÔÚ¾ßÌåµÄÍ¨µÀÖĞ¡£
+     è¿”å›é€šé“æ”¯æŒçš„SelectionKeyæ“ä½œopsetsã€‚integerå€¼ä¸­çš„bitä½è¡¨ç¤ºç›¸å…³çš„æ“ä½œï¼Œå¯¹äº
+     æœ¬é€šé“æœ‰æ•ˆã€‚æœ¬æ–¹æ³•æ€»æ˜¯è¿”å›ç›¸åŒçš„å€¼ï¼Œåœ¨å…·ä½“çš„é€šé“ä¸­ã€‚
      * @return  The valid-operation set
      */
     public abstract int validOps();
@@ -151,14 +151,14 @@ public abstract class SelectableChannel
      * Tells whether or not this channel is currently registered with any
      * selectors.  A newly-created channel is not registered.
      *
-     ÅËµ¤µ±Ç°Í¨µÀÊÇ·ñ×¢²áµ½Ñ¡ÔñÆ÷¡£ĞÂ´´½¨µÄÍ¨µÀÊÇ·Ç×¢²áµÄ¡£
+     åˆ¤æ–­å½“å‰é€šé“æ˜¯å¦æ³¨å†Œåˆ°é€‰æ‹©å™¨ã€‚æ–°åˆ›å»ºçš„é€šé“æ˜¯éæ³¨å†Œçš„ã€‚
      * <p> Due to the inherent delay between key cancellation and channel
      * deregistration, a channel may remain registered for some time after all
      * of its keys have been cancelled.  A channel may also remain registered
      * for some time after it is closed.  </p>
      *
-     ÓÉÓÚÔÚSelectKeyÈ¡Ïû²Ù×÷ºÍÍ¨µÀ·´×¢²áÖ®¼ä£¬´æÔÚÄÚ²¿µÄÊ±ÑÓ£¬ÔÚËùÓĞÍ¨µÀµÄSelectKeyÈ¡ÏûÊ±£¬
-     ÓĞÊ±Ò»¸öÍ¨µÀ¿ÉÄÜÈÔ´¦ÓÚ×¢²á×´Ì¬¡£ÔÚÍ¨µÀ¹Ø±Õºó£¬ÓĞÊ±¿ÉÄÜÈÔ´¦ÓÚ×¢²á×´Ì¬¡£
+     ç”±äºåœ¨SelectKeyå–æ¶ˆæ“ä½œå’Œé€šé“åæ³¨å†Œä¹‹é—´ï¼Œå­˜åœ¨å†…éƒ¨çš„æ—¶å»¶ï¼Œåœ¨æ‰€æœ‰é€šé“çš„SelectKeyå–æ¶ˆæ—¶ï¼Œ
+     æœ‰æ—¶ä¸€ä¸ªé€šé“å¯èƒ½ä»å¤„äºæ³¨å†ŒçŠ¶æ€ã€‚åœ¨é€šé“å…³é—­åï¼Œæœ‰æ—¶å¯èƒ½ä»å¤„äºæ³¨å†ŒçŠ¶æ€ã€‚
      * @return <tt>true</tt> if, and only if, this channel is registered
      */
     public abstract boolean isRegistered();
@@ -169,20 +169,20 @@ public abstract class SelectableChannel
      * Retrieves the key representing the channel's registration with the given
      * selector.  </p>
      *
-     »ñÈ¡Í¨µÀÉÏ´Î×¢²áµ½Ñ¡ÔñÆ÷µÄSelectionKey£¬Ã»ÓĞ×¢²á£¬Ôò·µ»Ønull
+     è·å–é€šé“ä¸Šæ¬¡æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„SelectionKeyï¼Œæ²¡æœ‰æ³¨å†Œï¼Œåˆ™è¿”å›null
      * @return  The key returned when this channel was last registered with the
      *          given selector, or <tt>null</tt> if this channel is not
      *          currently registered with that selector
      */
     public abstract SelectionKey keyFor(Selector sel);
-    //Í¬²½keySet£¬·µ»Ø¸Õ×¢²áµ½Ñ¡ÔñÆ÷µÄSelectionKey
+    //åŒæ­¥keySetï¼Œè¿”å›åˆšæ³¨å†Œåˆ°é€‰æ‹©å™¨çš„SelectionKey
     // sync(keySet) { return findKey(sel); }
 
     /**
      * Registers this channel with the given selector, returning a selection
      * key.
      *
-     ×¢²áÍ¨µÀµ½Ö¸¶¨µÄÑ¡ÔñÆ÷£¬²¢·µ»ØÒ»¸öSelectionKey¡£
+     æ³¨å†Œé€šé“åˆ°æŒ‡å®šçš„é€‰æ‹©å™¨ï¼Œå¹¶è¿”å›ä¸€ä¸ªSelectionKeyã€‚
      * <p> If this channel is currently registered with the given selector then
      * the selection key representing that registration is returned.  The key's
      * interest set will have been changed to <tt>ops</tt>, as if by invoking
@@ -191,17 +191,17 @@ public abstract class SelectableChannel
      * will have been set to that value.  A {@link CancelledKeyException} will
      * be thrown if the key has already been cancelled.
      *
-     Èç¹ûÍ¨µÀµ±Ç°ÒÑ¾­×¢²áµ½Ö¸¶¨µÄÑ¡ÔñÆ÷£¬±íÊ¾×¢²áÆ÷µÄSelectionKey½«»á±»·µ»Ø¡£
-     Ö»ÒªSelectionKey#interestOps(int) ·½·¨±»µ÷ÓÃ£¬ÄÇÃ´ SelectionKey¹Ø×¢ÊÂ¼ş½«»á±»¸üĞÂµ½opsÖĞ¡£
-     Èç¹ûatt²ÎÊı²»Îªnull£¬ÔòSelectionKeyµÄattachment½«»á±»¸³ÖµÎªatt¡£Èç¹ûSelectionKeyÒÑ¾­±»È¡Ïû£¬
-     ½«Å×³öCancelledKeyException¡£
+     å¦‚æœé€šé“å½“å‰å·²ç»æ³¨å†Œåˆ°æŒ‡å®šçš„é€‰æ‹©å™¨ï¼Œè¡¨ç¤ºæ³¨å†Œå™¨çš„SelectionKeyå°†ä¼šè¢«è¿”å›ã€‚
+     åªè¦SelectionKey#interestOps(int) æ–¹æ³•è¢«è°ƒç”¨ï¼Œé‚£ä¹ˆ SelectionKeyå…³æ³¨äº‹ä»¶å°†ä¼šè¢«æ›´æ–°åˆ°opsä¸­ã€‚
+     å¦‚æœattå‚æ•°ä¸ä¸ºnullï¼Œåˆ™SelectionKeyçš„attachmentå°†ä¼šè¢«èµ‹å€¼ä¸ºattã€‚å¦‚æœSelectionKeyå·²ç»è¢«å–æ¶ˆï¼Œ
+     å°†æŠ›å‡ºCancelledKeyExceptionã€‚
      * <p> Otherwise this channel has not yet been registered with the given
      * selector, so it is registered and the resulting new key is returned.
      * The key's initial interest set will be <tt>ops</tt> and its attachment
      * will be <tt>att</tt>.
      *
-     Èç¹ûÍ¨µÀ»¹Ã»ÓĞ×¢²áµ½Í¨µÀ£¬ÔÚ×¢²áÍê³Éºó£¬½«»á·µ»ØÒ»¸öĞÂ´´½¨µÄSelectionKey£¬
-     SelectionKeyµÄ³õÊ¼¹Ø×¢¼¯½«»á±»ÉèÖµÎªops£¬attachmentÉèÖµÎªatt¡£
+     å¦‚æœé€šé“è¿˜æ²¡æœ‰æ³¨å†Œåˆ°é€šé“ï¼Œåœ¨æ³¨å†Œå®Œæˆåï¼Œå°†ä¼šè¿”å›ä¸€ä¸ªæ–°åˆ›å»ºçš„SelectionKeyï¼Œ
+     SelectionKeyçš„åˆå§‹å…³æ³¨é›†å°†ä¼šè¢«è®¾å€¼ä¸ºopsï¼Œattachmentè®¾å€¼ä¸ºattã€‚
      * <p> This method may be invoked at any time.  If this method is invoked
      * while another invocation of this method or of the {@link
      * #configureBlocking(boolean) configureBlocking} method is in progress
@@ -210,40 +210,40 @@ public abstract class SelectableChannel
      * block if invoked concurrently with another registration or selection
      * operation involving the same selector. </p>
      *
-     ´Ë·½¿ÉÒÔ±»ÈÎºÎÊ±ºòµ÷ÓÃ¡£µ±ÆäËû·½·¨µ÷ÓÃ»òÕßconfigureBlocking(boolean)ÕıÔÚ½øĞĞ£¬
-     µ÷ÓÃ´Ë·½·¨½«»á×èÈû£¬Ö±µ½ÆäËû²Ù×÷Íê³É¡£´Ë·½·¨½«»áÍ¬²½Ñ¡ÔñÆ÷µÄSelectionKey¼¯ºÏ£¬
-     Òò´ËÈç¹ûÆäËûÍ¨µÀ×¢²á»òÑ¡Ôñ²Ù×÷Éæ¼°µ½Í¬Ò»¸öÑ¡ÔñÆ÷µÈ²Ù×÷²¢·¢£¬´Ë²Ù×÷Ò²Ğí»á×èÈû¡£
+     æ­¤æ–¹å¯ä»¥è¢«ä»»ä½•æ—¶å€™è°ƒç”¨ã€‚å½“å…¶ä»–æ–¹æ³•è°ƒç”¨æˆ–è€…configureBlocking(boolean)æ­£åœ¨è¿›è¡Œï¼Œ
+     è°ƒç”¨æ­¤æ–¹æ³•å°†ä¼šé˜»å¡ï¼Œç›´åˆ°å…¶ä»–æ“ä½œå®Œæˆã€‚æ­¤æ–¹æ³•å°†ä¼šåŒæ­¥é€‰æ‹©å™¨çš„SelectionKeyé›†åˆï¼Œ
+     å› æ­¤å¦‚æœå…¶ä»–é€šé“æ³¨å†Œæˆ–é€‰æ‹©æ“ä½œæ¶‰åŠåˆ°åŒä¸€ä¸ªé€‰æ‹©å™¨ç­‰æ“ä½œå¹¶å‘ï¼Œæ­¤æ“ä½œä¹Ÿè®¸ä¼šé˜»å¡ã€‚
      * <p> If this channel is closed while this operation is in progress then
      * the key returned by this method will have been cancelled and will
      * therefore be invalid. </p>
      *
-     µ±²Ù×÷ÕıÔÚ½øĞĞ£¬µ«Í¨µÀ±»¹Ø±Õ£¬ÄÇÃ´×¢²á·µ»ØµÄ×¢²áÆ÷SelectionKey½«»á±»È¡Ïû£¬
-     ²¢ÎŞĞ§¡£
-     * @param  sel£¬Ñ¡ÔñÆ÷
+     å½“æ“ä½œæ­£åœ¨è¿›è¡Œï¼Œä½†é€šé“è¢«å…³é—­ï¼Œé‚£ä¹ˆæ³¨å†Œè¿”å›çš„æ³¨å†Œå™¨SelectionKeyå°†ä¼šè¢«å–æ¶ˆï¼Œ
+     å¹¶æ— æ•ˆã€‚
+     * @param  selï¼Œé€‰æ‹©å™¨
      *         The selector with which this channel is to be registered
      *
-     * @param  ops£¬¹Ø×¢µÄ²Ù×÷ÊÂ¼ş
+     * @param  opsï¼Œå…³æ³¨çš„æ“ä½œäº‹ä»¶
      *         The interest set for the resulting key
      *
-     * @param  att ¸½¼Ó¶ÔÏó
+     * @param  att é™„åŠ å¯¹è±¡
      *         The attachment for the resulting key; may be <tt>null</tt>
      *
-     * @throws  ClosedChannelException£¬Èç¹ûÍ¨µÀ¹Ø±ÕÅ×³öClosedChannelException
+     * @throws  ClosedChannelExceptionï¼Œå¦‚æœé€šé“å…³é—­æŠ›å‡ºClosedChannelException
      *          If this channel is closed
      *
-     * @throws  ClosedSelectorException£¬Èç¹ûÑ¡ÔñÆ÷¹Ø±ÕÅ×³öClosedSelectorException
+     * @throws  ClosedSelectorExceptionï¼Œå¦‚æœé€‰æ‹©å™¨å…³é—­æŠ›å‡ºClosedSelectorException
      *          If the selector is closed
      *
-     * @throws  IllegalBlockingModeException£¬Èç¹ûÍ¨µÀÎª×èÈûÄ£Ê½£¬ÔòÅ×³öIllegalBlockingModeException
+     * @throws  IllegalBlockingModeExceptionï¼Œå¦‚æœé€šé“ä¸ºé˜»å¡æ¨¡å¼ï¼Œåˆ™æŠ›å‡ºIllegalBlockingModeException
      *          If this channel is in blocking mode
      *
-     * @throws  IllegalSelectorException£¬Èç¹ûÍ¨µÀ²»ÊÇÍ¨¹ıÓëÑ¡ÔñÆ÷ÏàÍ¬µÄprovider´´½¨£¬
-     ÔòÅ×³öIllegalSelectorException
+     * @throws  IllegalSelectorExceptionï¼Œå¦‚æœé€šé“ä¸æ˜¯é€šè¿‡ä¸é€‰æ‹©å™¨ç›¸åŒçš„provideråˆ›å»ºï¼Œ
+     åˆ™æŠ›å‡ºIllegalSelectorException
      *          If this channel was not created by the same provider
      *          as the given selector
      *
-     * @throws  CancelledKeyException£¬Èç¹ûÍ¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬µ«ÊÇÏà¹ØµÄSelectionKeyÒÑ¾­±»È¡Ïû£¬
-     Å×³öCancelledKeyException
+     * @throws  CancelledKeyExceptionï¼Œå¦‚æœé€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œä½†æ˜¯ç›¸å…³çš„SelectionKeyå·²ç»è¢«å–æ¶ˆï¼Œ
+     æŠ›å‡ºCancelledKeyException
      *          If this channel is currently registered with the given selector
      *          but the corresponding key has already been cancelled
      *
@@ -251,14 +251,14 @@ public abstract class SelectableChannel
      *          If a bit in the <tt>ops</tt> set does not correspond to an
      *          operation that is supported by this channel, that is, if
      *          <tt>set & ~validOps() != 0</tt>
-     *Èç¹û¹Ø×¢µÄÊÂ¼şopsÊÇÍ¨µÀ²»Ö§³ÖµÄÊÂ¼ş£¬ÔòÅ×³öIllegalArgumentException£¬ÎÒÃÇ
-     ¿ÉÒÔÍ¨¹ıset & ~validOps() != 0À´ÅĞ¶Ï£¬ÊÂ¼şops²ÎÊıÎª·ñºÏ·¨¡£
+     *å¦‚æœå…³æ³¨çš„äº‹ä»¶opsæ˜¯é€šé“ä¸æ”¯æŒçš„äº‹ä»¶ï¼Œåˆ™æŠ›å‡ºIllegalArgumentExceptionï¼Œæˆ‘ä»¬
+     å¯ä»¥é€šè¿‡set & ~validOps() != 0æ¥åˆ¤æ–­ï¼Œäº‹ä»¶opså‚æ•°ä¸ºå¦åˆæ³•ã€‚
      * @return  A key representing the registration of this channel with
      *          the given selector
      */
     public abstract SelectionKey register(Selector sel, int ops, Object att)
         throws ClosedChannelException;
-    //ÏÂÃæÊÇ£¬¼òµ¥µÄÍ¨µÀ×¢²áµ½Ñ¡ÔñÆ÷µÄ¹ı³Ì
+    //ä¸‹é¢æ˜¯ï¼Œç®€å•çš„é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„è¿‡ç¨‹
     // sync(regLock) {
     //   sync(keySet) { look for selector }
     //   if (channel found) { set interest ops -- may block in selector;
@@ -267,8 +267,8 @@ public abstract class SelectableChannel
     //   sync(keySet) { add key; }
     //   attach(attachment);
     //   return key;
-    ±éÀúÑ¡ÔñµÄSelectionKey¼¯ºÏ£¬²é¿´Í¨µÀÊÇ·ñ´æÔÚ£¬´æÔÚ¸üĞÂ¹Ø×¢ÊÂ¼ş¼¯£¬·ñÔò´´½¨ĞÂµÄSelectionKey
-    ²¢Ìí¼Óµ½SelectionKey¼¯ºÏÖĞ¡£
+    éå†é€‰æ‹©çš„SelectionKeyé›†åˆï¼ŒæŸ¥çœ‹é€šé“æ˜¯å¦å­˜åœ¨ï¼Œå­˜åœ¨æ›´æ–°å…³æ³¨äº‹ä»¶é›†ï¼Œå¦åˆ™åˆ›å»ºæ–°çš„SelectionKey
+    å¹¶æ·»åŠ åˆ°SelectionKeyé›†åˆä¸­ã€‚
     // }
 
     /**
@@ -319,50 +319,50 @@ public abstract class SelectableChannel
     public final SelectionKey register(Selector sel, int ops)
         throws ClosedChannelException
     {
-       //Î¯ÍĞ¸ø register(Selector sel, int ops, Object att)
+       //å§”æ‰˜ç»™ register(Selector sel, int ops, Object att)
         return register(sel, ops, null);
     }
 
     /**
      * Adjusts this channel's blocking mode.
-     *µ÷ÕûÍ¨µÀµÄ×èÈûÄ£Ê½
+     *è°ƒæ•´é€šé“çš„é˜»å¡æ¨¡å¼
      * <p> If this channel is registered with one or more selectors then an
      * attempt to place it into blocking mode will cause an {@link
      * IllegalBlockingModeException} to be thrown.
-     *Èç¹ûÍ¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬³¢ÊÔ½«Í¨µÀÉèÖÃÎª×èÈûÄ£Ê½½«Å×³öIllegalBlockingModeException£¬
-     ¼´×¢²áµ½Ñ¡ÔñÆ÷µÄÍ¨µÀ±ØĞëÊÇ·Ç×èÈûµÄ¡£
+     *å¦‚æœé€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œå°è¯•å°†é€šé“è®¾ç½®ä¸ºé˜»å¡æ¨¡å¼å°†æŠ›å‡ºIllegalBlockingModeExceptionï¼Œ
+     å³æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„é€šé“å¿…é¡»æ˜¯éé˜»å¡çš„ã€‚
      * <p> This method may be invoked at any time.  The new blocking mode will
      * only affect I/O operations that are initiated after this method returns.
      * For some implementations this may require blocking until all pending I/O
      * operations are complete.
      *
-     Õâ¸ö·½·¨¿ÉÒÔÔÚÈÎºÎÊ±ºòµ÷ÓÃ¡£ÔÚ·½·¨·µ»ØÊ±£¬ĞÂµÄ×èÈûÄ£Ê½½«»áÓ°Ïìµ½ÒÑ¾­¿ªÊ¼µÄ²Ù×÷¡£
-     ÔÚÒ»Ğ©ÊµÏÖ°æ±¾ÖĞ£¬¿ÉÄÜĞèÒª×èÈûµ½ËùÓĞµÄÒÑ¾­¿ªÊ¼µÄIO²Ù×÷Íê³É¡£
+     è¿™ä¸ªæ–¹æ³•å¯ä»¥åœ¨ä»»ä½•æ—¶å€™è°ƒç”¨ã€‚åœ¨æ–¹æ³•è¿”å›æ—¶ï¼Œæ–°çš„é˜»å¡æ¨¡å¼å°†ä¼šå½±å“åˆ°å·²ç»å¼€å§‹çš„æ“ä½œã€‚
+     åœ¨ä¸€äº›å®ç°ç‰ˆæœ¬ä¸­ï¼Œå¯èƒ½éœ€è¦é˜»å¡åˆ°æ‰€æœ‰çš„å·²ç»å¼€å§‹çš„IOæ“ä½œå®Œæˆã€‚
      * <p> If this method is invoked while another invocation of this method or
      * of the {@link #register(Selector, int) register} method is in progress
      * then it will first block until the other operation is complete. </p>
      *
-     µ±Ç°ÆäËû·½·¨µ÷ÓÃ»òÕßÍ¨µÀ×¢²áµ½Ñ¡ÔñÆ÷²Ù×÷ÕıÔÚ½øĞĞÊ±£¬´Ë·½·¨µ÷ÓÃ½«»á×èÈû£¬Ö±µ½
-     ÆäËû²Ù×÷Íê³É¡£
+     å½“å‰å…¶ä»–æ–¹æ³•è°ƒç”¨æˆ–è€…é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨æ“ä½œæ­£åœ¨è¿›è¡Œæ—¶ï¼Œæ­¤æ–¹æ³•è°ƒç”¨å°†ä¼šé˜»å¡ï¼Œç›´åˆ°
+     å…¶ä»–æ“ä½œå®Œæˆã€‚
      * @param  block  If <tt>true</tt> then this channel will be placed in
      *                blocking mode; if <tt>false</tt> then it will be placed
      *                non-blocking mode
-     *trueÎª×èÈûÄ£Ê½£¬falseÎª·Ç×èÈûÄ£Ê½
+     *trueä¸ºé˜»å¡æ¨¡å¼ï¼Œfalseä¸ºéé˜»å¡æ¨¡å¼
      * @return  This selectable channel
-     *·µ»ØÒ»¸ö¿ÉÑ¡ÔñµÄÍ¨µÀ
+     *è¿”å›ä¸€ä¸ªå¯é€‰æ‹©çš„é€šé“
      * @throws  ClosedChannelException
      *          If this channel is closed
-     *Èç¹ûÍ¨µÀÒÑ¾­¹Ø±Õ£¬ÔòÅ×³öClosedChannelException
+     *å¦‚æœé€šé“å·²ç»å…³é—­ï¼Œåˆ™æŠ›å‡ºClosedChannelException
      * @throws  IllegalBlockingModeException
      *          If <tt>block</tt> is <tt>true</tt> and this channel is
      *          registered with one or more selectors
-     *µ±Í¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬ÉèÖÃÍ¨µÀÎª×èÈûÄ£Ê½½«»áÅ×³öIllegalBlockingModeException
+     *å½“é€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œè®¾ç½®é€šé“ä¸ºé˜»å¡æ¨¡å¼å°†ä¼šæŠ›å‡ºIllegalBlockingModeException
      * @throws IOException
      *         If an I/O error occurs
      */
     public abstract SelectableChannel configureBlocking(boolean block)
         throws IOException;
-    //ÉèÖÃ×èÈûÄ£Ê½µÄ¼òµ¥Ê¾Àı
+    //è®¾ç½®é˜»å¡æ¨¡å¼çš„ç®€å•ç¤ºä¾‹
     // sync(regLock) {
     //   sync(keySet) { throw IBME if block && isRegistered; }
     //   change mode;
@@ -371,10 +371,10 @@ public abstract class SelectableChannel
     /**
      * Tells whether or not every I/O operation on this channel will block
      * until it completes.  A newly-created channel is always in blocking mode.
-     *ÅĞ¶ÏÍ¨µÀÉÏµÄÃ¿Ò»¸öIO²Ù×÷ÊÇ·ñÎª×èÈûÄ£Ê½£¬Ö±µ½²Ù×÷Íê³É¡£Ò»¸öĞÂ´´½¨µÄÍ¨µÀÎª×èÈûÄ£Ê½¡£
+     *åˆ¤æ–­é€šé“ä¸Šçš„æ¯ä¸€ä¸ªIOæ“ä½œæ˜¯å¦ä¸ºé˜»å¡æ¨¡å¼ï¼Œç›´åˆ°æ“ä½œå®Œæˆã€‚ä¸€ä¸ªæ–°åˆ›å»ºçš„é€šé“ä¸ºé˜»å¡æ¨¡å¼ã€‚
      * <p> If this channel is closed then the value returned by this method is
      * not specified. </p>
-     *Èç¹ûÍ¨µÀÒÑ¾­¹Ø±Õ£¬·µ»ØÖµÊÇ²»È·¶¨
+     *å¦‚æœé€šé“å·²ç»å…³é—­ï¼Œè¿”å›å€¼æ˜¯ä¸ç¡®å®š
      * @return <tt>true</tt> if, and only if, this channel is in blocking mode
      */
     public abstract boolean isBlocking();
@@ -385,15 +385,15 @@ public abstract class SelectableChannel
      * This is often useful in the implementation of adaptors that require a
      * specific blocking mode to be maintained for a short period of time.
      * </p>
-     *·µ»Ø#configureBlockingºÍ#register·½·¨µÄÍ¬²½¶ÔÏó¡£
+     *è¿”å›#configureBlockingå’Œ#registeræ–¹æ³•çš„åŒæ­¥å¯¹è±¡ã€‚
      * @return  The blocking-mode lock object
      */
     public abstract Object blockingLock();
 
 }
-SelectableChannelÊÇÒ»¸ö¿ÉÑ¡ÔñµÄÍ¨µÀ£¬¿ÉÒÔ×¢²áµ½Ñ¡ÔñÆ÷£¬Í¨µÀÔÚ´´½¨Ê±Îª×èÈûÄ£Ê½£¬
-±ØÑ¡ÏÈÍ¨¹ıconfigureBlocking·½·¨£¬ÉèÖÃÍ¨µÀÎª·Ç×èÈûÄ£Ê½£¬²Å¿ÉÒÔ×¢²áµ½×¢²áÆ÷¡£
-ÎÒÃÇ¿ÉÒÔÍ¨¹ıvalidOps·½·¨ÑéÖ¤Í¨µÀ×¢²áµ½Ñ¡ÔñÆ÷µÄÊÂ¼ş£¬ÊÇ·ñÎªÍ¨µÀÖ§³ÖµÄÊÂ¼ş£¬
-¿ÉÒÔÍ¨¹ıisRegistered·½·¨ÅĞ¶ÏÊÇ·ñ×¢²áµ½Ñ¡ÔñÆ÷£¬ÓÃisBlocking·½·¨ÅĞ¶ÏÍ¨µÀÊÇ·ñÔò
-×èÈûÄ£Ê½£¬ÓÃregister·½·¨½«Í¨µÀ¸ĞĞËÈ¤µÄÊÂ¼ş×¢²áµ½Ñ¡ÔñÆ÷ÖĞ£¬²¢·µ»ØÒ»¸ö×¢²áÆ÷SelectionKey¡£
+SelectableChannelæ˜¯ä¸€ä¸ªå¯é€‰æ‹©çš„é€šé“ï¼Œå¯ä»¥æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œé€šé“åœ¨åˆ›å»ºæ—¶ä¸ºé˜»å¡æ¨¡å¼ï¼Œ
+å¿…é€‰å…ˆé€šè¿‡configureBlockingæ–¹æ³•ï¼Œè®¾ç½®é€šé“ä¸ºéé˜»å¡æ¨¡å¼ï¼Œæ‰å¯ä»¥æ³¨å†Œåˆ°æ³¨å†Œå™¨ã€‚
+æˆ‘ä»¬å¯ä»¥é€šè¿‡validOpsæ–¹æ³•éªŒè¯é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„äº‹ä»¶ï¼Œæ˜¯å¦ä¸ºé€šé“æ”¯æŒçš„äº‹ä»¶ï¼Œ
+å¯ä»¥é€šè¿‡isRegisteredæ–¹æ³•åˆ¤æ–­æ˜¯å¦æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œç”¨isBlockingæ–¹æ³•åˆ¤æ–­é€šé“æ˜¯å¦åˆ™
+é˜»å¡æ¨¡å¼ï¼Œç”¨registeræ–¹æ³•å°†é€šé“æ„Ÿå…´è¶£çš„äº‹ä»¶æ³¨å†Œåˆ°é€‰æ‹©å™¨ä¸­ï¼Œå¹¶è¿”å›ä¸€ä¸ªæ³¨å†Œå™¨SelectionKeyã€‚
 
