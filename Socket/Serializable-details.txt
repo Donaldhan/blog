@@ -181,7 +181,7 @@ public final void writeObject(Object obj) throws IOException {
 	    //枚举
                 writeEnum((Enum) obj, desc, unshared);
             } else if (obj instanceof Serializable) {
-	    //序列化兑现跟这个是关键
+	    //序列化Serializable对象，这个是关键
                 writeOrdinaryObject(obj, desc, unshared);
 	    }
 	    ....     

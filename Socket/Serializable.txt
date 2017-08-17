@@ -292,7 +292,7 @@ public class TestSerializableX {
 =======read UTF after read object persion and int:it is a man
 [donald,27,man]
 
-从控制太输出可以看出，PersonX实体类完全序列化，即使字段有transient标识符
+从控制台输出可以看出，PersonX实体类完全序列化，即使字段有transient标识符
 
 无论是使用transient关键字，还是使用writeObject()和readObject()方法，
 其实都是基于Serializable接口的序列化。JDK中提供了另一个序列化接口--Externalizable，
@@ -438,7 +438,7 @@ public class TestSerializableE {
 ==========有参构造
 ==========无参构造
 =====read Object from file[donald,27,null]
-从控制输出来看：
+从控制台输出来看：
 序列化和反序列化调用的分别是writeExternal，readExternal，而非writeObject和readObject，通是
 使用Externalizable进行序列化时，当读取对象时，会调用被序列化类的无参构造器去创建一个新的对象，
 然后再将被保存对象的字段的值分别填充到新对象中。
@@ -589,7 +589,7 @@ public class TestClient {
 
 
 总结：
-反序列对象的时候，没有调用构造函数，而是使用字节流将对象属性，直接赋值。
+反序列Serializable对象的时候，没有调用构造函数，而是使用字节流将对象属性，直接赋值。
 同时可以看sex（private transient String），由于有transient标识符，而没有被序列化 。
 JDK中提供了另一个序列化接口Externalizable，使用该接口之后，之前基于Serializable接口的序列化机制就将失效。
 Externalizable序列化和反序列化调用的分别是对象的writeExternal，readExternal，而非writeObject和readObject，通是
