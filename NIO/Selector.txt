@@ -81,7 +81,7 @@ cancelled-key集合总是key set的子集。
  *选择操作将会把已经就绪的通道对应的选择key添加到 selected-key set 集合中。
  通过set的remove和迭代器的remove操作，将会从取消key集合中，移除选择key。
  除选择操作可以从key集合中移除key，其他的方式或方法不能从选择key中移除key。
- key不能直接添加的可选择key集合。
+ key不能直接添加到可选择key集合。
  *
  * <a name="selop">
  * <h4>Selection</h4>
