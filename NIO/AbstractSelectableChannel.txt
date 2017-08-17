@@ -1,8 +1,8 @@
-Channel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369111[/url]
-AbstractInterruptibleChannel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369238[/url]
-SelectableChannel½Ó¿Ú¶¨Òå:[url]http://donald-draper.iteye.com/blog/2369317[/url]
-SelectionKey¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369499[/url]
-SelectorProvider¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369615[/url]
+Channelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannelæ¥å£å®šä¹‰:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKeyå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProviderå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369615[/url]
 
 package java.nio.channels.spi;
 
@@ -12,7 +12,7 @@ import java.nio.channels.*;
 
 /**
  * Base implementation class for selectable channels.
- *AbstractSelectableChannel¿ÉÑ¡ÔñÍ¨µÀµÄ»ù´¡ÊµÏÖÀà¡£
+ *AbstractSelectableChannelå¯é€‰æ‹©é€šé“çš„åŸºç¡€å®ç°ç±»ã€‚
  * <p> This class defines methods that handle the mechanics of channel
  * registration, deregistration, and closing.  It maintains the current
  * blocking mode of this channel as well as its current set of selection keys.
@@ -20,9 +20,9 @@ import java.nio.channels.*;
  * java.nio.channels.SelectableChannel} specification.  Implementations of the
  * abstract protected methods defined in this class need not synchronize
  * against other threads that might be engaged in the same operations.  </p>
- *AbstractSelectableChannelÌá¹©Í¨µÀµÄ×¢²á£¬·´×¢²áºÍ¹Ø±Õ»úÖÆµÄÊµÏÖ¡£Î¬»¤ÕßÓëÑ¡ÔñÆ÷key¼¯ºÏ
- ÖĞÍ¨µÀ¶ÔÓ¦µÄÑ¡ÔñkeyÏàÍ¬µÄ×èÈûÄ£Ê½¡£ÊµÏÖÁË¿ÉÑ¡ÔñÍ¨µÀĞèÒªÊµÏÖËùÓĞÍ¬²½²Ù×÷¡£ AbstractSelectableChannel
- ÖĞËùÓĞµÄprotect³éÏó·½·¨£¬²»ĞèÒªÍ¬²½£¬ÒòÎªÕâĞ©·½·¨ÓëÆäËûÏß³ÌÏàÍ¬µÄ²Ù×÷Ã»ÓĞ³åÍ»¡£
+ *AbstractSelectableChannelæä¾›é€šé“çš„æ³¨å†Œï¼Œåæ³¨å†Œå’Œå…³é—­æœºåˆ¶çš„å®ç°ã€‚ç»´æŠ¤è€…ä¸é€‰æ‹©å™¨keyé›†åˆ
+ ä¸­é€šé“å¯¹åº”çš„é€‰æ‹©keyç›¸åŒçš„é˜»å¡æ¨¡å¼ã€‚å®ç°äº†å¯é€‰æ‹©é€šé“éœ€è¦å®ç°æ‰€æœ‰åŒæ­¥æ“ä½œã€‚ AbstractSelectableChannel
+ ä¸­æ‰€æœ‰çš„protectæŠ½è±¡æ–¹æ³•ï¼Œä¸éœ€è¦åŒæ­¥ï¼Œå› ä¸ºè¿™äº›æ–¹æ³•ä¸å…¶ä»–çº¿ç¨‹ç›¸åŒçš„æ“ä½œæ²¡æœ‰å†²çªã€‚
  *
  * @author Mark Reinhold
  * @author Mike McCloskey
@@ -34,31 +34,31 @@ public abstract class AbstractSelectableChannel
     extends SelectableChannel
 {
 
-    // The provider that created this channel,Í¨µÀÌá¹©Õß
+    // The provider that created this channel,é€šé“æä¾›è€…
     private final SelectorProvider provider;
 
     // Keys that have been created by registering this channel with selectors.
     // They are saved because if this channel is closed the keys must be
     // deregistered.  Protected by keyLock.
-    //Í¨µÀ×¢²áµ½Ñ¡ÔñÆ÷Æ÷µÄËùÓĞÑ¡Ôñkey¡£Ö®ËùÒÔ±£´æµÄÔ­Òò£¬ÊÇÎªÁËÔÚÍ¨µÀ¹Ø±ÕÊ±£¬·´×¢²áÍ¨µÀµÄÑ¡Ôñkey¡£
-    //Í¨¹ıkeyLock±£Ö¤Ñ¡Ôñkey¼¯ºÏµÄÏß³Ì°²È«·ÃÎÊ
+    //é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨å™¨çš„æ‰€æœ‰é€‰æ‹©keyã€‚ä¹‹æ‰€ä»¥ä¿å­˜çš„åŸå› ï¼Œæ˜¯ä¸ºäº†åœ¨é€šé“å…³é—­æ—¶ï¼Œåæ³¨å†Œé€šé“çš„é€‰æ‹©keyã€‚
+    //é€šè¿‡keyLockä¿è¯é€‰æ‹©keyé›†åˆçš„çº¿ç¨‹å®‰å…¨è®¿é—®
     private SelectionKey[] keys = null;
-    private int keyCount = 0;//ÓëÍ¨µÀÏà¹ØÑ¡ÔñkeyµÄÊıÁ¿
+    private int keyCount = 0;//ä¸é€šé“ç›¸å…³é€‰æ‹©keyçš„æ•°é‡
 
-    // Lock for key set and count Ñ¡ÔñkeyÊı×é±£»¤Ëø
+    // Lock for key set and count é€‰æ‹©keyæ•°ç»„ä¿æŠ¤é”
     private final Object keyLock = new Object();
 
     // Lock for registration and configureBlocking operations
-    //×¢²áºÍ×èÈûÅäÖÃÍ¬²½Ëø
+    //æ³¨å†Œå’Œé˜»å¡é…ç½®åŒæ­¥é”
     private final Object regLock = new Object();
 
-    // Blocking mode, protected by regLock£¬Ä¬ÈÏÎª×èÈûÄ£Ê½
-    //Ö»ÓĞ·Ç×èÈûÄ£Ê½µÄÍ¨µÀ£¬²Å¿ÉÒÔ×¢²áµ½Ñ¡ÔñÆ÷
+    // Blocking mode, protected by regLockï¼Œé»˜è®¤ä¸ºé˜»å¡æ¨¡å¼
+    //åªæœ‰éé˜»å¡æ¨¡å¼çš„é€šé“ï¼Œæ‰å¯ä»¥æ³¨å†Œåˆ°é€‰æ‹©å™¨
     boolean blocking = true;
 
     /**
      * Initializes a new instance of this class.
-     ¸ù¾İÑ¡ÔñÆ÷·şÎñÌá¹©Õß£¬¹¹½¨AbstractSelectableChannel
+     æ ¹æ®é€‰æ‹©å™¨æœåŠ¡æä¾›è€…ï¼Œæ„å»ºAbstractSelectableChannel
      */
     protected AbstractSelectableChannel(SelectorProvider provider) {
         this.provider = provider;
@@ -66,7 +66,7 @@ public abstract class AbstractSelectableChannel
 
     /**
      * Returns the provider that created this channel.
-     *·µ»Ø´´½¨Í¨µÀµÄÑ¡ÔñÆ÷Ìá¹©Õß¡£
+     *è¿”å›åˆ›å»ºé€šé“çš„é€‰æ‹©å™¨æä¾›è€…ã€‚
      * @return  The provider that created this channel
      */
     public final SelectorProvider provider() {
@@ -75,22 +75,22 @@ public abstract class AbstractSelectableChannel
 
 
     // -- Utility methods for the key set --
-    //Ìí¼ÓÑ¡Ôñkey
+    //æ·»åŠ é€‰æ‹©key
     private void addKey(SelectionKey k) {
         synchronized (keyLock) {
             int i = 0;
             if ((keys != null) && (keyCount < keys.length)) {
-	        //Èç¹ûÑ¡ÔñkeyÊı×éÒÑ¾­´´½¨£¬ÇÒÊı×éÎ´Âú£¬±éÀúÊı×éÖĞµÚÒ»¸öÎªnullµÄÑ¡Ôñkey£¬
-		//´æÔÚ£¬¼ÇÂ¼Î»ÖÃ
+	        //å¦‚æœé€‰æ‹©keyæ•°ç»„å·²ç»åˆ›å»ºï¼Œä¸”æ•°ç»„æœªæ»¡ï¼Œéå†æ•°ç»„ä¸­ç¬¬ä¸€ä¸ªä¸ºnullçš„é€‰æ‹©keyï¼Œ
+		//å­˜åœ¨ï¼Œè®°å½•ä½ç½®
                 // Find empty element of key array
                 for (i = 0; i < keys.length; i++)
                     if (keys[i] == null)
                         break;
             } else if (keys == null) {
-	        //Èç¹ûÑ¡ÔñkeyÊı×éÎª´´½¨£¬Ôò´´½¨Ñ¡ÔñkeyÊı×é£¬Ä¬ÈÏÈİÁ¿Îª3£¬£¨¶ÁĞ´Á¬½ÓÊÂ¼ş/½ÓÊÜÁ¬½ÓÊÂ¼ş£©
+	        //å¦‚æœé€‰æ‹©keyæ•°ç»„ä¸ºç©ºï¼Œåˆ™åˆ›å»ºé€‰æ‹©keyæ•°ç»„ï¼Œé»˜è®¤å®¹é‡ä¸º3ï¼Œï¼ˆè¯»å†™è¿æ¥äº‹ä»¶/æ¥å—è¿æ¥äº‹ä»¶ï¼‰
                 keys =  new SelectionKey[3];
             } else {
-	        //Èç¹ûÑ¡ÔñkeyÊı×éÒÑÂú£¬ÔòÀ©ÈİÎªÔ­À´ÈİÁ¿µÄ2±¶
+	        //å¦‚æœé€‰æ‹©keyæ•°ç»„å·²æ»¡ï¼Œåˆ™æ‰©å®¹ä¸ºåŸæ¥å®¹é‡çš„2å€
                 // Grow key array
                 int n = keys.length * 2;
                 SelectionKey[] ks =  new SelectionKey[n];
@@ -103,38 +103,38 @@ public abstract class AbstractSelectableChannel
             keyCount++;
         }
     }
-    //ÅĞ¶ÏÍ¨µÀÊÇ·ñÓëÖ¸¶¨µÄÑ¡ÔñÆ÷ÊÇ·ñÓĞ¹ØÁª£¬
-    //»»Ò»ÖÖËµ·¨Îª£¬Í¨µÀÊÇ·ñ×¢²áµ½Ñ¡ÔñÆ÷
+    //åˆ¤æ–­é€šé“æ˜¯å¦ä¸æŒ‡å®šçš„é€‰æ‹©å™¨æ˜¯å¦æœ‰å…³è”ï¼Œ
+    //æ¢ä¸€ç§è¯´æ³•ä¸ºï¼Œé€šé“æ˜¯å¦æ³¨å†Œåˆ°é€‰æ‹©å™¨
     private SelectionKey findKey(Selector sel) {
         synchronized (keyLock) {
             if (keys == null)
                 return null;
-	   //±éÀúÍ¨µÀÑ¡ÔñkeyÊı×é£¬Æ¥ÅäÑ¡ÔñkeyµÄÑ¡ÔñÆ÷
+	   //éå†é€šé“é€‰æ‹©keyæ•°ç»„ï¼ŒåŒ¹é…é€‰æ‹©keyçš„é€‰æ‹©å™¨
             for (int i = 0; i < keys.length; i++)
                 if ((keys[i] != null) && (keys[i].selector() == sel))
                     return keys[i];
             return null;
         }
     }
-    //ÒÆ³ıÍ¨µÀµÄÖ¸¶¨Ñ¡Ôñkey
+    //ç§»é™¤é€šé“çš„æŒ‡å®šé€‰æ‹©key
     void removeKey(SelectionKey k) {                    // package-private
         synchronized (keyLock) {
-	    //±éÀúÍ¨µÀÑ¡ÔñkeyÊı×é£¬Æ¥ÅäÑ¡Ôñkey£¬ÏàµÈÔòÖÃnull
+	    //éå†é€šé“é€‰æ‹©keyæ•°ç»„ï¼ŒåŒ¹é…é€‰æ‹©keyï¼Œç›¸ç­‰åˆ™ç½®null
             for (int i = 0; i < keys.length; i++)
                 if (keys[i] == k) {
                     keys[i] = null;
                     keyCount--;
                 }
-	    //ÉèÖÃÑ¡Ôñkey×´Ì¬ÎªÎŞĞ§
+	    //è®¾ç½®é€‰æ‹©keyçŠ¶æ€ä¸ºæ— æ•ˆ
             ((AbstractSelectionKey)k).invalidate();
         }
     }
-   //ÅĞ¶ÏÍ¨µÀÑ¡ÔñkeyÊÇ·ñ´æÔÚÓĞĞ§µÄ£¬¼´ÊÇ·ñ×¢²áµ½Í¨µÀ
+   //åˆ¤æ–­é€šé“é€‰æ‹©keyæ˜¯å¦å­˜åœ¨æœ‰æ•ˆçš„ï¼Œå³æ˜¯å¦æ³¨å†Œåˆ°é€šé“
     private boolean haveValidKeys() {
         synchronized (keyLock) {
             if (keyCount == 0)
                 return false;
-	   //±éÀúÍ¨µÀÑ¡ÔñkeyÊı×é£¬ÅĞ¶ÏÑ¡ÔñkeyÊÇ·ñÓĞĞ§£¬´æÔÚÒ»¸öÓĞĞ§£¬Ôò·µ»Øtrue
+	   //éå†é€šé“é€‰æ‹©keyæ•°ç»„ï¼Œåˆ¤æ–­é€‰æ‹©keyæ˜¯å¦æœ‰æ•ˆï¼Œå­˜åœ¨ä¸€ä¸ªæœ‰æ•ˆï¼Œåˆ™è¿”å›true
             for (int i = 0; i < keys.length; i++) {
                 if ((keys[i] != null) && keys[i].isValid())
                     return true;
@@ -145,33 +145,33 @@ public abstract class AbstractSelectableChannel
 
 
     // -- Registration --
-    //ÊÇ·ñ×¢²áµ½Í¨µÀ£¬Ñ¡ÔñkeyÊı×éÊµ¼ÊÊıÁ¿²»Îª0£¬ÔòÒÑ×¢²á
+    //æ˜¯å¦æ³¨å†Œåˆ°é€šé“ï¼Œé€‰æ‹©keyæ•°ç»„å®é™…æ•°é‡ä¸ä¸º0ï¼Œåˆ™å·²æ³¨å†Œ
     public final boolean isRegistered() {
         synchronized (keyLock) {
             return keyCount != 0;
         }
     }
-    //Í¨µÀ×¢²áµ½Ö¸¶¨Ñ¡ÔñÆ÷µÄÑ¡Ôñkey
+    //é€šé“æ³¨å†Œåˆ°æŒ‡å®šé€‰æ‹©å™¨çš„é€‰æ‹©key
     public final SelectionKey keyFor(Selector sel) {
         return findKey(sel);
     }
 
     /**
      * Registers this channel with the given selector, returning a selection key.
-     *×¢²áÍ¨µÀµ½Ñ¡ÔñÆ÷£¬·µ»ØÍ¨µÀÓëÑ¡ÔñÆ÷µÄÓ³ÉäÑ¡Ôñkey
+     *æ³¨å†Œé€šé“åˆ°é€‰æ‹©å™¨ï¼Œè¿”å›é€šé“ä¸é€‰æ‹©å™¨çš„æ˜ å°„é€‰æ‹©key
      * <p>  This method first verifies that this channel is open and that the
      * given initial interest set is valid.
-     *·½·¨Ê×ÏÈÑéÖ¤Í¨µÀÊÇ·ñ´ò¿ª£¬¹Ø×¢µÄ²Ù×÷ÊÂ¼şÊÇ·ñÓĞĞ§
+     *æ–¹æ³•é¦–å…ˆéªŒè¯é€šé“æ˜¯å¦æ‰“å¼€ï¼Œå…³æ³¨çš„æ“ä½œäº‹ä»¶æ˜¯å¦æœ‰æ•ˆ
      * <p> If this channel is already registered with the given selector then
      * the selection key representing that registration is returned after
      * setting its interest set to the given value.
-     *Èç¹ûÍ¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬Ôò¸üĞÂĞËÈ¤²Ù×÷ÊÂ¼ş¼¯£¬ºÍ¸½¼ş¶ÔÏó
+     *å¦‚æœé€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œåˆ™æ›´æ–°å…´è¶£æ“ä½œäº‹ä»¶é›†ï¼Œå’Œé™„ä»¶å¯¹è±¡
      * <p> Otherwise this channel has not yet been registered with the given
      * selector, so the {@link AbstractSelector#register register} method of
      * the selector is invoked while holding the appropriate locks.  The
      * resulting key is added to this channel's key set before being returned.
-     Èç¹û»¹Ã»ÓĞ×¢²áµ½Ñ¡ÔñÆ÷£¬Ôò×¢²áÍ¨µÀµ½Ñ¡ÔñÆ÷£¬²¢½«·µ»ØµÄÑ¡ÔñkeyÌí¼Óµ½Í¨µÀ
-     µÄÑ¡ÔñkeyÊı×éÖĞ¡£
+     å¦‚æœè¿˜æ²¡æœ‰æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œåˆ™æ³¨å†Œé€šé“åˆ°é€‰æ‹©å™¨ï¼Œå¹¶å°†è¿”å›çš„é€‰æ‹©keyæ·»åŠ åˆ°é€šé“
+     çš„é€‰æ‹©keyæ•°ç»„ä¸­ã€‚
      * </p>
      *
      * @throws  ClosedSelectorException {@inheritDoc}
@@ -189,26 +189,26 @@ public abstract class AbstractSelectableChannel
         throws ClosedChannelException
     {
         if (!isOpen())
-	    //Í¨µÀÒÑ¾­¹Ø±Õ£¬ÔòÅ×³öClosedChannelException
+	    //é€šé“å·²ç»å…³é—­ï¼Œåˆ™æŠ›å‡ºClosedChannelException
             throw new ClosedChannelException();
         if ((ops & ~validOps()) != 0)
-	    //Èç¹û×¢²áµÄ²Ù×÷ÊÂ¼ş·ÇÍ¨µÀËùÖ§³ÖµÄ²Ù×÷ÊÂ¼ş£¬ÔòÅ×³öIllegalArgumentException
+	    //å¦‚æœæ³¨å†Œçš„æ“ä½œäº‹ä»¶éé€šé“æ‰€æ”¯æŒçš„æ“ä½œäº‹ä»¶ï¼Œåˆ™æŠ›å‡ºIllegalArgumentException
             throw new IllegalArgumentException();
         synchronized (regLock) {
             if (blocking)
-	        //Èç¹ûÍ¨µÀÊÇ×èÈûÄ£Ê½£¬ÔòÅ×³öIllegalBlockingModeException
+	        //å¦‚æœé€šé“æ˜¯é˜»å¡æ¨¡å¼ï¼Œåˆ™æŠ›å‡ºIllegalBlockingModeException
                 throw new IllegalBlockingModeException();
             SelectionKey k = findKey(sel);
             if (k != null) {
-	        //Í¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬¸üĞÂĞËÈ¤²Ù×÷ÊÂ¼ş¼¯ºÍ¸½¼Ó¶ÔÏó
+	        //é€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œæ›´æ–°å…´è¶£æ“ä½œäº‹ä»¶é›†å’Œé™„åŠ å¯¹è±¡
                 k.interestOps(ops);
                 k.attach(att);
             }
             if (k == null) {
                 // New registration
-		//·ñÔò£¬×¢²áÍ¨µÀµ½Ñ¡ÔñÆ÷£¬¾ßÌå×¢²áÁ÷³Ì£¬ÎÒÃÇÔÚÒÔºó¾ßÌåÏêËµ
+		//å¦åˆ™ï¼Œæ³¨å†Œé€šé“åˆ°é€‰æ‹©å™¨ï¼Œå…·ä½“æ³¨å†Œæµç¨‹ï¼Œæˆ‘ä»¬åœ¨ä»¥åå…·ä½“è¯¦è¯´
                 k = ((AbstractSelector)sel).register(this, ops, att);
-		//½«×¢²á·µ»ØµÄÑ¡Ôñkey£¬Ìí¼Óµ½Í¨µÀµÄÑ¡Ôñkey¼¯ºÏÖĞ
+		//å°†æ³¨å†Œè¿”å›çš„é€‰æ‹©keyï¼Œæ·»åŠ åˆ°é€šé“çš„é€‰æ‹©keyé›†åˆä¸­
                 addKey(k);
             }
             return k;
@@ -229,11 +229,11 @@ public abstract class AbstractSelectableChannel
      * cancels all of this channel's keys.  </p>
      */
     protected final void implCloseChannel() throws IOException {
-        //¹Ø±Õ¿ÉÑ¡ÔñÍ¨´ï
+        //å…³é—­å¯é€‰æ‹©é€šè¾¾
         implCloseSelectableChannel();
         synchronized (keyLock) {
             int count = (keys == null) ? 0 : keys.length;
-	    //±éÀúÍ¨µÀµÄÑ¡ÔñkeyÊı×é£¬È¡ÏûÑ¡Ôñkey
+	    //éå†é€šé“çš„é€‰æ‹©keyæ•°ç»„ï¼Œå–æ¶ˆé€‰æ‹©key
             for (int i = 0; i < count; i++) {
                 SelectionKey k = keys[i];
                 if (k != null)
@@ -244,30 +244,30 @@ public abstract class AbstractSelectableChannel
 
     /**
      * Closes this selectable channel.
-     *¹Ø±Õ¿ÉÑ¡ÔñÍ¨µÀ
+     *å…³é—­å¯é€‰æ‹©é€šé“
      * <p> This method is invoked by the {@link java.nio.channels.Channel#close
      * close} method in order to perform the actual work of closing the
      * channel.  This method is only invoked if the channel has not yet been
      * closed, and it is never invoked more than once.
-     *Õâ¸ö·½·¨ÔÚÍ¨µÀ¹Ø±Õ·½·¨ÖĞÖ´ĞĞÊµ¼ÊµÄÍ¨µÀ¹Ø±Õ¹¤×÷£¬ÔÚÍ¨µÀ»¹Ã»ÓĞÍêÈ«¹Ø±ÕÊ±£¬µ÷ÓÃ£¬
-     ×î¶àµ÷ÓÃÒ»´Î¡£
+     *è¿™ä¸ªæ–¹æ³•åœ¨é€šé“å…³é—­æ–¹æ³•ä¸­æ‰§è¡Œå®é™…çš„é€šé“å…³é—­å·¥ä½œï¼Œåœ¨é€šé“è¿˜æ²¡æœ‰å®Œå…¨å…³é—­æ—¶ï¼Œè°ƒç”¨ï¼Œ
+     æœ€å¤šè°ƒç”¨ä¸€æ¬¡ã€‚
      * <p> An implementation of this method must arrange for any other thread
      * that is blocked in an I/O operation upon this channel to return
      * immediately, either by throwing an exception or by returning normally.
-     ´Ë·½·¨µÄÊµÏÖ±ØĞë°²ÅÅÆäËû×èÈûÔÚÍ¨µÀIO²Ù×÷µÄÏß³ÌÁ¢¿Ì·µ»Ø£¬»òÅ×³öÒ»¸öÒì³££¬»òÕı³£·µ»Ø¡£
+     æ­¤æ–¹æ³•çš„å®ç°å¿…é¡»å®‰æ’å…¶ä»–é˜»å¡åœ¨é€šé“IOæ“ä½œçš„çº¿ç¨‹ç«‹åˆ»è¿”å›ï¼Œæˆ–æŠ›å‡ºä¸€ä¸ªå¼‚å¸¸ï¼Œæˆ–æ­£å¸¸è¿”å›ã€‚
      * </p>
      */
     protected abstract void implCloseSelectableChannel() throws IOException;
 
 
     // -- Blocking --
-    //ÅĞ¶Ï×èÈûÄ£Ê½
+    //åˆ¤æ–­é˜»å¡æ¨¡å¼
     public final boolean isBlocking() {
         synchronized (regLock) {
             return blocking;
         }
     }
-    //»ñÈ¡×èÈûËø£¬¼´×¢²áËøregLock
+    //è·å–é˜»å¡é”ï¼Œå³æ³¨å†Œé”regLock
     public final Object blockingLock() {
         return regLock;
     }
@@ -284,14 +284,14 @@ public abstract class AbstractSelectableChannel
         throws IOException
     {
         if (!isOpen())
-	    //Èç¹ûÍ¨µÀ¹Ø±Õ£¬ÔòÅ×³öClosedChannelException
+	    //å¦‚æœé€šé“å…³é—­ï¼Œåˆ™æŠ›å‡ºClosedChannelException
             throw new ClosedChannelException();
         synchronized (regLock) {
             if (blocking == block)
-	        //Í¨µÀ×èÈûÄ£Ê½ÏàÍ¬£¬ÔòÖ±½Ó·µ»Ø
+	        //é€šé“é˜»å¡æ¨¡å¼ç›¸åŒï¼Œåˆ™ç›´æ¥è¿”å›
                 return this;
             if (block && haveValidKeys())
-	       //ÒÑ×¢²áµ½Í¨µÀ£¬Ö»ÄÜÊÇ·Ç×èÈûÄ£Ê½£¬ÅäÖÃ×èÈûÄ£Ê½£¬Å×³öIllegalBlockingModeException
+	       //å·²æ³¨å†Œåˆ°é€šé“ï¼Œåªèƒ½æ˜¯éé˜»å¡æ¨¡å¼ï¼Œé…ç½®é˜»å¡æ¨¡å¼ï¼ŒæŠ›å‡ºIllegalBlockingModeException
                 throw new IllegalBlockingModeException();
             implConfigureBlocking(block);
             blocking = block;
@@ -301,13 +301,13 @@ public abstract class AbstractSelectableChannel
 
     /**
      * Adjusts this channel's blocking mode.
-     *µ÷ÕûÍ¨µÀ×èÈûÄ£Ê½
+     *è°ƒæ•´é€šé“é˜»å¡æ¨¡å¼
      * <p> This method is invoked by the {@link #configureBlocking
      * configureBlocking} method in order to perform the actual work of
      * changing the blocking mode.  This method is only invoked if the new mode
      * is different from the current mode.  </p>
-     *´Ë·½·½·¨ÔÚ#configureBlocking·½·¨ÖĞµ÷ÓÃ£¬Ö÷ÒªÖ´ĞĞÊµ¼ÊµÄ×èÈûÄ£Ê½ÇĞ»»¹¤×÷¡£
-     ´Ë·½Ö»ÓĞÔÚÅäÖÃµÄ×èÈûÄ£Ê½Óëµ±Ç°×èÈûÄ£Ê½²»Í¬Ê±£¬²Å»á±»µ÷ÓÃ¡£
+     *æ­¤æ–¹æ–¹æ³•åœ¨#configureBlockingæ–¹æ³•ä¸­è°ƒç”¨ï¼Œä¸»è¦æ‰§è¡Œå®é™…çš„é˜»å¡æ¨¡å¼åˆ‡æ¢å·¥ä½œã€‚
+     æ­¤æ–¹åªæœ‰åœ¨é…ç½®çš„é˜»å¡æ¨¡å¼ä¸å½“å‰é˜»å¡æ¨¡å¼ä¸åŒæ—¶ï¼Œæ‰ä¼šè¢«è°ƒç”¨ã€‚
      * @throws IOException
      *         If an I/O error occurs
      */
@@ -315,13 +315,13 @@ public abstract class AbstractSelectableChannel
         throws IOException;
 
 }
-×Ü½á£º
-AbstractSelectableChannelÓĞÒ»¸öSelectorProviderÀàĞÍµÄ±äÁ¿provider£¬Ö÷ÒªÊÇÎª´´½¨Í¨µÀ¶ø
-·şÎñ¡£Ò»¸öÑ¡ÔñkeyÊı×ékeys£¬±£´æÓëÍ¨µÀÏà¹ØµÄÑ¡Ôñkey£¬Ò»¸ökey¼ÆÊıÆ÷keyCount£¬¼ÇÂ¼µ±Ç°Í¨µÀ×¢²áµ½Ñ¡ÔñÆ÷
-£¬Éú³ÉµÄÑ¡Ôñkey¡£Ò»¸ö²¼¶ûblocking¼ÇÂ¼µ±Ç°Í¨µÀµÄ×èÈûÄ£Ê½¡£Ò»¸ökeyLockÓµÓĞ¿ØÖÆÑ¡ÔñkeyÊı¾İµÄ
-Ïß³Ì°²È«·ÃÎÊ¡£Í¬Ê±»¹ÓĞÒ»¸öregLock¿ØÖÆÍ¨µÀ×¢²áÑ¡ÔñÆ÷ºÍÅäÖÃÍ¨µÀ×èÈûÄ£Ê½µÄÏß³Ì°²È«·ÃÎÊ¡£
-Ìá¹©ÁËÑ¡Ôñkey¼¯ºÏkeysµÄÌí¼ÓºÍÒÆ³ı£¬ÅĞ¶ÏÍ¨µÀÊÇ·ñ×¢²áµ½Ñ¡ÔñÆ÷£¬¼°»ñÈ¡×¢²áµ½Ñ¡ÔñÆ÷µÄÑ¡Ôñkey¡£
-×¢²áÍ¨µÀµ½Ñ¡ÔñÆ÷¹ı³ÌÎª£ºÊ×ÏÈÑéÖ¤Í¨µÀÊÇ·ñ´ò¿ª£¬¹Ø×¢µÄ²Ù×÷ÊÂ¼şÊÇ·ñÓĞĞ§£¬Èç¹ûÍ¨µÀ´ò¿ªÇÒÊÂ¼şÓĞĞ§£¬
-ÅĞ¶ÏÍ¨µÀÊÇ×¢²áµ½Ñ¡ÔñÆ÷£¬Èç¹ûÍ¨µÀÒÑ¾­×¢²áµ½Ñ¡ÔñÆ÷£¬Ôò¸üĞÂĞËÈ¤²Ù×÷ÊÂ¼ş¼¯£¬ºÍ¸½¼ş¶ÔÏó£¬·ñÔòµ÷ÓÃ
-Ñ¡ÔñÆ÷µÄ×¢²á·½·¨£¬²¢½«·µ»ØµÄÑ¡ÔñkeyÌí¼Óµ½Í¨µÀÑ¡Ôñkey¼¯ºÏ¡£¹Ø±ÕÍ¨µÀËù×öµÄ¹¤×÷Ö÷ÒªÊÇ£¬±éÀúÍ¨µÀµÄÑ¡ÔñkeyÊı×é£¬
-È¡ÏûÑ¡Ôñkey¡£
+æ€»ç»“ï¼š
+AbstractSelectableChannelæœ‰ä¸€ä¸ªSelectorProviderç±»å‹çš„å˜é‡providerï¼Œä¸»è¦æ˜¯ä¸ºåˆ›å»ºé€šé“è€Œ
+æœåŠ¡ã€‚ä¸€ä¸ªé€‰æ‹©keyæ•°ç»„keysï¼Œä¿å­˜ä¸é€šé“ç›¸å…³çš„é€‰æ‹©keyï¼Œä¸€ä¸ªkeyè®¡æ•°å™¨keyCountï¼Œè®°å½•å½“å‰é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨
+ï¼Œç”Ÿæˆçš„é€‰æ‹©keyã€‚ä¸€ä¸ªå¸ƒå°”blockingè®°å½•å½“å‰é€šé“çš„é˜»å¡æ¨¡å¼ã€‚ä¸€ä¸ªkeyLockæ‹¥æœ‰æ§åˆ¶é€‰æ‹©keyæ•°æ®çš„
+çº¿ç¨‹å®‰å…¨è®¿é—®ã€‚åŒæ—¶è¿˜æœ‰ä¸€ä¸ªregLockæ§åˆ¶é€šé“æ³¨å†Œé€‰æ‹©å™¨å’Œé…ç½®é€šé“é˜»å¡æ¨¡å¼çš„çº¿ç¨‹å®‰å…¨è®¿é—®ã€‚
+æä¾›äº†é€‰æ‹©keyé›†åˆkeysçš„æ·»åŠ å’Œç§»é™¤ï¼Œåˆ¤æ–­é€šé“æ˜¯å¦æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼ŒåŠè·å–æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„é€‰æ‹©keyã€‚
+æ³¨å†Œé€šé“åˆ°é€‰æ‹©å™¨è¿‡ç¨‹ä¸ºï¼šé¦–å…ˆéªŒè¯é€šé“æ˜¯å¦æ‰“å¼€ï¼Œå…³æ³¨çš„æ“ä½œäº‹ä»¶æ˜¯å¦æœ‰æ•ˆï¼Œå¦‚æœé€šé“æ‰“å¼€ä¸”äº‹ä»¶æœ‰æ•ˆï¼Œ
+åˆ¤æ–­é€šé“æ˜¯æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œå¦‚æœé€šé“å·²ç»æ³¨å†Œåˆ°é€‰æ‹©å™¨ï¼Œåˆ™æ›´æ–°å…´è¶£æ“ä½œäº‹ä»¶é›†ï¼Œå’Œé™„ä»¶å¯¹è±¡ï¼Œå¦åˆ™è°ƒç”¨
+é€‰æ‹©å™¨çš„æ³¨å†Œæ–¹æ³•ï¼Œå¹¶å°†è¿”å›çš„é€‰æ‹©keyæ·»åŠ åˆ°é€šé“é€‰æ‹©keyé›†åˆã€‚å…³é—­é€šé“æ‰€åšçš„å·¥ä½œä¸»è¦æ˜¯ï¼Œéå†é€šé“çš„é€‰æ‹©keyæ•°ç»„ï¼Œ
+å–æ¶ˆé€‰æ‹©keyã€‚
