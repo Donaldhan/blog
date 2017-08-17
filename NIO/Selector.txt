@@ -62,7 +62,7 @@ cancelled-key集合总是key set的子集。
  * register} method.  Cancelled keys are removed from the key set during
  * selection operations.  The key set itself is not directly modifiable.
  *key set只会通过选择通道的注册方法添加选择key到key集合中。已取消的key在选择操作中被移除。
- key set集合自己直接修改。
+ key set集合自己不能直接修改。
  * <p> A key is added to its selector's cancelled-key set when it is cancelled,
  * whether by closing its channel or by invoking its {@link SelectionKey#cancel
  * cancel} method.  Cancelling a key will cause its channel to be deregistered
