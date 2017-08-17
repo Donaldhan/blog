@@ -91,7 +91,7 @@ Channel#close，阻塞IO操作线程是否被中断，所有跟通道相关联�
  * be determined by invoking its {@link #isBlocking isBlocking} method.
  *
  一个可选择的通道要么是可阻塞的，要么是不可阻塞的。在阻塞模式下，通道的IO操作将会阻塞，直到
- 器完成。在非阻塞模式下，IO操作绝对不会被阻塞，IO操作可能接受少于请求的数据或者就没有。
+ 其完成。在非阻塞模式下，IO操作绝对不会被阻塞，IO操作可能接受少于请求的数据或者就没有。
  通道的阻塞模式，我们可以通过#isBlocking方法来判断。
  * <p> Newly-created selectable channels are always in blocking mode.
  * Non-blocking mode is most useful in conjunction with selector-based
