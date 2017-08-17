@@ -1,13 +1,13 @@
-Channel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369111[/url]
-AbstractInterruptibleChannel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369238[/url]
-SelectableChannel½Ó¿Ú¶¨Òå:[url]http://donald-draper.iteye.com/blog/2369317[/url]
-SelectionKey¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369499[/url]
-SelectorProvider¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369615[/url]
-AbstractSelectableChannel¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369742[/url]
-NetworkChannel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369773[/url]
-ServerSocketChannel¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369836[/url]
-±¾Éí´òËã½«ServerSocketChannelµÄ¾ßÌåÊµÏÖµÄ£¬¿´ÁËServerSocketChannelImpµÄ·½·¨ÖĞÉè¼Æµ½Ñ¡ÔñÆ÷£¬
-ËùÒÔÎÒÃÇÏÈ¿´Ò»ÏÂÑ¡ÔñÆ÷£¬ÔÙ¿´ServerSocketChannelImp£º
+Channelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannelæ¥å£å®šä¹‰:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKeyå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProviderå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannelå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannelå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369836[/url]
+æœ¬èº«æ‰“ç®—å°†ServerSocketChannelçš„å…·ä½“å®ç°çš„ï¼Œçœ‹äº†ServerSocketChannelImpçš„æ–¹æ³•ä¸­æ¶‰åŠåˆ°é€‰æ‹©å™¨ï¼Œ
+æ‰€ä»¥æˆ‘ä»¬å…ˆçœ‹ä¸€ä¸‹é€‰æ‹©å™¨ï¼Œå†çœ‹ServerSocketChannelImpï¼š
 package java.nio.channels;
 
 import java.io.Closeable;
@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * A multiplexor of {@link SelectableChannel} objects.
- *SelectorÊÇ¿ÉÑ¡ÔñÍ¨µÀµÄ¶àÂ·¸´ÓÃÆ÷
+ *Selectoræ˜¯å¯é€‰æ‹©é€šé“çš„å¤šè·¯å¤ç”¨å™¨
  * <p> A selector may be created by invoking the {@link #open open} method of
  * this class, which will use the system's default {@link
  * java.nio.channels.spi.SelectorProvider </code>selector provider<code>} to
@@ -26,50 +26,50 @@ import java.util.Set;
  * {@link java.nio.channels.spi.SelectorProvider#openSelector openSelector}
  * method of a custom selector provider.  A selector remains open until it is
  * closed via its {@link #close close} method.
- *Ñ¡ÔñÆ÷Í¨¹ıÏµÍ³Ä¬ÈÏµÄÑ¡ÔñÆ÷openÊµÏÖ´´½¨£¬»òÕßSelectorProviderµÄ#openSelector·½·¨¡£
- ÔÚÑ¡ÔñÆ÷Ã»¹Ø±ÕÖ®Ç°£¬¶¼´¦ÓÚ´ò¿ª×´Ì¬
+ *é€‰æ‹©å™¨é€šè¿‡ç³»ç»Ÿé»˜è®¤çš„é€‰æ‹©å™¨openå®ç°åˆ›å»ºï¼Œæˆ–è€…SelectorProviderçš„#openSelectoræ–¹æ³•ã€‚
+ åœ¨é€‰æ‹©å™¨æ²¡å…³é—­ä¹‹å‰ï¼Œéƒ½å¤„äºæ‰“å¼€çŠ¶æ€
  * <a name="ks">
  *
  * <p> A selectable channel's registration with a selector is represented by a
  * {@link SelectionKey} object.  A selector maintains three sets of selection
  * keys:
- *¿ÉÑ¡ÔñÍ¨µÀ×¢²áµ½Ñ¡ÔñÆ÷µÄtoken£¬ÎÒÃÇÓÃSelectionKey±íÊ¾¡£Ñ¡ÔñÆ÷Ö÷ÒªÎ¬»¤3¸öÑ¡Ôñkey¼¯ºÏ¡£
+ *å¯é€‰æ‹©é€šé“æ³¨å†Œåˆ°é€‰æ‹©å™¨çš„tokenï¼Œæˆ‘ä»¬ç”¨SelectionKeyè¡¨ç¤ºã€‚é€‰æ‹©å™¨ä¸»è¦ç»´æŠ¤3ä¸ªé€‰æ‹©keyé›†åˆã€‚
  * <ul>
  *
  *   <li><p> The <i>key set</i> contains the keys representing the current
  *   channel registrations of this selector.  This set is returned by the
  *   {@link #keys() keys} method. </p></li>
- *key set¼¯ºÏ±íÊ¾µ±Ç°×¢²áµ½Ñ¡ÔñµÄÍ¨µÀ¶ÔÓ¦µÄÑ¡Ôñkey¡£Õâ¸ö¼¯ºÏÍ¨¹ıkeys·½·¨·µ»Ø¡£
+ *key seté›†åˆè¡¨ç¤ºå½“å‰æ³¨å†Œåˆ°é€‰æ‹©çš„é€šé“å¯¹åº”çš„é€‰æ‹©keyã€‚è¿™ä¸ªé›†åˆé€šè¿‡keysæ–¹æ³•è¿”å›ã€‚
  *   <li><p> The <i>selected-key set</i> is the set of keys such that each
  *   key's channel was detected to be ready for at least one of the operations
  *   identified in the key's interest set during a prior selection operation.
  *   This set is returned by the {@link #selectedKeys() selectedKeys} method.
  *   The selected-key set is always a subset of the key set. </p></li>
- *selected-key set¼¯ºÏ±íÊ¾ÔÚÒ»¸öÑ¡Ôñ²Ù×÷ºó£¬×¢²áµ½Ñ¡ÔñÆ÷µÄÍ¨µÀÒÑ¾­×¼±¸¾ÍĞ÷µÄ
- Ñ¡Ôñkey¼¯ºÏ¡£Í¨¹ı#selectedKeys·½·¨·µ»Ø£¬selected-key set¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
+ *selected-key seté›†åˆè¡¨ç¤ºåœ¨ä¸€ä¸ªé€‰æ‹©æ“ä½œåï¼Œæ³¨å†Œåˆ°é€‰æ‹©å™¨çš„é€šé“å·²ç»å‡†å¤‡å°±ç»ªçš„
+ é€‰æ‹©keyé›†åˆã€‚é€šè¿‡#selectedKeysæ–¹æ³•è¿”å›ï¼Œselected-key seté›†åˆæ€»æ˜¯key setçš„å­é›†ã€‚
  *   <li><p> The <i>cancelled-key</i> set is the set of keys that have been
  *   cancelled but whose channels have not yet been deregistered.  This set is
  *   not directly accessible.  The cancelled-key set is always a subset of the
  *   key set. </p></li>
- *cancelled-key¼¯ºÏ£¬±íÊ¾Í¨µÀ»¹Ã»ÓĞ·´×¢²á£¬µ«Ñ¡ÔñkeyÒÑ¾­È¡ÏûµÄÑ¡Ôñkey¡£Õâ¸ö¼¯ºÏ²»ÄÜÖ±½Ó·ÃÎÊ¡£
-cancelled-key¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
+ *cancelled-keyé›†åˆï¼Œè¡¨ç¤ºé€šé“è¿˜æ²¡æœ‰åæ³¨å†Œï¼Œä½†é€‰æ‹©keyå·²ç»å–æ¶ˆçš„é€‰æ‹©keyã€‚è¿™ä¸ªé›†åˆä¸èƒ½ç›´æ¥è®¿é—®ã€‚
+cancelled-keyé›†åˆæ€»æ˜¯key setçš„å­é›†ã€‚
  * </ul>
  *
  * <p> All three sets are empty in a newly-created selector.
- *ÔÚÑ¡ÔñÆ÷´´½¨Ê±£¬Èı¸ö¼¯ºÏ¶¼Îª¿Õ¡£
+ *åœ¨é€‰æ‹©å™¨åˆ›å»ºæ—¶ï¼Œä¸‰ä¸ªé›†åˆéƒ½ä¸ºç©ºã€‚
  * <p> A key is added to a selector's key set as a side effect of registering a
  * channel via the channel's {@link SelectableChannel#register(Selector,int)
  * register} method.  Cancelled keys are removed from the key set during
  * selection operations.  The key set itself is not directly modifiable.
- *key setÖ»»áÍ¨¹ıÑ¡ÔñÍ¨µÀµÄ×¢²á·½·¨Ìí¼ÓÑ¡Ôñkeyµ½key¼¯ºÏÖĞ¡£ÒÑÈ¡ÏûµÄkeyÔÚÑ¡Ôñ²Ù×÷ÖĞ±»ÒÆ³ı¡£
- key set¼¯ºÏ×Ô¼ºÖ±½ÓĞŞ¸Ä¡£
+ *key setåªä¼šé€šè¿‡é€‰æ‹©é€šé“çš„æ³¨å†Œæ–¹æ³•æ·»åŠ é€‰æ‹©keyåˆ°keyé›†åˆä¸­ã€‚å·²å–æ¶ˆçš„keyåœ¨é€‰æ‹©æ“ä½œä¸­è¢«ç§»é™¤ã€‚
+ key seté›†åˆè‡ªå·±ç›´æ¥ä¿®æ”¹ã€‚
  * <p> A key is added to its selector's cancelled-key set when it is cancelled,
  * whether by closing its channel or by invoking its {@link SelectionKey#cancel
  * cancel} method.  Cancelling a key will cause its channel to be deregistered
  * during the next selection operation, at which time the key will removed from
  * all of the selector's key sets.
- *ÎŞÂÛÊÇÓÉÓÚÍ¨µÀ¹Ø±Õ£¬»¹ÊÇÑ¡ÔñkeyÈ¡Ïû£¬key±»È¡Ïûºó£¬½«»áÌí¼Óµ½Ñ¡ÔñÆ÷µÄÈ¡Ïûkey¼¯ºÏ¡£
- È¡ÏûÒ»¸ökey½«»áÊ¹Í¨µÀÔÚÏÂÒ»´ÎÑ¡Ôñ²Ù×÷ÖĞ£¬´ÓÑ¡ÔñÆ÷·´×¢²á£¬Í¬Ê±È¡Ïûkey½«»á´ÓÑ¡ÔñÆ÷µÄkey¼¯ºÏÖĞÒÆ³ı¡£
+ *æ— è®ºæ˜¯ç”±äºé€šé“å…³é—­ï¼Œè¿˜æ˜¯é€‰æ‹©keyå–æ¶ˆï¼Œkeyè¢«å–æ¶ˆåï¼Œå°†ä¼šæ·»åŠ åˆ°é€‰æ‹©å™¨çš„å–æ¶ˆkeyé›†åˆã€‚
+ å–æ¶ˆä¸€ä¸ªkeyå°†ä¼šä½¿é€šé“åœ¨ä¸‹ä¸€æ¬¡é€‰æ‹©æ“ä½œä¸­ï¼Œä»é€‰æ‹©å™¨åæ³¨å†Œï¼ŒåŒæ—¶å–æ¶ˆkeyå°†ä¼šä»é€‰æ‹©å™¨çš„keyé›†åˆä¸­ç§»é™¤ã€‚
  * <a name="sks"><p> Keys are added to the selected-key set by selection
  * operations.  A key may be removed directly from the selected-key set by
  * invoking the set's {@link java.util.Set#remove(java.lang.Object) remove}
@@ -78,10 +78,10 @@ cancelled-key¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
  * set.  Keys are never removed from the selected-key set in any other way;
  * they are not, in particular, removed as a side effect of selection
  * operations.  Keys may not be added directly to the selected-key set. </p>
- *Ñ¡Ôñ²Ù×÷½«»á°ÑÒÑ¾­¾ÍĞ÷µÄÍ¨µÀ¶ÔÓ¦µÄÑ¡ÔñkeyÌí¼Óµ½ selected-key set ¼¯ºÏÖĞ¡£
- Í¨¹ısetµÄremoveºÍµü´úÆ÷µÄremove²Ù×÷£¬½«»á´ÓÈ¡Ïûkey¼¯ºÏÖĞ£¬ÒÆ³ıÑ¡Ôñkey¡£
- ³ıÑ¡Ôñ²Ù×÷¿ÉÒÔ´Ókey¼¯ºÏÖĞÒÆ³ıkey£¬ÆäËûµÄ·½Ê½»ò·½·¨²»ÄÜ´ÓÑ¡ÔñkeyÖĞÒÆ³ıkey¡£
- key²»ÄÜÖ±½ÓÌí¼ÓµÄ¿ÉÑ¡Ôñkey¼¯ºÏ¡£
+ *é€‰æ‹©æ“ä½œå°†ä¼šæŠŠå·²ç»å°±ç»ªçš„é€šé“å¯¹åº”çš„é€‰æ‹©keyæ·»åŠ åˆ° selected-key set é›†åˆä¸­ã€‚
+ é€šè¿‡setçš„removeå’Œè¿­ä»£å™¨çš„removeæ“ä½œï¼Œå°†ä¼šä»å–æ¶ˆkeyé›†åˆä¸­ï¼Œç§»é™¤é€‰æ‹©keyã€‚
+ é™¤é€‰æ‹©æ“ä½œå¯ä»¥ä»keyé›†åˆä¸­ç§»é™¤keyï¼Œå…¶ä»–çš„æ–¹å¼æˆ–æ–¹æ³•ä¸èƒ½ä»é€‰æ‹©keyä¸­ç§»é™¤keyã€‚
+ keyä¸èƒ½ç›´æ¥æ·»åŠ çš„å¯é€‰æ‹©keyé›†åˆã€‚
  *
  * <a name="selop">
  * <h4>Selection</h4>
@@ -91,21 +91,21 @@ cancelled-key¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
  * cancelled-key sets.  Selection is performed by the {@link #select()}, {@link
  * #select(long)}, and {@link #selectNow()} methods, and involves three steps:
  * </p>
- *ÔÚÃ¿Ò»¸öÑ¡Ôñ²Ù×÷¹ı³ÌÖĞ£¬¿ÉÄÜ´Ó¿ÉÑ¡Ôñkey¼¯ºÏÖĞÌí¼Ó»òÕßÒÆ³ı¿ÉÒÔ£¬¿ÉÄÜ´Ókey¼¯ºÏ»òÕßkeyÈ¡Ïû¼¯ºÏÖĞ
- ÒÆ³ıÒ»¸ökey¡£Ñ¡ÔñÆ÷Ö´ĞĞ#select£¬select(long)ºÍ#selectNow·½·¨£¬½«»áÉæ¼°3²½£º
+ *åœ¨æ¯ä¸€ä¸ªé€‰æ‹©æ“ä½œè¿‡ç¨‹ä¸­ï¼Œå¯èƒ½ä»å¯é€‰æ‹©keyé›†åˆä¸­æ·»åŠ æˆ–è€…ç§»é™¤å¯ä»¥ï¼Œå¯èƒ½ä»keyé›†åˆæˆ–è€…keyå–æ¶ˆé›†åˆä¸­
+ ç§»é™¤ä¸€ä¸ªkeyã€‚é€‰æ‹©å™¨æ‰§è¡Œ#selectï¼Œselect(long)å’Œ#selectNowæ–¹æ³•ï¼Œå°†ä¼šæ¶‰åŠ3æ­¥ï¼š
  * <ol>
  *
  *   <li><p> Each key in the cancelled-key set is removed from each key set of
  *   which it is a member, and its channel is deregistered.  This step leaves
  *   the cancelled-key set empty. </p></li>
- * 1.½«»áÇå¿ÕÈ¡Ïûkey¼¯ºÏ£¬ÓëÈ¡ÏûkeyÏà¹ØµÄÍ¨µÀ½«»á·´×¢²á¡£ÕâÒ»²½È¡Ïûkey¼¯ºÏ½«Îª¿Õ¡£
+ * 1.å°†ä¼šæ¸…ç©ºå–æ¶ˆkeyé›†åˆï¼Œä¸å–æ¶ˆkeyç›¸å…³çš„é€šé“å°†ä¼šåæ³¨å†Œã€‚è¿™ä¸€æ­¥å–æ¶ˆkeyé›†åˆå°†ä¸ºç©ºã€‚
  *   <li><p> The underlying operating system is queried for an update as to the
  *   readiness of each remaining channel to perform any of the operations
  *   identified by its key's interest set as of the moment that the selection
  *   operation began.  For a channel that is ready for at least one such
  *   operation, one of the following two actions is performed: </p>
- *2.ÔÚÃ¿Ò»´ÎÑ¡Ôñ²Ù×÷¿ªÊ¼£¬µ×²ã²Ù×÷ÏµÍ³¶¼½«¼ì²éºÍ¸üÏÔÍ¨µÀÒÑ¾­×¼±¸¾ÍĞ÷µÄ²Ù×÷ÊÂ¼ş¡£
- ÔÚÍ¨µÀ×¼±¸ºÃÖÁÉÙÒ»¸öµÄ²Ù×÷ÊÂ¼şÏÂ£¬½«»áÖ´ĞĞÒÔÏÂÁ½¸ö¶¯×÷£º
+ *2.åœ¨æ¯ä¸€æ¬¡é€‰æ‹©æ“ä½œå¼€å§‹ï¼Œåº•å±‚æ“ä½œç³»ç»Ÿéƒ½å°†æ£€æŸ¥å’Œæ›´æ˜¾é€šé“å·²ç»å‡†å¤‡å°±ç»ªçš„æ“ä½œäº‹ä»¶ã€‚
+ åœ¨é€šé“å‡†å¤‡å¥½è‡³å°‘ä¸€ä¸ªçš„æ“ä½œäº‹ä»¶ä¸‹ï¼Œå°†ä¼šæ‰§è¡Œä»¥ä¸‹ä¸¤ä¸ªåŠ¨ä½œï¼š
  *   <ol type=a>
  *
  *     <li><p> If the channel's key is not already in the selected-key set then
@@ -113,80 +113,80 @@ cancelled-key¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
  *     identify exactly those operations for which the channel is now reported
  *     to be ready.  Any readiness information previously recorded in the ready
  *     set is discarded.  </p></li>
- *2.1 Èç¹ûÍ¨µÀÏà¹ØµÄÑ¡Ôñkey²»ÔÚ¿ÉÑ¡Ôñkey¼¯ºÏÖĞ£¬ÔòÌí¼Ókeyµ½¿ÉÑ¡Ôñkey¼¯ºÏ£¬²¢¸üĞÂ¾ÍĞ÷µÄ
- ²Ù×÷ÊÂ¼ş£¬ÏÈÇ°µÄ¾ÍĞ÷ÊÂ¼ş¼¯½«»á±»ÒÅÆú¡£
+ *2.1 å¦‚æœé€šé“ç›¸å…³çš„é€‰æ‹©keyä¸åœ¨å¯é€‰æ‹©keyé›†åˆä¸­ï¼Œåˆ™æ·»åŠ keyåˆ°å¯é€‰æ‹©keyé›†åˆï¼Œå¹¶æ›´æ–°å°±ç»ªçš„
+ æ“ä½œäº‹ä»¶ï¼Œå…ˆå‰çš„å°±ç»ªäº‹ä»¶é›†å°†ä¼šè¢«é—å¼ƒã€‚
  *     <li><p> Otherwise the channel's key is already in the selected-key set,
  *     so its ready-operation set is modified to identify any new operations
  *     for which the channel is reported to be ready.  Any readiness
  *     information previously recorded in the ready set is preserved; in other
  *     words, the ready set returned by the underlying system is
  *     bitwise-disjoined into the key's current ready set. </p></li>
- *2.2 Èç¹ûÍ¨µÀÏà¹ØkeyÒÑ¾­ÔÚ¿ÉÑ¡Ôñkey¼¯ºÏÖĞ£¬¸üĞÂ¾ÍĞ÷²Ù×÷¼¯£¬²¢±£ÁôÏÈÇ°×¼±¸¾ÍĞ÷µÄ²Ù×÷ÊÂ¼ş£¬
- »»¾ä»°£¬µ×²ã²Ù×÷ÏµÍ³µÄ·µ»ØµÄbitwise-disjoined¾ÍĞ÷¼¯½«»á¸üĞÂµ½µ±Ç°¾ÍĞ÷²Ù×÷ÊÂ¼ş¼¯¡£
+ *2.2 å¦‚æœé€šé“ç›¸å…³keyå·²ç»åœ¨å¯é€‰æ‹©keyé›†åˆä¸­ï¼Œæ›´æ–°å°±ç»ªæ“ä½œé›†ï¼Œå¹¶ä¿ç•™å…ˆå‰å‡†å¤‡å°±ç»ªçš„æ“ä½œäº‹ä»¶ï¼Œ
+ æ¢å¥è¯ï¼Œåº•å±‚æ“ä½œç³»ç»Ÿçš„è¿”å›çš„bitwise-disjoinedå°±ç»ªé›†å°†ä¼šæ›´æ–°åˆ°å½“å‰å°±ç»ªæ“ä½œäº‹ä»¶é›†ã€‚
  *   </ol></li>
  *
  *   If all of the keys in the key set at the start of this step have empty
  *   interest sets then neither the selected-key set nor any of the keys'
  *   ready-operation sets will be updated.
- *3.Èç¹ûÔÚÕâÒ»²½¿ªÊ¼Ê±£¬key¼¯ºÏÖĞµÄËùÓĞkeyµÄĞËÈ¤²Ù×÷ÊÂ¼şÎª¿Õ£¬¿ÉÑ¡Ôñkey¼¯ºÏ»òÆäËûÈÎºÎkeyµÄ
- ¾ÍĞ÷²Ù×÷ÊÂ¼ş¼¯Ã»ÓĞ¸üĞÂ£¨ÕâÒ»²½²»Ì«Ã÷°×£¬Ïë±íÊ¾Ê²Ã´ÒâË¼£¿£¬Àí½âµÄÍøÓÑ¸øÎÒÁôÑÔ£¬¹²Í¬³É³¤¡£
- Õâ¸öÒª½áºÏ¾ßÌåµÄÑ¡Ôñ·½·¨µÄÊµÏÖ£¬Õâ¸öÔÚÒÔºóµÄÎÄÕÂÖĞ£¬ÔÙ¿´£©
+ *3.å¦‚æœåœ¨è¿™ä¸€æ­¥å¼€å§‹æ—¶ï¼Œkeyé›†åˆä¸­çš„æ‰€æœ‰keyçš„å…´è¶£æ“ä½œäº‹ä»¶ä¸ºç©ºï¼Œå¯é€‰æ‹©keyé›†åˆæˆ–å…¶ä»–ä»»ä½•keyçš„
+ å°±ç»ªæ“ä½œäº‹ä»¶é›†æ²¡æœ‰æ›´æ–°ï¼ˆè¿™ä¸€æ­¥ä¸å¤ªæ˜ç™½ï¼Œæƒ³è¡¨ç¤ºä»€ä¹ˆæ„æ€ï¼Ÿï¼Œç†è§£çš„ç½‘å‹ç»™æˆ‘ç•™è¨€ï¼Œå…±åŒæˆé•¿ã€‚
+ è¿™ä¸ªè¦ç»“åˆå…·ä½“çš„é€‰æ‹©æ–¹æ³•çš„å®ç°ï¼Œè¿™ä¸ªåœ¨ä»¥åçš„æ–‡ç« ä¸­ï¼Œå†çœ‹ï¼‰
  *   <li><p> If any keys were added to the cancelled-key set while step (2) was
  *   in progress then they are processed as in step (1). </p></li>
- *ÔÚµÚ¶ş²½µÄ¹ı³ÌÖĞ£¬key±»Ìí¼Óµ½È¡Ïûkey¼¯ºÏ£¬½«»á·µ»ØµÚÒ»²½ÒÆ³ıÈ¡Ïûkey
+ *åœ¨ç¬¬äºŒæ­¥çš„è¿‡ç¨‹ä¸­ï¼Œkeyè¢«æ·»åŠ åˆ°å–æ¶ˆkeyé›†åˆï¼Œå°†ä¼šè¿”å›ç¬¬ä¸€æ­¥ç§»é™¤å–æ¶ˆkey
  * </ol>
  *
  * <p> Whether or not a selection operation blocks to wait for one or more
  * channels to become ready, and if so for how long, is the only essential
  * difference between the three selection methods. </p>
- *ÎŞÂÛÒ»¸öÑ¡Ôñ²Ù×÷ÔÚ×èÈûµÈ´ıÒ»¸ö»ò¶à¸öÍ¨µÀ×¼±¸¾ÍĞ÷£¬µ½Ä¿Ç°ÎªÖ¹µÈ´ı¶à¾Ã£¬
- Èı¸öÑ¡·½·¨»ù±¾ÉÏ²»Í¬¡£
+ *æ— è®ºä¸€ä¸ªé€‰æ‹©æ“ä½œåœ¨é˜»å¡ç­‰å¾…ä¸€ä¸ªæˆ–å¤šä¸ªé€šé“å‡†å¤‡å°±ç»ªï¼Œåˆ°ç›®å‰ä¸ºæ­¢ç­‰å¾…å¤šä¹…ï¼Œ
+ ä¸‰ä¸ªé€‰æ–¹æ³•åŸºæœ¬ä¸Šä¸åŒã€‚
  *
  * <h4>Concurrency</h4>
- *²¢·¢ĞÔ
+ *å¹¶å‘æ€§
  * <p> Selectors are themselves safe for use by multiple concurrent threads;
  * their key sets, however, are not.
- *Ñ¡ÔñÆ÷ÊÇÏß³Ì°²È«µÄ£¬¶øËûµÄ¼¸¸ökey¼¯ºÏ²»ÊÇÏß³Ì°²È«µÄ
+ *é€‰æ‹©å™¨æ˜¯çº¿ç¨‹å®‰å…¨çš„ï¼Œè€Œä»–çš„å‡ ä¸ªkeyé›†åˆä¸æ˜¯çº¿ç¨‹å®‰å…¨çš„
  * <p> The selection operations synchronize on the selector itself, on the key
  * set, and on the selected-key set, in that order.  They also synchronize on
  * the cancelled-key set during steps (1) and (3) above.
- *Ñ¡Ôñ²Ù×÷Í¬²½Ñ¡ÔñÆ÷£¬key¼¯ºÏ£¬¿ÉÑ¡Ôñkey¼¯ºÏ£¬Í¬Ê±ÔÚµÚÒ»²½ºÍµÚÈı²½ÖĞÍ¬²½È¡Ïûkey¼¯ºÏ¡£
+ *é€‰æ‹©æ“ä½œåŒæ­¥é€‰æ‹©å™¨ï¼Œkeyé›†åˆï¼Œå¯é€‰æ‹©keyé›†åˆï¼ŒåŒæ—¶åœ¨ç¬¬ä¸€æ­¥å’Œç¬¬ä¸‰æ­¥ä¸­åŒæ­¥å–æ¶ˆkeyé›†åˆã€‚
  * <p> Changes made to the interest sets of a selector's keys while a
  * selection operation is in progress have no effect upon that operation; they
  * will be seen by the next selection operation.
- *µ±Ò»¸öÑ¡ÔñkeyµÄĞËÈ¤²Ù×÷ÊÂ¼ş¼¯ÔÚÑ¡Ôñ²Ù×÷µÄ¹ı³ÌÖĞ¸Ä±äÊ±£¬¶Ôµ±Ç°Ñ¡Ôñ²Ù×÷Ã»ÓĞÓ°Ïì£¬
- µ±ÏÂÒ»´ÎÑ¡Ôñ²Ù×÷ÖĞ£¬²ÅÄÜ±»¿´µ½¡£
+ *å½“ä¸€ä¸ªé€‰æ‹©keyçš„å…´è¶£æ“ä½œäº‹ä»¶é›†åœ¨é€‰æ‹©æ“ä½œçš„è¿‡ç¨‹ä¸­æ”¹å˜æ—¶ï¼Œå¯¹å½“å‰é€‰æ‹©æ“ä½œæ²¡æœ‰å½±å“ï¼Œ
+ å½“ä¸‹ä¸€æ¬¡é€‰æ‹©æ“ä½œä¸­ï¼Œæ‰èƒ½è¢«çœ‹åˆ°ã€‚
  * <p> Keys may be cancelled and channels may be closed at any time.  Hence the
  * presence of a key in one or more of a selector's key sets does not imply
  * that the key is valid or that its channel is open.  Application code should
  * be careful to synchronize and check these conditions as necessary if there
  * is any possibility that another thread will cancel a key or close a channel.
- *ÔÚÈÎºÎÊ±ºò£¬Í¨µÀ¶¼ÓĞ¿ÉÄÜ¹Ø±Õ£¬key¶¼ÓĞ¿ÉÄÜÈ¡Ïû¡£Ò»¸ökey´æÔÚÓëÑ¡ÔñÆ÷µÄkey¼¯ºÏÖĞ£¬
- ²»ÒâÎ¶×ÅkeyÓĞĞ§»òkey¹ØÁªµÄÍ¨µÀ´ò¿ª¡£Èç¹ûÆäËûÏß³ÌÓĞ¿ÉÄÜÈ¡Ïûkey»ò¹Ø±ÕÍ¨µÀ£¬
- Ó¦ÓÃ±ØĞëĞ¡ĞÄÕâĞ©Í¬²½£¬²¢¼ì²éĞèÒªµÄÌõ¼ş¡£
+ *åœ¨ä»»ä½•æ—¶å€™ï¼Œé€šé“éƒ½æœ‰å¯èƒ½å…³é—­ï¼Œkeyéƒ½æœ‰å¯èƒ½å–æ¶ˆã€‚ä¸€ä¸ªkeyå­˜åœ¨ä¸é€‰æ‹©å™¨çš„keyé›†åˆä¸­ï¼Œ
+ ä¸æ„å‘³ç€keyæœ‰æ•ˆæˆ–keyå…³è”çš„é€šé“æ‰“å¼€ã€‚å¦‚æœå…¶ä»–çº¿ç¨‹æœ‰å¯èƒ½å–æ¶ˆkeyæˆ–å…³é—­é€šé“ï¼Œ
+ åº”ç”¨å¿…é¡»å°å¿ƒè¿™äº›åŒæ­¥ï¼Œå¹¶æ£€æŸ¥éœ€è¦çš„æ¡ä»¶ã€‚
  * <p> A thread blocked in one of the {@link #select()} or {@link
  * #select(long)} methods may be interrupted by some other thread in one of
  * three ways:
- *Ò»¸öÏß³Ì×èÈûÔÚÑ¡Ôñ²Ù×÷ÖĞ£¬¿ÉÒÔ±»ÆäËûÏß³ÌÒÔÒ»ÏÂÈıÖÖ·½Ê½ÖĞ¶Ï£º
+ *ä¸€ä¸ªçº¿ç¨‹é˜»å¡åœ¨é€‰æ‹©æ“ä½œä¸­ï¼Œå¯ä»¥è¢«å…¶ä»–çº¿ç¨‹ä»¥ä¸€ä¸‹ä¸‰ç§æ–¹å¼ä¸­æ–­ï¼š
  * <ul>
  *
  *   <li><p> By invoking the selector's {@link #wakeup wakeup} method,
  *   </p></li>
- *Ñ¡ÔñÆ÷µ÷ÓÃ#wakeup·½·¨
+ *é€‰æ‹©å™¨è°ƒç”¨#wakeupæ–¹æ³•
  *   <li><p> By invoking the selector's {@link #close close} method, or
  *   </p></li>
- *Ñ¡ÔñÆ÷µ÷ÓÃ#close·½·¨
+ *é€‰æ‹©å™¨è°ƒç”¨#closeæ–¹æ³•
  *   <li><p> By invoking the blocked thread's {@link
  *   java.lang.Thread#interrupt() interrupt} method, in which case its
  *   interrupt status will be set and the selector's {@link #wakeup wakeup}
  *   method will be invoked. </p></li>
- *µ÷ÓÃ×èÈûÏß³ÌµÄÖĞ¶Ï·½·¨Thread#interrupt£¬Ïß³ÌÖĞ¶ÏÎ»±»ÉèÖÃ£¬Ñ¡ÔñÆ÷µÄ#wakeup·½·¨½«»á
- ±»µ÷ÓÃ¡£
+ *è°ƒç”¨é˜»å¡çº¿ç¨‹çš„ä¸­æ–­æ–¹æ³•Thread#interruptï¼Œçº¿ç¨‹ä¸­æ–­ä½è¢«è®¾ç½®ï¼Œé€‰æ‹©å™¨çš„#wakeupæ–¹æ³•å°†ä¼š
+ è¢«è°ƒç”¨ã€‚
  * </ul>
  *
  * <p> The {@link #close close} method synchronizes on the selector and all
  * three key sets in the same order as in a selection operation.
- *¹Ø±Õ·½·¨½«»áÍ¬²½µ½Ñ¡Ôñ²Ù×÷ÖĞµÄÑ¡ÔñÆ÷ºÍ¹ØÁªµÄ3¸ökey¼¯ºÏ¡£
+ *å…³é—­æ–¹æ³•å°†ä¼šåŒæ­¥åˆ°é€‰æ‹©æ“ä½œä¸­çš„é€‰æ‹©å™¨å’Œå…³è”çš„3ä¸ªkeyé›†åˆã€‚
  * <a name="ksc">
  *
  * <p> A selector's key and selected-key sets are not, in general, safe for use
@@ -197,9 +197,9 @@ cancelled-key¼¯ºÏ×ÜÊÇkey setµÄ×Ó¼¯¡£
  * is modified after the iterator is created, in any way except by invoking the
  * iterator's own {@link java.util.Iterator#remove() remove} method, then a
  * {@link java.util.ConcurrentModificationException} will be thrown. </p>
- * key¼¯ºÏºÍ¿ÉÑ¡Ôñkey¼¯ºÏ£¬Ò»°ãÇé¿öÏÂ¶àÏß³Ì·ÃÎÊÊ±²»ÊÇÏß³Ì°²È«µÄ¡£Èç¹ûÏß³ÌÏëÒªÖ±½ÓĞŞ¸Ä
- Ïà¹Ø¼¯ºÏÓ¦¸Ã¿ØÖÆ¼¯ºÏÍ¬²½¡£ÔÚµü´úÆ÷´´½¨Ê±£¬Èç¹û¼¯ºÏ±»ĞŞ¸Ä£¬Set#iterator½«»áfail-fast¡£
- ÈÎºÎµ÷ÓÃµü´úÆ÷µÄIterator#remove·½·¨£¬¶¼½«Å×³öConcurrentModificationException¡£
+ * keyé›†åˆå’Œå¯é€‰æ‹©keyé›†åˆï¼Œä¸€èˆ¬æƒ…å†µä¸‹å¤šçº¿ç¨‹è®¿é—®æ—¶ä¸æ˜¯çº¿ç¨‹å®‰å…¨çš„ã€‚å¦‚æœçº¿ç¨‹æƒ³è¦ç›´æ¥ä¿®æ”¹
+ ç›¸å…³é›†åˆåº”è¯¥æ§åˆ¶é›†åˆåŒæ­¥ã€‚åœ¨è¿­ä»£å™¨åˆ›å»ºæ—¶ï¼Œå¦‚æœé›†åˆè¢«ä¿®æ”¹ï¼ŒSet#iteratorå°†ä¼šfail-fastã€‚
+ ä»»ä½•è°ƒç”¨è¿­ä»£å™¨çš„Iterator#removeæ–¹æ³•ï¼Œéƒ½å°†æŠ›å‡ºConcurrentModificationExceptionã€‚
  *
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
@@ -218,7 +218,7 @@ public abstract class Selector implements Closeable {
 
     /**
      * Opens a selector.
-     *ÓÃÏµÍ³Ä¬ÈÏµÄSelectorProviderÊµÀı´ò¿ªÒ»¸öÑ¡ÔñÆ÷
+     *ç”¨ç³»ç»Ÿé»˜è®¤çš„SelectorProviderå®ä¾‹æ‰“å¼€ä¸€ä¸ªé€‰æ‹©å™¨
      * <p> The new selector is created by invoking the {@link
      * java.nio.channels.spi.SelectorProvider#openSelector openSelector} method
      * of the system-wide default {@link
@@ -235,44 +235,44 @@ public abstract class Selector implements Closeable {
 
     /**
      * Tells whether or not this selector is open.  </p>
-     *ÅĞ¶ÏÑ¡ÔñÆ÷ÊÇ·ñ´ò¿ª
+     *åˆ¤æ–­é€‰æ‹©å™¨æ˜¯å¦æ‰“å¼€
      * @return <tt>true</tt> if, and only if, this selector is open
      */
     public abstract boolean isOpen();
 
     /**
      * Returns the provider that created this channel.  </p>
-     *·µ»Ø´´½¨Ñ¡ÔñÆ÷µÄÑ¡È¡Æ÷·şÎñÌá¹©Õß¡£
+     *è¿”å›åˆ›å»ºé€‰æ‹©å™¨çš„é€‰å–å™¨æœåŠ¡æä¾›è€…ã€‚
      * @return  The provider that created this channel
      */
     public abstract SelectorProvider provider();
 
     /**
      * Returns this selector's key set.
-     *·µ»ØÑ¡ÔñÆ÷µÄÑ¡Ôñkey¼¯ºÏ
+     *è¿”å›é€‰æ‹©å™¨çš„é€‰æ‹©keyé›†åˆ
      * <p> The key set is not directly modifiable.  A key is removed only after
      * it has been cancelled and its channel has been deregistered.  Any
      * attempt to modify the key set will cause an {@link
      * UnsupportedOperationException} to be thrown.
-     *Ñ¡Ôñkey¼¯ºÏ²»ÄÜÖ±½ÓµØĞŞ¸Ä¡£ÔÚÍ¨µÀ·´×¢²á»òÑ¡ÔñkeyÈ¡ÏûÊ±£¬Ïà¹ØµÄÑ¡Ôñkey½«»á
-     ´ÓÑ¡Ôñkey¼¯ºÏÖĞÒÆ³ı¡£ÈÎºÎ³¢ÊÔĞŞ¸ÄÑ¡Ôñkey¼¯ºÏµÄ²Ù×÷£¬½«Å×³öUnsupportedOperationException
+     *é€‰æ‹©keyé›†åˆä¸èƒ½ç›´æ¥åœ°ä¿®æ”¹ã€‚åœ¨é€šé“åæ³¨å†Œæˆ–é€‰æ‹©keyå–æ¶ˆæ—¶ï¼Œç›¸å…³çš„é€‰æ‹©keyå°†ä¼š
+     ä»é€‰æ‹©keyé›†åˆä¸­ç§»é™¤ã€‚ä»»ä½•å°è¯•ä¿®æ”¹é€‰æ‹©keyé›†åˆçš„æ“ä½œï¼Œå°†æŠ›å‡ºUnsupportedOperationException
      * <p> The key set is <a href="#ksc">not thread-safe</a>. </p>
      *
      * @return  This selector's key set
      *
-     * @throws  ClosedSelectorException Í¨µÀÒÑ¹Ø±Õ£¬ÔòÅ×³öClosedSelectorException
+     * @throws  ClosedSelectorException é€šé“å·²å…³é—­ï¼Œåˆ™æŠ›å‡ºClosedSelectorException
      *          If this selector is closed
      */
     public abstract Set<SelectionKey> keys();
 
     /**
      * Returns this selector's selected-key set.
-     *·µ»ØÑ¡ÔñÆ÷µÄÒÑÑ¡ÔñµÄkey¼¯ºÏ£¬¼°²Ù×÷ÊÂ¼şÒÑ¾­¾ÍĞ÷µÄkey¼¯ºÏ
+     *è¿”å›é€‰æ‹©å™¨çš„å·²é€‰æ‹©çš„keyé›†åˆï¼ŒåŠæ“ä½œäº‹ä»¶å·²ç»å°±ç»ªçš„keyé›†åˆ
      * <p> Keys may be removed from, but not directly added to, the
      * selected-key set.  Any attempt to add an object to the key set will
      * cause an {@link UnsupportedOperationException} to be thrown.
-     *Ñ¡Ôñkey²»¿ÉÒÔÖ±½ÓÌí¼Óµ½ÒÑÑ¡ÔñµÄkey¼¯ºÏ£¬µ«¿ÉÒÔÒÆ³ı¡£
-     ÈÎºÎ³¢ÊÔÌí¼ÓÑ¡Ôñkeyµ½key¼¯ºÏµÄ²Ù×÷£¬½«Å×³öUnsupportedOperationException
+     *é€‰æ‹©keyä¸å¯ä»¥ç›´æ¥æ·»åŠ åˆ°å·²é€‰æ‹©çš„keyé›†åˆï¼Œä½†å¯ä»¥ç§»é™¤ã€‚
+     ä»»ä½•å°è¯•æ·»åŠ é€‰æ‹©keyåˆ°keyé›†åˆçš„æ“ä½œï¼Œå°†æŠ›å‡ºUnsupportedOperationException
      * <p> The selected-key set is <a href="#ksc">not thread-safe</a>. </p>
      *
      * @return  This selector's selected-key set
@@ -285,15 +285,15 @@ public abstract class Selector implements Closeable {
     /**
      * Selects a set of keys whose corresponding channels are ready for I/O
      * operations.
-     *Ñ¡ÔñÒ»¸ö¹ØÁªÍ¨µÀÒÑ¾­×¼±¸ºÃ£É£Ï²Ù×÷µÄÑ¡ÔñkeyÊıÁ¿¡£
+     *é€‰æ‹©ä¸€ä¸ªå…³è”é€šé“å·²ç»å‡†å¤‡å¥½ï¼©ï¼¯æ“ä½œçš„é€‰æ‹©keyæ•°é‡ã€‚
      * <p> This method performs a non-blocking <a href="#selop">selection
      * operation</a>.  If no channels have become selectable since the previous
      * selection operation then this method immediately returns zero.
-     *Õâ¸ö·½·¨ÒÔ·Ç×èÈûÄ£Ê½Ö´ĞĞ¡£ÓÉÓÚÏÈÇ°ÒÑ¾­½øĞĞÑ¡Ôñ²Ù×÷£¬Ã»ÓĞÍ¨µÀ¿ÉÑ¡Ôñ£¬´Ë·½·¨£¬
-     ½«Á¢¼´·µ»ØÎª0.
+     *è¿™ä¸ªæ–¹æ³•ä»¥éé˜»å¡æ¨¡å¼æ‰§è¡Œã€‚ç”±äºå…ˆå‰å·²ç»è¿›è¡Œé€‰æ‹©æ“ä½œï¼Œæ²¡æœ‰é€šé“å¯é€‰æ‹©ï¼Œæ­¤æ–¹æ³•ï¼Œ
+     å°†ç«‹å³è¿”å›ä¸º0.
      * <p> Invoking this method clears the effect of any previous invocations
      * of the {@link #wakeup wakeup} method.  </p>
-     *µ÷ÓÃ´Ë·½·¨£¬½«Çå³ıwakeup·½·¨µÄĞ§¹û¡£
+     *è°ƒç”¨æ­¤æ–¹æ³•ï¼Œå°†æ¸…é™¤wakeupæ–¹æ³•çš„æ•ˆæœã€‚
      * @return  The number of keys, possibly zero, whose ready-operation sets
      *          were updated by the selection operation
      *
@@ -308,17 +308,17 @@ public abstract class Selector implements Closeable {
     /**
      * Selects a set of keys whose corresponding channels are ready for I/O
      * operations.
-     *Ñ¡ÔñÒ»¸ö¹ØÁªÍ¨µÀÒÑ¾­×¼±¸ºÃ£É£Ï²Ù×÷µÄÑ¡ÔñkeyÊıÁ¿¡£
+     *é€‰æ‹©ä¸€ä¸ªå…³è”é€šé“å·²ç»å‡†å¤‡å¥½ï¼©ï¼¯æ“ä½œçš„é€‰æ‹©keyæ•°é‡ã€‚
      * <p> This method performs a blocking <a href="#selop">selection
      * operation</a>.  It returns only after at least one channel is selected,
      * this selector's {@link #wakeup wakeup} method is invoked, the current
      * thread is interrupted, or the given timeout period expires, whichever
      * comes first.
-     *Õâ¸ö·½·¨ÒÔ·Ç×èÈûÄ£Ê½Ö´ĞĞ¡£ÔÚÖÁÉÙÓĞÒ»¸öÍ¨µÀ¿ÉÑ¡Ôñ£¬Ñ¡ÔñÆ÷wakeup·½·¨±»µ÷ÓÃ£¬
-     µ±Ç°Ïß³Ì±»ÖĞ¶Ï£¬»ò³¬Ê±£¬ÎŞÂÛÕâ¼¸ÖÖÇé¿ö£¬ÄÇÒ»¸öÏÈ·¢Éú£¬¶¼½«Ö±½Ó·µ»Ø¡£
+     *è¿™ä¸ªæ–¹æ³•ä»¥éé˜»å¡æ¨¡å¼æ‰§è¡Œã€‚åœ¨è‡³å°‘æœ‰ä¸€ä¸ªé€šé“å¯é€‰æ‹©ï¼Œé€‰æ‹©å™¨wakeupæ–¹æ³•è¢«è°ƒç”¨ï¼Œ
+     å½“å‰çº¿ç¨‹è¢«ä¸­æ–­ï¼Œæˆ–è¶…æ—¶ï¼Œæ— è®ºè¿™å‡ ç§æƒ…å†µï¼Œé‚£ä¸€ä¸ªå…ˆå‘ç”Ÿï¼Œéƒ½å°†ç›´æ¥è¿”å›ã€‚
      * <p> This method does not offer real-time guarantees: It schedules the
      * timeout as if by invoking the {@link Object#wait(long)} method. </p>
-     *´Ë·½·¨²»ÄÜ±£Ö¤ÊÂÊµµÄ±£Ö¤£¬ÒòÎªÍ¨¹ıObject#wait(long)È¥µ÷¶È³¬Ê±Ê±¼ä¡£
+     *æ­¤æ–¹æ³•ä¸èƒ½ä¿è¯äº‹å®çš„ä¿è¯ï¼Œå› ä¸ºé€šè¿‡Object#wait(long)å»è°ƒåº¦è¶…æ—¶æ—¶é—´ã€‚
      * @param  timeout  If positive, block for up to <tt>timeout</tt>
      *                  milliseconds, more or less, while waiting for a
      *                  channel to become ready; if zero, block indefinitely;
@@ -342,13 +342,13 @@ public abstract class Selector implements Closeable {
     /**
      * Selects a set of keys whose corresponding channels are ready for I/O
      * operations.
-     *Ñ¡ÔñÒ»¸ö¹ØÁªÍ¨µÀÒÑ¾­×¼±¸ºÃ£É£Ï²Ù×÷µÄÑ¡ÔñkeyÊıÁ¿¡£
+     *é€‰æ‹©ä¸€ä¸ªå…³è”é€šé“å·²ç»å‡†å¤‡å¥½ï¼©ï¼¯æ“ä½œçš„é€‰æ‹©keyæ•°é‡ã€‚
      * <p> This method performs a blocking <a href="#selop">selection
      * operation</a>.  It returns only after at least one channel is selected,
      * this selector's {@link #wakeup wakeup} method is invoked, or the current
      * thread is interrupted, whichever comes first.  </p>
-     *Õâ¸ö·½·¨ÒÔ×èÈûÄ£Ê½Ö´ĞĞ¡£ÔÚÖÁÉÙÓĞÒ»¸öÍ¨µÀ¿ÉÑ¡Ôñ£¬Ñ¡ÔñÆ÷wakeup·½·¨±»µ÷ÓÃ£¬
-     µ±Ç°Ïß³Ì±»ÖĞ¶Ï£¬ÎŞÂÛÕâ¼¸ÖÖÇé¿ö£¬ÄÇÒ»¸öÏÈ·¢Éú£¬¶¼½«Ö±½Ó·µ»Ø¡£
+     *è¿™ä¸ªæ–¹æ³•ä»¥é˜»å¡æ¨¡å¼æ‰§è¡Œã€‚åœ¨è‡³å°‘æœ‰ä¸€ä¸ªé€šé“å¯é€‰æ‹©ï¼Œé€‰æ‹©å™¨wakeupæ–¹æ³•è¢«è°ƒç”¨ï¼Œ
+     å½“å‰çº¿ç¨‹è¢«ä¸­æ–­ï¼Œæ— è®ºè¿™å‡ ç§æƒ…å†µï¼Œé‚£ä¸€ä¸ªå…ˆå‘ç”Ÿï¼Œéƒ½å°†ç›´æ¥è¿”å›ã€‚
      * @return  The number of keys, possibly zero,
      *          whose ready-operation sets were updated
      *
@@ -363,7 +363,7 @@ public abstract class Selector implements Closeable {
     /**
      * Causes the first selection operation that has not yet returned to return
      * immediately.
-     *»½ĞÑÒ»¸öµÈ´ıÑ¡È¡key¿ÉÓÃµÄÏß³Ì¡£
+     *å”¤é†’ä¸€ä¸ªç­‰å¾…é€‰å–keyå¯ç”¨çš„çº¿ç¨‹ã€‚
      * <p> If another thread is currently blocked in an invocation of the
      * {@link #select()} or {@link #select(long)} methods then that invocation
      * will return immediately.  If no selection operation is currently in
@@ -373,36 +373,36 @@ public abstract class Selector implements Closeable {
      * non-zero.  Subsequent invocations of the {@link #select()} or {@link
      * #select(long)} methods will block as usual unless this method is invoked
      * again in the meantime.
-     *Èç¹ûÆäËûÏß³Ìµ±Ç°ÕıÔÚ×èÈû»ò³¬Ê±µÈ´ıÑ¡Ôñ²Ù×÷£¬wakeup·½·¨µ÷ÓÃ£¬½«»½ĞÑÉÏÊöÏß³Ì¡£
-     Èç¹ûµ±Ç°Ã»ÓĞÑ¡Ôñ²Ù×÷ÔÚ½ø³ÌÖĞ£¬ÏÂÒ»¸öµ÷ÓÃÑ¡Ôñ²Ù×÷Ïà¹Ø·½·¨½«Á¢¼´·µ»Ø£¬³ı·Ç#selectNow
-     ·½·¨ÔÚÍ¬Ê±µ÷ÓÃ£¬#selectNowÊÇ·Ç×èÈûµÄ¡£ÔÚwakeupÖ®ºó£¬ÈÎºÎµ÷ÓÃselect²Ù×÷µÄ¶¼½«·µ»Ø·Ç0¡£
-    #selectºÍselect(long)½«»áÏòÆ½³£Ò»Ñù×èÈû£¬³ı·Çwakeup·½·¨Í¬Ê±±»µ÷ÓÃ¡£
+     *å¦‚æœå…¶ä»–çº¿ç¨‹å½“å‰æ­£åœ¨é˜»å¡æˆ–è¶…æ—¶ç­‰å¾…é€‰æ‹©æ“ä½œï¼Œwakeupæ–¹æ³•è°ƒç”¨ï¼Œå°†å”¤é†’ä¸Šè¿°çº¿ç¨‹ã€‚
+     å¦‚æœå½“å‰æ²¡æœ‰é€‰æ‹©æ“ä½œåœ¨è¿›ç¨‹ä¸­ï¼Œä¸‹ä¸€ä¸ªè°ƒç”¨é€‰æ‹©æ“ä½œç›¸å…³æ–¹æ³•å°†ç«‹å³è¿”å›ï¼Œé™¤é#selectNow
+     æ–¹æ³•åœ¨åŒæ—¶è°ƒç”¨ï¼Œ#selectNowæ˜¯éé˜»å¡çš„ã€‚åœ¨wakeupä¹‹åï¼Œä»»ä½•è°ƒç”¨selectæ“ä½œçš„éƒ½å°†è¿”å›é0ã€‚
+    #selectå’Œselect(long)å°†ä¼šå‘å¹³å¸¸ä¸€æ ·é˜»å¡ï¼Œé™¤éwakeupæ–¹æ³•åŒæ—¶è¢«è°ƒç”¨ã€‚
      * <p> Invoking this method more than once between two successive selection
      * operations has the same effect as invoking it just once.  </p>
-     *ÔÚ¶à´ÎÑ¡Ôñ²Ù×÷ÖĞ£¬wakeupÖ»ÆğĞ§Ò»´Î¡£
+     *åœ¨å¤šæ¬¡é€‰æ‹©æ“ä½œä¸­ï¼Œwakeupåªèµ·æ•ˆä¸€æ¬¡ã€‚
      * @return  This selector
      */
     public abstract Selector wakeup();
 
     /**
      * Closes this selector.
-     *¹Ø±ÕÑ¡ÔñÆ÷
+     *å…³é—­é€‰æ‹©å™¨
      * <p> If a thread is currently blocked in one of this selector's selection
      * methods then it is interrupted as if by invoking the selector's {@link
      * #wakeup wakeup} method.
-     *Èç¹ûµ±Ç°Ïß³Ì×èÈûÔÚÑ¡ÔñÆ÷µÄÑ¡Ôñ²Ù×÷ÉÏ£¬µ÷ÓÃÑ¡ÔñÆ÷µÄwakeup·½·¨£¬½«»áÏû³ıÖĞ¶ÏÎ»¡£
+     *å¦‚æœå½“å‰çº¿ç¨‹é˜»å¡åœ¨é€‰æ‹©å™¨çš„é€‰æ‹©æ“ä½œä¸Šï¼Œè°ƒç”¨é€‰æ‹©å™¨çš„wakeupæ–¹æ³•ï¼Œå°†ä¼šæ¶ˆé™¤ä¸­æ–­ä½ã€‚
      * <p> Any uncancelled keys still associated with this selector are
      * invalidated, their channels are deregistered, and any other resources
      * associated with this selector are released.
-     *ËùÓĞÓëÑ¡ÔñÆ÷Ïà¹ØÁªµÄÍ¨µÀµÄÑ¡Ôñkey½«»áÎŞĞ§£¬Í¨µÀ½«±»·´×¢²á£¬ÓëÑ¡ÔñÆ÷¹ØÁªµÄ
-     ÈÎºÎ×ÊÔ´¶¼½«»á±»ÊÍ·Å
+     *æ‰€æœ‰ä¸é€‰æ‹©å™¨ç›¸å…³è”çš„é€šé“çš„é€‰æ‹©keyå°†ä¼šæ— æ•ˆï¼Œé€šé“å°†è¢«åæ³¨å†Œï¼Œä¸é€‰æ‹©å™¨å…³è”çš„
+     ä»»ä½•èµ„æºéƒ½å°†ä¼šè¢«é‡Šæ”¾
      * <p> If this selector is already closed then invoking this method has no
      * effect.
-     *Èç¹ûÑ¡ÔñÆ÷ÒÑ¹Ø±Õ£¬ÔÙ´Îµ÷ÓÃÎŞĞ§
+     *å¦‚æœé€‰æ‹©å™¨å·²å…³é—­ï¼Œå†æ¬¡è°ƒç”¨æ— æ•ˆ
      * <p> After a selector is closed, any further attempt to use it, except by
      * invoking this method or the {@link #wakeup wakeup} method, will cause a
      * {@link ClosedSelectorException} to be thrown. </p>
-     *ÔÚÑ¡ÔñÆ÷¹Ø±Õºó£¬ÈÎºÎ³¢ÊÔwakeup·½·¨µ÷ÓÃµÄ£¬½«Å×³öClosedSelectorException
+     *åœ¨é€‰æ‹©å™¨å…³é—­åï¼Œä»»ä½•å°è¯•wakeupæ–¹æ³•è°ƒç”¨çš„ï¼Œå°†æŠ›å‡ºClosedSelectorException
      * @throws  IOException
      *          If an I/O error occurs
      */
