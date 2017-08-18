@@ -1,23 +1,23 @@
-Channel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369111[/url]
-AbstractInterruptibleChannel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369238[/url]
-SelectableChannel½Ó¿Ú¶¨Òå:[url]http://donald-draper.iteye.com/blog/2369317[/url]
-SelectionKey¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369499[/url]
-SelectorProvider¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369615[/url]
-AbstractSelectableChannel¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369742[/url]
-NetworkChannel½Ó¿Ú¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369773[/url]
-ServerSocketChannel¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2369836[/url]
-ServerSocketChannelImpl½âÎö£º[url]http://donald-draper.iteye.com/blog/2370912[/url]
-Selector¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2370015[/url]
-AbstractSelector¶¨Òå£º[url]http://donald-draper.iteye.com/blog/2370138[/url]
-SelectorImpl·ÖÎö :[url]http://donald-draper.iteye.com/blog/2370519[/url]
-WindowsSelectorImpl½âÎöÒ»£¨FdMap£¬PollArrayWrapper£©£º
+Channelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369111[/url]
+AbstractInterruptibleChannelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369238[/url]
+SelectableChannelæ¥å£å®šä¹‰:[url]http://donald-draper.iteye.com/blog/2369317[/url]
+SelectionKeyå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369499[/url]
+SelectorProviderå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369615[/url]
+AbstractSelectableChannelå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369742[/url]
+NetworkChannelæ¥å£å®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369773[/url]
+ServerSocketChannelå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2369836[/url]
+ServerSocketChannelImplè§£æï¼š[url]http://donald-draper.iteye.com/blog/2370912[/url]
+Selectorå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2370015[/url]
+AbstractSelectorå®šä¹‰ï¼š[url]http://donald-draper.iteye.com/blog/2370138[/url]
+SelectorImplåˆ†æ :[url]http://donald-draper.iteye.com/blog/2370519[/url]
+WindowsSelectorImplè§£æä¸€ï¼ˆFdMapï¼ŒPollArrayWrapperï¼‰ï¼š
 [url]http://donald-draper.iteye.com/blog/2370811[/url]
-WindowsSelectorImpl½âÎö¶ş£¨Ñ¡Ôñ²Ù×÷£¬Í¨µÀ×¢²á£¬Í¨µÀ·´×¢²á£¬Ñ¡ÔñÆ÷¹Ø±ÕµÈ£©£º
+WindowsSelectorImplè§£æäºŒï¼ˆé€‰æ‹©æ“ä½œï¼Œé€šé“æ³¨å†Œï¼Œé€šé“åæ³¨å†Œï¼Œé€‰æ‹©å™¨å…³é—­ç­‰ï¼‰ï¼š
 [url]http://donald-draper.iteye.com/blog/2370862[/url]
-ÔÚÇ°ÃæµÄÎÄÕÂÖĞÎÒÃÇ¿´ÁËÑ¡ÔñÆ÷£¨Ñ¡Ôñ²Ù×÷£¬¸üĞÂÍ¨µÀ¾ÍĞ÷²Ù×÷ÊÂ¼ş£©ºÍ
-ServerSocketChannle£¨°ó¶¨µØÖ·£¬½ÓÊÜÁ¬½Ó£©,½ÓÏÂÀ´µÄÎÄÕÂÎÒÃÇSocketChannel£¬
-SocketChannelÖ÷ÒªÍê³ÉÁ¬½Ó£¬¶ÁĞ´Í¨µÀ£¬½ñÌì¿´Ò»ÏÂSocketChannelµÄ×Ö½ÚÍ¨µÀ£¬
-·ÖÉ¢¶ÁºÍ¾Û¼¯Ğ´Í¨µÀ½Ó¿ÚµÄ¶¨Òå¡£
+åœ¨å‰é¢çš„æ–‡ç« ä¸­æˆ‘ä»¬çœ‹äº†é€‰æ‹©å™¨ï¼ˆé€‰æ‹©æ“ä½œï¼Œæ›´æ–°é€šé“å°±ç»ªæ“ä½œäº‹ä»¶ï¼‰å’Œ
+ServerSocketChannleï¼ˆç»‘å®šåœ°å€ï¼Œæ¥å—è¿æ¥ï¼‰,æ¥ä¸‹æ¥çš„æ–‡ç« æˆ‘ä»¬SocketChannelï¼Œ
+SocketChannelä¸»è¦å®Œæˆè¿æ¥ï¼Œè¯»å†™é€šé“ï¼Œä»Šå¤©çœ‹ä¸€ä¸‹SocketChannelçš„å­—èŠ‚é€šé“ï¼Œ
+åˆ†æ•£è¯»å’Œèšé›†å†™é€šé“æ¥å£çš„å®šä¹‰ã€‚
 //SocketChannel
 public abstract class SocketChannel
     extends AbstractSelectableChannel
@@ -30,8 +30,8 @@ import java.io.IOException;
  * A channel that can read and write bytes.  This interface simply unifies
  * {@link ReadableByteChannel} and {@link WritableByteChannel}; it does not
  * specify any new operations.
- *ByteChannel¿ÉÒÔ¶ÁĞ´×Ö½ÚÁ÷£¬Õâ¸ö½Ó¿ÚÍ³Ò»ÁËReadableByteChannelºÍWritableByteChannel
- ;Ã»ÓĞĞÂµÄ²Ù×÷
+ *ByteChannelå¯ä»¥è¯»å†™å­—èŠ‚æµï¼Œè¿™ä¸ªæ¥å£ç»Ÿä¸€äº†ReadableByteChannelå’ŒWritableByteChannel
+ ;æ²¡æœ‰æ–°çš„æ“ä½œ
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
  * @since 1.4
@@ -49,15 +49,15 @@ import java.nio.ByteBuffer;
 
 /**
  * A channel that can read bytes.
- *ReadableByteChannel¿ÉÒÔ´ÓÍ¨µÀÖĞ¶ÁÈ¡×Ö½Ú
+ *ReadableByteChannelå¯ä»¥ä»é€šé“ä¸­è¯»å–å­—èŠ‚
  * <p> Only one read operation upon a readable channel may be in progress at
  * any given time.  If one thread initiates a read operation upon a channel
  * then any other thread that attempts to initiate another read operation will
  * block until the first operation is complete.  Whether or not other kinds of
  * I/O operations may proceed concurrently with a read operation depends upon
  * the type of the channel. </p>
- *ÔÚ¿É¶ÁµÄÍ¨µÀÖĞ£¬Ò»¸ö½ø³ÌÖ»ÄÜÓĞÒ»¸ö¶Á²Ù×÷¡£Èç¹ûµ±Ç°Ïß³ÌÕıÔÚ¶ÁÍ¨µÀ£¬ÆäËû³¢ÊÔ
- ¶ÁÍ¨µÀµÄÏß³Ì£¬±ØĞëµÈ´ıÕıÔÚ¶ÁÍ´µÄÏß³ÌÍê³É¡£
+ *åœ¨å¯è¯»çš„é€šé“ä¸­ï¼Œä¸€ä¸ªè¿›ç¨‹åªèƒ½æœ‰ä¸€ä¸ªè¯»æ“ä½œã€‚å¦‚æœå½“å‰çº¿ç¨‹æ­£åœ¨è¯»é€šé“ï¼Œå…¶ä»–å°è¯•
+ è¯»é€šé“çš„çº¿ç¨‹ï¼Œå¿…é¡»ç­‰å¾…æ­£åœ¨è¯»æ“ä½œçš„çº¿ç¨‹å®Œæˆã€‚
  *
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
@@ -68,11 +68,11 @@ public interface ReadableByteChannel extends Channel {
 
     /**
      * Reads a sequence of bytes from this channel into the given buffer.
-     *´ÓÍ¨µÀÖĞ¶ÁÈ¡×Ö½ÚĞòÁĞ£¬Ğ´µ½»º´æÖĞ¡£
+     *ä»é€šé“ä¸­è¯»å–å­—èŠ‚åºåˆ—ï¼Œå†™åˆ°ç¼“å­˜ä¸­ã€‚
      * <p> An attempt is made to read up to <i>r</i> bytes from the channel,
      * where <i>r</i> is the number of bytes remaining in the buffer, that is,
      * <tt>dst.remaining()</tt>, at the moment this method is invoked.
-     *Ö»ÄÜ¶ÁÈ¡»º³åÊ£Óà¿Õ¼äÈİÁ¿µÄ×Ö½ÚĞòÁĞµ½»º´æ¡£
+     *åªèƒ½è¯»å–ç¼“å†²å‰©ä½™ç©ºé—´å®¹é‡çš„å­—èŠ‚åºåˆ—åˆ°ç¼“å­˜ã€‚
      * <p> Suppose that a byte sequence of length <i>n</i> is read, where
      * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
      * This byte sequence will be transferred into the buffer so that the first
@@ -91,16 +91,16 @@ public interface ReadableByteChannel extends Channel {
      * if a channel is in blocking mode and there is at least one byte
      * remaining in the buffer then this method will block until at least one
      * byte is read.
-     *Ò»¸ö¶Á²Ù×÷Ò²Ğí²»ÄÜÌî³ä»º´æ£¬Êµ¼ÊÒ²ĞíÃ»ÓĞ¶ÁÈ¡ÈÎºÎ×Ö½Ú¡£ÊÇ·ñÄÜ¹»Ìî³äºÍ¶ÁÈ¡×Ö½Ú£¬
-     ÒÀÀµÓÚÍ¨µÀµÄ×´Ì¬¡£Ò»¸ö·Ç×èÈûµÄÍ¨µÀ²»ÄÜ¶ÁÈ¡´óÓÚsocketÊäÈë»º³åÇøÈİÁ¿µÄ×Ö½ÚÊı£»ÏàËÆµØ£¬
-     Ò»¸öÎÄ¼şÍ¨µÀ²»ÄÜ¶ÁÈ¡´óÓÚÎÄ¼ş×Ö½Ú´óĞ¡µÄ×Ö½Ú¡£Èç¹ûÍ¨µÀÎª×èÈûÄ£Ê½£¬ÔòÖÁÉÙÓĞÒ»¸ö×Ö½ÚÔÚÍ¨µÀµÄsocket
-     ÊäÈë»º´æÇøÖĞ¿ÉÓÃ£¬Èç¹ûÃ»ÓĞread·½·¨×èÈûµ½ÖÁÉÙÓĞÒ»¸ö×Ö½Ú¿ÉÓÃ¡£
+     *ä¸€ä¸ªè¯»æ“ä½œä¹Ÿè®¸ä¸èƒ½å¡«å……ç¼“å­˜ï¼Œå®é™…ä¹Ÿè®¸æ²¡æœ‰è¯»å–ä»»ä½•å­—èŠ‚ã€‚æ˜¯å¦èƒ½å¤Ÿå¡«å……å’Œè¯»å–å­—èŠ‚ï¼Œ
+     ä¾èµ–äºé€šé“çš„çŠ¶æ€ã€‚ä¸€ä¸ªéé˜»å¡çš„é€šé“ä¸èƒ½è¯»å–å¤§äºsocketè¾“å…¥ç¼“å†²åŒºå®¹é‡çš„å­—èŠ‚æ•°ï¼›ç›¸ä¼¼åœ°ï¼Œ
+     ä¸€ä¸ªæ–‡ä»¶é€šé“ä¸èƒ½è¯»å–å¤§äºæ–‡ä»¶å­—èŠ‚å¤§å°çš„å­—èŠ‚ã€‚å¦‚æœé€šé“ä¸ºé˜»å¡æ¨¡å¼ï¼Œåˆ™è‡³å°‘æœ‰ä¸€ä¸ªå­—èŠ‚åœ¨é€šé“çš„socket
+     è¾“å…¥ç¼“å­˜åŒºä¸­å¯ç”¨ï¼Œå¦‚æœæ²¡æœ‰readæ–¹æ³•é˜»å¡åˆ°è‡³å°‘æœ‰ä¸€ä¸ªå­—èŠ‚å¯ç”¨ã€‚
      * <p> This method may be invoked at any time.  If another thread has
      * already initiated a read operation upon this channel, however, then an
      * invocation of this method will block until the first operation is
      * complete. </p>
-     *´Ë·½·¨¿ÉÒÔÔÚÈÎºÎÊ±ºòµ÷ÓÃ¡£Èç¹ûÆäËûÏß³ÌÒÑ¾­Ö´ĞĞÒ»¸ö¶Á²Ù×÷£¬Ôòµ±Ç°¶Á²Ù×÷×èÈûµ½ÆäËû
-     Ïß³ÌÖ´ĞĞÍê¶Á²Ù×÷¡£
+     *æ­¤æ–¹æ³•å¯ä»¥åœ¨ä»»ä½•æ—¶å€™è°ƒç”¨ã€‚å¦‚æœå…¶ä»–çº¿ç¨‹å·²ç»æ‰§è¡Œä¸€ä¸ªè¯»æ“ä½œï¼Œåˆ™å½“å‰è¯»æ“ä½œé˜»å¡åˆ°å…¶ä»–
+     çº¿ç¨‹æ‰§è¡Œå®Œè¯»æ“ä½œã€‚
      * @param  dst
      *         The buffer into which bytes are to be transferred
      *
@@ -137,16 +137,16 @@ import java.nio.ByteBuffer;
 
 /**
  * A channel that can write bytes.
- *WritableByteChannel¿ÉÒÔĞ´×Ö½ÚÁ÷µÄÍ¨µÀ
+ *WritableByteChannelå¯ä»¥å†™å­—èŠ‚æµçš„é€šé“
  * <p> Only one write operation upon a writable channel may be in progress at
  * any given time.  If one thread initiates a write operation upon a channel
  * then any other thread that attempts to initiate another write operation will
  * block until the first operation is complete.  Whether or not other kinds of
  * I/O operations may proceed concurrently with a write operation depends upon
  * the type of the channel. </p>
- *Ò»¸ö¿ÉĞ´µÄÍ¨µÀÔÚÒ»¸ö½ø³ÌÖĞÍ¬Ê±Ö»ÄÜÓĞÒ»¸öĞ´²Ù×÷¡£µ±Ò»¸öÏß³ÌÔÚĞ´Í¨µÀ£¬ÆäËû³¢ÊÔĞ´
- Í¨µÀµÄÏß³Ì½«»á×èÈû£¬Ö±ÖÁÕıÔÚĞ´µÄÏß³ÌÍê³É¡£
- Í¨µÀ¡£
+ *ä¸€ä¸ªå¯å†™çš„é€šé“åœ¨ä¸€ä¸ªè¿›ç¨‹ä¸­åŒæ—¶åªèƒ½æœ‰ä¸€ä¸ªå†™æ“ä½œã€‚å½“ä¸€ä¸ªçº¿ç¨‹åœ¨å†™é€šé“ï¼Œå…¶ä»–å°è¯•å†™
+ é€šé“çš„çº¿ç¨‹å°†ä¼šé˜»å¡ï¼Œç›´è‡³æ­£åœ¨å†™çš„çº¿ç¨‹å®Œæˆã€‚
+ é€šé“ã€‚
  *
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
@@ -159,11 +159,11 @@ public interface WritableByteChannel
 
     /**
      * Writes a sequence of bytes to this channel from the given buffer.
-     *´ÓÍ¨µÀ¶ÁÈ¡×Ö½ÚÁ÷£¬Ğ´µ½»º³åÇø¡£
+     *ä»é€šé“è¯»å–å­—èŠ‚æµï¼Œå†™åˆ°ç¼“å†²åŒºã€‚
      * <p> An attempt is made to write up to <i>r</i> bytes to the channel,
      * where <i>r</i> is the number of bytes remaining in the buffer, that is,
      * <tt>src.remaining()</tt>, at the moment this method is invoked.
-     *¾ßÌåÄÜĞ´¶àÉÙ×Ö½ÚÁ÷£¬ÒÀÀµÓÚ»º³åÇøµÄµ±Ç°¿ÉÓÃ´óĞ¡
+     *å…·ä½“èƒ½å†™å¤šå°‘å­—èŠ‚æµï¼Œä¾èµ–äºç¼“å†²åŒºçš„å½“å‰å¯ç”¨å¤§å°
      * <p> Suppose that a byte sequence of length <i>n</i> is written, where
      * <tt>0</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<i>n</i>&nbsp;<tt>&lt;=</tt>&nbsp;<i>r</i>.
      * This byte sequence will be transferred from the buffer starting at index
@@ -178,13 +178,13 @@ public interface WritableByteChannel
      * depending upon their state, may write only some of the bytes or possibly
      * none at all.  A socket channel in non-blocking mode, for example, cannot
      * write any more bytes than are free in the socket's output buffer.
-     *Ò»¸öĞ´²Ù×÷ÔÚĞ´r¸öÇëÇó×Ö½Úºó·µ»Ø¡£ÆäËûÒ»Ğ©ÀàĞÍÍ¨µÀ£¬ÒªÒÀÀµÓÚËûÃÇµÄ×´Ì¬£¬Ò²Ğí
-     Ö»Ğ´Ò»Ğ©×Ö½Ú£¬Ò²¿ÉÄÜÃ»ÓĞ¡£Ò»¸ö·Ç×èÈûÄ£Ê½µÄ£¬²»ÄÜĞ´±ÈsocketÊä³ö»º³åÇøÊµ¼ÊÈİÁ¿¶àµÄ×Ö½Ú¡£
+     *ä¸€ä¸ªå†™æ“ä½œåœ¨å†™rä¸ªè¯·æ±‚å­—èŠ‚åè¿”å›ã€‚å…¶ä»–ä¸€äº›ç±»å‹é€šé“ï¼Œè¦ä¾èµ–äºä»–ä»¬çš„çŠ¶æ€ï¼Œä¹Ÿè®¸
+     åªå†™ä¸€äº›å­—èŠ‚ï¼Œä¹Ÿå¯èƒ½æ²¡æœ‰ã€‚ä¸€ä¸ªéé˜»å¡æ¨¡å¼çš„ï¼Œä¸èƒ½å†™æ¯”socketè¾“å‡ºç¼“å†²åŒºå®é™…å®¹é‡å¤šçš„å­—èŠ‚ã€‚
      * <p> This method may be invoked at any time.  If another thread has
      * already initiated a write operation upon this channel, however, then an
      * invocation of this method will block until the first operation is
      * complete. </p>
-     *µ±Ò»¸öÏß³ÌÔÚĞ´Í¨µÀ£¬ÆäËû³¢ÊÔĞ´Í¨µÀµÄÏß³Ì½«»á×èÈû£¬Ö±ÖÁÕıÔÚĞ´µÄÏß³ÌÍê³É¡£
+     *å½“ä¸€ä¸ªçº¿ç¨‹åœ¨å†™é€šé“ï¼Œå…¶ä»–å°è¯•å†™é€šé“çš„çº¿ç¨‹å°†ä¼šé˜»å¡ï¼Œç›´è‡³æ­£åœ¨å†™çš„çº¿ç¨‹å®Œæˆã€‚
      * @param  src
      *         The buffer from which bytes are to be retrieved
      *
@@ -218,7 +218,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 /**
  * A channel that can read bytes into a sequence of buffers.
- *ScatteringByteChannel¿ÉÒÔ´ÓÍ¨µÀ¶ÁÈ¡×Ö½ÚÁ÷£¬Ğ´µ½Ò»×é»º³åÇøÖĞ¡£
+ *ScatteringByteChannelå¯ä»¥ä»é€šé“è¯»å–å­—èŠ‚æµï¼Œå†™åˆ°ä¸€ç»„ç¼“å†²åŒºä¸­ã€‚
  * <p> A <i>scattering</i> read operation reads, in a single invocation, a
  * sequence of bytes into one or more of a given sequence of buffers.
  * Scattering reads are often useful when implementing network protocols or
@@ -226,9 +226,9 @@ import java.nio.ByteBuffer;
  * or more fixed-length headers followed by a variable-length body.  Similar
  * <i>gathering</i> write operations are defined in the {@link
  * GatheringByteChannel} interface.  </p>
- *scattering¶Á²Ù×÷£¬´ÓÍ¨µÀ¶ÁÈ¡×Ö½ÚĞòÁĞ£¬Ğ´µ½Ò»×é»º³åÇøÖĞ¡£·ÖÉ¢¶Á²Ù×÷ÓÃÓÚÍøÂçĞ­ÒéºÍÎÄ¼ş¸ñÊ½»¯
- ³¡¾°ÖĞ¹ú£¬±ÈÈç£¬Ò»¸öÍøÂçĞ­Òé¿ÉÄÜ°üÀ¨Ò»¸ö»ò¶à¸ö¹Ì¶¨³¤¶ÈµÄÍ·²¿£¬¸ú×ÅÒ»¸ö¿É±ä³¤¶ÈµÄbody¡£
- ÏàËÆµÄ¾Û¼¯Ğ´²Ù×÷ÔÚGatheringByteChannel½Ó¿ÚÖĞ¶¨Òå¡£
+ *scatteringè¯»æ“ä½œï¼Œä»é€šé“è¯»å–å­—èŠ‚åºåˆ—ï¼Œå†™åˆ°ä¸€ç»„ç¼“å†²åŒºä¸­ã€‚åˆ†æ•£è¯»æ“ä½œç”¨äºç½‘ç»œåè®®å’Œæ–‡ä»¶æ ¼å¼åŒ–
+ åœºæ™¯ä¸­å›½ï¼Œæ¯”å¦‚ï¼Œä¸€ä¸ªç½‘ç»œåè®®å¯èƒ½åŒ…æ‹¬ä¸€ä¸ªæˆ–å¤šä¸ªå›ºå®šé•¿åº¦çš„å¤´éƒ¨ï¼Œè·Ÿç€ä¸€ä¸ªå¯å˜é•¿åº¦çš„bodyã€‚
+ ç›¸ä¼¼çš„èšé›†å†™æ“ä½œåœ¨GatheringByteChannelæ¥å£ä¸­å®šä¹‰ã€‚
  *
  * @author Mark Reinhold
  * @author JSR-51 Expert Group
@@ -242,11 +242,11 @@ public interface ScatteringByteChannel
     /**
      * Reads a sequence of bytes from this channel into a subsequence of the
      * given buffers.
-     *´ÓÍ¨µÀ¶ÁĞ´×Ö½ÚÁ÷£¬Ğ´µ½Ò»×é»º³åÇøÖĞ
+     *ä»é€šé“è¯»å†™å­—èŠ‚æµï¼Œå†™åˆ°ä¸€ç»„ç¼“å†²åŒºä¸­
      * <p> An invocation of this method attempts to read up to <i>r</i> bytes
      * from this channel, where <i>r</i> is the total number of bytes remaining
      * the specified subsequence of the given buffer array, that is,
-     *´Ë·½·¨µ÷ÓÃÊ±£¬½«»á´ÓÍ¨µÀ¶ÁÈ¡ËùÓĞ»º³åÇø¿ÉÓÃ¿Õ¼äÖ®ºÍ´óĞ¡µÄ×Ö½Ú
+     *æ­¤æ–¹æ³•è°ƒç”¨æ—¶ï¼Œå°†ä¼šä»é€šé“è¯»å–æ‰€æœ‰ç¼“å†²åŒºå¯ç”¨ç©ºé—´ä¹‹å’Œå¤§å°çš„å­—èŠ‚
      * <blockquote><pre>
      * dsts[offset].remaining()
      *     + dsts[offset+1].remaining()
@@ -269,8 +269,8 @@ public interface ScatteringByteChannel
      * already initiated a read operation upon this channel, however, then an
      * invocation of this method will block until the first operation is
      * complete. </p>
-     *Èç¹ûÔÚµ±Ç°Ïß³Ì¶Á²Ù×÷Ö®Ç°ÒÑ¾­ÓĞÏß³ÌÔÚ¶ÁÍ¨µÀ£¬Ôò±ØĞëµÈ´ıµ±Ç°¶ÁÍ¨µÀµÄÏß³ÌÍê³É£¬
-     ·½¿É½ø³Ì¶Á²Ù×÷¡£
+     *å¦‚æœåœ¨å½“å‰çº¿ç¨‹è¯»æ“ä½œä¹‹å‰å·²ç»æœ‰çº¿ç¨‹åœ¨è¯»é€šé“ï¼Œåˆ™å¿…é¡»ç­‰å¾…å½“å‰è¯»é€šé“çš„çº¿ç¨‹å®Œæˆï¼Œ
+     æ–¹å¯è¿›ç¨‹è¯»æ“ä½œã€‚
      * @param  dsts
      *         The buffers into which bytes are to be transferred
      *
@@ -315,7 +315,7 @@ public interface ScatteringByteChannel
 
     /**
      * Reads a sequence of bytes from this channel into the given buffers.
-     *´Ë·½·¨Ïàµ±ÓÚread(dsts, 0, dsts.length)·½·¨
+     *æ­¤æ–¹æ³•ç›¸å½“äºread(dsts, 0, dsts.length)æ–¹æ³•
      * <p> An invocation of this method of the form <tt>c.read(dsts)</tt>
      * behaves in exactly the same manner as the invocation
      *
@@ -357,7 +357,7 @@ import java.nio.ByteBuffer;
 
 /**
  * A channel that can write bytes from a sequence of buffers.
- *GatheringByteChannel¿É´ÓÒ»×é»º³åÇø¶ÁÈ¡×Ö½Ú£¬Ğ´µ½Í¨µÀÖĞ¡£
+ *GatheringByteChannelå¯ä»ä¸€ç»„ç¼“å†²åŒºè¯»å–å­—èŠ‚ï¼Œå†™åˆ°é€šé“ä¸­ã€‚
  * <p> A <i>gathering</i> write operation writes, in a single invocation, a
  * sequence of bytes from one or more of a given sequence of buffers.
  * Gathering writes are often useful when implementing network protocols or
@@ -379,7 +379,7 @@ public interface GatheringByteChannel
     /**
      * Writes a sequence of bytes to this channel from a subsequence of the
      * given buffers.
-     *´ÓÒ»×é»º³åÇø¶ÁÈ¡×Ö½Ú£¬Ğ´µ½Í¨µÀÖĞ¡£
+     *ä»ä¸€ç»„ç¼“å†²åŒºè¯»å–å­—èŠ‚ï¼Œå†™åˆ°é€šé“ä¸­ã€‚
      * <p> An attempt is made to write up to <i>r</i> bytes to this channel,
      * where <i>r</i> is the total number of bytes remaining in the specified
      * subsequence of the given buffer array, that is,
@@ -406,13 +406,13 @@ public interface GatheringByteChannel
      * depending upon their state, may write only some of the bytes or possibly
      * none at all.  A socket channel in non-blocking mode, for example, cannot
      * write any more bytes than are free in the socket's output buffer.
-     *Ò»Ğ©¾ßÌåµÄÍ¨µÀ£¬Ò²ĞíĞ´Ò»Ğ©×Ö½Ú£¬Ò²Ğí²»Ğ´£¬ÒÀÀµÓÚ¾ßÌåµÄ×´Ì¬¡£·Ç×èÈûÍ¨µÀ²»ÄÜ
-     Ğ´±ÈsocketÊä³ö»º³åÇø¶àµÄ×Ö½ÚÊı¡£
+     *ä¸€äº›å…·ä½“çš„é€šé“ï¼Œä¹Ÿè®¸å†™ä¸€äº›å­—èŠ‚ï¼Œä¹Ÿè®¸ä¸å†™ï¼Œä¾èµ–äºå…·ä½“çš„çŠ¶æ€ã€‚éé˜»å¡é€šé“ä¸èƒ½
+     å†™æ¯”socketè¾“å‡ºç¼“å†²åŒºå¤šçš„å­—èŠ‚æ•°ã€‚
      * <p> This method may be invoked at any time.  If another thread has
      * already initiated a write operation upon this channel, however, then an
      * invocation of this method will block until the first operation is
      * complete. </p>
-     *·½·¨ÔÚÒ»¸ö½ø³ÌÖĞ²»ÄÜ²¢·¢£¬Ò»¸ö¶ÁÏß³Ì±ØĞëµÈÁíÒ»¸ö¶ÁÏß³ÌÍê³É£¬·½¿É¶ÁÈ¡
+     *æ–¹æ³•åœ¨ä¸€ä¸ªè¿›ç¨‹ä¸­ä¸èƒ½å¹¶å‘ï¼Œä¸€ä¸ªè¯»çº¿ç¨‹å¿…é¡»ç­‰å¦ä¸€ä¸ªè¯»çº¿ç¨‹å®Œæˆï¼Œæ–¹å¯è¯»å–
      * @param  srcs
      *         The buffers from which bytes are to be retrieved
      *
@@ -457,7 +457,7 @@ public interface GatheringByteChannel
 
     /**
      * Writes a sequence of bytes to this channel from the given buffers.
-     *Óëwrite(srcs, 0, srcs.length)µÈ¼Û
+     *ä¸write(srcs, 0, srcs.length)ç­‰ä»·
      * <p> An invocation of this method of the form <tt>c.write(srcs)</tt>
      * behaves in exactly the same manner as the invocation
      *
