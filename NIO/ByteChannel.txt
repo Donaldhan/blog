@@ -349,7 +349,7 @@ public interface ScatteringByteChannel
      */
     public long read(ByteBuffer[] dsts) throws IOException;
 }
-//
+//GatheringByteChannel
 package java.nio.channels;
 import java.io.IOException;
 import java.nio.ByteBuffer;
