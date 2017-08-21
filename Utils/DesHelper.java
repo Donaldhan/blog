@@ -143,10 +143,9 @@ public class DesHelper {
     }
     public static void main(String[] args) throws Exception {
     	String timeStamp = "20170824094138";
-		String passWord="123456";
-		String key = "aassffgdwlfsffgsfdgsdgssfgsg";
-		String encodeResult = DesHelper.getInstance().encrypt3DESECB(timeStamp+passWord, key);
-		System.out.println("3DES algorithm encode result:"+encodeResult);
-		
+	String passWord="123456";
+	String key = "aassffgdwlfsffgsfdgsdgssfgsg";
+	String encodeResult = DesHelper.getInstance().encrypt3DESECB(timeStamp+passWord, key);
+	System.out.println("3DES algorithm encode result:"+encodeResult);
 	}
 }
