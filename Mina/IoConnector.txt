@@ -1,14 +1,14 @@
-Mina IoService½Ó¿Ú¶¨Òå¼°³éÏóÊµÏÖ£º[url]http://donald-draper.iteye.com/blog/2378271[/url]
-Mina socket¼àÌıÆ÷£¨NioSocketAcceptor£©£º[url]http://donald-draper.iteye.com/blog/2378668[/url]
-ÒıÑÔ£º
-Ç°ÃæÒ»ÆªÎÄÕÂÎÒÃÇ¿ÉÒÔsocket¼àÌı£¬ÏÈÀ´»Ø¹ËÒ»ÏÂ£º
-    socket¼àÌıNioSocketAcceptor£¬ÓĞÁ½¸öÄÚ²¿±äÁ¿ÎªÑ¡ÔñÆ÷selectorºÍÑ¡ÔñÆ÷Ìá¹©ÕßselectorProvider¡£init·½·¨Ö÷Òª¹¤×÷Îª´ò¿ªÒ»¸öÑ¡ÔñÆ÷selector¡£´ò¿ªÒ»¸ösocketµØÖ·£¬Èç¹ûÑ¡ÔñÆ÷Ìá¹©Õß²»Îª¿Õ£¬ÔòÍ¨¹ıÑ¡ÔñÆ÷Ìá¹©Õß´ò¿ªÒ»¸öServerSocketChannel£¬·ñÔò
-Í¨¹ıServerSocketChannel´ò¿ªÒ»¸ösocketÍ¨µÀ·şÎñÕß£»ÅäÖÃÍ¨µÀ×èÈûÄ£Ê½£¬¼°Í¨µÀ¹ØÁªµÄSeverSocketµÄµØÖ·ÖØÓÃÅäÖÃ£¬È»ºóÍ¨¹ıSeverSocket°ó¶¨µØÖ·¡£¼àÌıÆ÷½ÓÊÜÁ¬½Ó£¬Êµ¼ÊÉÏÊÇÎ¯ÍĞ¸ø°ó¶¨µØÖ·µÄServerSocketChannel£¬½ÓÊÜ¿Í»§¶ËµÄÁ¬½Ó£¬²úÉúÒ»¸öSocketChannel£¬ÔÙ¸ù¾İSocketChannelºÍIo´¦ÀíÆ÷´´½¨»á»°¡£Ñ¡Ôñ»½ĞÑ²Ù×÷Êµ¼ÊÎ¯ÍĞ¸øÄÚ²¿Ñ¡ÔñÆ÷¡£
-´ÓÕâÆªÎÄÕÂ¿ªÊ¼ÎÒÃÇÀ´½²socketÁ¬½ÓÆ÷NioSocketConnector£¬ÏÈ´ÓIoÁ¬½ÓÆ÷½Ó¿Ú¶¨Òå¿ªÊ¼£º
+Mina IoServiceæ¥å£å®šä¹‰åŠæŠ½è±¡å®ç°ï¼š[url]http://donald-draper.iteye.com/blog/2378271[/url]
+Mina socketç›‘å¬å™¨ï¼ˆNioSocketAcceptorï¼‰ï¼š[url]http://donald-draper.iteye.com/blog/2378668[/url]
+å¼•è¨€ï¼š
+å‰é¢ä¸€ç¯‡æ–‡ç« æˆ‘ä»¬çœ‹äº†socketç›‘å¬å™¨ï¼Œå…ˆæ¥å›é¡¾ä¸€ä¸‹ï¼š
+    socketç›‘å¬NioSocketAcceptorï¼Œæœ‰ä¸¤ä¸ªå†…éƒ¨å˜é‡ä¸ºé€‰æ‹©å™¨selectorå’Œé€‰æ‹©å™¨æä¾›è€…selectorProviderã€‚initæ–¹æ³•ä¸»è¦å·¥ä½œä¸ºæ‰“å¼€ä¸€ä¸ªé€‰æ‹©å™¨selectorã€‚æ‰“å¼€ä¸€ä¸ªsocketåœ°å€ï¼Œå¦‚æœé€‰æ‹©å™¨æä¾›è€…ä¸ä¸ºç©ºï¼Œåˆ™é€šè¿‡é€‰æ‹©å™¨æä¾›è€…æ‰“å¼€ä¸€ä¸ªServerSocketChannelï¼Œå¦åˆ™
+é€šè¿‡ServerSocketChannelæ‰“å¼€ä¸€ä¸ªsocketé€šé“æœåŠ¡è€…ï¼›é…ç½®é€šé“é˜»å¡æ¨¡å¼ï¼ŒåŠé€šé“å…³è”çš„SeverSocketçš„åœ°å€é‡ç”¨é…ç½®ï¼Œç„¶åé€šè¿‡SeverSocketç»‘å®šåœ°å€ã€‚ç›‘å¬å™¨æ¥å—è¿æ¥ï¼Œå®é™…ä¸Šæ˜¯å§”æ‰˜ç»™ç»‘å®šåœ°å€çš„ServerSocketChannelï¼Œæ¥å—å®¢æˆ·ç«¯çš„è¿æ¥ï¼Œäº§ç”Ÿä¸€ä¸ªSocketChannelï¼Œå†æ ¹æ®SocketChannelå’ŒIoå¤„ç†å™¨åˆ›å»ºä¼šè¯ã€‚é€‰æ‹©å”¤é†’æ“ä½œå®é™…å§”æ‰˜ç»™å†…éƒ¨é€‰æ‹©å™¨ã€‚
+ä»è¿™ç¯‡æ–‡ç« å¼€å§‹æˆ‘ä»¬æ¥è®²socketè¿æ¥å™¨NioSocketConnectorï¼Œå…ˆä»Ioè¿æ¥å™¨æ¥å£å®šä¹‰å¼€å§‹ï¼š
 /**
  * Connects to endpoint, communicates with the server, and fires events to
  * {@link IoHandler}s.
- Á¬½ÓÆ÷IoConnector£¬¿ÉÒÔÁ¬½ÓÖÕ¶ËÓë·şÎñÍ¨ĞÅ£¬´¥·¢IoHandlerµÄÏà¹ØÊÂ¼ş¡£
+ è¿æ¥å™¨IoConnectorï¼Œå¯ä»¥è¿æ¥ç»ˆç«¯ä¸æœåŠ¡é€šä¿¡ï¼Œè§¦å‘IoHandlerçš„ç›¸å…³äº‹ä»¶ã€‚
  * <p>
  * Please refer to
  * <a href="../../../../../xref-examples/org/apache/mina/examples/netcat/Main.html">NetCat</a>
@@ -17,29 +17,29 @@ Mina socket¼àÌıÆ÷£¨NioSocketAcceptor£©£º[url]http://donald-draper.iteye.com/blog
  * You should connect to the desired socket address to start communication,
  * and then events for incoming connections will be sent to the specified
  * default {@link IoHandler}.
- ÔÚ¿ªÊ¼Í¨ĞÅÖ®Ç°£¬ÄãÓ¦¸ÃÁ¬½ÓÒ»¸öSocketµØÖ·£¬½¨Á¢Á¬½ÓµÄÏà¹ØÊÂ¼ş½«»á·¢ËÍµ½IoHandler¡£
+ åœ¨å¼€å§‹é€šä¿¡ä¹‹å‰ï¼Œä½ åº”è¯¥è¿æ¥ä¸€ä¸ªSocketåœ°å€ï¼Œå»ºç«‹è¿æ¥çš„ç›¸å…³äº‹ä»¶å°†ä¼šå‘é€åˆ°IoHandlerã€‚
  * <p>
  * Threads connect to endpoint start automatically when
  * {@link #connect(SocketAddress)} is invoked, and stop when all
  * connection attempts are finished.
- *µ±Á¬½ÓÔ¶¶ËµØÖ·Ê±£¬Ïß³Ì×Ô¶¯Á¬½ÓÔ¶¶ËsocketµØÖ·£¬µ±Á¬½Ó³¢ÊÔÍê³ÉÊ±£¬Ïß³Ì¹Ø±Õ
+ *å½“è¿æ¥è¿œç«¯åœ°å€æ—¶ï¼Œçº¿ç¨‹è‡ªåŠ¨è¿æ¥è¿œç«¯socketåœ°å€ï¼Œå½“è¿æ¥å°è¯•å®Œæˆæ—¶ï¼Œçº¿ç¨‹å…³é—­
  * @author <a href="http://mina.apache.org">Apache MINA Project</a>
  */
 public interface IoConnector extends IoService {
     /**
      * @return the connect timeout in seconds.  The default value is 1 minute.
-     * »ñÈ¡Á¬½Ó³¬Ê±Ê±¼ä£¨s£©£¬Ä¬ÈÏÎª1·ÖÖÓ
+     * è·å–è¿æ¥è¶…æ—¶æ—¶é—´ï¼ˆsï¼‰ï¼Œé»˜è®¤ä¸º1åˆ†é’Ÿ
      * @deprecated
      */
     @Deprecated
     int getConnectTimeout();
-    /**»ñÈ¡Á¬½Ó³¬Ê±Ê±¼ä£¨ms£©£¬Ä¬ÈÏÎª1·ÖÖÓ
+    /**è·å–è¿æ¥è¶…æ—¶æ—¶é—´ï¼ˆmsï¼‰ï¼Œé»˜è®¤ä¸º1åˆ†é’Ÿ
      * @return the connect timeout in milliseconds.  The default value is 1 minute.
      */
     long getConnectTimeoutMillis();
     /**
      * Sets the connect timeout in seconds.  The default value is 1 minute.
-     * ÉèÖÃÁ¬½Ó³¬Ê±Ê±¼ä£¬µ¥Î»s
+     * è®¾ç½®è¿æ¥è¶…æ—¶æ—¶é—´ï¼Œå•ä½s
      * @deprecated
      * @param connectTimeout The time out for the connection
      */
@@ -47,7 +47,7 @@ public interface IoConnector extends IoService {
     void setConnectTimeout(int connectTimeout);
     /**
      * Sets the connect timeout in milliseconds.  The default value is 1 minute.
-     * ÉèÖÃÁ¬½Ó³¬Ê±Ê±¼ä£¬µ¥Î»ms
+     * è®¾ç½®è¿æ¥è¶…æ—¶æ—¶é—´ï¼Œå•ä½ms
      * @param connectTimeoutInMillis The time out for the connection
      */
     void setConnectTimeoutMillis(long connectTimeoutInMillis);
@@ -55,18 +55,18 @@ public interface IoConnector extends IoService {
     /**
      * @return the default remote address to connect to when no argument
      * is specified in {@link #connect()} method.
-     »ñÈ¡Ä¬ÈÏµÄÔ¶³ÌsocketµØÖ·
+     è·å–é»˜è®¤çš„è¿œç¨‹socketåœ°å€
      */
     SocketAddress getDefaultRemoteAddress();
 
     /**
      * Sets the default remote address to connect to when no argument is
      * specified in {@link #connect()} method.
-     * ÉèÖÃÄ¬ÈÏµÄÔ¶¶ËsocketµØÖ·
+     * è®¾ç½®é»˜è®¤çš„è¿œç«¯socketåœ°å€
      * @param defaultRemoteAddress The default remote address
      */
     void setDefaultRemoteAddress(SocketAddress defaultRemoteAddress);
-    //ÉèÖÃ»ñÈ¡±¾µØÄ¬ÈÏsocket´øº¢×Ó
+    //è®¾ç½®è·å–æœ¬åœ°é»˜è®¤socketå¸¦å­©å­
     /**
      * @return the default local address
      */
@@ -81,7 +81,7 @@ public interface IoConnector extends IoService {
     /**
      * Connects to the {@link #setDefaultRemoteAddress(SocketAddress) default
      * remote address}.
-     * Á¬½Óµ½Ä¬ÈÏÔ¶¶ËµØÖ·
+     * è¿æ¥åˆ°é»˜è®¤è¿œç«¯åœ°å€
      * @return the {@link ConnectFuture} instance which is completed when the
      *         connection attempt initiated by this call succeeds or fails.
      * @throws IllegalStateException
@@ -95,8 +95,8 @@ public interface IoConnector extends IoService {
      * the IoSession is created but before {@link IoHandler#sessionCreated(IoSession)}
      * is invoked.  There is <em>no</em> guarantee that the <code>ioSessionInitializer</code>
      * will be invoked before this method returns.
-     * ÔÚÁ¬½ÓÄ¬ÈÏÔ¶¶ËµØÖ·£¬µ±»á»°´´½¨Ê±£¬ÔÚIoHandler#sessionCreatedµ÷ÓÃÇ°£¬µ÷ÓÃioSessionInitializer
-     £¬³õÊ¼»¯»á»°
+     * åœ¨è¿æ¥é»˜è®¤è¿œç«¯åœ°å€ï¼Œå½“ä¼šè¯åˆ›å»ºæ—¶ï¼Œåœ¨IoHandler#sessionCreatedè°ƒç”¨å‰ï¼Œè°ƒç”¨ioSessionInitializer
+     ï¼Œåˆå§‹åŒ–ä¼šè¯
      * @param sessionInitializer  the callback to invoke when the {@link IoSession} object is created
      * @return the {@link ConnectFuture} instance which is completed when the
      *         connection attempt initiated by this call succeeds or fails.
@@ -107,7 +107,7 @@ public interface IoConnector extends IoService {
 
     /**
      * Connects to the specified remote address.
-     * Á¬½Óµ½Ô¶¶ËsocketµØÖ·
+     * è¿æ¥åˆ°è¿œç«¯socketåœ°å€
      * @param remoteAddress The remote address to connect to
      * @return the {@link ConnectFuture} instance which is completed when the
      *         connection attempt initiated by this call succeeds or fails.
@@ -120,8 +120,8 @@ public interface IoConnector extends IoService {
      * {@link IoHandler#sessionCreated(IoSession)} is invoked.  There is <em>no</em>
      * guarantee that the <code>ioSessionInitializer</code> will be invoked before
      * this method returns.
-     * Á¬½ÓÔ¶¶ËµØÖ·£¬ÔÚ»á»°´´½¨Ê±£¬ÔÚIoHandler#sessionCreatedµ÷ÓÃÇ°£¬µ÷ÓÃioSessionInitializer
-     £¬³õÊ¼»¯»á»°¡£
+     * è¿æ¥è¿œç«¯åœ°å€ï¼Œåœ¨ä¼šè¯åˆ›å»ºæ—¶ï¼Œåœ¨IoHandler#sessionCreatedè°ƒç”¨å‰ï¼Œè°ƒç”¨ioSessionInitializer
+     ï¼Œåˆå§‹åŒ–ä¼šè¯ã€‚
      * @param remoteAddress  the remote address to connect to
      * @param sessionInitializer  the callback to invoke when the {@link IoSession} object is created
      * 
@@ -132,7 +132,7 @@ public interface IoConnector extends IoService {
 
     /**
      * Connects to the specified remote address binding to the specified local address.
-     *Á¬½ÓÔ¶¶ËµØÖ·£¬°ó¶¨±¾µØµØÖ·
+     *è¿æ¥è¿œç«¯åœ°å€ï¼Œç»‘å®šæœ¬åœ°åœ°å€
      * @param remoteAddress The remote address to connect
      * @param localAddress The local address to bind
      * 
@@ -147,8 +147,8 @@ public interface IoConnector extends IoService {
      * IoSession is created but before {@link IoHandler#sessionCreated(IoSession)}
      * is invoked.  There is <em>no</em> guarantee that the <code>ioSessionInitializer</code>
      * will be invoked before this method returns.
-     * Á¬½ÓÔ¶¶ËµØÖ·£¬°ó¶¨±¾µØµØÖ·£¬ÔÚIoHandler#sessionCreatedµ÷ÓÃÇ°£¬µ÷ÓÃioSessionInitializer
-     £¬³õÊ¼»¯»á»°¡£
+     * è¿æ¥è¿œç«¯åœ°å€ï¼Œç»‘å®šæœ¬åœ°åœ°å€ï¼Œåœ¨IoHandler#sessionCreatedè°ƒç”¨å‰ï¼Œè°ƒç”¨ioSessionInitializer
+     ï¼Œåˆå§‹åŒ–ä¼šè¯ã€‚
      * @param remoteAddress  the remote address to connect to
      * @param localAddress  the local interface to bind to
      * @param sessionInitializer  the callback to invoke when the {@link IoSession} object is created
@@ -159,8 +159,8 @@ public interface IoConnector extends IoService {
     ConnectFuture connect(SocketAddress remoteAddress, SocketAddress localAddress,
             IoSessionInitializer<? extends ConnectFuture> sessionInitializer);
 }
-´ÓIoConnector½Ó¿Ú¶¨ÒåÀ´¿´£¬ÓëIoserviceÏà±ÈÔö¼ÓÁËÁ¬½Ó¹¦ÄÜ¡£
-ÔÙÀ´¿´³éÏóÁ¬½ÓÆ÷AbstractIoConnector¶¨Òå£º
+ä»IoConnectoræ¥å£å®šä¹‰æ¥çœ‹ï¼Œä¸Ioserviceç›¸æ¯”å¢åŠ äº†è¿æ¥åŠŸèƒ½ã€‚
+å†æ¥çœ‹æŠ½è±¡è¿æ¥å™¨AbstractIoConnectorå®šä¹‰ï¼š
 /**
  * A base implementation of {@link IoConnector}.
  *
@@ -170,21 +170,21 @@ public abstract class AbstractIoConnector extends AbstractIoService implements I
     /**
      * The minimum timeout value that is supported (in milliseconds).
      */
-    private long connectTimeoutCheckInterval = 50L;//Á¬½Ó³¬Ê±¼ì²é¼ä¸ô
-    private long connectTimeoutInMillis = 60 * 1000L; // 1 minute by default£¬Ä¬ÈÏÁ¬½Ó³¬Ê±Ê±¼ä
-    /** The remote address we are connected to Á¬½ÓµÄÔ¶¶ËµØÖ·*/
+    private long connectTimeoutCheckInterval = 50L;//è¿æ¥è¶…æ—¶æ£€æŸ¥é—´éš”
+    private long connectTimeoutInMillis = 60 * 1000L; // 1 minute by defaultï¼Œé»˜è®¤è¿æ¥è¶…æ—¶æ—¶é—´
+    /** The remote address we are connected to è¿æ¥çš„è¿œç«¯åœ°å€*/
     private SocketAddress defaultRemoteAddress;
-    /** The local address ±¾µØsocketµØÖ·*/
+    /** The local address æœ¬åœ°socketåœ°å€*/
     private SocketAddress defaultLocalAddress;
 }
-ÔÙ¿´¿´¹¹Ôì£º
+å†çœ‹çœ‹æ„é€ ï¼š
 /**
  * Constructor for {@link AbstractIoConnector}. You need to provide a
  * default session configuration and an {@link Executor} for handling I/O
  * events. If null {@link Executor} is provided, a default one will be
  * created using {@link Executors#newCachedThreadPool()}.
- * ¹¹ÔìAbstractIoConnector£¬ĞèÒªÌá¹©Ò»¸ö»á»°ÅäÖÃ£¬Ò»¸öÖ´ĞĞÆ÷ÓÃÓÚ´¦ÀíIOÏà¹ØÊÂ¼ş£¬
- Èç¹ûÖ´ĞĞÆ÷Îª¿Õ£¬Ä¬ÈÏÎªExecutors#newCachedThreadPool
+ * æ„é€ AbstractIoConnectorï¼Œéœ€è¦æä¾›ä¸€ä¸ªä¼šè¯é…ç½®ï¼Œä¸€ä¸ªæ‰§è¡Œå™¨ç”¨äºå¤„ç†IOç›¸å…³äº‹ä»¶ï¼Œ
+ å¦‚æœæ‰§è¡Œå™¨ä¸ºç©ºï¼Œé»˜è®¤ä¸ºExecutors#newCachedThreadPool
  * @see AbstractIoService#AbstractIoService(IoSessionConfig, Executor)
  * 
  * @param sessionConfig
@@ -196,7 +196,7 @@ public abstract class AbstractIoConnector extends AbstractIoService implements I
 protected AbstractIoConnector(IoSessionConfig sessionConfig, Executor executor) {
     super(sessionConfig, executor);
 }
-ÔÙÀ´¿´Á¬½Ó²Ù×÷£º
+å†æ¥çœ‹è¿æ¥æ“ä½œï¼š
 /**
  * {@inheritDoc}
  */
@@ -241,16 +241,16 @@ public ConnectFuture connect(SocketAddress remoteAddress,
 public ConnectFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
     return connect(remoteAddress, localAddress, null);
 }
-ÉÏÃæËùÓĞµÄÁ¬½Ó²Ù×÷¶¼ÊÇÎ¯ÍĞ¸ø·½·¨connect(SocketAddress remoteAddress, SocketAddress localAddress,
+ä¸Šé¢æ‰€æœ‰çš„è¿æ¥æ“ä½œéƒ½æ˜¯å§”æ‰˜ç»™æ–¹æ³•connect(SocketAddress remoteAddress, SocketAddress localAddress,
         IoSessionInitializer<? extends ConnectFuture> sessionInitializer) 
-ÎÒÃÇÀ´¿´Õâ¸ö·½·¨£º
+æˆ‘ä»¬æ¥çœ‹è¿™ä¸ªæ–¹æ³•ï¼š
 /**
  * {@inheritDoc}
  */
 @Override
 public final ConnectFuture connect(SocketAddress remoteAddress, SocketAddress localAddress,
         IoSessionInitializer<? extends ConnectFuture> sessionInitializer) {
-    //¼ì²éÁ¬½ÓÆ÷×´Ì¬£¬¼ì²é±¾µØµØÖ·ÓëÔ¶³ÌµØÖ·ÊÇ·ñÎª¿ÕÒÑ¾­Óë´«ÊäÔªÊı¾İµØÖ·ÀàĞÍÊÇ·ñÆ¥Åä
+    //æ£€æŸ¥è¿æ¥å™¨çŠ¶æ€ï¼Œæ£€æŸ¥æœ¬åœ°åœ°å€ä¸è¿œç¨‹åœ°å€æ˜¯å¦ä¸ºç©ºå·²ç»ä¸ä¼ è¾“å…ƒæ•°æ®åœ°å€ç±»å‹æ˜¯å¦åŒ¹é…
     if (isDisposing()) {
         throw new IllegalStateException("The connector is being disposed.");
     }
@@ -265,7 +265,7 @@ public final ConnectFuture connect(SocketAddress remoteAddress, SocketAddress lo
         throw new IllegalArgumentException("localAddress type: " + localAddress.getClass() + " (expected: "
                 + getTransportMetadata().getAddressType() + ")");
     }
-    //Èç¹ûÁ¬½ÓÆ÷IohandlerÎªnull£¬´´½¨Ò»¸ö¶Ô»á»°²Ù×÷ÊÂ¼ş²»´¦ÀíµÄIoHandler
+    //å¦‚æœè¿æ¥å™¨Iohandlerä¸ºnullï¼Œåˆ›å»ºä¸€ä¸ªå¯¹ä¼šè¯æ“ä½œäº‹ä»¶ä¸å¤„ç†çš„IoHandler
     if (getHandler() == null) {
         if (getSessionConfig().isUseReadOperation()) {
             setHandler(new IoHandler() {
@@ -335,7 +335,7 @@ public final ConnectFuture connect(SocketAddress remoteAddress, SocketAddress lo
 
 /**
  * Implement this method to perform the actual connect operation.
- *ÊµÏÖ¾ßÌåµÄconnect0
+ *å®ç°å…·ä½“çš„connect0
  * @param remoteAddress The remote address to connect from
  * @param localAddress <tt>null</tt> if no local address is specified
  * @param sessionInitializer The IoSessionInitializer to use when the connection s successful
@@ -344,23 +344,23 @@ public final ConnectFuture connect(SocketAddress remoteAddress, SocketAddress lo
  */
 protected abstract ConnectFuture connect0(SocketAddress remoteAddress, SocketAddress localAddress,
         IoSessionInitializer<? extends ConnectFuture> sessionInitializer);
-´ÓÉÏÃæ¿ÉÒÔ¿´³ö£¬Á¬½Ó²Ù×÷£¬Ê×ÏÈ¼ì²éÁ¬½ÓÆ÷×´Ì¬£¬±¾µØµØÖ·ÓëÔ¶³ÌµØÖ·ÊÇ·ñÎª¿ÕÒÑ¾­Óë´«ÊäÔªÊı¾İµØÖ·ÀàĞÍÊÇ·ñÆ¥Åä
-£¬Èç¹ûÁ¬½ÓÆ÷IohandlerÎªnull£¬´´½¨Ò»¸ö¶Ô»á»°²Ù×÷ÊÂ¼ş²»´¦ÀíµÄIoHandler£¬×îºó½«Êµ¼ÊÁ¬½Ó²Ù×÷Î¯ÍĞ¸øconnect0£¬´ı
-×ÓÀàÊµÏÖ¡£
-ÔÙÀ´¿´ÆäËû·½·¨£º
+ä»ä¸Šé¢å¯ä»¥çœ‹å‡ºï¼Œè¿æ¥æ“ä½œï¼Œé¦–å…ˆæ£€æŸ¥è¿æ¥å™¨çŠ¶æ€ï¼Œæœ¬åœ°åœ°å€ä¸è¿œç¨‹åœ°å€æ˜¯å¦ä¸ºç©ºå·²ç»ä¸ä¼ è¾“å…ƒæ•°æ®åœ°å€ç±»å‹æ˜¯å¦åŒ¹é…
+ï¼Œå¦‚æœè¿æ¥å™¨Iohandlerä¸ºnullï¼Œåˆ›å»ºä¸€ä¸ªå¯¹ä¼šè¯æ“ä½œäº‹ä»¶ä¸å¤„ç†çš„IoHandlerï¼Œæœ€åå°†å®é™…è¿æ¥æ“ä½œå§”æ‰˜ç»™connect0ï¼Œå¾…
+å­ç±»å®ç°ã€‚
+å†æ¥çœ‹å…¶ä»–æ–¹æ³•ï¼š
  /**
      * Adds required internal attributes and {@link IoFutureListener}s
      * related with event notifications to the specified {@code session}
      * and {@code future}.  Do not call this method directly;
-     Ìí¼Ó±ØÒªµÄÄÚ²¿ÊôĞÔºÍ½á¹û¼àÌıÆ÷µ½»á»°ºÍfuture£¬²»ÒªÖ±½Óµ÷ÓÃ´Ë·½·¨¡£
+     æ·»åŠ å¿…è¦çš„å†…éƒ¨å±æ€§å’Œç»“æœç›‘å¬å™¨åˆ°ä¼šè¯å’Œfutureï¼Œä¸è¦ç›´æ¥è°ƒç”¨æ­¤æ–¹æ³•ã€‚
      */
     @Override
     protected final void finishSessionInitialization0(final IoSession session, IoFuture future) {
         // In case that ConnectFuture.cancel() is invoked before
         // setSession() is invoked, add a listener that closes the
         // connection immediately on cancellation.
-	//·ÀÖ¹ÔÚÉèÖÃ»á»°Ê±£¬Á¬½ÓÇëÇó±»È¡Ïû£¬Ìí¼ÓÒ»¸ö¼àÌıÆ÷£¬µ±Á¬½ÓÈ¡ÏûÊ±£¬
-	//¹Ø±Õ»á»°¡£
+	//é˜²æ­¢åœ¨è®¾ç½®ä¼šè¯æ—¶ï¼Œè¿æ¥è¯·æ±‚è¢«å–æ¶ˆï¼Œæ·»åŠ ä¸€ä¸ªç›‘å¬å™¨ï¼Œå½“è¿æ¥å–æ¶ˆæ—¶ï¼Œ
+	//å…³é—­ä¼šè¯ã€‚
         future.addListener(new IoFutureListener<ConnectFuture>() {
             /**
              * {@inheritDoc}
@@ -466,7 +466,7 @@ protected abstract ConnectFuture connect0(SocketAddress remoteAddress, SocketAdd
     }
 
    
-×Ü½á£º
-IoConnector½Ó¿Ú¸øIoserviceÔö¼ÓÁËÁ¬½Ó¹¦ÄÜ£¬¿ÉÒÔÁ¬½Ó·şÎñ¶Ë¡£Á¬½Ó²Ù×÷£¬Ê×ÏÈ¼ì²éÁ¬½ÓÆ÷×´Ì¬£¬
-±¾µØµØÖ·ÓëÔ¶³ÌµØÖ·ÊÇ·ñÎª¿ÕÒÑ¾­Óë´«ÊäÔªÊı¾İµØÖ·ÀàĞÍÊÇ·ñÆ¥Åä£¬Èç¹ûÁ¬½ÓÆ÷IohandlerÎªnull£¬
-´´½¨Ò»¸ö¶Ô»á»°²Ù×÷ÊÂ¼ş²»´¦ÀíµÄIoHandler£¬×îºó½«Êµ¼ÊÁ¬½Ó²Ù×÷Î¯ÍĞ¸øconnect0£¬´ı×ÓÀàÊµÏÖ¡£
+æ€»ç»“ï¼š
+IoConnectoræ¥å£ç»™Ioserviceå¢åŠ äº†è¿æ¥åŠŸèƒ½ï¼Œå¯ä»¥è¿æ¥æœåŠ¡ç«¯ã€‚è¿æ¥æ“ä½œï¼Œé¦–å…ˆæ£€æŸ¥è¿æ¥å™¨çŠ¶æ€ï¼Œ
+æœ¬åœ°åœ°å€ä¸è¿œç¨‹åœ°å€æ˜¯å¦ä¸ºç©ºå·²ç»ä¸ä¼ è¾“å…ƒæ•°æ®åœ°å€ç±»å‹æ˜¯å¦åŒ¹é…ï¼Œå¦‚æœè¿æ¥å™¨Iohandlerä¸ºnullï¼Œ
+åˆ›å»ºä¸€ä¸ªå¯¹ä¼šè¯æ“ä½œäº‹ä»¶ä¸å¤„ç†çš„IoHandlerï¼Œæœ€åå°†å®é™…è¿æ¥æ“ä½œå§”æ‰˜ç»™connect0ï¼Œå¾…å­ç±»å®ç°ã€‚
