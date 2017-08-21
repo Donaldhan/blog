@@ -2,12 +2,12 @@
 #
 # Note that in order to read the configuration file, Redis must be
 # started with the file path as first argument:
-# redis Æô¶¯ÃüÁî£¬ºóÃæ¸úµÄÊÇÅäÖÃÎÄ¼şÂ·¾¶
+# redis å¯åŠ¨å‘½ä»¤ï¼Œåé¢è·Ÿçš„æ˜¯é…ç½®æ–‡ä»¶è·¯å¾„
 # ./redis-server /path/to/redis.conf
 
 # Note on units: when memory size is needed, it is possible to specify
 # it in the usual form of 1k 5GB 4M and so forth:
-#ÄÚ´æµ¥Î»´óĞ¡
+#å†…å­˜å•ä½å¤§å°
 # 1k => 1000 bytes
 # 1kb => 1024 bytes
 # 1m => 1000000 bytes
@@ -31,7 +31,7 @@
 #
 # If instead you are interested in using includes to override configuration
 # options, it is better to use include as the last line.
-# µ±ÓĞ¶à¸öÅäÖÃÎÄ¼şÊ±£¬ÔÚ´ËÅäÖÃ£¬ÏÂÃæµÄÅäÖÃÎÄ¼ş£¬»á¸²¸ÇÉÏÃæµÄÅäÖÃ
+# å½“æœ‰å¤šä¸ªé…ç½®æ–‡ä»¶æ—¶ï¼Œåœ¨æ­¤é…ç½®ï¼Œä¸‹é¢çš„é…ç½®æ–‡ä»¶ï¼Œä¼šè¦†ç›–ä¸Šé¢çš„é…ç½®
 # include /path/to/local.conf
 # include /path/to/other.conf
 
@@ -39,18 +39,18 @@
 
 # By default Redis does not run as a daemon. Use 'yes' if you need it.
 # Note that Redis will write a pid file in /var/run/redis.pid when daemonized.
-##redis ÔËĞĞÄ£Ê½£¬noÎªÇ°Ì¨£¬yesÎªºóÌ¨ÊØ»¤½ø³Ì
+##redis è¿è¡Œæ¨¡å¼ï¼Œnoä¸ºå‰å°ï¼Œyesä¸ºåå°å®ˆæŠ¤è¿›ç¨‹
 daemonize no
 
 # When running daemonized, Redis writes a pid file in /var/run/redis.pid by
 # default. You can specify a custom pid file location here.
 
-##redis ½ø³Ì´æ·ÅÎ»ÖÃ
+##redis è¿›ç¨‹å­˜æ”¾ä½ç½®
 pidfile /var/run/redis.pid
 
 # Accept connections on the specified port, default is 6379.
 # If port 0 is specified Redis will not listen on a TCP socket.
-##¼àÌı¶Ë¿ÚºÅ
+##ç›‘å¬ç«¯å£å·
 port 6379
 
 # TCP listen() backlog.
@@ -68,7 +68,7 @@ tcp-backlog 511
 # more IP addresses.
 #
 # Examples:
-# redis ¼àÌıipµØÖ·
+# redis ç›‘å¬ipåœ°å€
 # bind 192.168.1.100 10.0.0.1
 # bind 127.0.0.1
 
@@ -80,7 +80,7 @@ tcp-backlog 511
 # unixsocketperm 700
 
 # Close the connection after a client is idle for N seconds (0 to disable)
-##¿Í»§¶ËÔÊĞí¿ÕÏĞÊ±¼ä£¬0Îª¿Í»§¶ËÒ»Ö±±£»î
+##å®¢æˆ·ç«¯å…è®¸ç©ºé—²æ—¶é—´ï¼Œ0ä¸ºå®¢æˆ·ç«¯ä¸€ç›´ä¿æ´»
 timeout 0
 
 # TCP keepalive.
@@ -97,7 +97,7 @@ timeout 0
 # On other kernels the period depends on the kernel configuration.
 #
 # A reasonable value for this option is 60 seconds.
-##Èç¹ûtimeout²»Îª0£¬ÔòÉèÖÃĞÄÌøÊ±¼äÄ¬ÈÏÎª60s
+##å¦‚æœtimeoutä¸º0ï¼Œåˆ™è®¾ç½®å¿ƒè·³æ—¶é—´é»˜è®¤ä¸º60s
 tcp-keepalive 0
 
 # Specify the server verbosity level.
@@ -106,18 +106,18 @@ tcp-keepalive 0
 # verbose (many rarely useful info, but not a mess like the debug level)
 # notice (moderately verbose, what you want in production probably)
 # warning (only very important / critical messages are logged)
-##ÈÕÖ¾Êä³ö¼¶±ğ
+##æ—¥å¿—è¾“å‡ºçº§åˆ«
 loglevel notice
 
 # Specify the log file name. Also the empty string can be used to force
 # Redis to log on the standard output. Note that if you use standard
 # output for logging but daemonize, logs will be sent to /dev/null
-##ÈÕÖ¾ÎÄ¼ş£¬Èç¹ûÊØ»¤½ø³Ì£¬Ôò·¢ËÍµ½/dev/null
+##æ—¥å¿—æ–‡ä»¶ï¼Œå¦‚æœå®ˆæŠ¤è¿›ç¨‹ï¼Œåˆ™å‘é€åˆ°/dev/null
 logfile /home/redis/logs/log
 
 # To enable logging to the system logger, just set 'syslog-enabled' to yes,
 # and optionally update the other syslog parameters to suit your needs.
-#ÏµÍ³log
+#ç³»ç»Ÿlog
 # syslog-enabled no
 
 # Specify the syslog identity.
@@ -129,7 +129,7 @@ logfile /home/redis/logs/log
 # Set the number of databases. The default database is DB 0, you can select
 # a different one on a per-connection basis using SELECT <dbid> where
 # dbid is a number between 0 and 'databases'-1
-#Êı¾İ¿âµÄ×î´óÊıÁ¿£¬Ä¬ÈÏÊı¾İ¿âÎª0£¬×î´óÎª'databases'-1
+#æ•°æ®åº“çš„æœ€å¤§æ•°é‡ï¼Œé»˜è®¤æ•°æ®åº“ä¸º0ï¼Œæœ€å¤§ä¸º'databases'-1
 databases 16
 
 ################################ SNAPSHOTTING  ################################
@@ -153,8 +153,8 @@ databases 16
 #   like in the following example:
 #
 #   save ""
-### DB³Ö¾Ã»¯µ½´ÅÅÌµÄ²ßÂÔ£¬´¥·¢³Ö¾Ã»¯µÄ²ßÂÔ£¬¿ÉÒÔÓĞ¶à¸ö£¬saveºóÃæ£¬µÚÒ»¸öÎªÊ±¼ä£¬µÚ¶ş¸öÎª
-### keys¸Ä±äµÄÊıÁ¿
+### DBæŒä¹…åŒ–åˆ°ç£ç›˜çš„ç­–ç•¥ï¼Œè§¦å‘æŒä¹…åŒ–çš„ç­–ç•¥ï¼Œå¯ä»¥æœ‰å¤šä¸ªï¼Œsaveåé¢ï¼Œç¬¬ä¸€ä¸ªä¸ºæ—¶é—´ï¼Œç¬¬äºŒä¸ªä¸º
+### keysæ”¹å˜çš„æ•°é‡
 save 900 1
 save 300 10
 save 60 10000
@@ -172,16 +172,16 @@ save 60 10000
 # and persistence, you may want to disable this feature so that Redis will
 # continue to work as usual even if there are problems with disk,
 # permissions, and so forth.
-###µ±RDB¿ìÕÕ¿ªÆô£¬»òºóÌ¨³Ö¾Ã»¯Ê§°Ü£¬ÔòÍ£Ö¹Ğ´ÇëÇó£¬Èç¹ûºóÌ¨³Ö¾Ã»¯Ïß³Ì»Ö¸´¹¤×÷
-£¬ÔòredisÔò¿ÉÒÔ½ÓÊÜĞ´ÇëÇó¡£
-##ÏÂÃæµÄÅäÖÃÑ¡ÏîÊÇ£¬µ±ºóÌ¨³Ö¾Ã»¯Ïß³ÌÊ§°ÜÊ±£¬Í£Ö¹Ğ´ÇëÇó
+###å½“RDBå¿«ç…§å¼€å¯ï¼Œæˆ–åå°æŒä¹…åŒ–å¤±è´¥ï¼Œåˆ™åœæ­¢å†™è¯·æ±‚ï¼Œå¦‚æœåå°æŒä¹…åŒ–çº¿ç¨‹æ¢å¤å·¥ä½œ
+ï¼Œåˆ™redisåˆ™å¯ä»¥æ¥å—å†™è¯·æ±‚ã€‚
+##ä¸‹é¢çš„é…ç½®é€‰é¡¹æ˜¯ï¼Œå½“åå°æŒä¹…åŒ–çº¿ç¨‹å¤±è´¥æ—¶ï¼Œåœæ­¢å†™è¯·æ±‚
 stop-writes-on-bgsave-error yes
 
 # Compress string objects using LZF when dump .rdb databases?
 # For default that's set to 'yes' as it's almost always a win.
 # If you want to save some CPU in the saving child set it to 'no' but
 # the dataset will likely be bigger if you have compressible values or keys.
-##µ±±¸·İÊı¾İ¿âÊ±£¬ÊÇ·ñÑ¹ËõString objects
+##å½“å¤‡ä»½æ•°æ®åº“æ—¶ï¼Œæ˜¯å¦å‹ç¼©String objects
 rdbcompression yes
 
 # Since version 5 of RDB a CRC64 checksum is placed at the end of the file.
@@ -191,11 +191,11 @@ rdbcompression yes
 #
 # RDB files created with checksum disabled have a checksum of zero that will
 # tell the loading code to skip the check.
-##ÊÇ·ñ¼ìÑéCRC64
+##æ˜¯å¦æ£€éªŒCRC64
 rdbchecksum yes
 
 
-##Êı¾İ¿â±¸·İÎÄ¼ş
+##æ•°æ®åº“å¤‡ä»½æ–‡ä»¶
 # The filename where to dump the DB
 dbfilename dump.rdb
 
@@ -207,7 +207,7 @@ dbfilename dump.rdb
 # The Append Only File will also be created inside this directory.
 #
 # Note that you must specify a directory here, not a file name.
-###Redis ¹¤×÷Ä¿Â¼£¬dataÄ¿Â¼
+###Redis å·¥ä½œç›®å½•ï¼Œdataç›®å½•
 dir ./
 
 ################################# REPLICATION #################################
@@ -218,25 +218,25 @@ dir ./
 # 1) Redis replication is asynchronous, but you can configure a master to
 #    stop accepting writes if it appears to be not connected with at least
 #    a given number of slaves.
-#   redis¸´ÖÆÒì²½µÄ£¬ÎªÁË±£Ö¤Êı¾İµÄÒ»ÖÂĞÔ£¬±ØĞëÅäÖÃ£¬µ±masterÁ¬²»µ½slaveÊ±£¬
-#   master Í£Ö¹Ğ´ÇëÇó
+#   rediså¤åˆ¶å¼‚æ­¥çš„ï¼Œä¸ºäº†ä¿è¯æ•°æ®çš„ä¸€è‡´æ€§ï¼Œå¿…é¡»é…ç½®ï¼Œå½“masterè¿ä¸åˆ°slaveæ—¶ï¼Œ
+#   master åœæ­¢å†™è¯·æ±‚
 # 2) Redis slaves are able to perform a partial resynchronization with the
 #    master if the replication link is lost for a relatively small amount of
 #    time. You may want to configure the replication backlog size (see the next
 #    sections of this file) with a sensible value depending on your needs.
-#   ÎÒÃÇ¿ÉÒÔÍ¨¹ıÅäÖÃreplication backlog size£¬À´±ÜÃâslaveÓëmaster¶ÌÊ±¼äÊ§È¥Á¬½ÓµÄ
-#   Êı¾İ²»Ò»ÖÂÎÊÌâ
+#   æˆ‘ä»¬å¯ä»¥é€šè¿‡é…ç½®replication backlog sizeï¼Œæ¥é¿å…slaveä¸masterçŸ­æ—¶é—´å¤±å»è¿æ¥çš„
+#   æ•°æ®ä¸ä¸€è‡´é—®é¢˜
 # 3) Replication is automatic and does not need user intervention. After a
 #    network partition slaves automatically try to reconnect to masters
 #    and resynchronize with them.
-#  Master ipºÍportÅäÖÃ
+#  Master ipå’Œporté…ç½®
 # slaveof <masterip> <masterport>
 
 # If the master is password protected (using the "requirepass" configuration
 # directive below) it is possible to tell the slave to authenticate before
 # starting the replication synchronization process, otherwise the master will
 # refuse the slave request.
-# ## master ÑéÖ¤
+# ## master éªŒè¯
 # masterauth <master-password>
 
 # When a slave loses its connection with the master, or when the replication
@@ -250,9 +250,9 @@ dir ./
 #    an error "SYNC with master in progress" to all the kind of commands
 #    but to INFO and SLAVEOF.
 #
-## µ±saveÓëmasterÊ§È¥Á¬½ÓÊ±£¬slave-serve-stale-dataÉèÖÃÎªyesÊ±£¬slave¼ÌĞø½ÓÊÜclientµÄ
-ÇëÇó£¬µ«·µ»ØµÄÊı¾İ£¬¿ÉÄÜÊÇÒÑ¹ıÊ±µÄÊı¾İ»ò¿Õ£»ÉèÖÃÎªnoÊÇ£¬slave·µ»Ø¿Í»§¶ËµÄĞÅÏ¢Îª
-SYNC with master in progress£¬INFO and SLAVEOFÃüÁî³ıÍâ
+## å½“saveä¸masterå¤±å»è¿æ¥æ—¶ï¼Œslave-serve-stale-dataè®¾ç½®ä¸ºyesæ—¶ï¼Œslaveç»§ç»­æ¥å—clientçš„
+è¯·æ±‚ï¼Œä½†è¿”å›çš„æ•°æ®ï¼Œå¯èƒ½æ˜¯å·²è¿‡æ—¶çš„æ•°æ®æˆ–ç©ºï¼›è®¾ç½®ä¸ºnoæ˜¯ï¼Œslaveè¿”å›å®¢æˆ·ç«¯çš„ä¿¡æ¯ä¸º
+SYNC with master in progressï¼ŒINFO and SLAVEOFå‘½ä»¤é™¤å¤–
 slave-serve-stale-data yes
 
 # You can configure a slave instance to accept writes or not. Writing against
@@ -269,7 +269,7 @@ slave-serve-stale-data yes
 # such as CONFIG, DEBUG, and so forth. To a limited extent you can improve
 # security of read only slaves using 'rename-command' to shadow all the
 # administrative / dangerous commands.
-##slave ¶ÁĞ´×´Ì¬£¬slave¿ÉÒÔÉèÖÃÎª¿É¶ÁĞ´£¬µ«£¬Ğ´Ö»ÊÇ¶ÔÓÚÁÙÊ±Êı¾İ
+##slave è¯»å†™çŠ¶æ€ï¼Œslaveå¯ä»¥è®¾ç½®ä¸ºå¯è¯»å†™ï¼Œä½†ï¼Œå†™åªæ˜¯å¯¹äºä¸´æ—¶æ•°æ®
 slave-read-only yes
 
 # Replication SYNC strategy: disk or socket.
@@ -301,8 +301,8 @@ slave-read-only yes
 #
 # With slow disks and fast (large bandwidth) networks, diskless replication
 # works better.
-## µ±slaveÖØĞÂÁ¬½Óµ½master£¬masterÊÇÍ¨¹ıĞÂ½¨½ø³Ì´«ÊädbÎÄ¼ş£¬»¹ÊÇÍ¨¹ısocket£¬Ğ´
-rdb files£¬noÎªĞÂ½¨½ø³Ì´«ÊädbÎÄ¼ş£¬yesÎªÍ¨¹ısocket´«Êärdb filesÎÄ¼ş
+## å½“slaveé‡æ–°è¿æ¥åˆ°masterï¼Œmasteræ˜¯é€šè¿‡æ–°å»ºè¿›ç¨‹ä¼ è¾“dbæ–‡ä»¶ï¼Œè¿˜æ˜¯é€šè¿‡socketï¼Œå†™
+rdb filesï¼Œnoä¸ºæ–°å»ºè¿›ç¨‹ä¼ è¾“dbæ–‡ä»¶ï¼Œyesä¸ºé€šè¿‡socketä¼ è¾“rdb filesæ–‡ä»¶
 repl-diskless-sync no
 
 # When diskless replication is enabled, it is possible to configure the delay
@@ -316,13 +316,13 @@ repl-diskless-sync no
 # The delay is specified in seconds, and by default is 5 seconds. To disable
 # it entirely just set it to 0 seconds and the transfer will start ASAP.
 
-## repl-diskless-syncµÄÍ¬²½²ßÂÔÑÓÊ±£¬Ê±¼ä
+## repl-diskless-syncçš„åŒæ­¥ç­–ç•¥å»¶æ—¶ï¼Œæ—¶é—´
 repl-diskless-sync-delay 5
 
 # Slaves send PINGs to server in a predefined interval. It's possible to change
 # this interval with the repl_ping_slave_period option. The default value is 10
 # seconds.
-# SlaveÓëMasterµÄĞÄÌøÊ±¼ä
+# Slaveä¸Masterçš„å¿ƒè·³æ—¶é—´
 # repl-ping-slave-period 10
 
 # The following option sets the replication timeout for:
@@ -334,7 +334,7 @@ repl-diskless-sync-delay 5
 # It is important to make sure that this value is greater than the value
 # specified for repl-ping-slave-period otherwise a timeout will be detected
 # every time there is low traffic between the master and the slave.
-# ĞÄÌø»Ö¸´³¬Ê±Ê±¼ä
+# å¿ƒè·³æ¢å¤è¶…æ—¶æ—¶é—´
 # repl-timeout 60
 
 # Disable TCP_NODELAY on the slave socket after SYNC?
@@ -350,9 +350,9 @@ repl-diskless-sync-delay 5
 # By default we optimize for low latency, but in very high traffic conditions
 # or when the master and slaves are many hops away, turning this to "yes" may
 # be a good idea.
-## repl-disable-tcp-nodelayÓÃÓÚmasterÏòslave·¢ËÍÍ¬²½Êı¾İµÄ²ßÂÔ£¬µ±ÎªyesÊÇ£¬master
-½«Í¬²½Êı¾İ·ÖÎªÒ»Ğ©tcpĞ¡°ü·¢ËÍµ½slave£¬ÕâÖÖÊÇÕë¶Ô´ø¿íµÍµÄÇé¿ö£¬µ±masterÓëslaveÖ®¼äµÄ´ø¿í½Ï¸ß
-Ê±£¬ÎÒÃÇ¿ÉÒÔÉèÖÃyes£¬masterµ½slaveµÄÍ¬²½µÄÑÓÊ±Ê±¼ä½«»á¼õÉÙ
+## repl-disable-tcp-nodelayç”¨äºmasterå‘slaveå‘é€åŒæ­¥æ•°æ®çš„ç­–ç•¥ï¼Œå½“ä¸ºyesæ˜¯ï¼Œmaster
+å°†åŒæ­¥æ•°æ®åˆ†ä¸ºä¸€äº›tcpå°åŒ…å‘é€åˆ°slaveï¼Œè¿™ç§æ˜¯é’ˆå¯¹å¸¦å®½ä½çš„æƒ…å†µï¼Œå½“masterä¸slaveä¹‹é—´çš„å¸¦å®½è¾ƒé«˜
+æ—¶ï¼Œæˆ‘ä»¬å¯ä»¥è®¾ç½®yesï¼Œmasteråˆ°slaveçš„åŒæ­¥çš„å»¶æ—¶æ—¶é—´å°†ä¼šå‡å°‘
 repl-disable-tcp-nodelay no
 
 # Set the replication backlog size. The backlog is a buffer that accumulates
@@ -365,9 +365,9 @@ repl-disable-tcp-nodelay no
 # disconnected and later be able to perform a partial resynchronization.
 #
 # The backlog is only allocated once there is at least a slave connected.
-#´ËÑ¡ÏîÓÃÓÚ½«µ±slaveÓëmasterÊ§È¥Á¬½Ó£¬replication backlog µÄ´óĞ¡£¬µ±sizeÔ½´ó£¬
-slave¿ÉÒÔ±»ÔÊĞíÓëmasterÊ§È¥Á¬½ÓµÄÊ±¼äÔ½³¤£¬replication backlogÎÄ¼şÓÃÓÚµ±salveÓëmaster
-Ê§È¥Á¬½ÓÊ±µÄÊı¾İ
+#æ­¤é€‰é¡¹ç”¨äºå°†å½“slaveä¸masterå¤±å»è¿æ¥ï¼Œreplication backlog çš„å¤§å°ï¼Œå½“sizeè¶Šå¤§ï¼Œ
+slaveå¯ä»¥è¢«å…è®¸ä¸masterå¤±å»è¿æ¥çš„æ—¶é—´è¶Šé•¿ï¼Œreplication backlogæ–‡ä»¶ç”¨äºå½“salveä¸master
+å¤±å»è¿æ¥æ—¶çš„æ•°æ®
 # repl-backlog-size 1mb
 
 # After a master has no longer connected slaves for some time, the backlog
@@ -376,7 +376,7 @@ slave¿ÉÒÔ±»ÔÊĞíÓëmasterÊ§È¥Á¬½ÓµÄÊ±¼äÔ½³¤£¬replication backlogÎÄ¼şÓÃÓÚµ±salveÓëm
 # the backlog buffer to be freed.
 #
 # A value of 0 means to never release the backlog.
-# µ±masterÃ»ÓĞslaveÁ¬½ÓÊÇ£¬²Á³ırepl-backlogµÄÊ±¼ä£¬¸öÈËÈÏÎªÕâ¸öÊ±¼äÎªÑÓÊ±Ê±¼ä
+# å½“masteræ²¡æœ‰slaveè¿æ¥æ˜¯ï¼Œæ“¦é™¤repl-backlogçš„æ—¶é—´ï¼Œä¸ªäººè®¤ä¸ºè¿™ä¸ªæ—¶é—´ä¸ºå»¶æ—¶æ—¶é—´
 # repl-backlog-ttl 3600
 
 # The slave priority is an integer number published by Redis in the INFO output.
@@ -392,8 +392,8 @@ slave¿ÉÒÔ±»ÔÊĞíÓëmasterÊ§È¥Á¬½ÓµÄÊ±¼äÔ½³¤£¬replication backlogÎÄ¼şÓÃÓÚµ±salveÓëm
 # Redis Sentinel for promotion.
 #
 # By default the priority is 100.
-## salveµÄÓÅÏÈ¼¶£¬µ±redisµÄSentinel¼¯ÈºÖĞµÄmaster£¬ÓÉÓÚå´»úµÈÆäËûÔ­Òò²»ÄÜ¹¤×÷Ê±£¬
-Sentinel»áÑ¡Ôñ¼¯ÈºÖĞslaveÓÅÏÈ¼¶µÍµÄÎªmaster£¬µ±slaveÎª0Ê±£¬±íÊ¾slaveÓÀÔ¶²»»á±»Ñ¡ÔñÎªmaster
+## salveçš„ä¼˜å…ˆçº§ï¼Œå½“redisçš„Sentinelé›†ç¾¤ä¸­çš„masterï¼Œç”±äºå®•æœºç­‰å…¶ä»–åŸå› ä¸èƒ½å·¥ä½œæ—¶ï¼Œ
+Sentinelä¼šé€‰æ‹©é›†ç¾¤ä¸­slaveä¼˜å…ˆçº§ä½çš„ä¸ºmasterï¼Œå½“slaveä¸º0æ—¶ï¼Œè¡¨ç¤ºslaveæ°¸è¿œä¸ä¼šè¢«é€‰æ‹©ä¸ºmaster
 slave-priority 100
 
 # It is possible for a master to stop accepting writes if there are less than
@@ -409,14 +409,14 @@ slave-priority 100
 # are available, to the specified number of seconds.
 #
 # For example to require at least 3 slaves with a lag <= 10 seconds use:
-#ÕâÁ½¸öÑ¡ÏîÓÃÓÚÉèÖÃµ±SentinelÖĞ£¬Master½ÓÊÜĞ´ÇëÇóµÄÇé¿ö£¬ÏÂÃæµÄÅäÖÃº¬ÒåÎª,MasterÔÚ
-¼¯ÈºÖĞÖÁÉÙÓĞ3¸öslaveÔÚÏß£¬Í¬Ê±masterÓësalveÉÏ´ÎÎÕÊÖµÄ×î´óÊ±¼äĞ¡ÓÚ10s£¬²Å½ÓÊÜ¶ÁÇëÇó£¬ÕâÑù×ö
-µÄÄ¿µÄ£¬ÊÇÈ·±£Ã»ÓĞ×ã¹»µÄslave¿ÉÓÃµÄÇé¿öÏÂ£¬Sentinel¼¯Èº¶ªÊ§µÄÊı¾İ×îĞ¡
+#è¿™ä¸¤ä¸ªé€‰é¡¹ç”¨äºè®¾ç½®å½“Sentinelä¸­ï¼ŒMasteræ¥å—å†™è¯·æ±‚çš„æƒ…å†µï¼Œä¸‹é¢çš„é…ç½®å«ä¹‰ä¸º,Masteråœ¨
+é›†ç¾¤ä¸­è‡³å°‘æœ‰3ä¸ªslaveåœ¨çº¿ï¼ŒåŒæ—¶masterä¸salveä¸Šæ¬¡æ¡æ‰‹çš„æœ€å¤§æ—¶é—´å°äº10sï¼Œæ‰æ¥å—è¯»è¯·æ±‚ï¼Œè¿™æ ·åš
+çš„ç›®çš„ï¼Œæ˜¯ç¡®ä¿æ²¡æœ‰è¶³å¤Ÿçš„slaveå¯ç”¨çš„æƒ…å†µä¸‹ï¼ŒSentinelé›†ç¾¤ä¸¢å¤±çš„æ•°æ®æœ€å°
 # min-slaves-to-write 3
 # min-slaves-max-lag 10
 #
 # Setting one or the other to 0 disables the feature.
-# µ±min-slaves-max-lagÎª0Ê±£¬´ú±íÅäÖÃÏîÊ§Ğ§
+# å½“min-slaves-max-lagä¸º0æ—¶ï¼Œä»£è¡¨é…ç½®é¡¹å¤±æ•ˆ
 # By default min-slaves-to-write is set to 0 (feature disabled) and
 # min-slaves-max-lag is set to 10.
 
@@ -432,7 +432,7 @@ slave-priority 100
 # Warning: since Redis is pretty fast an outside user can try up to
 # 150k passwords per second against a good box. This means that you should
 # use a very strong password otherwise it will be very easy to break.
-# client ÃÜÂëÑéÖ¤£¬×îºÃÃÜÂëÉèÖÃ¸´ÔÓÒ»µã£¬ÒòÎªredisÔÊĞíÃ¿Ãë150K´ÎÃÜÂëĞ£Ñé
+# client å¯†ç éªŒè¯ï¼Œæœ€å¥½å¯†ç è®¾ç½®å¤æ‚ä¸€ç‚¹ï¼Œå› ä¸ºrediså…è®¸æ¯ç§’150Kæ¬¡å¯†ç æ ¡éªŒ
 # requirepass foobared
 
 # Command renaming.
@@ -454,8 +454,8 @@ slave-priority 100
 # Please note that changing the name of commands that are logged into the
 # AOF file or transmitted to slaves may cause problems.
 
-##ÓĞÊ±ºòÎÒÃÇÎªÁË±ÜÃâÍâ²¿ÈËÊ¿£¬Ê¹ÓÃÒ»Ğ©ÃüÁî£¬¿ÉÒÔÖØÃüÃûÒ»Ğ©ÃüÁî£¬µ«ÊÇÖØÃûÃüÁî»áĞ´µ½
-AOFÎÄ¼şÖĞ£¬»ò´«Êä¸øslaves£¬¿ÉÄÜµ¼ÖÂÒ»Ğ©Î»ÖÃÎÊÌâ
+##æœ‰æ—¶å€™æˆ‘ä»¬ä¸ºäº†é¿å…å¤–éƒ¨äººå£«ï¼Œä½¿ç”¨ä¸€äº›å‘½ä»¤ï¼Œå¯ä»¥é‡å‘½åä¸€äº›å‘½ä»¤ï¼Œä½†æ˜¯é‡åå‘½ä»¤ä¼šå†™åˆ°
+AOFæ–‡ä»¶ä¸­ï¼Œæˆ–ä¼ è¾“ç»™slavesï¼Œå¯èƒ½å¯¼è‡´ä¸€äº›ä½ç½®é—®é¢˜
 ################################### LIMITS ####################################
 
 # Set the max number of connected clients at the same time. By default
@@ -466,7 +466,7 @@ AOFÎÄ¼şÖĞ£¬»ò´«Êä¸øslaves£¬¿ÉÄÜµ¼ÖÂÒ»Ğ©Î»ÖÃÎÊÌâ
 #
 # Once the limit is reached Redis will close all the new connections sending
 # an error 'max number of clients reached'.
-# ×î´óÁ¬½ÓÊı
+# æœ€å¤§è¿æ¥æ•°
 # maxclients 10000
 
 # Don't use more memory than the specified amount of bytes.
@@ -491,7 +491,7 @@ AOFÎÄ¼şÖĞ£¬»ò´«Êä¸øslaves£¬¿ÉÄÜµ¼ÖÂÒ»Ğ©Î»ÖÃÎÊÌâ
 # In short... if you have slaves attached it is suggested that you set a lower
 # limit for maxmemory so that there is some free RAM on the system for slave
 # output buffers (but this is not needed if the policy is 'noeviction').
-#×î´ó¿ÉÓÃÄÚ´æ
+#æœ€å¤§å¯ç”¨å†…å­˜
 # maxmemory <bytes>
 
 # MAXMEMORY POLICY: how Redis will select what to remove when maxmemory
@@ -514,12 +514,12 @@ AOFÎÄ¼şÖĞ£¬»ò´«Êä¸øslaves£¬¿ÉÄÜµ¼ÖÂÒ»Ğ©Î»ÖÃÎÊÌâ
 #       getset mset msetnx exec sort
 #
 # The default is:
-# µ±redisÄÚ´æ´ïµ½×î´óÏŞÖÆÊÇ£¬ÄÚ´æ»ØÊÕ²ßÂÔnoevictionÊÇ²»»ØÊÕ£¬¿É¶Á²»¿ÉĞ´£»
-volatile-lru£ºÒÆ³ı´øexpireÊ±¼ä×îÉÙÊ¹ÓÃµÄkey
-allkeys-lru £º¸ù¾İLRU²ßÂÔÒÆ³ıall key
-volatile-random£º Ëæ»úÒÆ³ı key with an expire set
-allkeys-random£º remove a random key, any key
-volatile-ttl£º remove the key with the nearest expire time (minor TTL)
+# å½“rediså†…å­˜è¾¾åˆ°æœ€å¤§é™åˆ¶æ˜¯ï¼Œå†…å­˜å›æ”¶ç­–ç•¥noevictionæ˜¯ä¸å›æ”¶ï¼Œå¯è¯»ä¸å¯å†™ï¼›
+volatile-lruï¼šç§»é™¤å¸¦expireæ—¶é—´æœ€å°‘ä½¿ç”¨çš„key
+allkeys-lru ï¼šæ ¹æ®LRUç­–ç•¥ç§»é™¤all key
+volatile-randomï¼š éšæœºç§»é™¤ key with an expire set
+allkeys-randomï¼š remove a random key, any key
+volatile-ttlï¼š remove the key with the nearest expire time (minor TTL)
 # maxmemory-policy noeviction
 
 # LRU and minimal TTL algorithms are not precise algorithms but approximated
@@ -530,10 +530,10 @@ volatile-ttl£º remove the key with the nearest expire time (minor TTL)
 #
 # The default of 5 produces good enough results. 10 Approximates very closely
 # true LRU but costs a bit more CPU. 3 is very fast but not very accurate.
-# LRU and minimal TTL Ëã·¨ÎªÁË½ÚÊ¡ÄÚ´æ£¬²ßÂÔÉÏ½üºõÊµ¼ÊËã·¨£¬ÓëÊµ¼ÊµÄLRUºÍTTL»¹ÊÇ
-ÓĞ²î¾à£»LRU and minimal TTLÄ¬ÈÏ¼ì²é5±ßkeys£¬ÕÒ³öLRU keys£¬µ±È»ÎÒÃÇ¿ÉÒÔÍ¨¹ı
-maxmemory-samplesÀ´µ÷Õûkey¼ì²é´ÎÊı£¬10´ÎµÄËã·¨²ßÂÔÓëÊµ¼ÊËã·¨±È½Ï½Ó½ü£¬µ«¿ÉÄÜ»á
-ÏûºÄ¸ü¶àµÄCPU
+# LRU and minimal TTL ç®—æ³•ä¸ºäº†èŠ‚çœå†…å­˜ï¼Œç­–ç•¥ä¸Šè¿‘ä¹å®é™…ç®—æ³•ï¼Œä¸å®é™…çš„LRUå’ŒTTLè¿˜æ˜¯
+æœ‰å·®è·ï¼›LRU and minimal TTLé»˜è®¤æ£€æŸ¥5è¾¹keysï¼Œæ‰¾å‡ºLRU keysï¼Œå½“ç„¶æˆ‘ä»¬å¯ä»¥é€šè¿‡
+maxmemory-samplesæ¥è°ƒæ•´keyæ£€æŸ¥æ¬¡æ•°ï¼Œ10æ¬¡çš„ç®—æ³•ç­–ç•¥ä¸å®é™…ç®—æ³•æ¯”è¾ƒæ¥è¿‘ï¼Œä½†å¯èƒ½ä¼š
+æ¶ˆè€—æ›´å¤šçš„CPU
 # maxmemory-samples 5
 
 ############################## APPEND ONLY MODE ###############################
@@ -555,15 +555,15 @@ maxmemory-samplesÀ´µ÷Õûkey¼ì²é´ÎÊı£¬10´ÎµÄËã·¨²ßÂÔÓëÊµ¼ÊËã·¨±È½Ï½Ó½ü£¬µ«¿ÉÄÜ»á
 # with the better durability guarantees.
 #
 # Please check http://redis.io/topics/persistence for more information.
-### Ä¬ÈÏÇé¿öÏÂ£¬redisĞèÒªÒì²½dumpÊı¾İµ½´ÅÅÌÉÏ£¬µ«ÕâÖÖÇé¿öÏÂredis½ø³Ì¿ÉÄÜµ¼ÖÂ
-²¿·ÖĞ´¶ªÊ§£¬Í¬Ê±¶ÏµçÒ²»áµ¼ÖÂ²¿·ÖĞ´¶ªÊ§£¬ÎªÁË±ÜÃâÕâÖÖÇé¿ö£¬ÎÒÃÇ¿ÉÒÔ¿ªÆôappendonly
-Îªyes£¬¸üºÃµÄ±£Ö¤redisµÄ³Ö¾Ã»¯£¬µ±redisÆô¶¯Ê±£¬redis»á¼ÓÔØAOFÎÄ¼ş
+### é»˜è®¤æƒ…å†µä¸‹ï¼Œrediséœ€è¦å¼‚æ­¥dumpæ•°æ®åˆ°ç£ç›˜ä¸Šï¼Œä½†è¿™ç§æƒ…å†µä¸‹redisè¿›ç¨‹å¯èƒ½å¯¼è‡´
+éƒ¨åˆ†å†™ä¸¢å¤±ï¼ŒåŒæ—¶æ–­ç”µä¹Ÿä¼šå¯¼è‡´éƒ¨åˆ†å†™ä¸¢å¤±ï¼Œä¸ºäº†é¿å…è¿™ç§æƒ…å†µï¼Œæˆ‘ä»¬å¯ä»¥å¼€å¯appendonly
+ä¸ºyesï¼Œæ›´å¥½çš„ä¿è¯redisçš„æŒä¹…åŒ–ï¼Œå½“rediså¯åŠ¨æ—¶ï¼Œredisä¼šåŠ è½½AOFæ–‡ä»¶
 
 appendonly no
 
 # The name of the append only file (default: "appendonly.aof")
 
-##AOFÎÄ¼ş
+##AOFæ–‡ä»¶
 
 appendfilename "appendonly.aof"
 
@@ -589,11 +589,11 @@ appendfilename "appendonly.aof"
 # http://antirez.com/post/redis-persistence-demystified.html
 #
 # If unsure, use "everysec".
-## ÏÂÃæµÄÅäÖÃÏîÊÇÉèÖÃÍ¬²½ÄÚ´æÊı¾İµ½´ÅÅÌµÄ²ßÂÔ£¬ÓÉÓÚlinux fsyncº¯Êı²»Í¬µÄOS
-¿ÉÄÜ»á²»Ä£Ê½£¬ËùÒÔÍ¨¹ıÅäÖÃÍ¬²½²ßÂÔ£¬À´¿ØÖÆÊı¾İµÄÍ¬²½³Ö¾Ã»¯£¬
-no:²»Ö÷¶¯Í¬²½³Ö¾Ã»¯£¬ÒÀ¿¿OS²ßÂÔ£¬ÓÅµãËÙ¶È¿ì
-always£ºÔÚÃ¿´ÎĞ´Êı¾İ£¬²¢append logÊ±£¬¶¼Í¬²½³à¼Æ»®£¬ÓÅµãÊı¾İ°²È«ĞÔ¸ß£¬È·¶¨Âı
-everysec:Ã»ÃëÍ¬²½³Ö¾Ã»¯Ò»´Î£¬ÊÇÉÏÃæÁ½ÖÖ²ßÂÔµÄÕÛÖÔ£¬Ä¬ÈÏ²ßÂÔÎªeverysec
+## ä¸‹é¢çš„é…ç½®é¡¹æ˜¯è®¾ç½®åŒæ­¥å†…å­˜æ•°æ®åˆ°ç£ç›˜çš„ç­–ç•¥ï¼Œç”±äºlinux fsyncå‡½æ•°ä¸åŒçš„OS
+å¯èƒ½ä¼šä¸æ¨¡å¼ï¼Œæ‰€ä»¥é€šè¿‡é…ç½®åŒæ­¥ç­–ç•¥ï¼Œæ¥æ§åˆ¶æ•°æ®çš„åŒæ­¥æŒä¹…åŒ–ï¼Œ
+no:ä¸ä¸»åŠ¨åŒæ­¥æŒä¹…åŒ–ï¼Œä¾é OSç­–ç•¥ï¼Œä¼˜ç‚¹é€Ÿåº¦å¿«
+alwaysï¼šåœ¨æ¯æ¬¡å†™æ•°æ®ï¼Œå¹¶append logæ—¶ï¼Œéƒ½åŒæ­¥èµ¤è®¡åˆ’ï¼Œä¼˜ç‚¹æ•°æ®å®‰å…¨æ€§é«˜ï¼Œç¡®å®šæ…¢
+everysec:æ²¡ç§’åŒæ­¥æŒä¹…åŒ–ä¸€æ¬¡ï¼Œæ˜¯ä¸Šé¢ä¸¤ç§ç­–ç•¥çš„æŠ˜è¡·ï¼Œé»˜è®¤ç­–ç•¥ä¸ºeverysec
 # appendfsync always
 appendfsync everysec
 # appendfsync no
@@ -616,10 +616,10 @@ appendfsync everysec
 #
 # If you have latency problems turn this to "yes". Otherwise leave it as
 # "no" that is the safest pick from the point of view of durability.
-#µ±ÎÒÃÇÉèÖÃappendfsyncµÄ²ßÂÔÎªeverysecÊ±£¬BGSAVE or BGREWRITEAOFÏß³Ì
-»áÓĞ´óÁ¿µÄIO²Ù×÷£¬ÔÚÒ»Ğ©linux²Ù×÷ÏµÍ³ÖĞ£¬redis»á×èÈûÊ±¼ä½Ï³¤µÄfsync²Ù×÷£¬
-ÕâÑùµÄ»°ÎÒÃÇµÄappendfsyncµÄ²ßÂÔÎªnone£¬ÕâÑù¿ÉÄÜµ¼ÖÂÒ»Ğ©Êı¾İµÄ¶ªÊ§£¬Èç¹û
-ÎÒÃÇÏë±ÜÃâÕâĞ©Êı¾İµÄ¶ªÊ§£¬¿ÉÒÔÉèÖÃno-appendfsync-on-rewriteÎªyes
+#å½“æˆ‘ä»¬è®¾ç½®appendfsyncçš„ç­–ç•¥ä¸ºeverysecæ—¶ï¼ŒBGSAVE or BGREWRITEAOFçº¿ç¨‹
+ä¼šæœ‰å¤§é‡çš„IOæ“ä½œï¼Œåœ¨ä¸€äº›linuxæ“ä½œç³»ç»Ÿä¸­ï¼Œredisä¼šé˜»å¡æ—¶é—´è¾ƒé•¿çš„fsyncæ“ä½œï¼Œ
+è¿™æ ·çš„è¯æˆ‘ä»¬çš„appendfsyncçš„ç­–ç•¥ä¸ºnoneï¼Œè¿™æ ·å¯èƒ½å¯¼è‡´ä¸€äº›æ•°æ®çš„ä¸¢å¤±ï¼Œå¦‚æœ
+æˆ‘ä»¬æƒ³é¿å…è¿™äº›æ•°æ®çš„ä¸¢å¤±ï¼Œå¯ä»¥è®¾ç½®no-appendfsync-on-rewriteä¸ºyes
 no-appendfsync-on-rewrite no
 
 # Automatic rewrite of the append only file.
@@ -638,8 +638,8 @@ no-appendfsync-on-rewrite no
 #
 # Specify a percentage of zero in order to disable the automatic AOF
 # rewrite feature.
-##ÏÂÃæÕâÁ½²ÎÊıÓÃÓÚµ±aofÎÄ¼ş´ïµ½ÒÔÏÂauto-aof-rewrite-min-size´óĞ¡ÇÒÊ¹ÓÃÂÊÎª
-auto-aof-rewrite-percentageÊ±£¬´¥·¢BGREWRITEAOF
+##ä¸‹é¢è¿™ä¸¤å‚æ•°ç”¨äºå½“aofæ–‡ä»¶è¾¾åˆ°ä»¥ä¸‹auto-aof-rewrite-min-sizeå¤§å°ä¸”ä½¿ç”¨ç‡ä¸º
+auto-aof-rewrite-percentageæ—¶ï¼Œè§¦å‘BGREWRITEAOF
 auto-aof-rewrite-percentage 100
 auto-aof-rewrite-min-size 64mb
 
@@ -665,9 +665,9 @@ auto-aof-rewrite-min-size 64mb
 # the server will still exit with an error. This option only applies when
 # Redis will try to read more data from the AOF file but not enough bytes
 # will be found.
-###µ±redisÍ»È»±ÀÀ£Ê±£¬AOFÎÄ¼şÓĞÖĞ¶ÏÊ±»òÕßtruncateÊ±£¬µ±aof-load-truncatedÉèÖÃÎª
-yesÊ±£¬redis¾¡×î´óÅ¬Á¦´Ótruncated AOF file»Ö¸´Êı¾İ£¬µ±ÎªnoÊ±£¬ÓÃ»§ÖØÆôredisÊ±ĞèÒª
-×Ô¼ºÊÖ¶¯ÓÃredis-check-aofĞŞ¸´aofÎÄ¼ş
+###å½“redisçªç„¶å´©æºƒæ—¶ï¼ŒAOFæ–‡ä»¶æœ‰ä¸­æ–­æ—¶æˆ–è€…truncateæ—¶ï¼Œå½“aof-load-truncatedè®¾ç½®ä¸º
+yesæ—¶ï¼Œrediså°½æœ€å¤§åŠªåŠ›ä»truncated AOF fileæ¢å¤æ•°æ®ï¼Œå½“ä¸ºnoæ—¶ï¼Œç”¨æˆ·é‡å¯redisæ—¶éœ€è¦
+è‡ªå·±æ‰‹åŠ¨ç”¨redis-check-aofä¿®å¤aofæ–‡ä»¶
 aof-load-truncated yes
 
 ################################ LUA SCRIPTING  ###############################
@@ -686,7 +686,7 @@ aof-load-truncated yes
 # termination of the script.
 #
 # Set it to 0 or a negative value for unlimited execution without warnings.
-##lua ½Å±¾ÔÊĞíÖ´ĞĞµÄÊ±¼ä
+##lua è„šæœ¬å…è®¸æ‰§è¡Œçš„æ—¶é—´
 lua-time-limit 5000
 
 ################################ REDIS CLUSTER  ###############################
@@ -700,7 +700,7 @@ lua-time-limit 5000
 # Normal Redis instances can't be part of a Redis Cluster; only nodes that are
 # started as cluster nodes can. In order to start a Redis instance as a
 # cluster node enable the cluster support uncommenting the following:
-# Æô¶¯redis×÷Îª´Ø½Úµã
+# å¯åŠ¨redisä½œä¸ºç°‡èŠ‚ç‚¹
 # cluster-enabled yes
 
 # Every cluster node has a cluster configuration file. This file is not
@@ -708,13 +708,13 @@ lua-time-limit 5000
 # Every Redis Cluster node requires a different cluster configuration file.
 # Make sure that instances running in the same system do not have
 # overlapping cluster configuration file names.
-# redis ´Ø½ÚµãÅäÖÃÎÄ¼ş£¬Ã¿¸ö´Ø½Úµã¶¼ĞèÒªÒ»¸öÅäÖÃÎÄ¼ş
+# redis ç°‡èŠ‚ç‚¹é…ç½®æ–‡ä»¶ï¼Œæ¯ä¸ªç°‡èŠ‚ç‚¹éƒ½éœ€è¦ä¸€ä¸ªé…ç½®æ–‡ä»¶
 # cluster-config-file nodes-6379.conf
 
 # Cluster node timeout is the amount of milliseconds a node must be unreachable
 # for it to be considered in failure state.
 # Most other internal time limits are multiple of the node timeout.
-# ´Ø½ÚµãĞÄÌøÊ±¼ä
+# ç°‡èŠ‚ç‚¹å¿ƒè·³æ—¶é—´
 # cluster-node-timeout 15000
 
 # A slave of a failing master will avoid to start a failover if its data
@@ -759,11 +759,11 @@ lua-time-limit 5000
 #
 # Zero is the only value able to guarantee that when all the partitions heal
 # the cluster will always be able to continue.
-# ´ËÅäÖÃÎªµ±´Ømasterå´»úÊ±£¬salvesµÈ´ıÑ¡¾ÙMasterÊ±¼äÒò×Ó£¬µÈ´ıÊ±¼äµÄ¼ÆËã¹«Ê½Îª£º
+# æ­¤é…ç½®ä¸ºå½“ç°‡masterå®•æœºæ—¶ï¼Œsalvesç­‰å¾…é€‰ä¸¾Masteræ—¶é—´å› å­ï¼Œç­‰å¾…æ—¶é—´çš„è®¡ç®—å…¬å¼ä¸ºï¼š
 (node-timeout * slave-validity-factor) + repl-ping-slave-period
-µ±cluster-slave-validity-factorÔ½´ó£¬ÒâÎ¶×ÅÔÊĞíÓµÓĞ¸ü¾ÉÊı¾İµÄslavesÇĞ»»Îªmaster£¬
-µ±cluster-slave-validity-factorÔ½Ğ¡£¬ÒâÎ¶×Å¼¯Èº»á×èÖ¹masterµÄÑ¡ÔñÇĞ»»
-µ±cluster-slave-validity-factorÎª0Ê±£¬slave»á²»¶Ï³¢ÊÔ³ÉÎªmaster£¬ÒÔ±£Ö¤´ØµÄ¿ÉÓÃĞÔ
+å½“cluster-slave-validity-factorè¶Šå¤§ï¼Œæ„å‘³ç€å…è®¸æ‹¥æœ‰æ›´æ—§æ•°æ®çš„slavesåˆ‡æ¢ä¸ºmasterï¼Œ
+å½“cluster-slave-validity-factorè¶Šå°ï¼Œæ„å‘³ç€é›†ç¾¤ä¼šé˜»æ­¢masterçš„é€‰æ‹©åˆ‡æ¢
+å½“cluster-slave-validity-factorä¸º0æ—¶ï¼Œslaveä¼šä¸æ–­å°è¯•æˆä¸ºmasterï¼Œä»¥ä¿è¯ç°‡çš„å¯ç”¨æ€§
 # cluster-slave-validity-factor 10
 
 # Cluster slaves are able to migrate to orphaned masters, that are masters
@@ -782,9 +782,9 @@ lua-time-limit 5000
 # one slave). To disable migration just set it to a very large value.
 # A value of 0 can be set but is useful only for debugging and dangerous
 # in production.
-#¸öÈËÀí½â£¬cluster-migration-barrierÈ·±£×åÖĞslaveµÄÊıÁ¿£¬
-Ä¬ÈÏÎª1,µ±masterå´»úÊÇÈ·±£×åÊÇ¿ÉÓÃµÄ£»
-0¿ÉÓÃÓÚµ÷ÊÔ
+#ä¸ªäººç†è§£ï¼Œcluster-migration-barrierç¡®ä¿æ—ä¸­slaveçš„æ•°é‡ï¼Œ
+é»˜è®¤ä¸º1,å½“masterå®•æœºæ˜¯ç¡®ä¿æ—æ˜¯å¯ç”¨çš„ï¼›
+0å¯ç”¨äºè°ƒè¯•
 # cluster-migration-barrier 1
 
 # By default Redis Cluster nodes stop accepting queries if they detect there
@@ -797,9 +797,9 @@ lua-time-limit 5000
 # to continue to accept queries for the part of the key space that is still
 # covered. In order to do so, just set the cluster-require-full-coverage
 # option to no.
-# µ±×åÖĞhash slotÓĞÒ»¸öÃ»ÓĞ¸²¸ÇÊ±£¬Ôò×å½Úµã½«Í£Ö¹½ÓÊÜ²éÑ¯ÇëÇó£¬
-µ±cluster-require-full-coverageÉèÎªyesÊ±£¬hash slot ±ØĞëÈ«¸²¸Ç£¬
-µ±Îªno£¬²»ÓÃÈ«¸²¸Ç£¬×åÖĞ´æÔÚÃ»ÓĞ¸²¸ÇµÄhash slot£¬×åÒÀÈ»¿ÉÓÃÌá¹©²éÑ¯
+# å½“æ—ä¸­hash slotæœ‰ä¸€ä¸ªæ²¡æœ‰è¦†ç›–æ—¶ï¼Œåˆ™æ—èŠ‚ç‚¹å°†åœæ­¢æ¥å—æŸ¥è¯¢è¯·æ±‚ï¼Œ
+å½“cluster-require-full-coverageè®¾ä¸ºyesæ—¶ï¼Œhash slot å¿…é¡»å…¨è¦†ç›–ï¼Œ
+å½“ä¸ºnoï¼Œä¸ç”¨å…¨è¦†ç›–ï¼Œæ—ä¸­å­˜åœ¨æ²¡æœ‰è¦†ç›–çš„hash slotï¼Œæ—ä¾ç„¶å¯ç”¨æä¾›æŸ¥è¯¢
 # cluster-require-full-coverage yes
 
 # In order to setup your cluster make sure to read the documentation
@@ -823,13 +823,13 @@ lua-time-limit 5000
 # The following time is expressed in microseconds, so 1000000 is equivalent
 # to one second. Note that a negative number disables the slow log, while
 # a value of zero forces the logging of every command.
-##redisÂıÈÕÖ¾²Ù×÷Ê±¼äãĞÖµ£¬µ±´óÓÚ10000msÊ±£¬¼ÇÂ¼²Ù×÷µ½slow log ÎÄ¼şÖĞ£¬µ±Îª0Ê±£¬
-¼ÇÂ¼ËùÓĞµÄ²Ù×÷ÃüÁî
+##redisæ…¢æ—¥å¿—æ“ä½œæ—¶é—´é˜ˆå€¼ï¼Œå½“å¤§äº10000msæ—¶ï¼Œè®°å½•æ“ä½œåˆ°slow log æ–‡ä»¶ä¸­ï¼Œå½“ä¸º0æ—¶ï¼Œ
+è®°å½•æ‰€æœ‰çš„æ“ä½œå‘½ä»¤
 slowlog-log-slower-than 10000
 
 # There is no limit to this length. Just be aware that it will consume memory.
 # You can reclaim memory used by the slow log with SLOWLOG RESET.
-##Ã¿Ìõslow logµÄ×î´ó³¤¶È£¬·ÀÖ¹ÏûºÄ¹ı¶àµÄÄÚ´æ
+##æ¯æ¡slow logçš„æœ€å¤§é•¿åº¦ï¼Œé˜²æ­¢æ¶ˆè€—è¿‡å¤šçš„å†…å­˜
 slowlog-max-len 128
 
 ################################ LATENCY MONITOR ##############################
@@ -851,7 +851,7 @@ slowlog-max-len 128
 # impact, that while very small, can be measured under big load. Latency
 # monitoring can easily be enabled at runtime using the command
 # "CONFIG SET latency-monitor-threshold <milliseconds>" if needed.
-#redis ĞÔÄÜ¼à¿Ø¼à¿Ø£¬0±íÊ¾²»¿ªÆô¼à¿Ø£¬millisecondsÎªÑÓÊ±¼à¿ØÊ±¼ä
+#redis æ€§èƒ½ç›‘æ§ç›‘æ§ï¼Œ0è¡¨ç¤ºä¸å¼€å¯ç›‘æ§ï¼Œmillisecondsä¸ºå»¶æ—¶ç›‘æ§æ—¶é—´
 latency-monitor-threshold 0
 
 ############################# EVENT NOTIFICATION ##############################
@@ -887,7 +887,7 @@ latency-monitor-threshold 0
 #
 #  Example: to enable list and generic events, from the point of view of the
 #           event name, use:
-#Redis Pub/SubÄ£Ê½ÏÂ£¬ĞèÒªÍ¨ÖªµÄÊÂ¼ş
+#Redis Pub/Subæ¨¡å¼ä¸‹ï¼Œéœ€è¦é€šçŸ¥çš„äº‹ä»¶
 #  notify-keyspace-events Elg
 #
 #  Example 2: to get the stream of the expired keys subscribing to channel
@@ -901,18 +901,18 @@ latency-monitor-threshold 0
 notify-keyspace-events ""
 
 ############################### ADVANCED CONFIG ###############################
-##µ÷ÓÅÆª
+##è°ƒä¼˜ç¯‡
 # Hashes are encoded using a memory efficient data structure when they have a
 # small number of entries, and the biggest entry does not exceed a given
 # threshold. These thresholds can be configured using the following directives.
-##Hashes ×î´ósize
+##Hashes æœ€å¤§size
 hash-max-ziplist-entries 512
 hash-max-ziplist-value 64
 
 # Similarly to hashes, small lists are also encoded in a special way in order
 # to save a lot of space. The special representation is only used when
 # you are under the following limits:
-#list×î´ósize
+#listæœ€å¤§size
 list-max-ziplist-entries 512
 list-max-ziplist-value 64
 
@@ -921,13 +921,13 @@ list-max-ziplist-value 64
 # of 64 bit signed integers.
 # The following configuration setting sets the limit in the size of the
 # set in order to use this special memory saving encoding.f
-##set ¼¯ºÏ×î´ósize
+##set é›†åˆæœ€å¤§size
 set-max-intset-entries 512
 
 # Similarly to hashes and lists, sorted sets are also specially encoded in
 # order to save a lot of space. This encoding is only used when the length and
 # elements of a sorted set are below the following limits:
-##zset ×î´ósize
+##zset æœ€å¤§size
 zset-max-ziplist-entries 128
 zset-max-ziplist-value 64
 
@@ -943,7 +943,7 @@ zset-max-ziplist-value 64
 # which is O(N) with the sparse encoding. The value can be raised to
 # ~ 10000 when CPU is not a concern, but space is, and the data set is
 # composed of many HyperLogLogs with cardinality in the 0 - 15000 range.
-##HyperLogLog ×î´ósize
+##HyperLogLog æœ€å¤§size
 hll-sparse-max-bytes 3000
 
 # Active rehashing uses 1 millisecond every 100 milliseconds of CPU time in
@@ -964,7 +964,7 @@ hll-sparse-max-bytes 3000
 #
 # use "activerehashing yes" if you don't have such hard requirements but
 # want to free memory asap when possible.
-## µ±ÔòÏîÎªyesÊÇ£¬¼¤»îÖØĞÂhash key-valueÖµ£¬ÒÔÊÍ·ÅÄÚ´æ£¬
+## å½“åˆ™é¡¹ä¸ºyesæ˜¯ï¼Œæ¿€æ´»é‡æ–°hash key-valueå€¼ï¼Œä»¥é‡Šæ”¾å†…å­˜ï¼Œ
 activerehashing yes
 
 # The client output buffer limits can be used to force disconnection of clients
@@ -979,8 +979,8 @@ activerehashing yes
 # pubsub -> clients subscribed to at least one pubsub channel or pattern
 #
 # The syntax of every client-output-buffer-limit directive is the following:
-#µ±client²»ÄÜ¹»´Óserver¶ÁÈ¡Êı¾İµÄÇé¿öÏÂ( Pub/SubÄ£Ê½ÏÂ£¬Ïû·ÑÕß²»ÄÜ¾¡¿ÉÄÜµÄÏû·Ñ
-Éú²úÕß²úÉúÏûÏ¢)£¬server¶Ï¿ªclientµÄÄ£Ê½ÓĞÈıÖÖnormal£¬slave£¬pubsub
+#å½“clientä¸èƒ½å¤Ÿä»serverè¯»å–æ•°æ®çš„æƒ…å†µä¸‹( Pub/Subæ¨¡å¼ä¸‹ï¼Œæ¶ˆè´¹è€…ä¸èƒ½å°½å¯èƒ½çš„æ¶ˆè´¹
+ç”Ÿäº§è€…äº§ç”Ÿæ¶ˆæ¯)ï¼Œserveræ–­å¼€clientçš„æ¨¡å¼æœ‰ä¸‰ç§normalï¼Œslaveï¼Œpubsub
 # client-output-buffer-limit <class> <hard limit> <soft limit> <soft seconds>
 #
 # A client is immediately disconnected once the hard limit is reached, or if
@@ -1001,14 +1001,14 @@ activerehashing yes
 # subscribers and slaves receive data in a push fashion.
 #
 # Both the hard or the soft limit can be disabled by setting them to zero.
-## µ±<hard limit> <soft limit> <soft seconds>Îª0Ê±£¬server²»»á¶Ï¿ªclientÁ¬½Ó£¬
-Õë¶ÔclientÁ¬½Ó
+## å½“<hard limit> <soft limit> <soft seconds>ä¸º0æ—¶ï¼Œserverä¸ä¼šæ–­å¼€clientè¿æ¥ï¼Œ
+é’ˆå¯¹clientè¿æ¥
 client-output-buffer-limit normal 0 0 0
-##µ±clientÎªslaveÊ±£¬server»º´æÖĞÓĞ256mbÊı¾İ£¬
-µ«ÊÇslave²»ÄÜÔÚ60mÄÚ¶ÁÈ¡64mbµÄÊı¾İÊ±¶Ï¿ªÁ¬½Ó
+##å½“clientä¸ºslaveæ—¶ï¼Œserverç¼“å­˜ä¸­æœ‰256mbæ•°æ®ï¼Œ
+ä½†æ˜¯slaveä¸èƒ½åœ¨60må†…è¯»å–64mbçš„æ•°æ®æ—¶æ–­å¼€è¿æ¥
 client-output-buffer-limit slave 256mb 64mb 60
-##µ±clientÎªPub/SubÄ£Ê½ÏÂµÄSubÊ±£¬Pub/server»º´æÖĞÓĞ32mbÊı¾İ£¬
-µ«ÊÇSub/client²»ÄÜÔÚ60mÄÚ¶ÁÈ¡8mbµÄÊı¾İÊ±¶Ï¿ªÁ¬½Ó
+##å½“clientä¸ºPub/Subæ¨¡å¼ä¸‹çš„Subæ—¶ï¼ŒPub/serverç¼“å­˜ä¸­æœ‰32mbæ•°æ®ï¼Œ
+ä½†æ˜¯Sub/clientä¸èƒ½åœ¨60må†…è¯»å–8mbçš„æ•°æ®æ—¶æ–­å¼€è¿æ¥
 client-output-buffer-limit pubsub 32mb 8mb 60
 
 # Redis calls an internal function to perform many background tasks, like
@@ -1026,13 +1026,13 @@ client-output-buffer-limit pubsub 32mb 8mb 60
 # The range is between 1 and 500, however a value over 100 is usually not
 # a good idea. Most users should use the default of 10 and raise this up to
 # 100 only in environments where very low latency is required.
-## Redis ¶à¾Ãµ÷ÓÃÄÚ²¿µÄºóÌ¨ÈÎÎñÏß³Ì£¬Èç¹Ø±Õ³¬Ê±Á¬½Ó£¬Çå³ı¹ıÆÚµÄkeysµÈ£¬Ä¬ÈÏÎª10
-ÖµÌ«´ó£¬ÈÎÎñÏß³ÌÖ´ĞĞ´ÎÊıÔ½¶à£¬½«»áÏûºÄ¸ü¶àµÄCPU
+## Redis å¤šä¹…è°ƒç”¨å†…éƒ¨çš„åå°ä»»åŠ¡çº¿ç¨‹ï¼Œå¦‚å…³é—­è¶…æ—¶è¿æ¥ï¼Œæ¸…é™¤è¿‡æœŸçš„keysç­‰ï¼Œé»˜è®¤ä¸º10
+å€¼å¤ªå¤§ï¼Œä»»åŠ¡çº¿ç¨‹æ‰§è¡Œæ¬¡æ•°è¶Šå¤šï¼Œå°†ä¼šæ¶ˆè€—æ›´å¤šçš„CPU
 hz 10
 
 # When a child rewrites the AOF file, if the following option is enabled
 # the file will be fsync-ed every 32 MB of data generated. This is useful
 # in order to commit the file to the disk more incrementally and avoid
 # big latency spikes.
-##×ÓÉèÖÃµÄ×÷ÓÃÊÇ£¬µ±AOF fileÃ¿Ôö¼Ó32MB£¬¾Í½«Êı¾İÍ¬²½³Ö¾Ã»¯µ½´ÅÅÌ
+##å­è®¾ç½®çš„ä½œç”¨æ˜¯ï¼Œå½“AOF fileæ¯å¢åŠ 32MBï¼Œå°±å°†æ•°æ®åŒæ­¥æŒä¹…åŒ–åˆ°ç£ç›˜
 aof-rewrite-incremental-fsync yes
