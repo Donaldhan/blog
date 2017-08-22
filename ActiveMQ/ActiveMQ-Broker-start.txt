@@ -1,15 +1,15 @@
-JMS(ActiveMQ) PTPºÍPUB/SUBÄ£Ê½ÊµÀı£º[url]http://donald-draper.iteye.com/blog/2347445[/url]
-ActiveMQÁ¬½Ó¹¤³§¡¢Á¬½ÓÏê½â:[url]http://donald-draper.iteye.com/admin/blogs/2348070[/url]
-ActiveMQ»á»°³õÊ¼»¯:[url]http://donald-draper.iteye.com/admin/blogs/2348341[/url]
-ActiveMQÉú²úÕß£º[url]http://donald-draper.iteye.com/blog/2348381[/url]
-ActiveMQÏû·ÑÕß£º[url]http://donald-draper.iteye.com/admin/blogs/2348389[/url]
+JMS(ActiveMQ) PTPå’ŒPUB/SUBæ¨¡å¼å®ä¾‹ï¼š[url]http://donald-draper.iteye.com/blog/2347445[/url]
+ActiveMQè¿æ¥å·¥å‚ã€è¿æ¥è¯¦è§£:[url]http://donald-draper.iteye.com/admin/blogs/2348070[/url]
+ActiveMQä¼šè¯åˆå§‹åŒ–:[url]http://donald-draper.iteye.com/admin/blogs/2348341[/url]
+ActiveMQç”Ÿäº§è€…ï¼š[url]http://donald-draper.iteye.com/blog/2348381[/url]
+ActiveMQæ¶ˆè´¹è€…ï¼š[url]http://donald-draper.iteye.com/admin/blogs/2348389[/url]
 
 
 [activemq@zabbix bin]$ more activemq
 ...
-ÅäÖÃActive HOME£¬BASE£¬OPTS,CONF£¬JAVA_HOME&JAVA_CMDÂ·¾¶£¬
+é…ç½®Active HOMEï¼ŒBASEï¼ŒOPTS,CONFï¼ŒJAVA_HOME&JAVA_CMDè·¯å¾„ï¼Œ
 ...
-//Ö´ĞĞjar°ü
+//æ‰§è¡ŒjaråŒ…
 invokeJar(){
    PIDFILE="$1"
    TASK_TODO="$2"
@@ -19,7 +19,7 @@ invokeJar(){
     echo "ERROR: '${ACTIVEMQ_HOME}/bin/activemq.jar' does not exist, define ACTIVEMQ_HOME in the config"
     exit 1
    fi
-   #Ö´ĞĞactive jar°ü
+   #æ‰§è¡Œactive jaråŒ…
    # Execute java binary
    if [ -n "$TASK_TODO" ] && [ "$TASK_TODO" != "stop" ];then
       $EXEC_OPTION $DOIT_PREFIX "\"$JAVACMD\" $ACTIVEMQ_OPTS $ACTIVEMQ_DEBUG_OPTS \
@@ -35,7 +35,7 @@ invokeJar(){
               echo \"INFO: pidfile created : '${PIDFILE}' (pid '\$APID')\";exit \$RET" $DOIT_POSTFIX
       RET="$?"
    
-#./activemq start Æô¶¯Broker
+#./activemq start å¯åŠ¨Broker
 invoke_start(){
     if ( checkRunning );then
       PID="`cat $ACTIVEMQ_PIDFILE`"
@@ -53,21 +53,21 @@ invoke_start(){
 [activemq@zabbix bin]$ ls
 activemq  activemq-diag  activemq.jar  env  linux-x86-32  linux-x86-64  macosx  wrapper.jar
 [activemq@zabbix bin]$ 
-Ö´ĞĞÒÔÏÂÃüÁî£¬
+æ‰§è¡Œä»¥ä¸‹å‘½ä»¤ï¼Œ
 jar -xvf activemq.jar
-¿ÉÒÔ¿´µ½£¬activemq jar°üÖĞÓĞÒ»¸öÀàÎªMain£¬Õâ¾ÍÊÇactiveµÄÆô¶¯Èë¿Ú
+å¯ä»¥çœ‹åˆ°ï¼Œactivemq jaråŒ…ä¸­æœ‰ä¸€ä¸ªç±»ä¸ºMainï¼Œè¿™å°±æ˜¯activeçš„å¯åŠ¨å…¥å£
 package org.apache.activemq.console;
 public class Main
 {
-    //shellÃüÁîÈÎÎñclass
+    //shellå‘½ä»¤ä»»åŠ¡class
     public static final String TASK_DEFAULT_CLASS = "org.apache.activemq.console.command.ShellCommand";
     private static boolean useDefExt = true;
-    private File activeMQHome;//MQ¼ÒÄ¿Â¼
+    private File activeMQHome;//MQå®¶ç›®å½•
     private File activeMQBase;
-    private ClassLoader classLoader;//Àà¼ÓÔØÆ÷
-    //activeMQ À©Õ¹Ä¿Â¼
+    private ClassLoader classLoader;//ç±»åŠ è½½å™¨
+    //activeMQ æ‰©å±•ç›®å½•
     private final Set extensions = new LinkedHashSet();
-    //activeMQ Àà¼ÓÔØÂ·¾¶
+    //activeMQ ç±»åŠ è½½è·¯å¾„
     private final Set activeMQClassPath = new LinkedHashSet();
 
 }
@@ -75,28 +75,28 @@ public class Main
     {
     }
     public static void main(String args[]){
-        //´ÓÏ´Í¨»ñÈ¡java ioÁÙÊ±Ä¿Â¼£¬Ã»ÓĞÔò´´½¨
+        //ä»æ´—é€šè·å–java ioä¸´æ—¶ç›®å½•ï¼Œæ²¡æœ‰åˆ™åˆ›å»º
         File tmpdir = new File(System.getProperty("java.io.tmpdir"));
         if(!tmpdir.exists())
             tmpdir.mkdirs();
         Main app = new Main();
         List tokens = new LinkedList(Arrays.asList(args));
-	//½âÎöÀ©Õ¹
+	//è§£ææ‰©å±•
         app.parseExtensions(tokens);
-	//»ñÈ¡ÅäÖÃ
+	//è·å–é…ç½®
         File confDir = app.getActiveMQConfig();
-	//½«ÅäÖÃÎÄ¼şÌí¼Óµ½ClassPath
+	//å°†é…ç½®æ–‡ä»¶æ·»åŠ åˆ°ClassPath
         app.addClassPath(confDir);
         if(useDefExt && app.canUseExtdir())
         {
             boolean baseIsHome = app.getActiveMQBase().equals(app.getActiveMQHome());
-            //´´½¨libÄ¿Â¼
+            //åˆ›å»ºlibç›®å½•
 	    File baseLibDir = new File(app.getActiveMQBase(), "lib");
             File homeLibDir = new File(app.getActiveMQHome(), "lib");
             if(!baseIsHome)
                 app.addExtensionDirectory(baseLibDir);
             app.addExtensionDirectory(homeLibDir);
-	    //´´½¨libÏÂµÄcamel£¬optional£¬web£¬extraÄ¿Â¼
+	    //åˆ›å»ºlibä¸‹çš„camelï¼Œoptionalï¼Œwebï¼Œextraç›®å½•
             if(!baseIsHome)
             {
                 app.addExtensionDirectory(new File(baseLibDir, "camel"));
@@ -109,11 +109,11 @@ public class Main
             app.addExtensionDirectory(new File(homeLibDir, "web"));
             app.addExtensionDirectory(new File(homeLibDir, "extra"));
         }
-	//´ÓÏµÍ³»ñÈ¡activemq.classpath£¬Ìí¼Óµ½
+	//ä»ç³»ç»Ÿè·å–activemq.classpathï¼Œæ·»åŠ åˆ°
         app.addClassPathList(System.getProperty("activemq.classpath"));
         try
         {
-	    //Æô¶¯broker
+	    //å¯åŠ¨broker
             int ret = app.runTaskClass(tokens);
             System.exit(ret);
         }
@@ -138,7 +138,7 @@ public class Main
             System.exit(1);
         }
     }
-1.½âÎöÀ©Õ¹
+1.è§£ææ‰©å±•
 app.parseExtensions(tokens);
 
 public void parseExtensions(List tokens)
@@ -159,25 +159,25 @@ public void parseExtensions(List tokens)
                         System.out.println("Ignoring extension directory option.");
                     } else
                     {
-		        //Ìí¼ÓÍØÕ¹Ä¿Â¼
+		        //æ·»åŠ æ‹“å±•ç›®å½•
                         addExtensionDirectory(extDir);
                     }
 }
 
-//Ìí¼ÓÍØÕ¹Ä¿Â¼
+//æ·»åŠ æ‹“å±•ç›®å½•
     public void addExtensionDirectory(File directory)
     {
         extensions.add(directory);
     }
-´ÓÉÏ¿ÉÒÔ¿´³ö£¬½âÎöÍØÕ¹Ä¿Â¼ÅäÖÃÏî£¬²¢½«À©Õ¹Ä¿Â¼Ìí¼Óµ½ÍØÕ¹¼¯ºÏÖĞ
-2.»ñÈ¡ÅäÖÃ
+ä»ä¸Šå¯ä»¥çœ‹å‡ºï¼Œè§£ææ‹“å±•ç›®å½•é…ç½®é¡¹ï¼Œå¹¶å°†æ‰©å±•ç›®å½•æ·»åŠ åˆ°æ‹“å±•é›†åˆä¸­
+2.è·å–é…ç½®
 File confDir = app.getActiveMQConfig();
  public File getActiveMQConfig()
     {
         File activeMQConfig = null;
         if(System.getProperty("activemq.conf") != null)
         {
-	    //´ÓÏµÍ³»ñÈ¡activemq.conf£¬Èç¹û²»Îª¿Õ£¬Ôò´´½¨ÅäÖÃÎÄ¼ş
+	    //ä»ç³»ç»Ÿè·å–activemq.confï¼Œå¦‚æœä¸ä¸ºç©ºï¼Œåˆ™åˆ›å»ºé…ç½®æ–‡ä»¶
             activeMQConfig = new File(System.getProperty("activemq.conf"));
         } else
         {
@@ -187,35 +187,35 @@ File confDir = app.getActiveMQConfig();
         return activeMQConfig;
     }
 
-3.½«ÅäÖÃÎÄ¼şÌí¼Óµ½ClassPath
+3.å°†é…ç½®æ–‡ä»¶æ·»åŠ åˆ°ClassPath
 app.addClassPath(confDir);
   public void addClassPath(File classpath)
     {
         activeMQClassPath.add(classpath);
     }
-½«ÅäÖÃÎÄ¼şÌí¼Óµ½ClassPath¼¯ºÏÖĞ
+å°†é…ç½®æ–‡ä»¶æ·»åŠ åˆ°ClassPathé›†åˆä¸­
 4.
 boolean baseIsHome = app.getActiveMQBase().equals(app.getActiveMQHome());
-//´´½¨libÄ¿Â¼
+//åˆ›å»ºlibç›®å½•
  File baseLibDir = new File(app.getActiveMQBase(), "lib");
  File homeLibDir = new File(app.getActiveMQHome(), "lib");
  if(!baseIsHome)
      app.addExtensionDirectory(baseLibDir);
  app.addExtensionDirectory(homeLibDir);
- //´´½¨libÏÂµÄcamel£¬optional£¬web£¬extraÄ¿Â¼
+ //åˆ›å»ºlibä¸‹çš„camelï¼Œoptionalï¼Œwebï¼Œextraç›®å½•
  app.addExtensionDirectory(new File(homeLibDir, "camel"));
  app.addExtensionDirectory(new File(homeLibDir, "optional"));
  app.addExtensionDirectory(new File(homeLibDir, "web"));
  app.addExtensionDirectory(new File(homeLibDir, "extra"));
 
-½«libÀ©Õ¹Ä¿Â¼Ìí¼Óµ½À©Õ¹Ä¿Â¼¼¯ºÏÖĞ
+å°†libæ‰©å±•ç›®å½•æ·»åŠ åˆ°æ‰©å±•ç›®å½•é›†åˆä¸­
 
 5.
-´ÓÏµÍ³»ñÈ¡activemq.classpath£¬Ìí¼Óµ½ClassPath¼¯ºÏÖĞ
+ä»ç³»ç»Ÿè·å–activemq.classpathï¼Œæ·»åŠ åˆ°ClassPathé›†åˆä¸­
 app.addClassPathList(System.getProperty("activemq.classpath"));
 
 6.
-Æô¶¯broker
+å¯åŠ¨broker
  int ret = app.runTaskClass(tokens);
 
 
@@ -223,7 +223,7 @@ app.addClassPathList(System.getProperty("activemq.classpath"));
         throws Throwable
     {
         ClassLoader cl;
-	//»ñÈ¡java°æ±¾¼°homeÄ¿Â¼
+	//è·å–javaç‰ˆæœ¬åŠhomeç›®å½•
         StringBuilder buffer = new StringBuilder();
         buffer.append(System.getProperty("java.vendor"));
         buffer.append(" ");
@@ -232,7 +232,7 @@ app.addClassPathList(System.getProperty("activemq.classpath"));
         buffer.append(System.getProperty("java.home"));
         System.out.println((new StringBuilder()).append("Java Runtime: ").append(buffer.toString()).toString());
         buffer = new StringBuilder();
-	//»ñÈ¡javaÔËĞĞÊ±»·¾³µÄÄÚ´æ×´¿ö
+	//è·å–javaè¿è¡Œæ—¶ç¯å¢ƒçš„å†…å­˜çŠ¶å†µ
         buffer.append("current=");
         buffer.append(Runtime.getRuntime().totalMemory() / 1024L);
         buffer.append("k  free=");
@@ -246,27 +246,27 @@ app.addClassPathList(System.getProperty("activemq.classpath"));
         Object arg;
         for(Iterator i$ = jvmArgs.iterator(); i$.hasNext(); buffer.append(" ").append(arg))
             arg = i$.next();
-        //ÅäÖÃMQÀ©Õ¹Ä¿Â¼£¬¼ÒÄ¿Â¼£¬ÅäÖÃÎÄ¼şÒÔ¼°Êı¾İÄ¿Â¼
+        //é…ç½®MQæ‰©å±•ç›®å½•ï¼Œå®¶ç›®å½•ï¼Œé…ç½®æ–‡ä»¶ä»¥åŠæ•°æ®ç›®å½•
         System.out.println((new StringBuilder()).append("    JVM args:").append(buffer.toString()).toString());
         System.out.println((new StringBuilder()).append("Extensions classpath:\n  ").append(getExtensionDirForLogging()).toString());
         System.out.println((new StringBuilder()).append("ACTIVEMQ_HOME: ").append(getActiveMQHome()).toString());
         System.out.println((new StringBuilder()).append("ACTIVEMQ_BASE: ").append(getActiveMQBase()).toString());
         System.out.println((new StringBuilder()).append("ACTIVEMQ_CONF: ").append(getActiveMQConfig()).toString());
         System.out.println((new StringBuilder()).append("ACTIVEMQ_DATA: ").append(getActiveMQDataDir()).toString());
-        //»ñÈ¡Àà¼ÓÔØÆ÷
+        //è·å–ç±»åŠ è½½å™¨
 	cl = getClassLoader();
         Thread.currentThread().setContextClassLoader(cl);
         String args[];
         Class task;
         Method runTask;
         args = (String[])tokens.toArray(new String[tokens.size()]);
-	//¼ÓÔØShellCommandÀà
+	//åŠ è½½ShellCommandç±»
         task = cl.loadClass("org.apache.activemq.console.command.ShellCommand");
-	//»ñÈ¡ShellCommandµÄmain·½·¨
+	//è·å–ShellCommandçš„mainæ–¹æ³•
         runTask = task.getMethod("main", new Class[] {
             [Ljava/lang/String;, java/io/InputStream, java/io/PrintStream
         });
-	//µ÷ÓÃShellCommandµÄ
+	//è°ƒç”¨ShellCommandçš„
         return ((Integer)runTask.invoke(task.newInstance(), new Object[] {
             args, System.in, System.out
         })).intValue();
@@ -274,7 +274,7 @@ app.addClassPathList(System.getProperty("activemq.classpath"));
         e;
         throw e.getCause();
     }
-   //»ñÈ¡¼ÓÔØÀà
+   //è·å–åŠ è½½ç±»
     public ClassLoader getClassLoader()
         throws MalformedURLException
     {
@@ -334,12 +334,12 @@ app.addClassPathList(System.getProperty("activemq.classpath"));
                 urls.toArray(u);
                 classLoader = new URLClassLoader(u, classLoader);
             }
-	    //ÉèÖÃµ±Ç°Ïß³ÌÀà¼ÓÔØÆ÷
+	    //è®¾ç½®å½“å‰çº¿ç¨‹ç±»åŠ è½½å™¨
             Thread.currentThread().setContextClassLoader(classLoader);
         }
         return classLoader;
     }
-ÎÒÃÇÀ´¿´ShellCommandÀà£¬¼°Æämain·½·¨
+æˆ‘ä»¬æ¥çœ‹ShellCommandç±»ï¼ŒåŠå…¶mainæ–¹æ³•
 
 public class ShellCommand extends AbstractCommand
 {
@@ -387,23 +387,23 @@ public class ShellCommand extends AbstractCommand
             "", "Task Options (Options specific to each task):", "    --extdir <dir>  - Add the jar files in the directory to the classpath.", "    --version       - Display the version information.", (new StringBuilder()).append("    -h,-?,--help    - Display this help information. To display task specific help, use ").append(interactive ? "" : "Main ").append("[task] -h,-?,--help").toString(), "", "Task Data:", "    - Information needed by each specific task.", "", "JMX system property options:", 
             "    -Dactivemq.jmx.url=<jmx service uri> (default is: 'service:jmx:rmi:///jndi/rmi://localhost:1099/jmxrmi')", "    -Dactivemq.jmx.user=<user name>", "    -Dactivemq.jmx.password=<password>", ""
         }));
-	//½«À©Õ¹Ä¿Â¼£¬libÄ¿Â¼Ìí¼Óµ½¸¨ÖúÎÄ¼ş¼¯ºÏ
+	//å°†æ‰©å±•ç›®å½•ï¼Œlibç›®å½•æ·»åŠ åˆ°è¾…åŠ©æ–‡ä»¶é›†åˆ
         helpFile = (String[])help.toArray(new String[help.size()]);
     }
 }
-ÔÙ¿´main·½·¨£º
+å†çœ‹mainæ–¹æ³•ï¼š
 public static int main(String args[], InputStream in, PrintStream out)
     {
         CommandContext context;
         List tokens;
         ShellCommand main;
-	//´´½¨ÃüÁîÉÏÏÂÎÄ
+	//åˆ›å»ºå‘½ä»¤ä¸Šä¸‹æ–‡
         context = new CommandContext();
         context.setFormatter(new CommandShellOutputFormatter(out));
         tokens = new ArrayList(Arrays.asList(args));
         main = new ShellCommand();
         main.setCommandContext(context);
-        //Ö´ĞĞÆô¶¯brokerÃüÁî
+        //æ‰§è¡Œå¯åŠ¨brokerå‘½ä»¤
         main.execute(tokens);
         return 0;
         Exception e;
@@ -412,26 +412,26 @@ public static int main(String args[], InputStream in, PrintStream out)
         return 1;
     }
 
-À´¿´Ö´ĞĞÆô¶¯brokerÃüÁî
+æ¥çœ‹æ‰§è¡Œå¯åŠ¨brokerå‘½ä»¤
 main.execute(tokens);
 //AbstractCommand
  public void execute(List tokens)
         throws Exception
     {
-        //½âÎöactivemq ÃüÁî²ÎÊı
+        //è§£æactivemq å‘½ä»¤å‚æ•°
         parseOptions(tokens);
-	//´òÓ¡°ïÖúÃüÁî
+	//æ‰“å°å¸®åŠ©å‘½ä»¤
         if(isPrintHelp)
             printHelp();
         else
-	//´òÓ¡°æ±¾
+	//æ‰“å°ç‰ˆæœ¬
         if(isPrintVersion)
             context.printVersion(ActiveMQConnectionMetaData.PROVIDER_VERSION);
         else
-	    //Æô¶¯broker
+	    //å¯åŠ¨broker
             runTask(tokens);
     }
-  //½âÎö²ÎÊı
+  //è§£æå‚æ•°
  protected void parseOptions(List tokens)
         throws Exception
     {
@@ -440,11 +440,11 @@ main.execute(tokens);
             String token = (String)tokens.remove(0);
             if(token.startsWith("-"))
             {
-	        //ÒÔ¡°-¡±¿ªÍ·£¬ÔòÎªÅäÖÃÏî£¬´¦Àí²ÎÊıÅäÖÃÏî
+	        //ä»¥â€œ-â€å¼€å¤´ï¼Œåˆ™ä¸ºé…ç½®é¡¹ï¼Œå¤„ç†å‚æ•°é…ç½®é¡¹
                 handleOption(token, tokens);
             } else
             {
-	        //·ñÔòÎªÃüÁî
+	        //å¦åˆ™ä¸ºå‘½ä»¤
                 tokens.add(0, token);
                 return;
             }
@@ -458,19 +458,19 @@ main.execute(tokens);
         isPrintVersion = false;
         if(token.equals("-h") || token.equals("-?") || token.equals("--help"))
         {
-	    //°ïÖúĞÅÏ¢£¬Çå³ıtokens
+	    //å¸®åŠ©ä¿¡æ¯ï¼Œæ¸…é™¤tokens
             isPrintHelp = true;
             tokens.clear();
         } else
         if(token.equals("--version"))
         {
-	    //´òÓ¡°æ±¾
+	    //æ‰“å°ç‰ˆæœ¬
             isPrintVersion = true;
             tokens.clear();
         } else
         if(token.startsWith("-D"))
         {
-	    //ÏµÍ³²ÎÊı
+	    //ç³»ç»Ÿå‚æ•°
             String key = token.substring(2);
             String value = "";
             int pos = key.indexOf("=");
@@ -482,7 +482,7 @@ main.execute(tokens);
             System.setProperty(key, value);
         } else
         {
-	   //À©Õ¹ÅäÖÃĞÍ
+	   //æ‰©å±•é…ç½®å‹
             if(token.startsWith("--"))
             {
                 String prop = token.substring(2);
@@ -496,8 +496,8 @@ main.execute(tokens);
             isPrintHelp = true;
         }
     }
-»Øµ½Æô¶¯brokerÖĞ
-//´òÓ¡°ïÖúÃüÁî
+å›åˆ°å¯åŠ¨brokerä¸­
+//æ‰“å°å¸®åŠ©å‘½ä»¤
  if(isPrintHelp)
      printHelp();
 //ShellCommand
@@ -506,7 +506,7 @@ protected void printHelp()
         context.printHelp(helpFile);
     }
 
-CommandContextÍ¨¹ıCommandShellOutputFormatter´òÓ¡°ïÖúÎÄµµ
+CommandContexté€šè¿‡CommandShellOutputFormatteræ‰“å°å¸®åŠ©æ–‡æ¡£
 //CommandShellOutputFormatter
 public class CommandShellOutputFormatter
     implements OutputFormatter
@@ -523,9 +523,9 @@ public class CommandShellOutputFormatter
 }
 
 
-´ÓÉÏÃæ¿ÉÒÔ¿´µ±activemqµÄ²ÎÊıÎª°ïÖúĞÅÏ¢»ò°æ±¾ĞÅÏ¢£¬Ôò´òÓ¡Ïà¹ØĞÅÏ¢£¬·ñÔòÆô¶¯broker
-»Øµ½Æô¶¯ÃüÁî
-//Æô¶¯broker
+ä»ä¸Šé¢å¯ä»¥çœ‹å½“activemqçš„å‚æ•°ä¸ºå¸®åŠ©ä¿¡æ¯æˆ–ç‰ˆæœ¬ä¿¡æ¯ï¼Œåˆ™æ‰“å°ç›¸å…³ä¿¡æ¯ï¼Œå¦åˆ™å¯åŠ¨broker
+å›åˆ°å¯åŠ¨å‘½ä»¤
+//å¯åŠ¨broker
 runTask(tokens);
 
 
@@ -556,7 +556,7 @@ protected void runTask(List tokens)
             if(command != null)
             {
                 command.setCommandContext(context);
-		//Ö´ĞĞÃüÁî
+		//æ‰§è¡Œå‘½ä»¤
                 command.execute(tokens);
             }
         } else
@@ -564,12 +564,12 @@ protected void runTask(List tokens)
             printHelp();
         }
     }
-ÎÒÃÇÀ´¿´startÃüÁî
+æˆ‘ä»¬æ¥çœ‹startå‘½ä»¤
 public class StartCommand extends AbstractCommand
 {
-    //ÅäÖÃÎÄ¼ş
+    //é…ç½®æ–‡ä»¶
     public static final String DEFAULT_CONFIG_URI = "xbean:activemq.xml";
-    //°ïÖúÎÄµµ
+    //å¸®åŠ©æ–‡æ¡£
     protected String helpFile[] = {
         "Task Usage: Main start [start-options] [uri]", "Description: Creates and starts a broker using a configuration file, or a broker URI.", "", "Start Options:", "    -D<name>=<value>      Define a system property.", "    --version             Display the version information.", "    -h,-?,--help          Display the start broker help information.", "", "URI:", "", 
         "    XBean based broker configuration:", "", "        Example: Main xbean:file:activemq.xml", "            Loads the xbean configuration file from the current working directory", "        Example: Main xbean:activemq.xml", "            Loads the xbean configuration file from the classpath", "", "    URI Parameter based broker configuration:", "", "        Example: Main broker:(tcp://localhost:61616, tcp://localhost:5000)?useJmx=true", 
@@ -593,9 +593,9 @@ public class StartCommand extends AbstractCommand
                 else
                     configURI = new URI((String)brokerURIs.get(0));
                 System.out.println((new StringBuilder()).append("Loading message broker from: ").append(configURI).toString());
-                //BrokerFactory¹¤³§¸ù¾İÅäÖÃÎÄ¼ş´´½¨Broker·şÎñ
+                //BrokerFactoryå·¥å‚æ ¹æ®é…ç½®æ–‡ä»¶åˆ›å»ºBrokeræœåŠ¡
 		broker = BrokerFactory.createBroker(configURI);
-		//Æô¶¯Broker
+		//å¯åŠ¨Broker
                 broker.start();
             }
             catch(Exception e)
@@ -607,7 +607,7 @@ public class StartCommand extends AbstractCommand
                 throw new Exception(broker.getStartException());
 
             final CountDownLatch shutdownLatch = new CountDownLatch(1);
-	    //Ìí¼ÓÍ£Ö¹brokerµÄJVM»Øµ÷¹Ò¹³
+	    //æ·»åŠ åœæ­¢brokerçš„JVMå›è°ƒæŒ‚é’©
             Thread jvmShutdownHook = new Thread() {
 
                 public void run()
@@ -629,7 +629,7 @@ public class StartCommand extends AbstractCommand
                 super();
             }
             };
-	    //½«Í£Ö¹brokerµÄJVM»Øµ÷¹Ò¹³Ìí¼Óµ½ÔËĞĞÊ±»·¾³
+	    //å°†åœæ­¢brokerçš„JVMå›è°ƒæŒ‚é’©æ·»åŠ åˆ°è¿è¡Œæ—¶ç¯å¢ƒ
             Runtime.getRuntime().addShutdownHook(jvmShutdownHook);
             broker.addShutdownHook(new Runnable() {
 
@@ -648,7 +648,7 @@ public class StartCommand extends AbstractCommand
                 super();
             }
             });
-	    //µÈ´ıÍ£Ö¹brokerĞÅºÅshutdownLatch
+	    //ç­‰å¾…åœæ­¢brokerä¿¡å·shutdownLatch
             shutdownLatch.await();
             try
             {
@@ -662,7 +662,7 @@ public class StartCommand extends AbstractCommand
         } while(true);
     }
 
-À´¿´BrokerFactory¹¤³§¸ù¾İÅäÖÃÎÄ¼ş´´½¨Broker·şÎñ
+æ¥çœ‹BrokerFactoryå·¥å‚æ ¹æ®é…ç½®æ–‡ä»¶åˆ›å»ºBrokeræœåŠ¡
 broker = BrokerFactory.createBroker(configURI);
 
  public static BrokerService createBroker(URI brokerURI)
@@ -675,37 +675,37 @@ broker = BrokerFactory.createBroker(configURI);
     {
         if(brokerURI.getScheme() == null)
             throw new IllegalArgumentException((new StringBuilder()).append("Invalid broker URI, no scheme specified: ").append(brokerURI).toString());
-        //a.´´½¨broker¹¤³§´¦Àíhandler
+        //a.åˆ›å»ºbrokerå·¥å‚å¤„ç†handler
 	BrokerFactoryHandler handler = createBrokerFactoryHandler(brokerURI.getScheme());
-	//b.ÓÉHandler´´½¨BrokerService
+	//b.ç”±Handleråˆ›å»ºBrokerService
         BrokerService broker = handler.createBroker(brokerURI);
         if(startBroker)
             broker.start();
         return broker;
     }
 
-a.´´½¨broker¹¤³§´¦Àíhandler
+a.åˆ›å»ºbrokerå·¥å‚å¤„ç†handler
 BrokerFactoryHandler handler = createBrokerFactoryHandler(brokerURI.getScheme());
-ÓĞÉÏÃæconfigURI = new URI("xbean:activemq.xml")£¬activeMQ½«ÅäÖÃÎÄ¼ş£¬·ÅÔÚJMXÖĞ¹ÜÀí£¬
-Ğ­ÒéÎªXbean
+æœ‰ä¸Šé¢configURI = new URI("xbean:activemq.xml")ï¼ŒactiveMQå°†é…ç½®æ–‡ä»¶ï¼Œæ”¾åœ¨JMXä¸­ç®¡ç†ï¼Œ
+åè®®ä¸ºXbean
 public final class BrokerFactory
 {
-   //¿´µ½Õâ¸öÊÇ²»ÊÇºÜÊìÏ¤£¬¸ù¾İĞ­Òé»úÖÆ£¬¼ÓÔØBROKER_FACTORY
+   //çœ‹åˆ°è¿™ä¸ªæ˜¯ä¸æ˜¯å¾ˆç†Ÿæ‚‰ï¼Œæ ¹æ®åè®®æœºåˆ¶ï¼ŒåŠ è½½BROKER_FACTORY
    private static final FactoryFinder BROKER_FACTORY_HANDLER_FINDER = new FactoryFinder("META-INF/services/org/apache/activemq/broker/");
    private static final ThreadLocal START_DEFAULT = new ThreadLocal();
-   //´´½¨broker¹¤³§handler£¬
+   //åˆ›å»ºbrokerå·¥å‚handlerï¼Œ
    public static BrokerFactoryHandler createBrokerFactoryHandler(String type)
         throws IOException
     {
-        //ÕâÖÖÄ£Ê½£¬Ç°ÃæÒÑ¾­Ëµ¹ı£¬¼ÓÔØMETA-INF/services/org/apache/activemq/broker/
-	//ÎÄ¼ş¼ĞÏÂxbeanÎÄ¼şÖĞclassÊôĞÔ¶ÔÓ¦µÄbroker¹¤³§Àà
+        //è¿™ç§æ¨¡å¼ï¼Œå‰é¢å·²ç»è¯´è¿‡ï¼ŒåŠ è½½META-INF/services/org/apache/activemq/broker/
+	//æ–‡ä»¶å¤¹ä¸‹xbeanæ–‡ä»¶ä¸­classå±æ€§å¯¹åº”çš„brokerå·¥å‚ç±»
         return (BrokerFactoryHandler)BROKER_FACTORY_HANDLER_FINDER.newInstance(type);
     }
 }
-xbeanÎÄ¼ş
+xbeanæ–‡ä»¶
 class=org.apache.activemq.xbean.XBeanBrokerFactory
 
-b.ÓÉHandler´´½¨BrokerService
+b.ç”±Handleråˆ›å»ºBrokerService
 BrokerService broker = handler.createBroker(brokerURI);
 
 //XBeanBrokerFactory
@@ -729,12 +729,12 @@ public BrokerService createBroker(URI config)
             IntrospectionSupport.setProperties(this, URISupport.parseQuery(uri));
             uri = uri.substring(0, uri.lastIndexOf('?'));
         }
-	//´´½¨ÉÏÏÂÎÄ
+	//åˆ›å»ºä¸Šä¸‹æ–‡
         ApplicationContext context = createApplicationContext(uri);
         BrokerService broker = null;
         try
         {
-	    //´ÓÉÏÏÂÎÄÖĞ»ñÈ¡brokerÊôĞÔ
+	    //ä»ä¸Šä¸‹æ–‡ä¸­è·å–brokerå±æ€§
             broker = (BrokerService)context.getBean("broker");
         }
         catch(BeansException beansexception) { }
@@ -766,7 +766,7 @@ public BrokerService createBroker(URI config)
         }
     }
 
- //´´½¨Ó¦ÓÃÉÏÏÂÎÄ£¬Í¨SpringµÄ»úÖÆ
+ //åˆ›å»ºåº”ç”¨ä¸Šä¸‹æ–‡ï¼Œé€šSpringçš„æœºåˆ¶
  protected ApplicationContext createApplicationContext(String uri)
         throws MalformedURLException
     {
@@ -779,7 +779,7 @@ public BrokerService createBroker(URI config)
             {
                 reader.setValidating(isValidate());
             }
-             //XML Broker¹¤³§
+             //XML Brokerå·¥å‚
             final XBeanBrokerFactory this$0;
 
             
@@ -793,7 +793,7 @@ public BrokerService createBroker(URI config)
         LOG.error((new StringBuilder()).append("Failed to load: ").append(resource).append(", reason: ").append(errorToLog.getLocalizedMessage()).toString(), errorToLog);
         throw errorToLog;
     }
-ÌùÉÏactivemq.xml brokerÅäÖÃÆ¬¶Î
+è´´ä¸Šactivemq.xml brokeré…ç½®ç‰‡æ®µ
   <broker xmlns="http://activemq.apache.org/schema/core" brokerName="localhost" dataDirectory="${activemq.data}">
 
         <destinationPolicy>
@@ -884,7 +884,7 @@ public BrokerService createBroker(URI config)
 
 
 
-//´ÓÉÏÏÂÎÄÖĞ»ñÈ¡brokerÊôĞÔ
+//ä»ä¸Šä¸‹æ–‡ä¸­è·å–brokerå±æ€§
 broker = (BrokerService)context.getBean("broker");
 public class XBeanBrokerService extends BrokerService
 { 
@@ -893,7 +893,7 @@ public class XBeanBrokerService extends BrokerService
     {
         start = BrokerFactory.getStartDefault();
     }
-    //ÔÚ¹¹ÔìÍêÖ®ºó£¬µ÷ÓÃafterPropertiesSet
+    //åœ¨æ„é€ å®Œä¹‹åï¼Œè°ƒç”¨afterPropertiesSet
     private void postConstruct()
     {
         try
@@ -909,12 +909,12 @@ public class XBeanBrokerService extends BrokerService
     public void afterPropertiesSet()
         throws Exception
     {   
-        //³õÊ¼»¯ÄÚ´æÊ¹ÓÃÇé¿ö
+        //åˆå§‹åŒ–å†…å­˜ä½¿ç”¨æƒ…å†µ
         ensureSystemUsageHasStore();
         if(shouldAutostart())
             start();
     }
-    //±£Ö¤ÄÚ´æ»¹ÓĞ¿Õ¼ä¿ÉÓÃ
+    //ä¿è¯å†…å­˜è¿˜æœ‰ç©ºé—´å¯ç”¨
     private void ensureSystemUsageHasStore()
         throws IOException
     {
@@ -927,16 +927,16 @@ public class XBeanBrokerService extends BrokerService
             usage.getJobSchedulerUsage().setStore(getJobSchedulerStore());
     }
 }
-´ÓÉÏ¿ÉÒÔ¿´³öXBeanBrokerFactoryÊ×ÏÈ¸ù¾İactivemq.xmlÔÚJMXÖĞxbeanĞÅÏ¢£¬Í¨¹ıSpring¼ÓÔØ
-Ó¦ÓÃÉÏÏÂÎÄµÄ·½Ê½½âÎöxbeanĞÅÏ¢£¬È»ºó´ÓÓ¦ÓÃÉÏÏÂÎÄÖĞ»ñÈ¡broker·şÎñXBeanBrokerService
+ä»ä¸Šå¯ä»¥çœ‹å‡ºXBeanBrokerFactoryé¦–å…ˆæ ¹æ®activemq.xmlåœ¨JMXä¸­xbeanä¿¡æ¯ï¼Œé€šè¿‡SpringåŠ è½½
+åº”ç”¨ä¸Šä¸‹æ–‡çš„æ–¹å¼è§£æxbeanä¿¡æ¯ï¼Œç„¶åä»åº”ç”¨ä¸Šä¸‹æ–‡ä¸­è·å–brokeræœåŠ¡XBeanBrokerService
 
-ÔÙ¿´Æô¶¯Broker
+å†çœ‹å¯åŠ¨Broker
 broker.start();
-Æô¶¯ÔÚBrokerServiceÖĞ
+å¯åŠ¨åœ¨BrokerServiceä¸­
 public class BrokerService
     implements Service
 {
-   public static final String DEFAULT_PORT = "61616";//Ä¬ÈÏ¶Ë¿Ú
+   public static final String DEFAULT_PORT = "61616";//é»˜è®¤ç«¯å£
     public static final String LOCAL_HOST_NAME;
     public static final String BROKER_VERSION;
     public static final String DEFAULT_BROKER_NAME = "localhost";
@@ -944,51 +944,51 @@ public class BrokerService
     public static final long DEFAULT_START_TIMEOUT = 600000L;
     private static final Logger LOG;
     private static final long serialVersionUID = 7353129142305630237L;
-    private boolean useJmx;//ÊÇ·ñÓÃJMX
-    private boolean enableStatistics;//ÊÇ·ñ¿ªÆôÍ³¼Æ
-    private boolean persistent;//ÊÇ·ñ³Ö¾Ã»¯
+    private boolean useJmx;//æ˜¯å¦ç”¨JMX
+    private boolean enableStatistics;//æ˜¯å¦å¼€å¯ç»Ÿè®¡
+    private boolean persistent;//æ˜¯å¦æŒä¹…åŒ–
     private boolean populateJMSXUserID;
-    private boolean useAuthenticatedPrincipalForJMSXUserID;//JMXÓÃ»§ÑéÖ¤id
+    private boolean useAuthenticatedPrincipalForJMSXUserID;//JMXç”¨æˆ·éªŒè¯id
     private boolean populateUserNameInMBeans;
     private long mbeanInvocationTimeout;
-    private boolean useShutdownHook;//javaÔËĞĞÊ±£¬¹Ø±Õbroker£¬ÊÇ·ñÓĞHook
+    private boolean useShutdownHook;//javaè¿è¡Œæ—¶ï¼Œå…³é—­brokerï¼Œæ˜¯å¦æœ‰Hook
     private boolean useLoggingForShutdownErrors;
-    private boolean shutdownOnMasterFailure;//ÊÇ·ñÔÚMasterå´»úÊ±£¬¹Ø±Õbroker
+    private boolean shutdownOnMasterFailure;//æ˜¯å¦åœ¨Masterå®•æœºæ—¶ï¼Œå…³é—­broker
     private boolean shutdownOnSlaveFailure;
     private boolean waitForSlave;
     private long waitForSlaveTimeout;
     private boolean passiveSlave;
-    private String brokerName;//brokerÃû³Æ
-    private File dataDirectoryFile;//Êı¾İÄ¿Â¼
+    private String brokerName;//brokeråç§°
+    private File dataDirectoryFile;//æ•°æ®ç›®å½•
     private File tmpDataDirectory;
     private Broker broker;
     private BrokerView adminView;
-    private ManagementContext managementContext;//¹ÜÀíÆ÷ÉÏÏÂÎÄ
+    private ManagementContext managementContext;//ç®¡ç†å™¨ä¸Šä¸‹æ–‡
     private ObjectName brokerObjectName;
-    private TaskRunnerFactory taskRunnerFactory;//ÈÎÎñ¹¤³§
+    private TaskRunnerFactory taskRunnerFactory;//ä»»åŠ¡å·¥å‚
     private TaskRunnerFactory persistenceTaskRunnerFactory;
-    private SystemUsage systemUsage;//ÏµÍ³ÄÚ´æÊ¹ÓÃÇé¿ö
-    private SystemUsage producerSystemUsage;//Éú²úÕßÄÚ´æÊ¹ÓÃÇé¿ö
-    private SystemUsage consumerSystemUsaage;//Ïû·ÑÕßÄÚ´æÊ¹ÓÃÇé¿ö
-    private PersistenceAdapter persistenceAdapter;//³Ö¾Ã»¯ÊÊÅäÆ÷
-    private PersistenceAdapterFactory persistenceFactory;//³Ö¾Ã»¯¹¤³§
-    protected DestinationFactory destinationFactory;//Ä¿µÄµØ¹¤³§
-    private MessageAuthorizationPolicy messageAuthorizationPolicy;//ÏûÏ¢ÑéÖ¤²ßÂÔ
+    private SystemUsage systemUsage;//ç³»ç»Ÿå†…å­˜ä½¿ç”¨æƒ…å†µ
+    private SystemUsage producerSystemUsage;//ç”Ÿäº§è€…å†…å­˜ä½¿ç”¨æƒ…å†µ
+    private SystemUsage consumerSystemUsaage;//æ¶ˆè´¹è€…å†…å­˜ä½¿ç”¨æƒ…å†µ
+    private PersistenceAdapter persistenceAdapter;//æŒä¹…åŒ–é€‚é…å™¨
+    private PersistenceAdapterFactory persistenceFactory;//æŒä¹…åŒ–å·¥å‚
+    protected DestinationFactory destinationFactory;//ç›®çš„åœ°å·¥å‚
+    private MessageAuthorizationPolicy messageAuthorizationPolicy;//æ¶ˆæ¯éªŒè¯ç­–ç•¥
     private final List transportConnectors = new CopyOnWriteArrayList();//transportConnectors
     private final List networkConnectors = new CopyOnWriteArrayList();//networkConnectors
     private final List proxyConnectors = new CopyOnWriteArrayList();
     private final List jmsConnectors = new CopyOnWriteArrayList();//jmsConnectors
     private final List services = new ArrayList();
-    private transient Thread shutdownHook;//¹Ø±Õbroke£¬ÔËĞĞhookÏß³Ì
+    private transient Thread shutdownHook;//å…³é—­brokeï¼Œè¿è¡Œhookçº¿ç¨‹
     private String transportConnectorURIs[];//transportConnector urI
     private String networkConnectorURIs[];
     private JmsConnector jmsBridgeConnectors[];
-    private boolean deleteAllMessagesOnStartup;//ÊÇ·ñÔÚÆôÊ±£¬É¾³ıËùÓĞÏûÏ¢
+    private boolean deleteAllMessagesOnStartup;//æ˜¯å¦åœ¨å¯æ—¶ï¼Œåˆ é™¤æ‰€æœ‰æ¶ˆæ¯
     private boolean advisorySupport;
-    private URI vmConnectorURI;//ĞéÄâ»úURI
+    private URI vmConnectorURI;//è™šæ‹ŸæœºURI
     private String defaultSocketURIString;
     private PolicyMap destinationPolicy;
-    //BrokerÔËĞĞ×´Ì¬
+    //Brokerè¿è¡ŒçŠ¶æ€
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
     private final AtomicBoolean stopping = new AtomicBoolean(false);
@@ -1000,39 +1000,39 @@ public class BrokerService
     //brokerid
     private BrokerId brokerId;
     private volatile DestinationInterceptor destinationInterceptors[];
-    private ActiveMQDestination destinations[];//ÏûÏ¢Ä¿µÄµØ
+    private ActiveMQDestination destinations[];//æ¶ˆæ¯ç›®çš„åœ°
     private PListStore tempDataStore;
-    private int persistenceThreadPriority;//³Ö¾Ã»¯Ïß³ÌÓÅÏÈ¼¶
+    private int persistenceThreadPriority;//æŒä¹…åŒ–çº¿ç¨‹ä¼˜å…ˆçº§
     private boolean useLocalHostBrokerName;
-    private final CountDownLatch stoppedLatch = new CountDownLatch(1);//¹Ø±ÕĞÅºÅÁ¿
-    private final CountDownLatch startedLatch = new CountDownLatch(1);//Æô¶¯ĞÅºÅÁ¿
+    private final CountDownLatch stoppedLatch = new CountDownLatch(1);//å…³é—­ï¼Œé—­é”
+    private final CountDownLatch startedLatch = new CountDownLatch(1);//å¯åŠ¨ï¼Œé—­é”
     private Broker regionBroker;
     private int producerSystemUsagePortion;
     private int consumerSystemUsagePortion;
     private boolean splitSystemUsageForProducersConsumers;
     private boolean monitorConnectionSplits;
-    private int taskRunnerPriority;//ÈÎÎñÏß³ÌÓÅÏÈ¼¶
+    private int taskRunnerPriority;//ä»»åŠ¡çº¿ç¨‹ä¼˜å…ˆçº§
     private boolean dedicatedTaskRunner;
     private boolean cacheTempDestinations;
     private int timeBeforePurgeTempDestinations;
     private final List shutdownHooks = new ArrayList();
     private boolean systemExitOnShutdown;
     private int systemExitOnShutdownExitCode;
-    private SslContext sslContext;//SSLÉÏÏÂÎÄ
+    private SslContext sslContext;//SSLä¸Šä¸‹æ–‡
     private boolean forceStart;
     private IOExceptionHandler ioExceptionHandler;
     private boolean schedulerSupport;
     private File schedulerDirectoryFile;
-    private Scheduler scheduler;//µ÷¶ÈÆ÷
-    private ThreadPoolExecutor executor;//Ïß³ÌÖ´ĞĞÆ÷
+    private Scheduler scheduler;//è°ƒåº¦å™¨
+    private ThreadPoolExecutor executor;//çº¿ç¨‹æ‰§è¡Œå™¨
     private int schedulePeriodForDestinationPurge;
     private int maxPurgedDestinationsPerSweep;
     private int schedulePeriodForDiskUsageCheck;
-    private BrokerContext brokerContext;//brokerÉÏÏÂÎÄ
+    private BrokerContext brokerContext;//brokerä¸Šä¸‹æ–‡
     private boolean networkConnectorStartAsync;
     private boolean allowTempAutoCreationOnSend;
-    private JobSchedulerStore jobSchedulerStore;//jobµ÷¶È´æ´¢Æ÷
-    private final AtomicLong totalConnections = new AtomicLong();//Á¬½ÓÊı
+    private JobSchedulerStore jobSchedulerStore;//jobè°ƒåº¦å­˜å‚¨å™¨
+    private final AtomicLong totalConnections = new AtomicLong();//è¿æ¥æ•°
     private final AtomicInteger currentConnections = new AtomicInteger();
     private long offlineDurableSubscriberTimeout;
     private long offlineDurableSubscriberTaskSchedule;
@@ -1049,7 +1049,7 @@ public class BrokerService
 
     static 
     {
-        //¼ÓÔØ°æ±¾ĞÅÏ¢
+        //åŠ è½½ç‰ˆæœ¬ä¿¡æ¯
         String version;
         LOG = LoggerFactory.getLogger(org/apache/activemq/broker/BrokerService);
         try
@@ -1123,10 +1123,10 @@ public class BrokerService
         storeOpenWireVersion = 11;
     }
 }
-´ÓÉÏÃæ¿ÉÒÔ¿´³öBrokerServiceµÄ¹¹Ôì£¬Ö÷ÒªÊÇ³õÊ¼»¯¹Ø±ÕbrokerÊÇ·ñÓĞHook£¬ÈÎÎñÏß³ÌÓÅÏÈ¼¶£¬ÊÇ·ñÔÊĞíÖØÆô£¬
-ÊÇ·ñÖ§³öµ÷¶ÈÆ÷£¬Ïû·ÑÕßÉú²úÕßÔÊĞíÊ¹ÓÃµÄÄÚ´æÕ¼±È¡£
+ä»ä¸Šé¢å¯ä»¥çœ‹å‡ºBrokerServiceçš„æ„é€ ï¼Œä¸»è¦æ˜¯åˆå§‹åŒ–å…³é—­brokeræ˜¯å¦æœ‰Hookï¼Œä»»åŠ¡çº¿ç¨‹ä¼˜å…ˆçº§ï¼Œæ˜¯å¦å…è®¸é‡å¯ï¼Œ
+æ˜¯å¦æ”¯å‡ºè°ƒåº¦å™¨ï¼Œæ¶ˆè´¹è€…ç”Ÿäº§è€…å…è®¸ä½¿ç”¨çš„å†…å­˜å æ¯”ã€‚
 
-À´¿´Æô¶¯
+æ¥çœ‹å¯åŠ¨
 public void start()
         throws Exception
     {
@@ -1141,10 +1141,10 @@ public void start()
         if(!isUseJmx())
             break MISSING_BLOCK_LABEL_156;
         MDC.remove("activemq.broker");
-	//Æô¶¯¹ÜÀíÆ÷ÉÏÏÂÎÄ
+	//å¯åŠ¨ç®¡ç†å™¨ä¸Šä¸‹æ–‡
         startManagementContext();
         NetworkConnector connector;
-	//×¢²áÍøÂçÁ¬½Ó
+	//æ³¨å†Œç½‘ç»œè¿æ¥
         for(Iterator i$ = getNetworkConnectors().iterator(); i$.hasNext(); registerNetworkConnectorMBean(connector))
             connector = (NetworkConnector)i$.next();
 
@@ -1152,14 +1152,14 @@ public void start()
         BrokerRegistry brokerRegistry = BrokerRegistry.getInstance();
         if(brokerRegistry.lookup(getBrokerName()) == null)
             brokerRegistry.bind(getBrokerName(), this);
-	//Æô¶¯ÊÊÅäÆ÷
+	//å¯åŠ¨é€‚é…å™¨
         startPersistenceAdapter(startAsync);
-	//Æô¶¯broker
+	//å¯åŠ¨broker
         startBroker(startAsync);
         brokerRegistry.bind(getBrokerName(), this);   
 }
-ÎÒÃÇ×î¹ØĞÄµÄÊÇÆô¶¯broker
-Æô¶¯broker
+æˆ‘ä»¬æœ€å…³å¿ƒçš„æ˜¯å¯åŠ¨broker
+å¯åŠ¨broker
 startBroker(startAsync);
 
 private void startBroker(boolean async)
@@ -1194,18 +1194,18 @@ private void startBroker(boolean async)
             }
             }).start();
         else
-	    //¹Ø¼üµã
+	    //å…³é”®ç‚¹
             doStartBroker();
     }
-//Æô¶¯broker
+//å¯åŠ¨broker
  private void doStartBroker()
         throws Exception
     {
         if(startException != null)
             return;
-	//Æô¶¯Ä¿µÄµØ
+	//å¯åŠ¨ç›®çš„åœ°
         startDestinations();
-	//Ìí¼Ó¹Ø±Õhook
+	//æ·»åŠ å…³é—­hook
         addShutdownHook();
         broker = getBroker();
         brokerId = broker.getBrokerId();
@@ -1215,7 +1215,7 @@ private void startBroker(boolean async)
             if(getManagementContext().isCreateConnector() && !getManagementContext().isConnectorStarted())
             {
                 managementContext.stop();
-		//Æô¶¯¹ÜÀíÆ÷ÉÏÏÂÎÄ
+		//å¯åŠ¨ç®¡ç†å™¨ä¸Šä¸‹æ–‡
                 startManagementContext();
             }
             ManagedRegionBroker managedBroker = (ManagedRegionBroker)regionBroker;
@@ -1230,16 +1230,16 @@ private void startBroker(boolean async)
             Log4JConfigView log4jConfigView = new Log4JConfigView();
             AnnotatedMBean.registerMBean(getManagementContext(), log4jConfigView, objectName);
         }
-	//¿ªÆôËùÓĞÁ¬½Ó
+	//å¼€å¯æ‰€æœ‰è¿æ¥
         startAllConnectors();
         getBroker().brokerServiceStarted();
         checkSystemUsageLimits();
-	//Æô¶¯ĞÅºÅ
+	//å¯åŠ¨ä¿¡å·
         startedLatch.countDown();
         getBroker().nowMasterBroker();
     }
 
-//¿ªÆôËùÓĞÁ¬½Ó
+//å¼€å¯æ‰€æœ‰è¿æ¥
 startAllConnectors();
 
 
@@ -1249,7 +1249,7 @@ public void startAllConnectors()
         Set durableDestinations = getBroker().getDurableDestinations();
         List al = new ArrayList();
         TransportConnector connector;
-	//Æô¶¯Á¬½Ó¼àÌıstartTransportConnector(connector)
+	//å¯åŠ¨è¿æ¥ç›‘å¬startTransportConnector(connector)
         for(Iterator iter = getTransportConnectors().iterator(); iter.hasNext(); al.add(startTransportConnector(connector)))
             connector = (TransportConnector)iter.next();
 
@@ -1265,7 +1265,7 @@ public void startAllConnectors()
         uri = URISupport.createURIWithQuery(uri, URISupport.createQueryString(map));
         if(!stopped.get())
         {
-	    //³õÊ¼»¯Ïß³ÌÖ´ĞĞÆ÷
+	    //åˆå§‹åŒ–çº¿ç¨‹æ‰§è¡Œå™¨
             ThreadPoolExecutor networkConnectorStartExecutor = null;
             if(isNetworkConnectorStartAsync())
                 networkConnectorStartExecutor = new ThreadPoolExecutor(0, 2147483647, 10L, TimeUnit.SECONDS, new SynchronousQueue(), new ThreadFactory() {
@@ -1287,7 +1287,7 @@ public void startAllConnectors()
                 count = 0;
             }
                 });
-	    //Æô¶¯NetworkConnector 
+	    //å¯åŠ¨NetworkConnector 
             for(Iterator iter = getNetworkConnectors().iterator(); iter.hasNext();)
             {
                 final NetworkConnector connector = (NetworkConnector)iter.next();
@@ -1345,15 +1345,15 @@ public void startAllConnectors()
 
         }
     }
-À´¿´Æô¶¯Á¬½Ó¼àÌı
-Æô¶¯Á¬½Ó¼àÌı
+æ¥çœ‹å¯åŠ¨è¿æ¥ç›‘å¬
+å¯åŠ¨è¿æ¥ç›‘å¬
 startTransportConnector(connector)
 public TransportConnector startTransportConnector(TransportConnector connector)
         throws Exception
     {
-        //ÉèÖÃÁ¬½Óbroker
+        //è®¾ç½®è¿æ¥broker
         connector.setBrokerService(this);
-	//ÉèÖÃÈÎÎñ¹¤³§
+	//è®¾ç½®ä»»åŠ¡å·¥å‚
         connector.setTaskRunnerFactory(getTaskRunnerFactory());
         MessageAuthorizationPolicy policy = getMessageAuthorizationPolicy();
         if(policy != null)
@@ -1361,7 +1361,7 @@ public TransportConnector startTransportConnector(TransportConnector connector)
         if(isUseJmx())
             connector = registerConnectorMBean(connector);
         connector.getStatistics().setEnabled(enableStatistics);
-	//Æô¶¯Á¬½Ó
+	//å¯åŠ¨è¿æ¥
         connector.start();
         return connector;
     }
@@ -1370,13 +1370,13 @@ public TransportConnector startTransportConnector(TransportConnector connector)
 public class TransportConnector
     implements Connector, BrokerServiceAware
 {
-   protected final CopyOnWriteArrayList connections;//Á¬½ÓĞÅÏ¢
+   protected final CopyOnWriteArrayList connections;//è¿æ¥ä¿¡æ¯
     protected TransportStatusDetector statusDector;
-    private BrokerService brokerService;//broker·şÎñ
-    private TransportServer server;//¼àÌıServer
+    private BrokerService brokerService;//brokeræœåŠ¡
+    private TransportServer server;//ç›‘å¬Server
     private URI uri;
     private BrokerInfo brokerInfo;
-    private TaskRunnerFactory taskRunnerFactory;//ÈÎÎñ¹¤³§
+    private TaskRunnerFactory taskRunnerFactory;//ä»»åŠ¡å·¥å‚
     private MessageAuthorizationPolicy messageAuthorizationPolicy;
     private DiscoveryAgent discoveryAgent;
     private final ConnectorStatistics statistics;
@@ -1390,7 +1390,7 @@ public class TransportConnector
     private boolean updateClusterClientsOnRemove;
     private String updateClusterFilter;
     private boolean auditNetworkProducers;
-    //ÔÊĞíÁ¬½ÓµÄ×î´óÏû·ÑÕßÓëÉú²úÕß
+    //å…è®¸è¿æ¥çš„æœ€å¤§æ¶ˆè´¹è€…ä¸ç”Ÿäº§è€…
     private int maximumProducersAllowedPerConnection;
     private int maximumConsumersAllowedPerConnection;
     private PublishedAddressPolicy publishedAddressPolicy;
@@ -1412,9 +1412,9 @@ public class TransportConnector
         peerBrokers = new LinkedList();
     }
 }
-´ÓÉÏÃæ¿´³õÊ¼»¯TransportConnector£¬¾ÍÊÇ³õÊ¼»¯broker·şÎñ£¬ÔÊĞíÁ¬½ÓµÄ×î´óÏû·ÑÕßÓëÉú²úÕßµÈĞÅÏ¢¡£
+ä»ä¸Šé¢çœ‹åˆå§‹åŒ–TransportConnectorï¼Œå°±æ˜¯åˆå§‹åŒ–brokeræœåŠ¡ï¼Œå…è®¸è¿æ¥çš„æœ€å¤§æ¶ˆè´¹è€…ä¸ç”Ÿäº§è€…ç­‰ä¿¡æ¯ã€‚
 
-//Æô¶¯Á¬½Ó
+//å¯åŠ¨è¿æ¥
 connector.start();
 
 public void start()
@@ -1426,7 +1426,7 @@ public void start()
         brokerInfo.setPeerBrokerInfos(broker.getPeerBrokerInfos());
         brokerInfo.setFaultTolerantConfiguration(broker.isFaultTolerantConfiguration());
         brokerInfo.setBrokerURL(broker.getBrokerService().getDefaultSocketURIString());
-	//ÉèÖÃServer½ÓÊÜÁ¬½Ó¼àÌıÆ÷
+	//è®¾ç½®Serveræ¥å—è¿æ¥ç›‘å¬å™¨
         getServer().setAcceptListener(new TransportAcceptListener() {
 
             public void onAccept(final Transport transport)
@@ -1441,9 +1441,9 @@ public void start()
                             {
                                 if(!brokerService.isStopping())
                                 {
-				    //½ÓÊÜÁ¬½Óºó£¬´´½¨Á¬½Ó£¬Æô¶¯Á¬½Ó£¬Õâ¸öÊ±ºòÊÇ²»ÊÇ
-				    //ÓëÇ°ÃæÁªÏµÉÏÁË£¬µ±Æô¶¯Á¬½ÓÊ±£¬Æô¶¯»á»°£¬Æô¶¯
-				    //»á»°Ö´ĞĞÆ÷£¬Í¨ÖªÏû·ÑÕßÏû·ÑÏûÏ¢
+				    //æ¥å—è¿æ¥åï¼Œåˆ›å»ºè¿æ¥ï¼Œå¯åŠ¨è¿æ¥ï¼Œè¿™ä¸ªæ—¶å€™æ˜¯ä¸æ˜¯
+				    //ä¸å‰é¢è”ç³»ä¸Šäº†ï¼Œå½“å¯åŠ¨è¿æ¥æ—¶ï¼Œå¯åŠ¨ä¼šè¯ï¼Œå¯åŠ¨
+				    //ä¼šè¯æ‰§è¡Œå™¨ï¼Œé€šçŸ¥æ¶ˆè´¹è€…æ¶ˆè´¹æ¶ˆæ¯
                                     Connection connection = createConnection(transport);
                                     connection.start();
                                 } else
@@ -1475,9 +1475,9 @@ public void start()
             }
         });
         getServer().setBrokerInfo(brokerInfo);
-	//Æô¶¯server
+	//å¯åŠ¨server
         getServer().start();
-	//slave·¢ÏÖ´úÀí
+	//slaveå‘ç°ä»£ç†
         DiscoveryAgent da = getDiscoveryAgent();
         if(da != null)
         {
@@ -1495,11 +1495,11 @@ public void start()
         throws IOException, URISyntaxException
     {
         if(server == null)
-	    //ÉèÖÃServer
+	    //è®¾ç½®Server
             setServer(createTransportServer());
         return server;
     }
-    ´´½¨TransportServer
+    åˆ›å»ºTransportServer
   protected TransportServer createTransportServer()
         throws IOException, URISyntaxException
     {
@@ -1509,19 +1509,19 @@ public void start()
             return TransportFactorySupport.bind(brokerService, uri);
     }
     //TransportFactorySupport
-    //°ó¶¨broker·şÎñÓÚURI
+    //ç»‘å®šbrokeræœåŠ¡äºURI
   public static TransportServer bind(BrokerService brokerService, URI location)
         throws IOException
     {
         TransportFactory tf;
-	//¸ù¾İÒÔÇ°µÄÎÄÕÂÕâ¸öÓ¦¸ÃºÜÊìÏ¤£¬TransportFactory»ñÈ¡¹¤³§£¬Êµ¼ÊÎªTcpTransportFactory
+	//æ ¹æ®ä»¥å‰çš„æ–‡ç« è¿™ä¸ªåº”è¯¥å¾ˆç†Ÿæ‚‰ï¼ŒTransportFactoryè·å–å·¥å‚ï¼Œå®é™…ä¸ºTcpTransportFactory
         tf = TransportFactory.findTransportFactory(location);
         if(brokerService != null && (tf instanceof BrokerServiceAware))
             ((BrokerServiceAware)tf).setBrokerService(brokerService);
         TransportServer transportserver;
         if(brokerService != null)
             SslContext.setCurrentSslContext(brokerService.getSslContext());
-	//°ó¶¨µØÖ·
+	//ç»‘å®šåœ°å€
         transportserver = tf.doBind(location);
         SslContext.setCurrentSslContext(null);
         return transportserver;
@@ -1539,22 +1539,22 @@ ublic TransportServer doBind(URI location)
     {
         TcpTransportServer server;
         Map options = new HashMap(URISupport.parseParameters(location));
-	//´´½¨SOCKET¹¤³§
+	//åˆ›å»ºSOCKETå·¥å‚
         ServerSocketFactory serverSocketFactory = createServerSocketFactory();
         server = createTcpTransportServer(location, serverSocketFactory);
-	//ÉèÖÃServerĞ­Òé
+	//è®¾ç½®Serveråè®®
         server.setWireFormatFactory(createWireFormatFactory(options));
         IntrospectionSupport.setProperties(server, options);
         Map transportOptions = IntrospectionSupport.extractProperties(options, "transport.");
         server.setTransportOption(transportOptions);
-	//°ó¶¨Server
+	//ç»‘å®šServer
         server.bind();
         return server;
         URISyntaxException e;
         e;
         throw IOExceptionSupport.create(e);
     }
-ÔÙ¿´TcpTransportServer
+å†çœ‹TcpTransportServer
 public class TcpTransportServer extends TransportServerThreadSupport
     implements ServiceListener
 {   
@@ -1570,16 +1570,16 @@ public class TcpTransportServer extends TransportServerThreadSupport
     protected boolean allowLinkStealing;
     protected boolean trace;
     protected int soTimeout;
-    protected int socketBufferSize;//»º´æ´óĞ¡
-    protected int connectionTimeout;//Á¬½Ó³¬Ê±Ê±¼ä
+    protected int socketBufferSize;//ç¼“å­˜å¤§å°
+    protected int connectionTimeout;//è¿æ¥è¶…æ—¶æ—¶é—´
     protected String logWriterName;
     protected boolean dynamicManagement;
     protected boolean startLogging;
     protected final ServerSocketFactory serverSocketFactory;
-    protected BlockingQueue socketQueue;//socketµÄ¶ÓÁĞ
+    protected BlockingQueue socketQueue;//socketçš„é˜Ÿåˆ—
     protected Thread socketHandlerThread;
     protected int maximumConnections;
-    protected AtomicInteger currentTransportCount;//Á¬½ÓÊı
+    protected AtomicInteger currentTransportCount;//è¿æ¥æ•°
     public TcpTransportServer(TcpTransportFactory transportFactory, URI location, ServerSocketFactory serverSocketFactory)
         throws IOException, URISyntaxException
     {
@@ -1604,10 +1604,10 @@ public class TcpTransportServer extends TransportServerThreadSupport
     }
 }
 
-³õÊ¼»¯TcpTransportServer¾ÍÊÇ£¬Á¬½Ó»º´æ´óĞ¡£¬Á¬½ÓÑÓÊ±£¬Ğ­Òé¸ñÊ½»¯¹¤³§£¬socketServer¹¤³§µÈ£»
+åˆå§‹åŒ–TcpTransportServerå°±æ˜¯ï¼Œè¿æ¥ç¼“å­˜å¤§å°ï¼Œè¿æ¥å»¶æ—¶ï¼Œåè®®æ ¼å¼åŒ–å·¥å‚ï¼ŒsocketServerå·¥å‚ç­‰ï¼›
 
 
-ÏÈ¿´TcpTransportServer°ó¶¨
+å…ˆçœ‹TcpTransportServerç»‘å®š
  public void bind()
         throws IOException
     {
@@ -1617,13 +1617,13 @@ public class TcpTransportServer extends TransportServerThreadSupport
         InetAddress addr = InetAddress.getByName(host);
         try
         {
-	   //¸ù¾İipºÍport´´½¨serverSocket
+	   //æ ¹æ®ipå’Œportåˆ›å»ºserverSocket
             serverSocket = serverSocketFactory.createServerSocket(bind.getPort(), backlog, addr);
             configureServerSocket(serverSocket);
         }
   }
 
-ÔÙ¿´Æô¶¯server
+å†çœ‹å¯åŠ¨server
 getServer().start();
 
 
@@ -1634,7 +1634,7 @@ public abstract class TransportServerThreadSupport extends TransportServerSuppor
 
 public abstract class TransportServerSupport extends ServiceSupport
     implements TransportServer
-¿´µ½ServiceSupport£¬Êµ¼Êµ÷ÓÃµÄÎªdoStart
+çœ‹åˆ°ServiceSupportï¼Œå®é™…è°ƒç”¨çš„ä¸ºdoStart
 //TransportServerThreadSupport
 protected void doStart()
         throws Exception
@@ -1645,18 +1645,18 @@ protected void doStart()
         runner.setPriority(9);
         runner.start();
     }
-Í¬Ê±Æô¶¯TcpTransportServerÏß³Ì
+åŒæ—¶å¯åŠ¨TcpTransportServerçº¿ç¨‹
 //TcpTransportServer
  public void run()
     {
-       //´ÓserverSocket»ñÈ¡Í¨µÀ£¬java nio
+       //ä»serverSocketè·å–é€šé“ï¼Œjava nio
         final ServerSocketChannel chan = serverSocket.getChannel();
         if(chan != null)
             try
             {
                 chan.configureBlocking(false);
                 selector = SelectorManager.getInstance().register(chan, new org.apache.activemq.transport.nio.SelectorManager.Listener() {
-                    //Í¨µÀÑ¡ÔñÆ÷
+                    //é€šé“é€‰æ‹©å™¨
                     public void onSelect(SelectorSelection sel)
                     {
                         try
@@ -1719,14 +1719,14 @@ protected void doStart()
                 Socket socket = null;
                 try
                 {
-		    //µÚÒ»´Î£¬Ã»ÓĞsocket£¬Ôò´´½¨serverSocket
+		    //ç¬¬ä¸€æ¬¡ï¼Œæ²¡æœ‰socketï¼Œåˆ™åˆ›å»ºserverSocket
                     socket = serverSocket.accept();
                     if(socket != null)
                         if(isStopped() || getAcceptListener() == null)
                             socket.close();
                         else
                         if(useQueueForAccept)
-			    //½«serverSocketÌí¼ÓsocketQueue
+			    //å°†serverSocketæ·»åŠ socketQueue
                             socketQueue.put(socket);
                         else
                             handleSocket(socket);
@@ -1761,13 +1761,13 @@ protected void doStart()
             if(transport instanceof ServiceSupport)
                 ((ServiceSupport)transport).addServiceListener(this);
             Transport configuredTransport = transportFactory.serverConfigure(transport, format, options);
-	    //Á¬½Ó¼àÌıÆ÷½ÓÊÜÁ¬½Ó£¬´´½¨Á¬½Ó£¬¿ªÆôÁ¬½Ó
+	    //è¿æ¥ç›‘å¬å™¨æ¥å—è¿æ¥ï¼Œåˆ›å»ºè¿æ¥ï¼Œå¼€å¯è¿æ¥
             getAcceptListener().onAccept(configuredTransport);
             currentTransportCount.incrementAndGet();
         }
        
     }
-ÔÚbrokerServiceÆô¶¯¹ı³ÌÖĞÓĞÉèÖÃÁËÁ¬½Ó¼àÌıÆ÷
+åœ¨brokerServiceå¯åŠ¨è¿‡ç¨‹ä¸­æœ‰è®¾ç½®äº†è¿æ¥ç›‘å¬å™¨
 public void start()
         throws Exception
     {
@@ -1777,7 +1777,7 @@ public void start()
         brokerInfo.setPeerBrokerInfos(broker.getPeerBrokerInfos());
         brokerInfo.setFaultTolerantConfiguration(broker.isFaultTolerantConfiguration());
         brokerInfo.setBrokerURL(broker.getBrokerService().getDefaultSocketURIString());
-	//ÉèÖÃServer½ÓÊÜÁ¬½Ó¼àÌıÆ÷
+	//è®¾ç½®Serveræ¥å—è¿æ¥ç›‘å¬å™¨
         getServer().setAcceptListener(new TransportAcceptListener() {
 
             public void onAccept(final Transport transport)
@@ -1792,9 +1792,9 @@ public void start()
                             {
                                 if(!brokerService.isStopping())
                                 {
-				    //½ÓÊÜÁ¬½Óºó£¬´´½¨Á¬½Ó£¬Æô¶¯Á¬½Ó£¬Õâ¸öÊ±ºòÊÇ²»ÊÇ
-				    //ÓëÇ°ÃæÁªÏµÉÏÁË£¬µ±Æô¶¯Á¬½ÓÊ±£¬Æô¶¯»á»°£¬Æô¶¯
-				    //»á»°Ö´ĞĞÆ÷£¬Í¨ÖªÏû·ÑÕßÏû·ÑÏûÏ¢
+				    //æ¥å—è¿æ¥åï¼Œåˆ›å»ºè¿æ¥ï¼Œå¯åŠ¨è¿æ¥ï¼Œè¿™ä¸ªæ—¶å€™æ˜¯ä¸æ˜¯
+				    //ä¸å‰é¢è”ç³»ä¸Šäº†ï¼Œå½“å¯åŠ¨è¿æ¥æ—¶ï¼Œå¯åŠ¨ä¼šè¯ï¼Œå¯åŠ¨
+				    //ä¼šè¯æ‰§è¡Œå™¨ï¼Œé€šçŸ¥æ¶ˆè´¹è€…æ¶ˆè´¹æ¶ˆæ¯
                                     Connection connection = createConnection(transport);
                                     connection.start();
                                 } 
@@ -1812,24 +1812,24 @@ public void start()
         return answer;
     }
 
-×Ü½á£º
-´Óactivemq½Å±¾£¬¿ÉÒÔ¿´³öÆô¶¯ActiveMQÊµ¼ÊÊÇÆô¶¯£¬binÎÄ¼ş¼ĞÏÂµÄÆäÊµactivemq.jar
-°üÖĞÓĞÒ»¸öÀàÎªMain£¬Õâ¾ÍÊÇactiveµÄÆô¶¯Èë¿Ú,MainÖ÷ÒªÊÇ¼ÓÔØlibÄ¿Â¼ºÍClassPath£¬³õÊ¼»¯
-Àà¼ÓÔØÆ÷£¬Î¯ÍĞ¸øShellCommand£¬ÓÉShellCommand¸ù¾İÃüÁîÃèÊöÈ¥Ö´ĞĞ£¬Èç¹ûÊÇVersionºÍHELP£¬
-Ôò´òÓ¡ĞÅÏ¢£¬ÈôÊÇÆô¶¯ÃüÁî£¬ÔòÍ¨¹ıXBeanBrokerFactory´´½¨BrokerService£¬Õâ¸ö¹ı³ÌÖ÷ÒªÀûÓÃµÄ
-SpringµÄbeanÈİÆ÷»úÖÆ£¬È»ºóÆô¶¯BrokerService£¬Ö÷ÒªÆô¶¯³Ö¾Ã»¯ÊÊÅäÆ÷£¬JMXÁ¬½Ó£¬ÉÏÏÂÎÄ¹ØÏµÆ÷£¬
-×îºóÆô¶¯ËùÓĞÍøÂçÁ¬½Ó£¬¼°TcpTransportÁ¬½Ó£¬Ä¬ÈÏÊ¹ÓÃµÄÊÇopenwire£ºtcp£¬ËùÒÔÎÒÃÇ¾Í¿´Ò»ÏÂ
-TcpTransportServer£¬TcpTransportServerÓĞTcpTransportFactory´´½¨²¢ÅäÖÃOpenWireĞ­Òé×ª»»Æ÷£¬
-Æô¶¯TcpTransportServer£¬¾ÍÊÇ´ÓServerSocketFactory»ñÈ¡ServerSocket£¬²¢°ó¶¨ipºÍport£¬¼àÌıÁ¬½Ó
-£¬²¢ÉèÖÃServerSocketµÄ¼àÌıÆ÷org.apache.activemq.transport.nio.SelectorManager.Listener£¬Õâ¸öÓÃµÄ
-ÊÇjava nio¡£
+æ€»ç»“ï¼š
+ä»activemqè„šæœ¬ï¼Œå¯ä»¥çœ‹å‡ºå¯åŠ¨ActiveMQå®é™…æ˜¯å¯åŠ¨ï¼Œbinæ–‡ä»¶å¤¹ä¸‹çš„å…¶å®activemq.jar
+åŒ…ä¸­æœ‰ä¸€ä¸ªç±»ä¸ºMainï¼Œè¿™å°±æ˜¯activeçš„å¯åŠ¨å…¥å£,Mainä¸»è¦æ˜¯åŠ è½½libç›®å½•å’ŒClassPathï¼Œåˆå§‹åŒ–
+ç±»åŠ è½½å™¨ï¼Œå§”æ‰˜ç»™ShellCommandï¼Œç”±ShellCommandæ ¹æ®å‘½ä»¤æè¿°å»æ‰§è¡Œï¼Œå¦‚æœæ˜¯Versionå’ŒHELPï¼Œ
+åˆ™æ‰“å°ä¿¡æ¯ï¼Œè‹¥æ˜¯å¯åŠ¨å‘½ä»¤ï¼Œåˆ™é€šè¿‡XBeanBrokerFactoryåˆ›å»ºBrokerServiceï¼Œè¿™ä¸ªè¿‡ç¨‹ä¸»è¦åˆ©ç”¨çš„
+Springçš„beanå®¹å™¨æœºåˆ¶ï¼Œç„¶åå¯åŠ¨BrokerServiceï¼Œä¸»è¦å¯åŠ¨æŒä¹…åŒ–é€‚é…å™¨ï¼ŒJMXè¿æ¥ï¼Œä¸Šä¸‹æ–‡å…³ç³»å™¨ï¼Œ
+æœ€åå¯åŠ¨æ‰€æœ‰ç½‘ç»œè¿æ¥ï¼ŒåŠTcpTransportè¿æ¥ï¼Œé»˜è®¤ä½¿ç”¨çš„æ˜¯openwireï¼štcpï¼Œæ‰€ä»¥æˆ‘ä»¬å°±çœ‹ä¸€ä¸‹
+TcpTransportServerï¼ŒTcpTransportServeræœ‰TcpTransportFactoryåˆ›å»ºå¹¶é…ç½®OpenWireåè®®è½¬æ¢å™¨ï¼Œ
+å¯åŠ¨TcpTransportServerï¼Œå°±æ˜¯ä»ServerSocketFactoryè·å–ServerSocketï¼Œå¹¶ç»‘å®šipå’Œportï¼Œç›‘å¬è¿æ¥
+ï¼Œå¹¶è®¾ç½®ServerSocketçš„ç›‘å¬å™¨org.apache.activemq.transport.nio.SelectorManager.Listenerï¼Œè¿™ä¸ªç”¨çš„
+æ˜¯java nioã€‚
 
 
 
 
 public final class CommandContext
 {
- //activemq ÃüÁîÊä³ö¸ñÊ½¹¤¾ß
+ //activemq å‘½ä»¤è¾“å‡ºæ ¼å¼å·¥å…·
  private OutputFormatter formatter;
  }
 public interface OutputFormatter
@@ -1841,10 +1841,10 @@ public interface OutputFormatter
     public abstract void printMBean(Map map);
     public abstract void printMBean(Collection collection);
     public abstract void printMessage(Map map);
-    //´òÓ¡ÏûÏ¢
+    //æ‰“å°æ¶ˆæ¯
     public abstract void printMessage(Message message);
     public abstract void printMessage(Collection collection);
-    //´òÓ¡°ïÖúĞÅÏ¢
+    //æ‰“å°å¸®åŠ©ä¿¡æ¯
     public abstract void printHelp(String as[]);
     public abstract void printInfo(String s);
     public abstract void printException(Exception exception);

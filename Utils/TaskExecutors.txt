@@ -1,0 +1,69 @@
+在使用线程池执行器的时候，由于用Executors方式创建的线程池执行器不能执行线程抛出的异常，
+我们可以继承ThreadPoolExecutor并实现afterExecute方法，来捕捉线程执行的异常。
+具体实例如下：
+
+package org.donald;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+/**
+ * 线程执行器
+ * @author donald
+ * @date 2017-8-24
+ * @time 下午3:58:27
+ */
+public class TaskExecutors extends ThreadPoolExecutor {
+	private static final Logger log = LoggerFactory.getLogger(TaskExecutors.class);
+	/**
+	 * 
+	 * @param corePoolSize
+	 * @param maximumPoolSize
+	 * @param keepAliveTime
+	 * @param unit
+	 * @param workQueue
+	 */
+	public TaskExecutors(int corePoolSize, int maximumPoolSize,
+			long keepAliveTime, TimeUnit unit, BlockingQueue<Runnable> workQueue) {
+		super(corePoolSize, maximumPoolSize, keepAliveTime, unit, workQueue);
+	}
+	/**
+	 * 创建工作线程数量为nThreads的线程池
+	 * @param nThreads
+	 * @return
+	 */
+	public static ExecutorService newFixedThreadPool(int nThreads) {
+		return new TaskExecutors(nThreads, nThreads, 0L,
+				TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
+	}
+	/**
+	 * 捕捉线程执行异常
+	 */
+	@Override
+    protected void afterExecute(Runnable r, Throwable t) {
+    	  super.afterExecute(r, t);                 
+          if (t == null && r instanceof Future<?>) {
+            try {                                   
+               Object result = ((Future<?>) r).get();
+            } catch (CancellationException ce) {    
+                t = ce;                             
+            } catch (ExecutionException ee) {       
+                t = ee.getCause();                  
+            } 
+            catch (InterruptedException ie) {     
+                Thread.currentThread().interrupt(); 
+            }                                       
+          }                                         
+          if (t != null){
+        	  log.error("线程池执行线程异常："+t.getMessage());
+        	  t.printStackTrace();
+          }
+        }   
+}
