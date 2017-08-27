@@ -77,6 +77,597 @@ public interface EventLoopGroup extends EventExecutorGroup {[/code]
  多线程事件执行器组MultithreadEventExecutorGroup可以在同一时间多线程处理任务。
  */
 public abstract class MultithreadEventExecutorGroup extends AbstractEventExecutorGroup {
+    private final EventExecutor[] children;//组内的事件执行器
+    private final Set<EventExecutor> readonlyChildren;//组内事件执行器集的可读包装集
+    private final AtomicInteger terminatedChildren = new AtomicInteger();//已关闭的事件执行器数
+    //termination异步任务结果
+    private final Promise<?> terminationFuture = new DefaultPromise(GlobalEventExecutor.INSTANCE);
+    private final EventExecutorChooserFactory.EventExecutorChooser chooser;//事件执行器选择器
+}
+从上面来看，多线程事件执行器组MultithreadEventExecutorGroup，内部有一个事件执行器数组存放组内的事件执行器；
+readonlyChildren为组内事件执行器集的可读包装集Set；terminatedChildren（AtomicInteger），用于记录
+已关闭的事件执行器数；termination为执行器组terminated异步任务结果；
+同时有一个事件执行器选择器chooser（EventExecutorChooser）。
+我们来看一下事件执行器选择器的定义：
+其定义在选择器工厂EventExecutorChooserFactory中
+package io.netty.util.concurrent;
+
+import io.netty.util.internal.UnstableApi;
+
+/**
+ * Factory that creates new {@link EventExecutorChooser}s.
+ */
+@UnstableApi
+public interface EventExecutorChooserFactory {
+    /**
+     * Returns a new {@link EventExecutorChooser}.
+     创建一个事件执行器选择器
+     */
+    EventExecutorChooser newChooser(EventExecutor[] executors);
+    /**
+     * Chooses the next {@link EventExecutor} to use.
+     */
+    @UnstableApi
+    interface EventExecutorChooser {
+        /**
+         * Returns the new {@link EventExecutor} to use.
+	 返回新创建的事件执行功能器
+         */
+        EventExecutor next();
+    }
+}
+在选择器工厂定义中有一个注解我们来看一下：
+package io.netty.util.internal;
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+/**
+ * Indicates a public API that can change at any time (even in minor/bugfix releases).
+ *预示着公用的API可能随时改变
+ * Usage guidelines:
+ *使用引导
+ * <ol>
+ *     <li>Is not needed for things located in *.internal.* packages</li>
+ *     <li>Only public accessible classes/interfaces must be annotated</li>公有方法方式必须注解
+ *     <li>If this annotation is not present the API is considered stable and so no backward compatibility can be
+ *         broken in a non-major release!</li>
+      此注解不表示API不稳定，而是在一个非主线释放版本中，不向后兼容。
+ * </ol>
+ */
+@Retention(RetentionPolicy.SOURCE)
+@Target({
+        ElementType.ANNOTATION_TYPE,
+        ElementType.CONSTRUCTOR,
+        ElementType.FIELD,
+        ElementType.METHOD,
+        ElementType.PACKAGE,
+        ElementType.TYPE
+})
+@Documented
+public @interface UnstableApi {
+}
+
+回到事件执行器选择工厂的默认实现：
+package io.netty.util.concurrent;
+
+import io.netty.util.internal.UnstableApi;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Default implementation which uses simple round-robin to choose next {@link EventExecutor}.
+ */
+@UnstableApi
+public final class DefaultEventExecutorChooserFactory implements EventExecutorChooserFactory {
+    //默认事件执行器选择器工程实例
+    public static final DefaultEventExecutorChooserFactory INSTANCE = new DefaultEventExecutorChooserFactory();
+
+    private DefaultEventExecutorChooserFactory() { }
+
+    @SuppressWarnings("unchecked")
+    @Override
+    //根据执行器的数量是否为2的幂次方决定使用PowerOfTwoEventExecutorChooser还是GenericEventExecutorChooser
+    public EventExecutorChooser newChooser(EventExecutor[] executors) {
+        if (isPowerOfTwo(executors.length)) {
+            return new PowerOfTwoEventExecutorChooser(executors);
+        } else {
+            return new GenericEventExecutorChooser(executors);
+        }
+    }
+    //判断执行器数是否为2的幂次方
+    private static boolean isPowerOfTwo(int val) {
+        return (val & -val) == val;
+    }
+    //2的幂次方事件执行器选择器
+    private static final class PowerOfTwoEventExecutorChooser implements EventExecutorChooser {
+        private final AtomicInteger idx = new AtomicInteger();
+        private final EventExecutor[] executors;
+
+        PowerOfTwoEventExecutorChooser(EventExecutor[] executors) {
+            this.executors = executors;
+        }
+        @Override
+        public EventExecutor next() {
+            return executors[idx.getAndIncrement() & executors.length - 1];
+        }
+    }
+   //一般事件执行器选择器
+    private static final class GenericEventExecutorChooser implements EventExecutorChooser {
+        private final AtomicInteger idx = new AtomicInteger();
+        private final EventExecutor[] executors;
+        GenericEventExecutorChooser(EventExecutor[] executors) {
+            this.executors = executors;
+        }
+	//获取内部执行器id对应的事件执行器
+        @Override
+        public EventExecutor next() {
+            return executors[Math.abs(idx.getAndIncrement() % executors.length)];
+        }
+    }
+}
+从上面可以看出当，当执行器的数量为2的幂次方时，使用的事件执行器选择器为PowerOfTwoEventExecutorChooser，
+否则为GenericEventExecutorChooser。
+回到多线程事件执行器组的构造：
+
+    /**
+     * Create a new instance.
+     *
+     * @param nThreads          the number of threads that will be used by this instance.
+     线程数
+     * @param executor          the Executor to use, or {@code null} if the default should be used.
+     执行器
+     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     传递给创建事件执行器的参数
+     */
+    protected MultithreadEventExecutorGroup(int nThreads, Executor executor, Object... args) {
+        this(nThreads, executor, DefaultEventExecutorChooserFactory.INSTANCE, args);
+    }
+从上面的构造函数来看，事件执行器选择器默认为DefaultEventExecutorChooserFactory，然后委托给
+MultithreadEventExecutorGroup(int nThreads, Executor executor,
+      EventExecutorChooserFactory chooserFactory, Object... args)
+
+
+再看另外一个种构造:
+
+    /**
+     * Create a new instance.
+     *
+     * @param nThreads          the number of threads that will be used by this instance.
+     * @param threadFactory     the ThreadFactory to use, or {@code null} if the default should be used.
+     * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+     */
+    protected MultithreadEventExecutorGroup(int nThreads, ThreadFactory threadFactory, Object... args) {
+        this(nThreads, threadFactory == null ? null : new ThreadPerTaskExecutor(threadFactory), args);
+    }
+
+来看任务线程执行器ThreadPerTaskExecutor
+package io.netty.util.concurrent;
+
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadFactory;
+
+public final class ThreadPerTaskExecutor implements Executor {
+    private final ThreadFactory threadFactory;
+
+    public ThreadPerTaskExecutor(ThreadFactory threadFactory) {
+        if (threadFactory == null) {
+            throw new NullPointerException("threadFactory");
+        }
+        this.threadFactory = threadFactory;
+    }
+
+    @Override
+    public void execute(Runnable command) {
+        threadFactory.newThread(command).start();
+    }
+}
+从上面来看默认的线程池执行器为ThreadPerTaskExecutor。
+来看实际构造
+   
+ /**
+  * Create a new instance.
+  *
+  * @param nThreads          the number of threads that will be used by this instance.
+  * @param executor          the Executor to use, or {@code null} if the default should be used.
+  * @param chooserFactory    the {@link EventExecutorChooserFactory} to use.
+  * @param args              arguments which will passed to each {@link #newChild(Executor, Object...)} call
+  */
+ protected MultithreadEventExecutorGroup(int nThreads, Executor executor,
+                                         EventExecutorChooserFactory chooserFactory, Object... args) {
+     //检查线程数参数
+     if (nThreads <= 0) {
+         throw new IllegalArgumentException(String.format("nThreads: %d (expected: > 0)", nThreads));
+     }
+     //如果执行器不为空，则初始化线程执行器的线程工厂
+     if (executor == null) {
+         executor = new ThreadPerTaskExecutor(newDefaultThreadFactory());
+     }
+    //创建事件执行器集
+     children = new EventExecutor[nThreads];
+
+     for (int i = 0; i < nThreads; i ++) {
+         boolean success = false;
+         try {
+	     //创建事件执行器，newChild待子类实现
+             children[i] = newChild(executor, args);
+             success = true;
+         } catch (Exception e) {
+             // TODO: Think about if this is a good exception type
+             throw new IllegalStateException("failed to create a child event loop", e);
+         } finally {
+             if (!success) {
+	         //初始化失败，则关闭事件执行器
+                 for (int j = 0; j < i; j ++) {
+                     children[j].shutdownGracefully();
+                 }
+                 //Terminated事件执行器
+                 for (int j = 0; j < i; j ++) {
+                     EventExecutor e = children[j];
+                     try {
+                         while (!e.isTerminated()) {
+                             e.awaitTermination(Integer.MAX_VALUE, TimeUnit.SECONDS);
+                         }
+                     } catch (InterruptedException interrupted) {
+                         // Let the caller handle the interruption.
+                         Thread.currentThread().interrupt();
+                         break;
+                     }
+                 }
+             }
+         }
+     }
+     //初始化事件执行器选择器
+     chooser = chooserFactory.newChooser(children);
+     //创建terminated事件执行器监听器
+     final FutureListener<Object> terminationListener = new FutureListener<Object>() {
+         @Override
+         public void operationComplete(Future<Object> future) throws Exception {
+             if (terminatedChildren.incrementAndGet() == children.length) {
+                 terminationFuture.setSuccess(null);
+             }
+         }
+     };
+    //添加terminated事件执行器监听器到terminated异步任务结果
+     for (EventExecutor e: children) {
+         e.terminationFuture().addListener(terminationListener);
+     }
+     //包装事件执行器集为只读
+     Set<EventExecutor> childrenSet = new LinkedHashSet<EventExecutor>(children.length);
+     Collections.addAll(childrenSet, children);
+     readonlyChildren = Collections.unmodifiableSet(childrenSet);
+ }
+}
+构造方法中有一个点我们需要关注，创建默认线程池工厂：
+protected ThreadFactory newDefaultThreadFactory() {
+    return new DefaultThreadFactory(getClass());
+}
+
+package io.netty.util.concurrent;
+
+import io.netty.util.internal.StringUtil;
+
+import java.util.Locale;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * A {@link ThreadFactory} implementation with a simple naming rule.
+ */
+public class DefaultThreadFactory implements ThreadFactory {
+
+    private static final AtomicInteger poolId = new AtomicInteger();
+
+    private final AtomicInteger nextId = new AtomicInteger();//线程id生成器
+    private final String prefix;//线程名前缀
+    private final boolean daemon;//是否为守候模式
+    private final int priority;//线程有限级
+    protected final ThreadGroup threadGroup;//线程组
+
+    public DefaultThreadFactory(Class<?> poolType) {
+        this(poolType, false, Thread.NORM_PRIORITY);
+    }
+
+    public DefaultThreadFactory(String poolName) {
+        this(poolName, false, Thread.NORM_PRIORITY);
+    }
+
+    public DefaultThreadFactory(Class<?> poolType, boolean daemon) {
+        this(poolType, daemon, Thread.NORM_PRIORITY);
+    }
+
+    public DefaultThreadFactory(String poolName, boolean daemon) {
+        this(poolName, daemon, Thread.NORM_PRIORITY);
+    }
+
+    public DefaultThreadFactory(Class<?> poolType, int priority) {
+        this(poolType, false, priority);
+    }
+
+    public DefaultThreadFactory(String poolName, int priority) {
+        this(poolName, false, priority);
+    }
+
+    public DefaultThreadFactory(Class<?> poolType, boolean daemon, int priority) {
+        this(toPoolName(poolType), daemon, priority);
+    }
+    //获取线程池名称
+    public static String toPoolName(Class<?> poolType) {
+        if (poolType == null) {
+            throw new NullPointerException("poolType");
+        }
+
+        String poolName = StringUtil.simpleClassName(poolType);
+        switch (poolName.length()) {
+            case 0:
+                return "unknown";
+            case 1:
+                return poolName.toLowerCase(Locale.US);
+            default:
+                if (Character.isUpperCase(poolName.charAt(0)) && Character.isLowerCase(poolName.charAt(1))) {
+                    return Character.toLowerCase(poolName.charAt(0)) + poolName.substring(1);
+                } else {
+                    return poolName;
+                }
+        }
+    }
+
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority, ThreadGroup threadGroup) {
+        if (poolName == null) {
+            throw new NullPointerException("poolName");
+        }
+        if (priority < Thread.MIN_PRIORITY || priority > Thread.MAX_PRIORITY) {
+            throw new IllegalArgumentException(
+                    "priority: " + priority + " (expected: Thread.MIN_PRIORITY <= priority <= Thread.MAX_PRIORITY)");
+        }
+       //线程名默认为线程池名+id
+        prefix = poolName + '-' + poolId.incrementAndGet() + '-';
+        this.daemon = daemon;
+        this.priority = priority;
+        this.threadGroup = threadGroup;
+    }
+
+    public DefaultThreadFactory(String poolName, boolean daemon, int priority) {
+        //如果系统安全管理器为空，则线程组为当前线程所属组，否则系统安全管理获取线程组信息
+        this(poolName, daemon, priority, System.getSecurityManager() == null ?
+                Thread.currentThread().getThreadGroup() : System.getSecurityManager().getThreadGroup());
+    }
+
+    @Override
+    public Thread newThread(Runnable r) {
+        Thread t = newThread(new DefaultRunnableDecorator(r), prefix + nextId.incrementAndGet());
+        try {
+            if (t.isDaemon() != daemon) {
+                t.setDaemon(daemon);
+            }
+
+            if (t.getPriority() != priority) {
+                t.setPriority(priority);
+            }
+        } catch (Exception ignored) {
+            // Doesn't matter even if failed to set.
+        }
+        return t;
+    }
+   //包装线程为FastThreadLocalThread
+    protected Thread newThread(Runnable r, String name) {
+        return new FastThreadLocalThread(threadGroup, r, name);
+    }
+    //线程包装类
+    private static final class DefaultRunnableDecorator implements Runnable {
+
+        private final Runnable r;
+        DefaultRunnableDecorator(Runnable r) {
+            this.r = r;
+        }
+        @Override
+        public void run() {
+            try {
+                r.run();
+            } finally {
+	        //移除所有线程级的变量
+                FastThreadLocal.removeAll();
+            }
+        }
+    }
+}
+默认线程工厂类，我们需要关注的只有以下一点：
+//包装线程为FastThreadLocalThread
+protected Thread newThread(Runnable r, String name) {
+    return new FastThreadLocalThread(threadGroup, r, name);
+}
+package io.netty.util.concurrent;
+
+import io.netty.util.internal.InternalThreadLocalMap;
+
+/**
+ * A special {@link Thread} that provides fast access to {@link FastThreadLocal} variables.
+ */
+public class FastThreadLocalThread extends Thread {
+    private InternalThreadLocalMap threadLocalMap;//线程本地变量Map
+    public FastThreadLocalThread() { }
+    public FastThreadLocalThread(Runnable target) {
+        super(target);
+    }
+    public FastThreadLocalThread(ThreadGroup group, Runnable target) {
+        super(group, target);
+    }
+
+    public FastThreadLocalThread(String name) {
+        super(name);
+    }
+    public FastThreadLocalThread(ThreadGroup group, String name) {
+        super(group, name);
+    }
+
+    public FastThreadLocalThread(Runnable target, String name) {
+        super(target, name);
+    }
+    public FastThreadLocalThread(ThreadGroup group, Runnable target, String name) {
+        super(group, target, name);
+    }
+    public FastThreadLocalThread(ThreadGroup group, Runnable target, String name, long stackSize) {
+        super(group, target, name, stackSize);
+    }
+    /**
+     * Returns the internal data structure that keeps the thread-local variables bound to this thread.
+     * Note that this method is for internal use only, and thus is subject to change at any time.
+     返回绑定的当前线程的线程本地变量Map
+     */
+    public final InternalThreadLocalMap threadLocalMap() {
+        return threadLocalMap;
+    }
+    /**
+     * Sets the internal data structure that keeps the thread-local variables bound to this thread.
+     * Note that this method is for internal use only, and thus is subject to change at any time.
+     */
+    public final void setThreadLocalMap(InternalThreadLocalMap threadLocalMap) {
+        this.threadLocalMap = threadLocalMap;
+    }
+}
+/**
+ * The internal data structure that stores the thread-local variables for Netty and all {@link FastThreadLocal}s.
+ * Note that this class is for internal use only and is subject to change at any time.  Use {@link FastThreadLocal}
+ * unless you know what you are doing.
+ */
+public final class InternalThreadLocalMap extends UnpaddedInternalThreadLocalMap {
+
+    private static final int DEFAULT_ARRAY_LIST_INITIAL_CAPACITY = 8;
+
+    public static final Object UNSET = new Object();
+    ...
+ }
 
 
 
+
+
+来看关闭超时等待方法Terminated：
+@Override
+public EventExecutor next() {
+     //委托给事件执行器选择器
+    return chooser.next();
+}
+
+@Override
+public Iterator<EventExecutor> iterator() {
+    //获取只读执行器集的迭代器
+    return readonlyChildren.iterator();
+}
+
+/**
+ * Return the number of {@link EventExecutor} this implementation uses. This number is the maps
+ * 1:1 to the threads it use.
+ 返回管理的事件执行器数量
+ */
+public final int executorCount() {
+    return children.length;
+}
+
+/**
+ * Create a new EventExecutor which will later then accessible via the {@link #next()}  method. This method will be
+ * called for each thread that will serve this {@link MultithreadEventExecutorGroup}.
+ *创建一个事件执行器，创建后，可以通过next方法访问。此方法由服务多线程事件执行器组线程调用，
+ 待子类实现
+ */
+protected abstract EventExecutor newChild(Executor executor, Object... args) throws Exception;
+//关闭事件执行器组
+@Override
+public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
+    //遍历管理的事件执行器集，关闭执行器
+    for (EventExecutor l: children) {
+        l.shutdownGracefully(quietPeriod, timeout, unit);
+    }
+	//返回异步关闭事件执行器组任务结果
+    return terminationFuture();
+}
+
+@Override
+public Future<?> terminationFuture() {
+    return terminationFuture;
+}
+
+@Override
+@Deprecated
+public void shutdown() {
+    for (EventExecutor l: children) {
+        l.shutdown();
+    }
+}
+//所有执行器组内的事件执行器正在关闭，才返回true
+@Override
+public boolean isShuttingDown() {
+    for (EventExecutor l: children) {
+        if (!l.isShuttingDown()) {
+            return false;
+        }
+    }
+    return true;
+}
+//所有执行器组内的事件执行器已关闭，才返回true
+@Override
+public boolean isShutdown() {
+    for (EventExecutor l: children) {
+        if (!l.isShutdown()) {
+            return false;
+        }
+    }
+    return true;
+}
+//所有执行器组内的事件执行器已Terminated，才返回true
+@Override
+public boolean isTerminated() {
+    for (EventExecutor l: children) {
+        if (!l.isTerminated()) {
+            return false;
+        }
+    }
+    return true;
+}
+//超时等待Terminated执行器组
+@Override
+public boolean awaitTermination(long timeout, TimeUnit unit)
+        throws InterruptedException {
+    long deadline = System.nanoTime() + unit.toNanos(timeout);
+    loop: for (EventExecutor l: children) {//遍历事件执行器组
+        for (;;) {
+            long timeLeft = deadline - System.nanoTime();
+            if (timeLeft <= 0) {//超时等待时间耗完，则停止Terminated执行器组
+                break loop;
+            }
+		//否则，超时剩余等待时间timeLeft，Terminated事件执行器
+            if (l.awaitTermination(timeLeft, TimeUnit.NANOSECONDS)) {
+                break;
+            }
+        }
+    }
+    return isTerminated();
+}
+
+从上面可以看出获取执行器组的下一个事件执行器方法委托个内存的事件执行器选择器chooser；
+返回的迭代器为内部只读执行器集的迭代器；而关闭执行器组方法，实际为遍历管理的事件执行器集，
+关闭执行器；判断执行器组是否关闭和Terminated，当且仅当组内的事件执行器都关闭和Terminated时，
+才返回true；超时等待Terminated执行器组方法，实际为遍历事件执行器组超时等待时间耗完，
+则停止Terminated执行器组，否则，超时剩余等待时间timeLeft，Terminated事件执行器。
+
+
+
+
+总结：
+
+
+多线程事件执行器组MultithreadEventExecutorGroup，内部有一个事件执行器数组存放组内的事件执行器；
+readonlyChildren为组内事件执行器集的可读包装集Set；terminatedChildren（AtomicInteger），用于记录
+已关闭的事件执行器数；termination为执行器组terminated异步任务结果；
+同时有一个事件执行器选择器chooser（EventExecutorChooser）。
+
+
+
+
+
+
+获取执行器组的下一个事件执行器方法委托个内存的事件执行器选择器chooser；
+返回的迭代器为内部只读执行器集的迭代器；而关闭执行器组方法，实际为遍历管理的事件执行器集，
+关闭执行器；判断执行器组是否关闭和Terminated，当且仅当组内的事件执行器都关闭和Terminated时，
+才返回true；超时等待Terminated执行器组方法，实际为遍历事件执行器组超时等待时间耗完，
+则停止Terminated执行器组，否则，超时剩余等待时间timeLeft，Terminated事件执行器。

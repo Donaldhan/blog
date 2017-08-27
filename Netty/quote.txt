@@ -38,3 +38,4 @@ netty 通道初始化器ChannelInitializer:[url]http://donald-draper.iteye.com/blog/23
 EventLoopGroup
 #############################################################################################
 netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url][/url]
