@@ -1,11 +1,22 @@
 netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
 引言:
 前面一篇文章我们看了事件执行器组和事件执行器的接口定义，先来回顾一下：
-    事件循环组EventLoopGroup为一个特殊的事件执行器组EventExecutorGroup，可以注册通道，以便在事件循环中，被后面的选择操作处理器。事件执行器组继承了JUC的调度执行器服务ScheduledExecutorService，用迭代器Iterable<EventExecutor>管理组内的事件执行器。事件执行器是一个特殊的事件执行器组。Nio多线程事件循环NioEventLoopGroup可以理解为多线程版MultithreadEventExecutorGroup的事件执行器组。
-    事件执行器组EventExecutorGroup主要提供了关闭事件执行器组管理的执行器的相关方法，获取事件执行器组管理的事件执行器和执行任务线程方法。
-    事件执行器EventExecutor为一个特殊的事件执行器组EventExecutorGroup，提供了获取事件执行器组的下一个事件执行器方法，判断线程是否在当前事件循环中以及创建可写的异步任务结果和进度结果，及已经成功失败的异步结果。
-    抽象事件执行器组AbstractEventExecutorGroup，所有与调度执行器关联的提交任务和调度任务方法，直接委托给事件执行器组的下一个事件执行器相应方法执行。graceful方式关闭事件执行器组，默认关闭间隔为2s，超时时间为25s，具体定义在抽象事件执行器AbstractEventExecutor中。
-    抽象事件执行器，继承了抽象执行器服务AbstractExecutorService，提交任务线程，直接委托给父类抽象执行器服务，不支持延时调度的周期间歇性调度任务线程，多个一个安全地执行给定任务线程方法，捕捉执行过程中抛出的异常。由于抽象的事件执行器是一个特殊的事件执行器组，内部事件执行器selfCollection（Collections.<EventExecutor>singleton(this)），是自己单例集，next方法返回的是自己。
+    事件循环组EventLoopGroup为一个特殊的事件执行器组EventExecutorGroup，可以注册通道，
+以便在事件循环中，被后面的选择操作处理器。事件执行器组继承了JUC的调度执行器服务ScheduledExecutorService，
+用迭代器Iterable<EventExecutor>管理组内的事件执行器。事件执行器是一个特殊的事件执行器组。
+Nio多线程事件循环NioEventLoopGroup可以理解为多线程版MultithreadEventExecutorGroup的事件执行器组。
+事件执行器组EventExecutorGroup主要提供了关闭事件执行器组管理的执行器的相关方法，
+获取事件执行器组管理的事件执行器和执行任务线程方法。
+    事件执行器EventExecutor为一个特殊的事件执行器组EventExecutorGroup，
+提供了获取事件执行器组的下一个事件执行器方法，判断线程是否在当前事件循环中以及创建可写的异步任务结果和进度结果
+，及已经成功失败的异步结果。
+    抽象事件执行器组AbstractEventExecutorGroup，所有与调度执行器关联的提交任务和调度任务方法，
+直接委托给事件执行器组的下一个事件执行器相应方法执行。graceful方式关闭事件执行器组，
+默认关闭间隔为2s，超时时间为25s，具体定义在抽象事件执行器AbstractEventExecutor中。
+    抽象事件执行器，继承了抽象执行器服务AbstractExecutorService，提交任务线程，
+直接委托给父类抽象执行器服务，不支持延时调度的周期间歇性调度任务线程，
+多个一个安全地执行给定任务线程方法，捕捉执行过程中抛出的异常。由于抽象的事件执行器是一个特殊的事件执行器组，
+内部事件执行器selfCollection（Collections.<EventExecutor>singleton(this)），是自己单例集，next方法返回的是自己。
 
 
 我们先把Nio事件循环继承树结构列一下：
@@ -338,6 +349,7 @@ public final class ThreadPerTaskExecutor implements Executor {
      readonlyChildren = Collections.unmodifiableSet(childrenSet);
  }
 }
+
 构造方法中有一个点我们需要关注，创建默认线程池工厂：
 protected ThreadFactory newDefaultThreadFactory() {
     return new DefaultThreadFactory(getClass());
@@ -525,24 +537,26 @@ public class FastThreadLocalThread extends Thread {
         this.threadLocalMap = threadLocalMap;
     }
 }
+//InternalThreadLocalMap，看看即，后具体涉及再看
 /**
  * The internal data structure that stores the thread-local variables for Netty and all {@link FastThreadLocal}s.
  * Note that this class is for internal use only and is subject to change at any time.  Use {@link FastThreadLocal}
  * unless you know what you are doing.
+线程本地变量Map
  */
 public final class InternalThreadLocalMap extends UnpaddedInternalThreadLocalMap {
-
     private static final int DEFAULT_ARRAY_LIST_INITIAL_CAPACITY = 8;
-
     public static final Object UNSET = new Object();
     ...
- }
+}
 
 
+从上面可以看出，构造多线程执行器组，首先检查线程数参数，如果执行器不为空，则初始化线程执行器的线程工厂，
+创建事件执行器集，并根据执行器和相关参数创建事件执行器，实际创建方法为newChild，待子类实现，初始化事件执行器选择器，
+创建terminated事件执行器监听器，添加terminated事件执行器监听器到terminated异步任务结果，
+包装事件执行器集为只读集readonlyChildren。
 
-
-
-来看关闭超时等待方法Terminated：
+回到多线程执行器组的关闭，超时等待方Terminated法：
 @Override
 public EventExecutor next() {
      //委托给事件执行器选择器
@@ -651,19 +665,17 @@ public boolean awaitTermination(long timeout, TimeUnit unit)
 则停止Terminated执行器组，否则，超时剩余等待时间timeLeft，Terminated事件执行器。
 
 
-
-
 总结：
-
 
 多线程事件执行器组MultithreadEventExecutorGroup，内部有一个事件执行器数组存放组内的事件执行器；
 readonlyChildren为组内事件执行器集的可读包装集Set；terminatedChildren（AtomicInteger），用于记录
 已关闭的事件执行器数；termination为执行器组terminated异步任务结果；
 同时有一个事件执行器选择器chooser（EventExecutorChooser）。
 
-
-
-
+构造多线程执行器组，首先检查线程数参数，如果执行器不为空，则初始化线程执行器的线程工厂，
+创建事件执行器集，并根据执行器和相关参数创建事件执行器，实际创建方法为newChild，待子类实现，初始化事件执行器选择器，
+创建terminated事件执行器监听器，添加terminated事件执行器监听器到terminated异步任务结果，
+包装事件执行器集为只读集readonlyChildren。
 
 
 获取执行器组的下一个事件执行器方法委托个内存的事件执行器选择器chooser；
