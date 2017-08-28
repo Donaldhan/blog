@@ -1,8 +1,17 @@
 netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
 netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+引言：
 上一篇文章我们看了多线程事件执行器组，先来回顾一下：
-     多线程事件执行器组MultithreadEventExecutorGroup，内部有一个事件执行器数组存放组内的事件执行器；readonlyChildren为组内事件执行器集的可读包装集Set；terminatedChildren（AtomicInteger），用于记录已关闭的事件执行器数；termination为执行器组terminated异步任务结果；同时有一个事件执行器选择器chooser（EventExecutorChooser）。构造多线程执行器组，首先检查线程数参数，如果执行器不为空，则初始化线程执行器的线程工厂，创建事件执行器集，并根据执行器和相关参数创建事件执行器，实际创建方法为newChild，待子类实现，初始化事件执行器选择器，创建terminated事件执行器监听器，添加terminated事件执行器监听器到terminated异步任务结果，包装事件执行器集为只读集readonlyChildren。
-     获取执行器组的下一个事件执行器方法委托个内存的事件执行器选择器chooser；返回的迭代器为内部只读执行器集的迭代器；而关闭执行器组方法，实际为遍历管理的事件执行器集，关闭执行器；判断执行器组是否关闭和Terminated，当且仅当组内的事件执行器都关闭和Terminated时，才返回true；超时等待Terminated执行器组方法，实际为遍历事件执行器组超时等待时间耗完，则停止Terminated执行器组，否则，超时剩余等待时间timeLeft，Terminated事件执行器。
+     多线程事件执行器组MultithreadEventExecutorGroup，内部有一个事件执行器数组存放组内的事件执行器；
+readonlyChildren为组内事件执行器集的可读包装集Set；terminatedChildren（AtomicInteger），用于记录已关闭的事件执行器数；
+termination为执行器组terminated异步任务结果；同时有一个事件执行器选择器chooser（EventExecutorChooser）。
+构造多线程执行器组，首先检查线程数参数，如果执行器不为空，则初始化线程执行器的线程工厂，创建事件执行器集，
+并根据执行器和相关参数创建事件执行器，实际创建方法为newChild，待子类实现，初始化事件执行器选择器，
+创建terminated事件执行器监听器，添加terminated事件执行器监听器到terminated异步任务结果，包装事件执行器集为只读集readonlyChildren。
+     获取执行器组的下一个事件执行器方法委托个内存的事件执行器选择器chooser；返回的迭代器为内部只读执行器集的迭代器；
+而关闭执行器组方法，实际为遍历管理的事件执行器集，关闭执行器；判断执行器组是否关闭和Terminated，
+当且仅当组内的事件执行器都关闭和Terminated时，才返回true；超时等待Terminated执行器组方法，
+实际为遍历事件执行器组超时等待时间耗完，则停止Terminated执行器组，否则，超时剩余等待时间timeLeft，Terminated事件执行器。
 本想这篇看一下多线程事件循环组呢，但是其实现了事件循环组，我们这篇先来看一下EventLoopGroup
 //MultithreadEventLoopGroup
 package io.netty.channel;
@@ -24,7 +33,7 @@ import java.util.concurrent.ThreadFactory;
  */
 public abstract class MultithreadEventLoopGroup extends MultithreadEventExecutorGroup implements EventLoopGroup {
 
-下面来看来看事件循环组EventLoopGroup的定义
+下面来看事件循环组EventLoopGroup的定义
 package io.netty.channel;
 
 import io.netty.util.concurrent.EventExecutorGroup;
@@ -227,7 +236,7 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
             ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
     }
 }
-从Nio事件循环组创建事件循环可以看出事件循环为NioEventLoop，这也就是接下来的文章要看的，先列出
+从Nio事件循环组创建事件循环，可以看出事件循环为NioEventLoop，这也就是接下来的文章要看的，先列出
 Nio事件循环声明继承树。
 /**
  * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a

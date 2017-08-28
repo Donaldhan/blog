@@ -39,4 +39,4 @@ EventLoopGroup
 #############################################################################################
 netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
 netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
-netty 多线程事件循环组：[url][/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]

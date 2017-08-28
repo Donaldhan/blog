@@ -1,3 +1,27 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+引言：
+前一篇文章我们看了多线程事件循环组，先来回顾一下：
+     事件循环组EventLoopGroup继承了事件执行器组EventExecutorGroup，next方法返回的为事件循环EventLoop，事件循环组主要所做的工作为通道注册。
+     事件循环EventLoop可理解为已顺序、串行的方式处理提交的任务的事件执行器EventExecutor。事件循环组EventLoopGroup可以理解为特殊的事件执行器组EventExecutorGroup；事件执行器组管理事件执行器，事件循环组管理事件循环。抽象事件循环AbstractEventLoop继承了抽象事件执行器AbstractEventExecutor，实现了事件循环接口。
+     多线程事件循环组MultithreadEventLoopGroup继承了多线程事件执行器组，实现了事件循环组接口，相关注册通道方法委托给多线程事件循环组的next事件循环，线程工程创建的线程优先级默认为最大线程优先级；默认事件循环线程数为1和可用处理器数的2倍中的最大者，这个线程数就是构造多线程事件执行器组事件执行器数量。
+
+今天我们要看的是Nio事件循环，先从NioEventLoopGroup来看，Nio事件循环如何创建：
+//NioEventLoopGroup
+/**
+ * {@link MultithreadEventLoopGroup} implementations which is used for NIO {@link Selector} based {@link Channel}s.
+ */
+public class NioEventLoopGroup extends MultithreadEventLoopGroup {
+    ...
+    @Override
+    protected EventLoop newChild(Executor executor, Object... args) throws Exception {
+        return new NioEventLoop(this, executor, (SelectorProvider) args[0],
+            ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
+    }
+}
+从Nio事件循环组创建事件循环可以看出，事件循环为NioEventLoop。
+
 /**
  * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
  * {@link Selector} and so does the multi-plexing of these in the event loop.
@@ -17,7 +41,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
  */
 public abstract class SingleThreadEventExecutor extends AbstractScheduledEventExecutor implements OrderedEventExecutor {
 
-
+我们先从抽象调度事件执行器开始看：
 package io.netty.util.concurrent;
 
 import io.netty.util.internal.ObjectUtil;
