@@ -1,0 +1,307 @@
+3.6 Git 分支 - 分支的衍合：https://git-scm.com/book/zh/v1/Git-%E5%88%86%E6%94%AF-%E5%88%86%E6%94%AF%E7%9A%84%E8%A1%8D%E5%90%88
+rebase：http://gitbook.liuhui998.com/4_2.html
+常用 Git 命令清单：http://www.ruanyifeng.com/blog/2015/12/git-cheat-sheet.html
+解决冲突:https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248578c67b8067c8c017b000/001375840202368c74be33fbd884e71b570f2cc3c0d1dcf000
+
+
+https://github.com/Donaldhan/test.git
+
+
+cygwin 上使用git，克隆不支持https和http，使用git协议：
+1.检出项目到本地目录
+
+
+donald@donaldMac MINGW64 /f/testgit
+$ git clone https://github.com/Donaldhan/test.git
+Cloning into 'test'...
+fatal: I don't handle protocol '??https'
+
+donald@donaldMac MINGW64 /f/testgit
+$ git clone http://github.com/Donaldhan/test.git
+Cloning into 'test'...
+fatal: I don't handle protocol '??http'
+
+donald@donaldMac MINGW64 /f/testgit
+$ git clone git://github.com/Donaldhan/test.git
+Cloning into 'test'...
+remote: Counting objects: 4, done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 4 (delta 0), reused 0 (delta 0), pack-reused 0
+Receiving objects: 100% (4/4), 4.30 KiB | 0 bytes/s, done.
+
+如果检查到指定目录可以使用
+git clone <dir>
+
+查看已经将文件clone到本地
+donald@donaldMac MINGW64 /f/testgit
+$ ls
+test/
+
+donald@donaldMac MINGW64 /f/testgit
+$ cd test/
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ ls
+LICENSE
+
+
+
+2.测试新建文件并push
+
+先添加，再提交，pull，then push：
+
+
+
+创建notes文件，
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ vim notes
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ cat notes
+just fo test
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ ls
+LICENSE  notes
+
+先添加文件，再提交到本地仓库
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git add notes
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git commit -m "init notest"
+[master 0ea8f21] init notest
+ 1 file changed, 1 insertion(+)
+ create mode 100644 notes
+
+先从远程pull，再push本地文件到远程
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git pull
+Already up-to-date.
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git push
+fatal: remote error:
+  You can't push to git://github.com/Donaldhan/test.git
+  Use https://github.com/Donaldhan/test.git
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git push https://github.com/Donaldhan/test.git
+Counting objects: 3, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (2/2), done.
+Writing objects: 100% (3/3), 315 bytes | 0 bytes/s, done.
+Total 3 (delta 0), reused 0 (delta 0)
+To https://github.com/Donaldhan/test.git
+   e056a47..0ea8f21  master -> master
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+
+查看本地git项目状态
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ ls
+LICENSE  notes
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git status
+On branch master
+Your branch is up-to-date with 'origin/master'.
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+
+
+
+3.来测试修改提交，pull，and then push：
+针对修改文件，先提交，再pull，再push本地修改文件到远端项目仓库
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ vim notes
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ cat notes
+just fo test
+
+test for modify
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git commit notes -m "test for modify"
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+[master 704039e] test for modify
+ 1 file changed, 2 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git pull
+Already up-to-date.
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git push https://github.com/Donaldhan/test.git
+Counting objects: 3, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (2/2), done.
+Writing objects: 100% (3/3), 278 bytes | 0 bytes/s, done.
+Total 3 (delta 1), reused 0 (delta 0)
+remote: Resolving deltas: 100% (1/1), completed with 1 local object.
+To https://github.com/Donaldhan/test.git
+   0ea8f21..704039e  master -> master
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$
+
+4.测试冲突
+先修改github远端notes文件，
+
+just fo test
+
+test for modify
+
+test for slove conflit in github
+
+在修改本地文件
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ ls
+LICENSE  notes
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ cat notes
+just fo test
+
+test for modify
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ vim  notes
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ cat notes
+just fo test
+
+test for modify
+
+local test for conflit
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git commit notes -m "test conflit"
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+[master 2ad3269] test conflit
+ 1 file changed, 3 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git pull
+remote: Counting objects: 3, done.
+remote: Compressing objects: 100% (3/3), done.
+remote: Total 3 (delta 1), reused 0 (delta 0), pack-reused 0
+Unpacking objects: 100% (3/3), done.
+From git://github.com/Donaldhan/test
+   0ea8f21..646c10d  master     -> origin/master
+Auto-merging notes
+CONFLICT (content): Merge conflict in notes
+Automatic merge failed; fix conflicts and then commit the result.
+
+donald@donaldMac MINGW64 /f/testgit/test (master|MERGING)
+$ git status
+On branch master
+Your branch and 'origin/master' have diverged,
+and have 1 and 1 different commits each, respectively.
+  (use "git pull" to merge the remote branch into yours)
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+
+        both modified:   notes
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+
+从上面给出的信息，有两种解决方式，
+1.使用git merge --abort 命令终止合并
+2.解决冲突，使用git add <file>...命令标记解决，运行git commit 提交，再push
+
+我们来测试第三种方式：
+
+donald@donaldMac MINGW64 /f/testgit/test (master|MERGING)
+$ cat notes
+just fo test
+
+test for modify
+
+<<<<<<< HEAD
+
+local test for conflit
+=======
+test for slove conflit in github
+>>>>>>> 646c10d3bf352fe56508be052555f19ead99dc99
+
+$ vim notes
+
+donald@donaldMac MINGW64 /f/testgit/test (master|MERGING)
+$ cat notes
+just fo test
+
+test for modify
+
+local test for conflit
+test for slove conflit in github
+
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master|MERGING)
+$ git add notes
+
+
+donald@donaldMac MINGW64 /f/testgit/test (master|MERGING)
+$ git commit  -m "sovle conflit"
+[master 9dd65f2] sovle conflit
+
+注意：这个git commit 命令不带file 参数，直接commit
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git push https://github.com/Donaldhan/test.git
+Counting objects: 6, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (6/6), done.
+Writing objects: 100% (6/6), 601 bytes | 0 bytes/s, done.
+Total 6 (delta 2), reused 0 (delta 0)
+remote: Resolving deltas: 100% (2/2), completed with 1 local object.
+To https://github.com/Donaldhan/test.git
+   646c10d..9dd65f2  master -> master
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+
+解决方式，先编辑冲突文件，保存，使用git add <file>标记为已解决， 
+然后git commit提交更改，最后push到远端github仓库即可。
+注意：这个git commit 命令不带file 参数，直接commit
+
+查看状态，is Ok
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/test (master)
+$ git pull
+From git://github.com/Donaldhan/test
+   646c10d..9dd65f2  master     -> origin/master
+Already up-to-date.
+
