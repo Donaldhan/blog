@@ -8,10 +8,8 @@ netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
       抽象调度事件执行器AbstractScheduledEventExecutor，内部有一个调度任务队列
 scheduledTaskQueue(PriorityQueue),用于存储待调度的任务。抽象调度事件执行器无论是调度任务线程，周期性任务，还是间歇性任务，先将任务包装成调度任务ScheduledFutureTask，然后委托给#schedule(final ScheduledFutureTask<V> task)方法,#schedule方法首先判断线程是否在当前事务循环，如果在，则添加调度任务到调度任务队列，否则直接创建一个线程，完成添加调度任务到调度任务队列工作；移除调度任务的思想与调度任务相同，只不过执行移除操作。
 
-今天我们来看单线程事件执行器SingleThreadEventExecutor：
 
 package io.netty.util.concurrent;
-
 import io.netty.util.internal.ObjectUtil;
 import io.netty.util.internal.SystemPropertyUtil;
 import io.netty.util.internal.UnstableApi;
