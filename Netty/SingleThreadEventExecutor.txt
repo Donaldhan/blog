@@ -5,8 +5,7 @@ netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/239
 引言：
 前面一篇文章我们看了抽象调度事件执行器，来回顾一下：
       调度任务ScheduledFutureTask，内部有一个任务调度延时变量deadlineNanos，用于记录下一次调度的延时时间；调度任务间隔时间periodNanos为0，调度任务非周期性任务，大于0，周期性调度，小于零，固定延时调度；对于创建Runnable形式的调度，要先包装成Callable任务；调度任务执行时，对于非周期性任务，则直接执行，而周期性与间歇性任务，计算任务下一次任务调度的延时时间，如果调度任务没取消，则添加调度任务到关联的调度事件执行器调度任务队列。
-      抽象调度事件执行器AbstractScheduledEventExecutor，内部有一个调度任务队列
-scheduledTaskQueue(PriorityQueue),用于存储待调度的任务。抽象调度事件执行器无论是调度任务线程，周期性任务，还是间歇性任务，先将任务包装成调度任务ScheduledFutureTask，然后委托给#schedule(final ScheduledFutureTask<V> task)方法,#schedule方法首先判断线程是否在当前事务循环，如果在，则添加调度任务到调度任务队列，否则直接创建一个线程，完成添加调度任务到调度任务队列工作；移除调度任务的思想与调度任务相同，只不过执行移除操作。
+      抽象调度事件执行器AbstractScheduledEventExecutor，内部有一个调度任务队列scheduledTaskQueue(PriorityQueue),用于存储待调度的任务。抽象调度事件执行器无论是调度任务线程，周期性任务，还是间歇性任务，先将任务包装成调度任务ScheduledFutureTask，然后委托给#schedule(final ScheduledFutureTask<V> task)方法,#schedule方法首先判断线程是否在当前事务循环，如果在，则添加调度任务到调度任务队列，否则直接创建一个线程，完成添加调度任务到调度任务队列工作；移除调度任务的思想与调度任务相同，只不过执行移除操作。
 
 今天我们来看单线程事件执行器：
 package io.netty.util.concurrent;
