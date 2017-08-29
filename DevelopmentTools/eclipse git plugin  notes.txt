@@ -1,8 +1,0 @@
-先安装git，再安装TortoiseGit-2.4.0.2-64bit，最后是TortoiseGit-2.4.0.2-64bit，语言包。
-1.先用git从github克隆项目，到执行文件夹，假设为blog（右击，git克隆项目即可）；
-2.将文件添加到blog文件夹下；
-3.TortoiseGit添加文件（右击添加，填写log日志）
-4.这个要注意，在讲本地文件push到github之前，先使用TortoiseGit从github地址拉取，再push；
-myeclipse，git插件用，2.3版本
-eclipse，git插件用，4.7版本；
-上传项目到github：先再github创建仓库，再将eclipse中的项目，share project到github的仓库地址
