@@ -231,8 +231,8 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
 
 从上面给出的信息，有两种解决方式，
-1.使用git merge --abort 命令终止合并
-2.解决冲突，使用git add <file>...命令标记解决，运行git commit 提交，再push
+1).使用git merge --abort 命令终止合并
+2).解决冲突，使用git add <file>...命令标记解决，运行git commit 提交，再push
 
 我们来测试第三种方式：
 
@@ -303,3 +303,78 @@ From git://github.com/Donaldhan/test
    646c10d..9dd65f2  master     -> origin/master
 Already up-to-date.
 
+
+5.再来看重名文件
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ ls
+eclipse-git-plugin.txt  git-command-with-solve-conflict.txt  git-install.txt
+
+重命名文件：
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ mv git-command-with-solve-conflict.txt git-command-solve-conflict.txt
+查看状态:一个文件删除，一个文件添加
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        deleted:    git-command-with-solve-conflict.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        git-command-solve-conflict.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git status -s
+ D git-command-with-solve-conflict.txt
+?? git-command-solve-conflict.txt
+
+提交重名的文件
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git add git-command-solve-conflict.txt
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git commit -m "rename conflict notes"
+[master b7ff1f9] rename conflict notes
+ 1 file changed, 305 insertions(+)
+ create mode 100644 DevelopmentTools/git-command-solve-conflict.txt
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git status -s
+ D git-command-with-solve-conflict.txt
+
+提交工作区自上次commit之后的变化，直接到仓库区
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git commit -a -m "delete original conflict notes"
+[master 978e974] delete original conflict notes
+ 1 file changed, 305 deletions(-)
+ delete mode 100644 DevelopmentTools/git-command-with-solve-conflict.txt
+
+先pull，再push
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git pull
+From https://github.com/Donaldhan/blog
+   f691713..481a1b7  master     -> origin/master
+Already up-to-date.
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$ git push https://github.com/Donaldhan/blog.git
+Counting objects: 6, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (6/6), done.
+Writing objects: 100% (6/6), 559 bytes | 0 bytes/s, done.
+Total 6 (delta 4), reused 0 (delta 0)
+remote: Resolving deltas: 100% (4/4), completed with 2 local objects.
+To https://github.com/Donaldhan/blog.git
+   481a1b7..978e974  master -> master
+
+donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
+$
