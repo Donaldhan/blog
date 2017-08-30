@@ -378,3 +378,183 @@ To https://github.com/Donaldhan/blog.git
 
 donald@donaldMac MINGW64 /f/blog/DevelopmentTools (master)
 $
+
+
+6.新建分支
+donald@donaldHP MINGW64 /f/testgit
+$ ls
+test/
+
+donald@donaldHP MINGW64 /f/testgit
+$ git init newproject
+Initialized empty Git repository in F:/testgit/newproject/.git/
+
+donald@donaldHP MINGW64 /f/testgit
+$ ls
+newproject/  test/
+
+donald@donaldHP MINGW64 /f/testgit
+$ cd newproject/
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git remote add origin https://github.com/Donaldhan/newp.git
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+
+Initial commit
+
+nothing to commit (create/copy files and use "git add" to track)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+
+Initial commit
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        notes
+
+nothing added to commit but untracked files present (use "git add" to track)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add notes
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit notes -m "add git init and remote notes"
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+[master (root-commit) 3411c7d] add git init and remote notes
+ 1 file changed, 4 insertions(+)
+ create mode 100644 notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git pull
+warning: no common commits
+remote: Counting objects: 5, done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 5 (delta 0), reused 0 (delta 0), pack-reused 0
+Unpacking objects: 100% (5/5), done.
+From https://github.com/Donaldhan/newp
+ * [new branch]      master     -> origin/master
+There is no tracking information for the current branch.
+Please specify which branch you want to merge with.
+See git-pull(1) for details.
+
+    git pull <remote> <branch>
+
+If you wish to set tracking information for this branch you can do so with:
+
+    git branch --set-upstream-to=origin/<branch> master
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git push https://github.com/Donaldhan/newp.git
+To https://github.com/Donaldhan/newp.git
+ ! [rejected]        master -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/Donaldhan/newp.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. Integrate the remote changes (e.g.
+hint: 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git push -u origin master
+To https://github.com/Donaldhan/newp.git
+ ! [rejected]        master -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/Donaldhan/newp.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. Integrate the remote changes (e.g.
+hint: 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git pull origin master
+From https://github.com/Donaldhan/newp
+ * branch            master     -> FETCH_HEAD
+fatal: refusing to merge unrelated histories
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git push orgin master
+fatal: 'orgin' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git push origin master
+To https://github.com/Donaldhan/newp.git
+ ! [rejected]        master -> master (non-fast-forward)
+error: failed to push some refs to 'https://github.com/Donaldhan/newp.git'
+hint: Updates were rejected because the tip of your current branch is behind
+hint: its remote counterpart. Integrate the remote changes (e.g.
+hint: 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details.
+
+显示本地分支
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git branch
+* master
+
+显示远端分支
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git branch -r
+  origin/master
+
+显示远端与本地分支
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git branch -a
+* master
+  remotes/origin/master
+
+切换到远端分支
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git checkout origin/master
+Note: checking out 'origin/master'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by performing another checkout.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -b with the checkout command again. Example:
+
+  git checkout -b <new-branch-name>
+
+HEAD is now at acf4cb3... Initial commit
+
+donald@donaldHP MINGW64 /f/testgit/newproject ((acf4cb3...))
+$ ls
+LICENSE  README.md
+
+切换回本地分支
+donald@donaldHP MINGW64 /f/testgit/newproject ((acf4cb3...))
+$ git checkout master
+Previous HEAD position was acf4cb3... Initial commit
+Switched to branch 'master'
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+
+
+
+
