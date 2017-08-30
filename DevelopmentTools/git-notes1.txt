@@ -1,1 +1,93 @@
-git命令使用：
+git命令使用：https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248578c67b8067c8c017b000
+
+在github创建项目，https://github.com/Donaldhan/newp.git，
+注意必须是空白的，没有添加gitgnore和readme.MD文件
+github提示如下
+ssh协议：
+Quick setup — if you’ve done this kind of thing before
+or
+
+We recommend every repository include a README, LICENSE, and .gitignore.
+…or create a new repository on the command line
+
+echo "# newp" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/Donaldhan/newp.git
+git push -u origin master
+
+…or push an existing repository from the command line
+
+git remote add origin https://github.com/Donaldhan/newp.git
+git push -u origin master
+
+…or import code from another repository
+
+You can initialize this repository with code from a Subversion, Mercurial, or TFS project.
+
+https协议：
+
+Quick setup — if you’ve done this kind of thing before
+or
+
+We recommend every repository include a README, LICENSE, and .gitignore.
+…or create a new repository on the command line
+
+echo "# newp" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/Donaldhan/newp.git
+git push -u origin master
+
+…or push an existing repository from the command line
+
+git remote add origin https://github.com/Donaldhan/newp.git
+git push -u origin master
+
+…or import code from another repository
+
+You can initialize this repository with code from a Subversion, Mercurial, or TFS project.
+
+####################################
+添加远程仓库
+####################################
+本地仓库分支
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git remote add origin git@github.com:Donaldhan/newp.git
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git push -u origin master
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Counting objects: 25, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (15/15), done.
+Writing objects: 100% (25/25), 2.15 KiB | 0 bytes/s, done.
+Total 25 (delta 2), reused 0 (delta 0)
+remote: Resolving deltas: 100% (2/2), done.
+To github.com:Donaldhan/newp.git
+ * [new branch]      master -> master
+Branch master set up to track remote branch master from origin.
+
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Your branch is up-to-date with 'origin/master'.
+nothing to commit, working tree clean
+
+
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git remote add origin https://github.com/Donaldhan/newp.git
+
+
