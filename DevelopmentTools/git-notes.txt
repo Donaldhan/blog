@@ -1,0 +1,517 @@
+git命令使用：https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248578c67b8067c8c017b000/0013758392816224cafd33c44b4451887cc941e6716805c000
+本文主要是学习git命令，及add，commit，rm，checkout，log，status，
+reflog，reset命令的记录.
+donald@donaldHP MINGW64 /f/testgit/newproject
+$ ls
+
+donald@donaldHP MINGW64 /f/testgit/newproject
+$ ls -al
+total 4
+drwxr-xr-x 1 donald 197121 0 8月  30 09:30 ./
+drwxr-xr-x 1 donald 197121 0 8月  29 22:40 ../
+
+##########################################
+初始化本地仓库
+##########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject
+$ git init
+Initialized empty Git repository in F:/testgit/newproject/.git/
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls -al
+total 8
+drwxr-xr-x 1 donald 197121 0 8月  30 09:30 ./
+drwxr-xr-x 1 donald 197121 0 8月  29 22:40 ../
+drwxr-xr-x 1 donald 197121 0 8月  30 09:30 .git/
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+
+Initial commit
+
+nothing to commit (create/copy files and use "git add" to track)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+
+Initial commit
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        notes
+
+nothing added to commit but untracked files present (use "git add" to track)
+
+##########################################
+添加文件并提交
+##########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add notes
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+
+Initial commit
+
+Changes to be committed:
+  (use "git rm --cached <file>..." to unstage)
+
+        new file:   notes
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "add notes"
+[master (root-commit) 82ae670] add notes
+ 1 file changed, 1 insertion(+)
+ create mode 100644 notes
+
+##########################################
+修改文件
+##########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+查看文件的变化
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git diff notes
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+diff --git a/notes b/notes
+index 8e66e82..9109ffb 100644
+--- a/notes
++++ b/notes
+@@ -1 +1,3 @@
+ just test
++
++command
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+提交文件修改到本地仓库
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit notes -m "add command"
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+warning: LF will be replaced by CRLF in notes.
+The file will have its original line endings in your working directory.
+[master ca70d2a] add command
+ 1 file changed, 2 insertions(+)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+
+##########################################
+查看提交日志,回滚到指定版本
+##########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git log
+commit ca70d2aa635f6fdce342d2e173126c4a96479f3d
+Author: doanldhan <shaoqinghanah@qq.com>
+Date:   Wed Aug 30 09:38:29 2017 +0800
+
+    add command
+
+commit 82ae670be7194937e4dd9d2537ffe589562f6a39
+Author: doanldhan <shaoqinghanah@qq.com>
+Date:   Wed Aug 30 09:31:24 2017 +0800
+
+    add notes
+
+回到上次提交版本，HEAD^,上两次HEAD^^,上100次，HEAD~100
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git reset --hard HEAD^
+HEAD is now at 82ae670 add notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+回到指定版本，版本号没必要写全，前几位就可以了，Git会自动去找。当然也不能只写前一两位
+，因为Git可能会找到多个版本号，就无法确定是哪一个了。
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git reset --hard ca70d2aa
+HEAD is now at ca70d2a add command
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+当你用$ git reset --hard HEAD^回退到add distributed版本时，再想恢复到append GPL，
+就必须找到append GPL的commit id。Git提供了一个命令git reflog用来记录你的每一次命令：
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git reflog
+ca70d2a HEAD@{0}: reset: moving to ca70d2aa
+82ae670 HEAD@{1}: reset: moving to HEAD^
+ca70d2a HEAD@{2}: commit: add command
+82ae670 HEAD@{3}: commit (initial): add notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+
+##########################################
+git工作环境：
+工作区work-暂存区state-仓库git
+##########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+在工作空间添加readme文件
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim readme
+
+状态不可追踪
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        readme
+
+nothing added to commit but untracked files present (use "git add" to track)
+
+添加到暂存区state
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add readme
+warning: LF will be replaced by CRLF in readme.
+The file will have its original line endings in your working directory.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        new file:   readme
+
+提交到本地git仓库
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "add readme"
+[master 305f86b] add readme
+ 1 file changed, 1 insertion(+)
+ create mode 100644 readme
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+
+##########################################
+撤销修改
+##########################################
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim notes
+
+添加stupid boss
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        modified:   notes
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim notes
+
+添加stupid leader
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        modified:   notes
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+test state
+
+stupid boss
+
+stupid leader
+
+撤销下工作区的修改
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git checkout -- notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+test state
+
+stupid boss
+
+如果修改提交的暂存区，则首先回到HEAD对应的文件
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git reset HEAD^
+Unstaged changes after reset:
+M       notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+test state
+
+stupid boss
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+在使用git checkout 撤销修改，注意要带--，不带表示切换分支
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git checkout -- notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ cat notes
+just test
+
+command
+
+branch
+
+test state
+
+git checkout -- 其实是用版本库里的版本替换工作区的版本，无论工作区是修改还是删除，都可以“一键还原”。
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+场景1：当你改乱了工作区某个文件的内容，想直接丢弃工作区的修改时，用命令git checkout -- file。
+
+场景2：当你不但改乱了工作区某个文件的内容，还添加到了暂存区时，想丢弃修改，分两步，第一步用命令git reset HEAD file，
+就回到了场景1，第二步按场景1操作。
+
+场景3：已经提交了不合适的修改到版本库时，想要撤销本次提交，参考版本回退一节，不过前提是没有推送到远程库。
+
+########################################
+重命名文件
+########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+notes  readme
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ mv notes notes.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes not staged for commit:
+  (use "git add/rm <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        deleted:    notes
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        notes.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        deleted:    notes
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        notes.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "rename notes tp notes.txt"
+[master cdaf43c] rename notes tp notes.txt
+ 1 file changed, 7 deletions(-)
+ delete mode 100644 notes
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        notes.txt
+
+nothing added to commit but untracked files present (use "git add" to track)
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add notes.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        new file:   notes.txt
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "rename notes tp notes.txt"
+[master 6374601] rename notes tp notes.txt
+ 1 file changed, 7 insertions(+)
+ create mode 100644 notes.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+
+########################################
+移除文件
+########################################
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+notes.txt  readme
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ vim test.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git add test.txt
+warning: LF will be replaced by CRLF in test.txt.
+The file will have its original line endings in your working directory.
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "add test.txt";
+[master 90e62df] add test.txt
+ 1 file changed, 1 insertion(+)
+ create mode 100644 test.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git rm test.txt
+rm 'test.txt'
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        deleted:    test.txt
+
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ ls
+notes.txt  readme
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git commit -m "remove git rm test file"
+[master 468bdf8] remove git rm test file
+ 1 file changed, 1 deletion(-)
+ delete mode 100644 test.txt
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+nothing to commit, working tree clean
+
+donald@donaldHP MINGW64 /f/testgit/newproject (master)
+$
+命令git rm用于删除一个文件。如果一个文件已经被提交到版本库，
+那么你永远不用担心误删，但是要小心，你只能恢复文件到最新版本，你会丢失最近一次提交后你修改的内容。
