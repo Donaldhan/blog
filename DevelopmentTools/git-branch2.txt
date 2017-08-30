@@ -1,0 +1,596 @@
+git命令使用：https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248578c67b8067c8c017b000
+
+
+
+#############################################
+Feature分支
+#############################################
+软件开发中，总有无穷无尽的新的功能要不断添加进来。
+添加一个新功能时，你肯定不希望因为一些实验性质的代码，把主分支搞乱了，
+所以，每添加一个新功能，最好新建一个feature分支，在上面开发，完成后，合并，最后，删除该feature分支。
+现在，你终于接到了一个新任务：开发代号为feature-superboat的新功能，该功能计划用于下一代星际飞船。
+于是准备开发：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch
+  dev
+* master
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git checkout dev
+Switched to branch 'dev'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch
+* dev
+  master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git checkout -b feature-superboat
+Switched to a new branch 'feature-superboat'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ vim boat.txt
+
+5分钟后，开发完毕：
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ git add boat.txt
+warning: LF will be replaced by CRLF in boat.txt.
+The file will have its original line endings in your working directory.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ git commit -m "create the super boat"
+[feature-superboat 1fd47b5] create the super boat
+ 1 file changed, 1 insertion(+)
+ create mode 100644 boat.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ git status
+On branch feature-superboat
+nothing to commit, working tree clean
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ git log --graph --pretty=oneline --abbrev-commit
+* 1fd47b5 create the super boat
+* 26466f0 test stash done
+* c228bbf simulate merge dev branch without fast foward
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+切回dev，准备合并：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (feature-superboat)
+$ git checkout dev
+Switched to branch 'dev'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git log --graph --pretty=oneline --abbrev-commit
+* 26466f0 test stash done
+* c228bbf simulate merge dev branch without fast foward
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+nothing to commit, working tree clean
+
+一切顺利的话，feature分支和bug分支是类似的，合并，然后删除。
+但是，
+就在此时，接到上级命令，因经费不足，新功能必须取消！
+虽然白干了，但是这个分支还是必须就地销毁：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch -d feature-superboat
+error: The branch 'feature-superboat' is not fully merged.
+If you are sure you want to delete it, run 'git branch -D feature-superboat'.
+
+销毁失败。Git友情提醒，feature-vulcan分支还没有被合并，如果删除，
+将丢失掉修改，如果要强行删除，需要使用命令git branch -D feature-superboat。
+现在我们强行删除：
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch -D feature-superboat
+Deleted branch feature-superboat (was 1fd47b5).
+
+终于删除成功！
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch
+* dev
+  master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$
+
+#######################################
+多人协作
+######################################
+当你从远程仓库克隆时，实际上Git自动把本地的master分支和远程的master分支对应起来了，
+并且，远程仓库的默认名称是origin。
+要查看远程库的信息，用git remote：
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git remote
+origin
+
+用git remote -v显示更详细的信息：
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git remote -v
+origin  git@github.com:Donaldhan/newp.git (fetch)
+origin  git@github.com:Donaldhan/newp.git (push)
+上面显示了可以抓取和推送的origin的地址。如果没有推送权限，就看不到push的地址。
+推送分支
+
+推送分支，就是把该分支上的所有本地提交推送到远程库。
+推送时，要指定本地分支，这样，Git就会把该分支推送到远程库对应的远程分支上：
+$ git push origin master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git push origin master
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Everything up-to-date
+
+如果要推送其他分支，比如dev，就改成：
+$ git push origin dev
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git push origin dev
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Total 0 (delta 0), reused 0 (delta 0)
+To github.com:Donaldhan/newp.git
+ * [new branch]      dev -> dev
+
+分支dev已推送到远端仓库
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch
+  dev
+* master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch -r
+  origin/dev
+  origin/master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch -a
+  dev
+* master
+  remotes/origin/dev
+  remotes/origin/master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$
+
+但是，并不是一定要把本地分支往远程推送，那么，哪些分支需要推送，哪些不需要呢？
+    master分支是主分支，因此要时刻与远程同步；
+    dev分支是开发分支，团队所有成员都需要在上面工作，所以也需要与远程同步；
+    bug分支只用于在本地修复bug，就没必要推到远程了，除非老板要看看你每周到底修复了几个bug；
+    feature分支是否推到远程，取决于你是否和你的小伙伴合作在上面开发。
+总之，就是在Git中，分支完全可以在本地自己藏着玩，是否推送，视你的心情而定！
+抓取分支
+
+多人协作时，大家都会往master和dev分支上推送各自的修改。
+
+现在，模拟一个你的小伙伴，可以在另一台电脑（注意要把SSH Key添加到GitHub）或者同一台电脑的另一个目录下克隆：
+
+$ git clone git@github.com:michaelliao/learngit.git
+Cloning into 'learngit'...
+remote: Counting objects: 46, done.
+remote: Compressing objects: 100% (26/26), done.
+remote: Total 46 (delta 16), reused 45 (delta 15)
+Receiving objects: 100% (46/46), 15.69 KiB | 6 KiB/s, done.
+Resolving deltas: 100% (16/16), done.
+
+当你的小伙伴从远程库clone时，默认情况下，你的小伙伴只能看到本地的master分支。不信可以用git branch命令看看：
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ cd ..
+
+donald@donaldMac MINGW64 /f/testgit
+$ ls
+newproject/  test/
+
+donald@donaldMac MINGW64 /f/testgit
+$ mkdir project
+
+donald@donaldMac MINGW64 /f/testgit
+$ ls
+newproject/  project/  test/
+
+donald@donaldMac MINGW64 /f/testgit
+$ cd newproject/
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ cd ..
+
+donald@donaldMac MINGW64 /f/testgit
+$ ls
+newproject/  project/  test/
+
+donald@donaldMac MINGW64 /f/testgit
+$ cd project/
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ ls
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ git clone git@github.com:Donaldhan/newp.git
+Cloning into 'newp'...
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+remote: Counting objects: 52, done.
+remote: Compressing objects: 100% (24/24), done.
+remote: Total 52 (delta 12), reused 51 (delta 11), pack-reused 0
+Receiving objects: 100% (52/52), 4.29 KiB | 0 bytes/s, done.
+Resolving deltas: 100% (12/12), done.
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ ls
+newp/
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ cd newp/
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git branch
+* master
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git status
+On branch master
+Your branch is up-to-date with 'origin/master'.
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git branch
+* master
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git branch -r
+  origin/HEAD -> origin/master
+  origin/dev
+  origin/master
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git branch -a
+* master
+  remotes/origin/HEAD -> origin/master
+  remotes/origin/dev
+  remotes/origin/master
+
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+
+本地并没有dev分支
+现在，你的小伙伴要在dev分支上开发，就必须创建远程origin的dev分支到本地，于是他用这个命令创建本地dev分支：
+$ git checkout -b dev origin/dev
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (master)
+$ git checkout -b dev origin/dev
+Switched to a new branch 'dev'
+Branch dev set up to track remote branch dev from origin.
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git branch
+* dev
+  master
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git branch -a
+* dev
+  master
+  remotes/origin/HEAD -> origin/master
+  remotes/origin/dev
+  remotes/origin/master
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+
+
+现在，他就可以在dev上继续修改，然后，时不时地把dev分支push到远程：
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ vim cooperate.txt
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git add cooperate.txt
+warning: LF will be replaced by CRLF in cooperate.txt.
+The file will have its original line endings in your working directory.
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git commit -m "test cooperate"
+[dev a0272a7] test cooperate
+ 1 file changed, 1 insertion(+)
+ create mode 100644 cooperate.txt
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git status
+On branch dev
+Your branch is ahead of 'origin/dev' by 1 commit.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git push origin dev
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Counting objects: 3, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (2/2), done.
+Writing objects: 100% (3/3), 342 bytes | 0 bytes/s, done.
+Total 3 (delta 0), reused 0 (delta 0)
+To github.com:Donaldhan/newp.git
+   26466f0..a0272a7  dev -> dev
+
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ vim stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git add stashtest.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git commit -m "test multi developer work on dev branch"
+[dev 344e026] test multi developer work on dev branch
+ 1 file changed, 2 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git status
+On branch dev
+Your branch is ahead of 'origin/dev' by 1 commit.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git push origin dev
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Counting objects: 3, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (3/3), done.
+Writing objects: 100% (3/3), 323 bytes | 0 bytes/s, done.
+Total 3 (delta 1), reused 0 (delta 0)
+remote: Resolving deltas: 100% (1/1), completed with 1 local object.
+To github.com:Donaldhan/newp.git
+   a0272a7..344e026  dev -> dev
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ git status
+On branch dev
+Your branch is up-to-date with 'origin/dev'.
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+
+
+你的小伙伴已经向origin/dev分支推送了他的提交，而碰巧你也对同样的文件作了修改，并试图推送：
+
+
+donald@donaldMac MINGW64 /f/testgit/project/newp (dev)
+$ cd ..
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ ls
+newp/
+
+donald@donaldMac MINGW64 /f/testgit/project
+$ cd ..
+
+donald@donaldMac MINGW64 /f/testgit
+$ ls
+newproject/  project/  test/
+
+donald@donaldMac MINGW64 /f/testgit
+$ cd newproject/
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ vim stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git add stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git commit -m "test cooperate"
+[dev b4f62ae] test cooperate
+ 1 file changed, 2 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git push origin dev
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+To github.com:Donaldhan/newp.git
+ ! [rejected]        dev -> dev (fetch first)
+error: failed to push some refs to 'git@github.com:Donaldhan/newp.git'
+hint: Updates were rejected because the remote contains work that you do
+hint: not have locally. This is usually caused by another repository pushing
+hint: to the same ref. You may want to first integrate the remote changes
+hint: (e.g., 'git pull ...') before pushing again.
+hint: See the 'Note about fast-forwards' in 'git push --help' for details
+
+推送失败，因为你的小伙伴的最新提交和你试图推送的提交有冲突，解决办法也很简单，
+Git已经提示我们，先用git pull把最新的提交从origin/dev抓下来，然后，在本地合并，解决冲突，再推送：
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git pull
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+remote: Counting objects: 6, done.
+remote: Compressing objects: 100% (4/4), done.
+remote: Total 6 (delta 1), reused 6 (delta 1), pack-reused 0
+Unpacking objects: 100% (6/6), done.
+From github.com:Donaldhan/newp
+   26466f0..344e026  dev        -> origin/dev
+There is no tracking information for the current branch.
+Please specify which branch you want to merge with.
+See git-pull(1) for details.
+
+    git pull <remote> <branch>
+
+If you wish to set tracking information for this branch you can do so with:
+
+    git branch --set-upstream-to=origin/<branch> dev
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+
+
+git pull也失败了，原因是没有指定本地dev分支与远程origin/dev分支的链接，根据提示，设置dev和origin/dev的链接：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch --set-upstream-to=origin/dev dev
+Branch dev set up to track remote branch dev from origin.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+
+
+再pull：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git pull
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Auto-merging stashtest.txt
+CONFLICT (content): Merge conflict in stashtest.txt
+Automatic merge failed; fix conflicts and then commit the result.
+
+
+这回git pull成功，但是合并有冲突，需要手动解决，解决的方法和分支管理中的解决冲突完全一样。解决后，提交，再push：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev|MERGING)
+$ git status
+On branch dev
+Your branch and 'origin/dev' have diverged,
+and have 1 and 2 different commits each, respectively.
+  (use "git pull" to merge the remote branch into yours)
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Changes to be committed:
+
+        new file:   cooperate.txt
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+
+        both modified:   stashtest.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev|MERGING)
+$ vim stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev|MERGING)
+$ git add stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev|MERGING)
+$ git commit -m "fix cooperate merge issue"
+[dev cf55957] fix cooperate merge issue
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Your branch is ahead of 'origin/dev' by 2 commits.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git push origin dev
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Counting objects: 6, done.
+Delta compression using up to 4 threads.
+Compressing objects: 100% (5/5), done.
+Writing objects: 100% (6/6), 628 bytes | 0 bytes/s, done.
+Total 6 (delta 1), reused 0 (delta 0)
+remote: Resolving deltas: 100% (1/1), completed with 1 local object.
+To github.com:Donaldhan/newp.git
+   344e026..cf55957  dev -> dev
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Your branch is up-to-date with 'origin/dev'.
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ ls
+cooperate.txt  notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ cat stashtest.txt
+test stash pop apply
+
+cooperate test
+test mutli developer work on dev branch
+
+donald@donaldMac MINGW64 /f/testgit/newpro
+
+因此，多人协作的工作模式通常是这样：
+    首先，可以试图用git push origin branch-name推送自己的修改；
+    如果推送失败，则因为远程分支比你的本地更新，需要先用git pull试图合并；
+    如果合并有冲突，则解决冲突，并在本地提交；
+    没有冲突或者解决掉冲突后，再用git push origin branch-name推送就能成功！
+
+如果git pull提示“no tracking information”，则说明本地分支和远程分支的链接关系没有创建，
+用命令
+git branch --set-upstream-to=origin/branch-name branch-name。
+这就是多人协作的工作模式，一旦熟悉了，就非常简单。
+小结
+
+    查看远程库信息，使用git remote -v；
+    本地新建的分支如果不推送到远程，对其他人就是不可见的；
+    从本地推送分支，使用git push origin branch-name，如果推送失败，先用git pull抓取远程的新提交；
+    在本地创建和远程分支对应的分支，使用git checkout -b branch-name origin/branch-name，本地和远程分支的名称最好一致；
+    建立本地分支和远程分支的关联，使用
+    git branch --set-upstream-to=origin/branch-name branch-name或
+    git branch --set-upstream branch-name origin/branch-name；
+    从远程抓取分支，使用git pull，如果有冲突，要先处理冲突。
+
+
