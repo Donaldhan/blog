@@ -54,16 +54,16 @@ You can initialize this repository with code from a Subversion, Mercurial, or TF
 添加远程仓库
 ####################################
 本地仓库分支
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git status
 On branch master
 nothing to commit, working tree clean
 
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git remote add origin git@github.com:Donaldhan/newp.git
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git push -u origin master
 Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
 Counting objects: 25, done.
@@ -78,7 +78,7 @@ Branch master set up to track remote branch master from origin.
 
 查看现在的分支版本为origin/master
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git status
 On branch master
 Your branch is up-to-date with 'origin/master'.
@@ -86,7 +86,7 @@ nothing to commit, working tree clean
 
 
 HTTP协议 添加分支
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git remote add origin https://github.com/Donaldhan/newp.git
 剩余的和SSH协议基本相同
 
@@ -100,37 +100,37 @@ Git支持多种协议，包括https，但通过ssh支持的原生git协议速度
 创建与分支合并
 ######################################################
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ ls
 notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git status
 On branch master
 Your branch is up-to-date with 'origin/master'.
 nothing to commit, working tree clean
 
 创建分支
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch dev
 
 切换分支
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git checkout dev
 Switched to branch 'dev'
 
 查看分支，*后的为当前分支
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ git branch
 * dev
   master
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ ls
 notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ cat notes.txt
 just test
 
@@ -142,30 +142,30 @@ test state
 
 在dev分支上，修改
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ vim notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ git add notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ git commit -m "work on dev branch"
 [dev 640a114] work on dev branch
  1 file changed, 2 insertions(+)
 
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ git status
 On branch dev
 nothing to commit, working tree clean
 
 切换回master主分支
-donald@donaldHP MINGW64 /f/testgit/newproject (dev)
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
 $ git checkout master
 Switched to branch 'master'
 Your branch is up-to-date with 'origin/master'.
 
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ cat notes.txt
 just test
 
@@ -175,25 +175,25 @@ branch
 
 test state
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git status
 On branch master
 Your branch is up-to-date with 'origin/master'.
 nothing to commit, working tree clean
 
 合并dev分支到master
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git merge dev
 Updating 2576169..640a114
 Fast-forward
  notes.txt | 2 ++
  1 file changed, 2 insertions(+)
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ cat notes
 cat: notes: No such file or directory
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ cat notes.txt
 just test
 
@@ -207,15 +207,15 @@ work on dev branch
 
 删除dev分支
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch -d dev
 Deleted branch dev (was 640a114).
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch
 * master
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $
 
 
@@ -231,31 +231,31 @@ Git鼓励大量使用分支：
 解决冲突
 ######################################
 建立test分支，并在分支修改notes文件，并提交
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch test
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git checkout test
 Switched to branch 'test'
 
-donald@donaldHP MINGW64 /f/testgit/newproject (test)
+donald@donaldMac MINGW64 /f/testgit/newproject (test)
 $ vim notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (test)
+donald@donaldMac MINGW64 /f/testgit/newproject (test)
 $ git add notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (test)
+donald@donaldMac MINGW64 /f/testgit/newproject (test)
 $ git commit -m "simulate conflict"
 [test 0ecbcc5] simulate conflict
  1 file changed, 2 insertions(+)
 
-donald@donaldHP MINGW64 /f/testgit/newproject (test)
+donald@donaldMac MINGW64 /f/testgit/newproject (test)
 $ git status
 On branch test
 nothing to commit, working tree clean
 
 切换到分支，修改notes文件，并提交，合并test分支到master分支
-donald@donaldHP MINGW64 /f/testgit/newproject (test)
+donald@donaldMac MINGW64 /f/testgit/newproject (test)
 $ git checkout master
 Switched to branch 'master'
 Your branch is ahead of 'origin/master' by 1 commit.
@@ -263,30 +263,30 @@ Your branch is ahead of 'origin/master' by 1 commit.
 
 Git还会自动提示我们当前master分支比远程的master分支要超前1个提交。
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ vim notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git add notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git commit "simulate conflict on master"
 error: pathspec 'simulate conflict on master' did not match any file(s) known to git.
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git commit -m "simulate conflict on master"
 [master 046c708] simulate conflict on master
  1 file changed, 2 insertions(+)
 
 合并test分支到master分支
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git merge test
 Auto-merging notes.txt
 CONFLICT (content): Merge conflict in notes.txt
 Automatic merge failed; fix conflicts and then commit the result.
 
 有冲突，查看冲突信息
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ git status
 On branch master
 Your branch is ahead of 'origin/master' by 2 commits.
@@ -304,7 +304,7 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
 查看冲突文件
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ cat notes.txt
 just test
 
@@ -323,10 +323,10 @@ simulate conflict on test branch
 
 Git用<<<<<<<，=======，>>>>>>>标记出不同分支的内容，我们修改如下后保存：
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ vim notes.txt
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ cat notes.txt
 just test
 
@@ -342,17 +342,17 @@ solve the conflict from test branch on master branch
 
 simulate conflict on test branch
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ git add notes.txt
 
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master|MERGING)
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
 $ git commit -m "fix conflict"
 [master cfc8bb6] fix conflict
 
 查看分支合并情况
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git log --graph --pretty=oneline --abbrev-commit
 *   cfc8bb6 fix conflict
 |\
@@ -371,7 +371,7 @@ $ git log --graph --pretty=oneline --abbrev-commit
 * ca70d2a add command
 * 82ae670 add notes
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git log --graph
 *   commit cfc8bb620002a2a7191d308985ea9f7f87c65c32
 |\  Merge: 046c708 0ecbcc5
@@ -415,16 +415,16 @@ $ git log --graph
 | Date:   Wed Aug 30 10:52:34 2017 +0800
 :
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ ^C
 
 删除test分支
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch -d test
 Deleted branch test (was 0ecbcc5).
 
-donald@donaldHP MINGW64 /f/testgit/newproject (master)
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
 $ git branch
 * master
 
