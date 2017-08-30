@@ -3,5 +3,599 @@ git命令使用：https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248
 
 
 #############################################
-
+分支管理策略
 #############################################
+
+通常，合并分支时，如果可能，Git会用Fast forward模式，但这种模式下，删除分支后，会丢掉分支信息。
+如果要强制禁用Fast forward模式，Git就会在merge时生成一个新的commit，这样，从分支历史上就可以看出分支信息。
+下面我们实战一下--no-ff方式的git merge：
+首先，仍然创建并切换dev分支：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git checkout -b dev
+Switched to a new branch 'dev'
+
+在分支上，修改文件，并提交
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ ls
+notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ vim notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git add notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git commit -m "simulate merge dev branch without fast foward"
+[dev c228bbf] simulate merge dev branch without fast foward
+ 1 file changed, 3 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+nothing to commit, working tree clean
+
+切换到master分支
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git checkout master
+Switched to branch 'master'
+Your branch is ahead of 'origin/master' by 4 commits.
+  (use "git push" to publish your local commits)
+
+查看原始分支合并图
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+合并dev分支到master分支
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git merge --no-ff -m "merge dev branch without fast foward" dev
+Merge made by the 'recursive' strategy.
+ notes.txt | 3 +++
+ 1 file changed, 3 insertions(+)
+
+查看当前分支合并图
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   b97f27c merge dev branch without fast foward
+|\
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$
+
+Git分支十分强大，在团队开发中应该充分应用。
+合并分支时，加上--no-ff参数就可以用普通模式合并，
+合并后的历史有分支，能看出来曾经做过合并，而fast forward合并就看不出来曾经做过合并。
+
+
+#####################################
+Bug分支
+#####################################
+软件开发中，bug就像家常便饭一样。有了bug就需要修复，在Git中，由于分支是如此的强大，所以，
+每个bug都可以通过一个新的临时分支来修复，修复后，合并分支，然后将临时分支删除。
+当你接到一个修复一个代号001的bug的任务时，很自然地，你想创建一个分支issue001来修复它，
+但是，等等，当前正在dev上进行的工作还没有提交：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch
+  dev
+* master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git checkout dev
+Switched to branch 'dev'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ vim notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ vim stashtest
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        stashtest
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ mv stashtest stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+
+        stashtest.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git add stashtest.txt
+warning: LF will be replaced by CRLF in stashtest.txt.
+The file will have its original line endings in your working directory.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        new file:   stashtest.txt
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+
+并不是你不想提交，而是工作只进行到一半，还没法提交，预计完成还需1天时间。
+但是，必须在两个小时内修复该bug，怎么办？
+幸好，Git还提供了一个stash功能，可以把当前工作现场“储藏”起来，等以后恢复现场后继续工作：
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git stash
+Saved working directory and index state WIP on dev: c228bbf simulate merge dev branch without fast foward
+HEAD is now at c228bbf simulate merge dev branch without fast foward
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+nothing to commit, working tree clean
+
+现在，用git status查看工作区，就是干净的（除非有没有被Git管理的文件），因此可以放心地创建分支来修复bug。
+首先确定要在哪个分支上修复bug，假定需要在master分支上修复，就从master创建临时分支：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git checkout master
+Switched to branch 'master'
+Your branch is up-to-date with 'origin/master'.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git checkout -b issue001
+Switched to a new branch 'issue001'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ git branch
+  dev
+* issue001
+  master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ vim notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ git add notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ git commit -m "fix issue001 bug"
+[issue001 7deca0f] fix issue001 bug
+ 1 file changed, 2 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ git status
+On branch issue001
+nothing to commit, working tree clean
+
+修复完成后，切换到master分支，并完成合并，最后删除issue001分支：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (issue001)
+$ git checkout master
+Switched to branch 'master'
+Your branch is up-to-date with 'origin/master'.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Your branch is up-to-date with 'origin/master'.
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git merge --no-ff -m "fix the bug issue001" issue001
+Merge made by the 'recursive' strategy.
+ notes.txt | 2 ++
+ 1 file changed, 2 insertions(+)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   714141f fix the bug issue001
+|\
+| * 7deca0f fix issue001 bug
+|/
+*   b97f27c merge dev branch without fast foward
+|\
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch -d issue001
+Deleted branch issue001 (was 7deca0f).
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch
+  dev
+* master
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   714141f fix the bug issue001
+|\
+| * 7deca0f fix issue001 bug
+|/
+*   b97f27c merge dev branch without fast foward
+|\
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+太棒了，原计划两个小时的bug修复只花了5分钟！现在，是时候接着回到dev分支干活了！
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git checkout dev
+Switched to branch 'dev'
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+nothing to commit, working tree clean
+
+工作区是干净的，刚才的工作现场存到哪去了？用git stash list命令看看：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git stash list
+stash@{0}: WIP on dev: c228bbf simulate merge dev branch without fast foward
+
+工作现场还在，Git把stash内容存在某个地方了，但是需要恢复一下，有两个办法：
+一是用git stash apply恢复，但是恢复后，stash内容并不删除，你需要用git stash drop来删除；
+另一种方式是用git stash pop，恢复的同时把stash内容也删了：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git stash pop
+On branch dev
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        new file:   stashtest.txt
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+Dropped refs/stash@{0} (f8758cddfaa5b5ef33af2c6aaa0237da7588dac3)
+gi
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        new file:   stashtest.txt
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git checkout -- <file>..." to discard changes in working directory)
+
+        modified:   notes.txt
+
+你可以多次stash，恢复的时候，先用git stash list查看，然后恢复指定的stash，用命令：
+$ git stash apply stash@{0}
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git stash list
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$
+修复bug时，我们会通过创建新的bug分支进行修复，然后合并，最后删除；
+当手头工作没有完成时，先把工作现场git stash一下，然后去修复bug，修复后，再git stash pop，回到工作现场。
+
+将stash之前的修改和新增，提交到本地仓库
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ ls
+notes.txt  stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git add notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+Changes to be committed:
+  (use "git reset HEAD <file>..." to unstage)
+
+        modified:   notes.txt
+        new file:   stashtest.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git commit -m "test stash done"
+[dev 26466f0] test stash done
+ 2 files changed, 4 insertions(+)
+ create mode 100644 stashtest.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git status
+On branch dev
+nothing to commit, working tree clean
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git checkout master
+Switched to branch 'master'
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   714141f fix the bug issue001
+|\
+| * 7deca0f fix issue001 bug
+|/
+*   b97f27c merge dev branch without fast foward
+|\
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+将dev分支合并到master分支
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git merge --no-ff -m "stash test is finish" dev
+Auto-merging notes.txt
+CONFLICT (content): Merge conflict in notes.txt
+Automatic merge failed; fix conflicts and then commit the result.
+
+有冲突，查看状态，编辑冲突，提交
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Changes to be committed:
+
+        new file:   stashtest.txt
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+
+        both modified:   notes.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ vim notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git commit -m "fix the stash test conflict"
+error: Committing is not possible because you have unmerged files.
+hint: Fix them up in the work tree, and then use 'git add/rm <file>'
+hint: as appropriate to mark resolution and make a commit.
+fatal: Exiting because of an unresolved conflict.
+U       notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+You have unmerged paths.
+  (fix conflicts and run "git commit")
+  (use "git merge --abort" to abort the merge)
+
+Changes to be committed:
+
+        new file:   stashtest.txt
+
+Unmerged paths:
+  (use "git add <file>..." to mark resolution)
+
+        both modified:   notes.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git add notes.txt
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 2 commits.
+  (use "git push" to publish your local commits)
+All conflicts fixed but you are still merging.
+  (use "git commit" to conclude merge)
+
+Changes to be committed:
+
+        modified:   notes.txt
+        new file:   stashtest.txt
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ cat notes.txt
+just test
+
+command
+
+branch
+
+test state
+
+work on dev branch
+
+solve the conflict from test branch on master branch
+
+simulate conflict on test branch
+
+
+merger dev branch no fast foward
+
+create temp branch fix bug
+
+test git stash pop apply
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master|MERGING)
+$ git commit -m "fix the stash test result  conflict"
+[master 297d787] fix the stash test result  conflict
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git status
+On branch master
+Your branch is ahead of 'origin/master' by 4 commits.
+  (use "git push" to publish your local commits)
+nothing to commit, working tree clean
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   297d787 fix the stash test result  conflict
+|\
+| * 26466f0 test stash done
+* |   714141f fix the bug issue001
+|\ \
+| * | 7deca0f fix issue001 bug
+|/ /
+* |   b97f27c merge dev branch without fast foward
+|\ \
+| |/
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
