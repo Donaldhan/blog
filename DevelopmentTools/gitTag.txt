@@ -3,5 +3,354 @@ git命令使用：https://www.liaoxuefeng.com/wiki/0013739516305929606dd18361248
 
 
 #############################################
-Tag
+Tag概念
 #############################################
+发布一个版本时，我们通常先在版本库中打一个标签（tag），这样，就唯一确定了打标签时刻的版本。
+将来无论什么时候，取某个标签的版本，就是把那个打标签的时刻的历史版本取出来。所以，标签也是版本库的一个快照。
+Git的标签虽然是版本库的快照，但其实它就是指向某个commit的指针（跟分支很像对不对？但是分支可以移动，标签不能移动），
+所以，创建和删除标签都是瞬间完成的。
+Git有commit，为什么还要引入tag？
+“请把上周一的那个版本打包发布，commit号是6a5819e...”
+“一串乱七八糟的数字不好找！”
+如果换一个办法：
+“请把上周一的那个版本打包发布，版本号是v1.2”
+“好的，按照tag v1.2查找commit就行！”
+所以，tag就是一个让人容易记住的有意义的名字，它跟某个commit绑在一起。
+
+下面来看tag的使用：
+
+
+#############################################
+Tag创建
+#############################################
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git branch
+* dev
+  master
+切回到master分支，打tag
+
+donald@donaldMac MINGW64 /f/testgit/newproject (dev)
+$ git checkout master
+Switched to branch 'master'
+Your branch is up-to-date with 'origin/master'.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git branch
+  dev
+* master
+
+然后，敲命令git tag <name>就可以打一个新标签：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag v1.0.0
+
+可以用命令git tag查看所有标签：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v1.0.0
+
+默认标签是打在最新提交的commit上的。有时候，如果忘了打标签，比如，现在已经是周五了，但应该在周一打的标签没有打，怎么办？
+方法是找到历史提交的commit id，然后打上就可以了：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   297d787 fix the stash test result  conflict
+|\
+| * 26466f0 test stash done
+* |   714141f fix the bug issue001
+|\ \
+| * | 7deca0f fix issue001 bug
+|/ /
+* |   b97f27c merge dev branch without fast foward
+|\ \
+| |/
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+比方说要对add merge这次提交打标签，它对应的commit id是7deca0f，敲入命令：
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag v0.9.0 7deca0f
+
+再用命令git tag查看标签：
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.9.0
+v1.0.0
+
+注意，标签不是按时间顺序列出，而是按字母排序的。可以用git show <tagname>查看标签信息：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git show v0.9.0
+commit 7deca0f243fc8f6fb4fa7cdfd0ed56bc081035db
+Author: doanldhan <shaoqinghanah@qq.com>
+Date:   Wed Aug 30 22:11:47 2017 +0800
+
+    fix issue001 bug
+
+diff --git a/notes.txt b/notes.txt
+index 26860b9..1b5dca0 100644
+--- a/notes.txt
++++ b/notes.txt
+@@ -14,3 +14,5 @@ simulate conflict on test branch
+
+
+ merger dev branch no fast foward
++
++create temp branch fix bug
+
+可以看到，v0.9确实打在fix issue001 bug这次提交上。
+还可以创建带有说明的标签，用-a指定标签名，-m指定说明文字：
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   297d787 fix the stash test result  conflict
+|\
+| * 26466f0 test stash done
+* |   714141f fix the bug issue001
+|\ \
+| * | 7deca0f fix issue001 bug
+|/ /
+* |   b97f27c merge dev branch without fast foward
+|\ \
+| |/
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag -a v0.8.0 -m "version 0.8.0 released" b97f27c
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.8.0
+v0.9.0
+v1.0.0
+
+用命令git show <tagname>可以看到说明文字：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git show v0.8.0
+tag v0.8.0
+Tagger: doanldhan <shaoqinghanah@qq.com>
+Date:   Thu Aug 31 09:02:28 2017 +0800
+
+version 0.8.0 released
+
+commit b97f27c7e56b0a5ce08a5180f202ed85e23045f5
+Merge: cfc8bb6 c228bbf
+Author: doanldhan <shaoqinghanah@qq.com>
+Date:   Wed Aug 30 21:55:30 2017 +0800
+
+    merge dev branch without fast foward
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$
+
+还可以通过-s用私钥签名一个标签：
+
+$ git tag -s v0.2 -m "signed version 0.2 released" fec145a
+
+签名采用PGP签名，因此，必须首先安装gpg（GnuPG），如果没有找到gpg，或者没有gpg密钥对，就会报错：
+
+gpg: signing failed: secret key not available
+error: gpg failed to sign the data
+error: unable to sign the tag
+
+如果报错，请参考GnuPG帮助文档配置Key。
+
+用命令git show <tagname>可以看到PGP签名信息：
+
+$ git show v0.2
+tag v0.2
+Tagger:doanldhan <shaoqinghanah@qq.com>
+Date:   Mon Aug 26 07:28:33 2013 +0800
+
+signed version 0.2 released
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.4.12 (Darwin)
+
+iQEcBAABAgAGBQJSGpMhAAoJEPUxHyDAhBpT4QQIAKeHfR3bo...
+-----END PGP SIGNATURE-----
+
+commit fec145accd63cdc9ed95a2f557ea0658a2a6537f
+Author: doanldhan <shaoqinghanah@qq.com>
+Date:   Thu Aug 22 10:37:30 2013 +0800
+
+    branch test
+
+用PGP签名的标签是不可伪造的，因为可以验证PGP签名。验证签名的方法比较复杂，这里就不介绍了。
+
+命令git tag <name>用于新建一个标签，默认为HEAD，也可以指定一个commit id；
+git tag -a <tagname> -m "blablabla..."可以指定标签信息；
+git tag -s <tagname> -m "blablabla..."可以用PGP签名标签；
+命令git tag可以查看所有标签。
+
+################################################
+操作tag
+###############################################
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git log --graph --pretty=oneline --abbrev-commit
+*   297d787 fix the stash test result  conflict
+|\
+| * 26466f0 test stash done
+* |   714141f fix the bug issue001
+|\ \
+| * | 7deca0f fix issue001 bug
+|/ /
+* |   b97f27c merge dev branch without fast foward
+|\ \
+| |/
+| * c228bbf simulate merge dev branch without fast foward
+|/
+*   cfc8bb6 fix conflict
+|\
+| * 0ecbcc5 simulate conflict
+* | 046c708 simulate conflict on master
+|/
+* 640a114 work on dev branch
+* 2576169 rm readme
+* 468bdf8 remove git rm test file
+* 90e62df add test.txt
+* 6374601 rename notes tp notes.txt
+* cdaf43c rename notes tp notes.txt
+* a0a0af9 add test state sentence
+* 7af842c add branch sentence
+* 305f86b add readme
+* ca70d2a add command
+* 82ae670 add notes
+
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.8.0
+v0.9.0
+v1.0.0
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag v0.1.0 6404114
+fatal: Failed to resolve '6404114' as a valid ref.
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag v0.1.0 640a114
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.1.0
+v0.8.0
+v0.9.0
+v1.0.0
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag v0.5.0 cfc8bb6
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.1.0
+v0.5.0
+v0.8.0
+v0.9.0
+v1.0.0
+
+如果标签打错了，也可以删除：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag -d v0.5.0
+Deleted tag 'v0.5.0' (was cfc8bb6)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.1.0
+v0.8.0
+v0.9.0
+v1.0.0
+
+因为创建的标签都只存储在本地，不会自动推送到远程。所以，打错的标签可以在本地安全删除。
+如果要推送某个标签到远程，使用命令git push origin <tagname>：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git push origin v1.0.0
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Total 0 (delta 0), reused 0 (delta 0)
+To github.com:Donaldhan/newp.git
+ * [new tag]         v1.0.0 -> v1.0.0
+
+或者，一次性推送全部尚未推送到远程的本地标签：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git push origin --tags
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+Counting objects: 1, done.
+Writing objects: 100% (1/1), 168 bytes | 0 bytes/s, done.
+Total 1 (delta 0), reused 0 (delta 0)
+To github.com:Donaldhan/newp.git
+ * [new tag]         v0.1.0 -> v0.1.0
+ * [new tag]         v0.8.0 -> v0.8.0
+ * [new tag]         v0.9.0 -> v0.9.0
+
+如果标签已经推送到远程，要删除远程标签就麻烦一点，先从本地删除：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag -d v0.1.0
+Deleted tag 'v0.1.0' (was 640a114)
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git tag
+v0.8.0
+v0.9.0
+v1.0.0
+
+然后，从远程删除。删除命令也是push，但是格式如下：
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$ git push origin :refs/tags/v0.1.0
+Enter passphrase for key '/c/Users/donald/.ssh/id_rsa':
+To github.com:Donaldhan/newp.git
+ - [deleted]         v0.1.0
+
+donald@donaldMac MINGW64 /f/testgit/newproject (master)
+$
+
+要看看是否真的从远程库删除了标签，可以登陆GitHub查看。
+
+
+命令git push origin <tagname>可以推送一个本地标签；
+命令git push origin --tags可以推送全部未推送过的本地标签；
+命令git tag -d <tagname>可以删除一个本地标签；
+命令git push origin :refs/tags/<tagname>可以删除一个远程标签。
