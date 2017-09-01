@@ -1,0 +1,72 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+
+引言：
+上一篇文章我们看一单线程任务的内部变量和初始化，先来回顾一下：
+    单线程事件执行器SingleThreadEventExecutor，内部主要有一个状态变量STATE_UPDATER（AtomicIntegerFieldUpdater），执行器状态以供有4中就绪，开始，正在关闭，已关闭，终止；一个任务队列taskQueue存放待执行的任务线程；一个执行器执行任务taskQueue(LinkedBlockingQueue)；一个事件执行器关闭信号量threadLock控制事件执行器的关闭；一个是高可见线程thread，指定当前事件执行器线程，用于判断IO操作线程是否在当前事件循环中；
+    单线程事件执行器构造，主要是初始化父事件执行器，最大任务数，事件执行器，任务队列和任务拒绝策略，默认拒绝策略为直接抛出拒绝执行器异常。由于单线程事件执行器为顺序执行器OrderedEventExecutor，其主要通过taskQueue为LinkedBlockQueue保证任务的顺序执行。
+
+今天我们来看单线程事件执行器，执行任务等方法：
+先把单线程事件执行器内部变量贴出来以便理解相关方法，
+public abstract class SingleThreadEventExecutor extends AbstractScheduledEventExecutor implements OrderedEventExecutor {
+    //最大执行任数，最小为16
+    static final int DEFAULT_MAX_PENDING_EXECUTOR_TASKS = Math.max(16,
+            SystemPropertyUtil.getInt("io.netty.eventexecutor.maxPendingTasks", Integer.MAX_VALUE));
+
+    private static final InternalLogger logger =
+            InternalLoggerFactory.getInstance(SingleThreadEventExecutor.class);
+    //事件执行器状态
+    private static final int ST_NOT_STARTED = 1;//就绪
+    private static final int ST_STARTED = 2;//开始
+    private static final int ST_SHUTTING_DOWN = 3;//正在关闭
+    private static final int ST_SHUTDOWN = 4;//已关闭
+    private static final int ST_TERMINATED = 5;//终止
+    //唤醒任务
+    private static final Runnable WAKEUP_TASK = new Runnable() {
+        @Override
+        public void run() {
+            // Do nothing.
+        }
+    };
+    //空任务
+    private static final Runnable NOOP_TASK = new Runnable() {
+        @Override
+        public void run() {
+            // Do nothing.
+        }
+    };
+    //事件执行器状态
+    private static final AtomicIntegerFieldUpdater<SingleThreadEventExecutor> STATE_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(SingleThreadEventExecutor.class, "state");
+    //线程属性
+    private static final AtomicReferenceFieldUpdater<SingleThreadEventExecutor, ThreadProperties> PROPERTIES_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(
+                    SingleThreadEventExecutor.class, ThreadProperties.class, "threadProperties");
+   //任务队列
+    private final Queue<Runnable> taskQueue;
+    private volatile Thread thread;//当前事件执行器线程
+    @SuppressWarnings("unused")//线程属性
+    private volatile ThreadProperties threadProperties;
+    private final Executor executor;
+    private volatile boolean interrupted;//是否中断
+    private final Semaphore threadLock = new Semaphore(0);//事件执行器关闭信号量
+    private final Set<Runnable> shutdownHooks = new LinkedHashSet<Runnable>();//关闭Hooks任务
+    private final boolean addTaskWakesUp;
+    private final int maxPendingTasks;//最大执行器任务
+    private final RejectedExecutionHandler rejectedExecutionHandler;//任务拒绝策略
+    private long lastExecutionTime;//上次执行器时间
+    @SuppressWarnings({ "FieldMayBeFinal", "unused" })
+    private volatile int state = ST_NOT_STARTED;
+
+    private volatile long gracefulShutdownQuietPeriod;//关闭间隔QuietPeriod
+    private volatile long gracefulShutdownTimeout;//关闭超时时间
+    private long gracefulShutdownStartTime;//关闭开始时间
+    //终止异步任务结果
+    private final Promise<?> terminationFuture = new DefaultPromise<Void>(GlobalEventExecutor.INSTANCE);
+}
+
+
+总结：
