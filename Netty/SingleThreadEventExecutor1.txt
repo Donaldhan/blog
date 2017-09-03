@@ -67,6 +67,729 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
     //终止异步任务结果
     private final Promise<?> terminationFuture = new DefaultPromise<Void>(GlobalEventExecutor.INSTANCE);
 }
+下面先来看执行任务方法
+ @Override
+    public void execute(Runnable task) {
+        if (task == null) {
+            throw new NullPointerException("task");
+        }
+       //判断线程是否在当前事务循环中
+        boolean inEventLoop = inEventLoop();
+        if (inEventLoop) {
+	    //如果在事务循环中，则添加任务到任务队列
+            addTask(task);
+        } else {
+	    //否则，当前事件执行器线程
+            startThread();
+	    //添加任务到任务队列
+            addTask(task);
+	    //如果事件执行器，已关闭，则移除任务，抛出拒绝执行异常
+            if (isShutdown() && removeTask(task)) {
+                reject();
+            }
+        }
+        //如果添加任务不唤醒事件循环且执行任务唤醒事件循环，则唤醒事件循环
+        if (!addTaskWakesUp && wakesUpForTask(task)) {
+            wakeup(inEventLoop);
+        }
+}
+1.
+//判断线程是否在当前事务循环中
+boolean inEventLoop = inEventLoop();
 
+2.
+if (inEventLoop) {
+    //如果在事务循环中，则添加任务到任务队列
+    addTask(task);
+}
+3.
+else {
+    //否则，当前事件执行器线程
+    startThread();
+    //添加任务到任务队列
+    addTask(task);
+    //如果事件执行器，已关闭，则移除任务，抛出拒绝执行异常
+    if (isShutdown() && removeTask(task)) {
+        reject();
+    }
+}
+
+4.
+//如果添加任务不唤醒事件循环且执行任务唤醒事件循环，则唤醒事件循环
+ if (!addTaskWakesUp && wakesUpForTask(task)) {
+     wakeup(inEventLoop);
+ }
+
+下面分别来看这几点
+
+1.
+//判断线程是否在当前事务循环中
+boolean inEventLoop = inEventLoop();
+//AbstractEventExecutor
+@Override
+  public boolean inEventLoop() {
+      return inEventLoop(Thread.currentThread());
+  }
+//SingleThreadEventExecutor
+@Override
+public boolean inEventLoop(Thread thread) {
+    return thread == this.thread;
+}
+
+2.
+if (inEventLoop) {
+    //如果在事务循环中，则添加任务到任务队列
+    addTask(task);
+}
+/**
+ * Add a task to the task queue, or throws a {@link RejectedExecutionException} if this instance was shutdown
+ * before.
+ 在单线程事件执行器关闭前，添加任务到任务队列，或者抛出拒绝执行任务异常
+ */
+protected void addTask(Runnable task) {
+    if (task == null) {
+        throw new NullPointerException("task");
+    }
+    //如果添加任务到队列失败，则抛出抛出拒绝执行任务异常
+    if (!offerTask(task)) {
+        reject(task);
+    }
+}
+final boolean offerTask(Runnable task) {
+    //如果关闭，则拒绝执行器任务，否则添加任务到任务队列
+    if (isShutdown()) {
+        reject();
+    }
+    return taskQueue.offer(task);
+}
+/**
+  * Offers the task to the associated {@link RejectedExecutionHandler}.
+  将拒绝执行的任务委托给拒绝执行任务Handler处理
+  * @param task to reject.
+  */
+ protected final void reject(Runnable task) {
+     rejectedExecutionHandler.rejected(task, this);
+ }
+//直接抛出拒绝执行任务异常
+protected static void reject() {
+        throw new RejectedExecutionException("event executor terminated");
+}
+从这一点来看，当执行器关闭时，直接直接抛出拒绝执行任务异常，如果没关闭，
+则将拒绝执行的任务委托给拒绝执行任务Handler处理。
+3.
+else {
+    //否则，当前事件执行器线程
+    startThread();
+    //添加任务到任务队列
+    addTask(task);
+    //如果事件执行器，已关闭，则移除任务，抛出拒绝执行异常
+    if (isShutdown() && removeTask(task)) {
+        reject();
+    }
+}
+//启动事件执行器线程
+private void startThread() {
+    if (state == ST_NOT_STARTED) {
+        //更新执行器状态为已启动，并完成实际启动工作
+        if (STATE_UPDATER.compareAndSet(this, ST_NOT_STARTED, ST_STARTED)) {
+            doStartThread();
+        }
+    }
+}
+//完成实际启动工作
+private void doStartThread() {
+    assert thread == null;
+    executor.execute(new Runnable() {
+        @Override
+        public void run() {
+	   //初始化事件执行器线程，用于判断线程是否在当前事件循环中
+            thread = Thread.currentThread();
+            if (interrupted) {
+	        //如果执行器线程中断，消除中断位
+                thread.interrupt();
+            }
+            boolean success = false;
+	    //更新执行器上次执行器事件
+            updateLastExecutionTime();
+            try {
+	        //启动事件执行器线程
+                SingleThreadEventExecutor.this.run();
+                success = true;
+            } catch (Throwable t) {
+                logger.warn("Unexpected exception from an event executor: ", t);
+            } finally {
+                for (;;) {
+		    //自旋，等待执行器关闭，并更新执行器状态为已关闭
+                    int oldState = state;
+                    if (oldState >= ST_SHUTTING_DOWN || STATE_UPDATER.compareAndSet(
+                            SingleThreadEventExecutor.this, oldState, ST_SHUTTING_DOWN)) {
+                        break;
+                    }
+                }
+
+                // Check if confirmShutdown() was called at the end of the loop.
+		//检查confirmShutdown方法是否在循环最后调用
+                if (success && gracefulShutdownStartTime == 0) {
+                    logger.error("Buggy " + EventExecutor.class.getSimpleName() + " implementation; " +
+                            SingleThreadEventExecutor.class.getSimpleName() + ".confirmShutdown() must be called " +
+                            "before run() implementation terminates.");
+                }
+
+                try {
+                    // Run all remaining tasks and shutdown hooks.
+                    for (;;) {
+		        /确定执行器关闭
+                        if (confirmShutdown()) {
+                            break;
+                        }
+                    }
+                } finally {
+                    try {
+		        //完成清理工作
+                        cleanup();
+                    } finally {
+		        //更新执行器状态为已终止
+                        STATE_UPDATER.set(SingleThreadEventExecutor.this, ST_TERMINATED);
+			//释放线程锁
+                        threadLock.release();
+			//如果任务线程队列不为空，则警告
+                        if (!taskQueue.isEmpty()) {
+                            logger.warn(
+                                    "An event executor terminated with " +
+                                            "non-empty task queue (" + taskQueue.size() + ')');
+                        }
+                        //设置终止任务结果为成功
+                        terminationFuture.setSuccess(null);
+                    }
+                }
+            }
+        }
+    });
+}
+在实际完成事件执行器启动工作方法中，事件完成工作通过一个线程完成，并有内部执行器执行；
+线程事件工作在一个try，finally语句块中，在finally语句块中自旋等待执行器关闭，并完成
+关闭任务。
+来看上述方法需要关注的几点：
+3.1
+//更新执行器上次执行器事件
+updateLastExecutionTime();
+/**
+ * Updates the internal timestamp that tells when a submitted task was executed most recently.
+ * {@link #runAllTasks()} and {@link #runAllTasks(long)} updates this timestamp automatically, and thus there's
+ * usually no need to call this method.  However, if you take the tasks manually using {@link #takeTask()} or
+ * {@link #pollTask()}, you have to call this method at the end of task execution loop for accurate quiet period
+ * checks.
+ */
+protected void updateLastExecutionTime() {
+    lastExecutionTime = ScheduledFutureTask.nanoTime();
+}
+
+3.2
+//启动事件执行器线程
+SingleThreadEventExecutor.this.run();
+/**
+ *待子类实现
+ */
+protected abstract void run();
+
+3.3
+/确定执行器关闭
+if (confirmShutdown()) {
+    break;
+}
+/**
+ * Confirm that the shutdown if the instance should be done now!
+ 确认事件执行器关闭
+ */
+protected boolean confirmShutdown() {
+    //如果没关闭，返回false
+    if (!isShuttingDown()) {
+        return false;
+    }
+    //如果线程不在当前事件循环中，抛出非法状态异常
+    if (!inEventLoop()) {
+        throw new IllegalStateException("must be invoked from an event loop");
+    }
+    //取消调度任务
+    cancelScheduledTasks();
+    //更新关闭事件
+    if (gracefulShutdownStartTime == 0) {
+        gracefulShutdownStartTime = ScheduledFutureTask.nanoTime();
+    }
+    //执行所有任务或关闭Hooks线程成功
+    if (runAllTasks() || runShutdownHooks()) {
+        if (isShutdown()) {
+	    //已关闭
+            // Executor shut down - no new tasks anymore.
+            return true;
+        }
+
+        // There were tasks in the queue. Wait a little bit more until no tasks are queued for the quiet period or
+        // terminate if the quiet period is 0.
+        // See https://github.com/netty/netty/issues/4241
+        if (gracefulShutdownQuietPeriod == 0) {
+            return true;
+        }
+        wakeup(true);
+        return false;
+    }
+    //获取调度任务当前事件
+    final long nanoTime = ScheduledFutureTask.nanoTime();
+    //如果已经关闭，或关闭超时，返回true
+    if (isShutdown() || nanoTime - gracefulShutdownStartTime > gracefulShutdownTimeout) {
+        return true;
+    }
+    //如果关闭间隔时间没过完
+    if (nanoTime - lastExecutionTime <= gracefulShutdownQuietPeriod) {
+        // Check if any tasks were added to the queue every 100ms.
+        // TODO: Change the behavior of takeTask() so that it returns on timeout.
+	//则继续执行提交的任务
+        wakeup(true);
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            // Ignore
+        }
+
+        return false;
+    }
+
+    // No tasks were added for last quiet period - hopefully safe to shut down.
+    // (Hopefully because we really cannot make a guarantee that there will be no execute() calls by a user.)
+    return true;
+}
+来看取消调度任务
+//取消调度任务
+cancelScheduledTasks();
+这个方法，在前面文章中已说，简单看下就行
+ /**
+  * Cancel all scheduled tasks.
+  *
+  * This method MUST be called only when {@link #inEventLoop()} is {@code true}.
+  */
+ protected void cancelScheduledTasks() {
+     assert inEventLoop();
+     Queue<ScheduledFutureTask<?>> scheduledTaskQueue = this.scheduledTaskQueue;
+     if (isNullOrEmpty(scheduledTaskQueue)) {
+         return;
+     }
+
+     final ScheduledFutureTask<?>[] scheduledTasks =
+             scheduledTaskQueue.toArray(new ScheduledFutureTask<?>[scheduledTaskQueue.size()]);
+
+     for (ScheduledFutureTask<?> task: scheduledTasks) {
+         task.cancelWithoutRemove(false);
+     }
+
+     scheduledTaskQueue.clear();
+ }
+
+再来看执行所有任务或关闭Hooks线程
+//执行所有任务或关闭Hooks线程成功
+if (runAllTasks() || runShutdownHooks()) {
+    if (isShutdown()) {
+	    //已关闭
+        // Executor shut down - no new tasks anymore.
+        return true;
+    }
+
+    // There were tasks in the queue. Wait a little bit more until no tasks are queued for the quiet period or
+    // terminate if the quiet period is 0.
+    // See https://github.com/netty/netty/issues/4241
+    if (gracefulShutdownQuietPeriod == 0) {
+        return true;
+    }
+    wakeup(true);
+    return false;
+}
+/**
+ * Poll all tasks from the task queue and run them via {@link Runnable#run()} method.
+ *从任务队列take所有任务，并执行器
+ * @return {@code true} if and only if at least one task was run
+ */
+protected boolean runAllTasks() {
+    assert inEventLoop();
+    boolean fetchedAll;
+    boolean ranAtLeastOne = false;
+
+    do {
+        //从调度任务队列抓取任务，添加到任务队列中
+        fetchedAll = fetchFromScheduledTaskQueue();
+        //从任务队列take任务，并执行
+        if (runAllTasksFrom(taskQueue)) {
+            ranAtLeastOne = true;
+        }
+    } while (!fetchedAll); // keep on processing until we fetched all scheduled tasks.
+
+    if (ranAtLeastOne) {
+        //更新最后执行时间
+        lastExecutionTime = ScheduledFutureTask.nanoTime();
+    }
+    //完成运行所有任务后的工作
+    afterRunningAllTasks();
+    return ranAtLeastOne;
+}
+//从调度任务队列抓取任务，添加到任务队列中
+private boolean fetchFromScheduledTaskQueue() {
+     long nanoTime = AbstractScheduledEventExecutor.nanoTime();
+     Runnable scheduledTask  = pollScheduledTask(nanoTime);
+     while (scheduledTask != null) {
+         if (!taskQueue.offer(scheduledTask)) {
+             // No space left in the task queue add it back to the scheduledTaskQueue so we pick it up again.
+             scheduledTaskQueue().add((ScheduledFutureTask<?>) scheduledTask);
+             return false;
+         }
+         scheduledTask  = pollScheduledTask(nanoTime);
+     }
+     return true;
+ }
+ /**
+ * Runs all tasks from the passed {@code taskQueue}.
+ *从任务队列take任务，并执行
+ * @param taskQueue To poll and execute all tasks.
+ *
+ * @return {@code true} if at least one task was executed.
+ */
+protected final boolean runAllTasksFrom(Queue<Runnable> taskQueue) {
+    Runnable task = pollTaskFrom(taskQueue);
+    if (task == null) {
+        return false;
+    }
+    for (;;) {
+        safeExecute(task);
+        task = pollTaskFrom(taskQueue);
+        if (task == null) {
+            return true;
+        }
+    }
+}
+//从任务队列拉取任务
+protected static Runnable pollTaskFrom(Queue<Runnable> taskQueue) {
+    for (;;) {
+        Runnable task = taskQueue.poll();
+        if (task == WAKEUP_TASK) {
+	    //如果是唤醒任务，则跳过
+            continue;
+        }
+        return task;
+    }
+}
+//AbstractEventExecutor
+/**
+  * Try to execute the given {@link Runnable} and just log if it throws a {@link Throwable}.
+  */
+ protected static void safeExecute(Runnable task) {
+     try {
+         task.run();
+     } catch (Throwable t) {
+         logger.warn("A task raised an exception. Task: {}", task, t);
+     }
+ }
+
+/**
+ * Invoked before returning from {@link #runAllTasks()} and {@link #runAllTasks(long)}.
+ 待子类实现
+ */
+@UnstableApi
+protected void afterRunningAllTasks() { }
+
+在来看运行关闭Hook线程：
+private boolean runShutdownHooks() {
+    boolean ran = false;
+    // Note shutdown hooks can add / remove shutdown hooks.
+    while (!shutdownHooks.isEmpty()) {
+        //如果关闭hook线程集合不为空，执行hook线程。
+        List<Runnable> copy = new ArrayList<Runnable>(shutdownHooks);
+        shutdownHooks.clear();
+
+        for (Runnable task: copy) {
+            try {
+                task.run();
+            } catch (Throwable t) {
+                logger.warn("Shutdown hook raised an exception.", t);
+            } finally {
+                ran = true;
+            }
+        }
+    }
+    if (ran) {
+        lastExecutionTime = ScheduledFutureTask.nanoTime();
+    }
+    return ran;
+}
+3.4
+//完成清理工作
+cleanup();
+/**
+ * Do nothing, sub-classes may override
+ 待子类实现
+ */
+protected void cleanup() {
+    // NOOP
+}
+
+4.
+//如果添加任务不唤醒事件循环且执行任务唤醒事件循环，则唤醒事件循环
+ if (!addTaskWakesUp && wakesUpForTask(task)) {
+     wakeup(inEventLoop);
+ }
+@SuppressWarnings("unused")
+protected boolean wakesUpForTask(Runnable task) {
+    return true;
+}
+//添加唤醒线程到任务队列
+protected void wakeup(boolean inEventLoop) {
+    if (!inEventLoop || state == ST_SHUTTING_DOWN) {
+        // Use offer as we actually only need this to unblock the thread and if offer fails we do not care as there
+        // is already something in the queue.
+        taskQueue.offer(WAKEUP_TASK);
+    }
+}
+
+从上面可看出，单线程事件执行器，执行任务，首先判断任务是否为null，为空抛出空指针异常，
+否则，判断线程是否在当前事件循环中，在则添加任务到任务队列，否则开启当前单线程事件执行器，并
+添加任务到任务队列，如果此时事件执行器已关闭，并可以移除任务，则抛出拒绝执行器任务异常；
+如果需要启动事件执行器唤醒线程，则添加唤醒线程到任务队列。
+
+再来看其他方法：
+/**
+ * Interrupt the current running {@link Thread}.
+ 中断时间执行器线程
+ */
+protected void interruptThread() {
+    Thread currentThread = thread;
+    if (currentThread == null) {
+        interrupted = true;
+    } else {
+        currentThread.interrupt();
+    }
+}
+//从任务队列拉取任务
+/**
+ * @see Queue#poll()
+ */
+protected Runnable pollTask() {
+    assert inEventLoop();
+    return pollTaskFrom(taskQueue);
+}
+
+protected static Runnable pollTaskFrom(Queue<Runnable> taskQueue) {
+    for (;;) {
+        Runnable task = taskQueue.poll();
+        if (task == WAKEUP_TASK) {
+            continue;
+        }
+        return task;
+    }
+}
+//移除任务
+/**
+ * @see Queue#remove(Object)
+ */
+protected boolean removeTask(Runnable task) {
+    if (task == null) {
+        throw new NullPointerException("task");
+    }
+    return taskQueue.remove(task);
+}
+//检查队头任务
+ /**
+ * @see Queue#peek()
+ */
+protected Runnable peekTask() {
+    assert inEventLoop();
+    return taskQueue.peek();
+}
+//判断任务队列是否还有任务
+/**
+ * @see Queue#isEmpty()
+ */
+protected boolean hasTasks() {
+    assert inEventLoop();
+    return !taskQueue.isEmpty();
+}
+
+/**
+ * Return the number of tasks that are pending for processing.
+ *获取任务队列当前任务数
+ * <strong>Be aware that this operation may be expensive as it depends on the internal implementation of the
+ * SingleThreadEventExecutor. So use it was care!</strong>
+ */
+public int pendingTasks() {
+    return taskQueue.size();
+}
+//添加hook线程到，关闭hook线程集合
+/**
+ * Add a {@link Runnable} which will be executed on shutdown of this instance
+ */
+public void addShutdownHook(final Runnable task) {
+    if (inEventLoop()) {
+        shutdownHooks.add(task);
+    } else {
+        execute(new Runnable() {
+            @Override
+            public void run() {
+                shutdownHooks.add(task);
+            }
+        });
+    }
+}
+//从关闭hook线程集合中，移除hook线程
+/**
+ * Remove a previous added {@link Runnable} as a shutdown hook
+ */
+public void removeShutdownHook(final Runnable task) {
+    if (inEventLoop()) {
+        shutdownHooks.remove(task);
+    } else {
+        execute(new Runnable() {
+            @Override
+            public void run() {
+                shutdownHooks.remove(task);
+            }
+        });
+    }
+}
+//返回下一个调度任务的延时时间
+/**
+ * Returns the amount of time left until the scheduled task with the closest dead line is executed.
+ */
+protected long delayNanos(long currentTimeNanos) {
+    ScheduledFutureTask<?> scheduledTask = peekScheduledTask();
+    if (scheduledTask == null) {
+        return SCHEDULE_PURGE_INTERVAL;
+    }
+
+    return scheduledTask.delayNanos(currentTimeNanos);
+}
+从上面可以看出，添加，移除，poll任务操作，实际委托给任务队列，
+添加，移除hook线程操作委托给关闭hooks线程集合。
+来看从任务队列take任务
+ /**
+ * Take the next {@link Runnable} from the task queue and so will block if no task is currently present.
+ * <p>
+ * Be aware that this method will throw an {@link UnsupportedOperationException} if the task queue, which was
+ * created via {@link #newTaskQueue()}, does not implement {@link BlockingQueue}.
+ * </p>
+ *
+ * @return {@code null} if the executor thread has been interrupted or waken up.
+ */
+protected Runnable takeTask() {
+    assert inEventLoop();
+    if (!(taskQueue instanceof BlockingQueue)) {
+        throw new UnsupportedOperationException();
+    }
+    //获取当前任务队列
+    BlockingQueue<Runnable> taskQueue = (BlockingQueue<Runnable>) this.taskQueue;
+    for (;;) {
+       //从调度任务队列peek头部调度任务
+        ScheduledFutureTask<?> scheduledTask = peekScheduledTask();
+        if (scheduledTask == null) {
+            Runnable task = null;
+            try {
+	        //如果调度任务为空，则从任务队列take一个任务
+                task = taskQueue.take();
+                if (task == WAKEUP_TASK) {
+                    task = null;
+                }
+            } catch (InterruptedException e) {
+                // Ignore
+            }
+            return task;
+        } else {
+	    //否则，获取调度任务延时时间
+            long delayNanos = scheduledTask.delayNanos();
+            Runnable task = null;
+            if (delayNanos > 0) {
+                try {
+		    //如果延时时间大于0，则从任务队列超时poll任务
+                    task = taskQueue.poll(delayNanos, TimeUnit.NANOSECONDS);
+                } catch (InterruptedException e) {
+                    // Waken up.
+                    return null;
+                }
+            }
+            if (task == null) {
+                // We need to fetch the scheduled tasks now as otherwise there may be a chance that
+                // scheduled tasks are never executed if there is always one task in the taskQueue.
+                // This is for example true for the read task of OIO Transport
+                // See https://github.com/netty/netty/issues/1614
+		//从调度任务队列抓取调度任务，添加到任务队列
+                fetchFromScheduledTaskQueue();
+		//从任务队列poll任务
+                task = taskQueue.poll();
+            }
+
+            if (task != null) {
+                return task;
+            }
+        }
+    }
+}
+
+从上面可以看出，单线程事件执行器take任务，首先从调度任务队列peek头部调度任务，
+如果任务不为空，则获取调度任务延时时间，如果延时时间大于0，则从任务队列超时poll任务
+，否则从调度任务队列抓取调度任务，添加到任务队列，并从任务队列poll任务；如果调度任务为空，
+则从任务队列take一个任务，如果是唤醒任务，则忽略。
+
+再来看超时运行所有任务：
+
+ /**
+ * Poll all tasks from the task queue and run them via {@link Runnable#run()} method.  This method stops running
+ * the tasks in the task queue and returns if it ran longer than {@code timeoutNanos}.
+ */
+protected boolean runAllTasks(long timeoutNanos) {
+    fetchFromScheduledTaskQueue();
+    Runnable task = pollTask();
+    if (task == null) {
+        afterRunningAllTasks();
+        return false;
+    }
+
+    final long deadline = ScheduledFutureTask.nanoTime() + timeoutNanos;
+    long runTasks = 0;
+    long lastExecutionTime;
+    for (;;) {
+        safeExecute(task);
+
+        runTasks ++;
+
+        // Check timeout every 64 tasks because nanoTime() is relatively expensive.
+        // XXX: Hard-coded value - will make it configurable if it is really a problem.
+        if ((runTasks & 0x3F) == 0) {
+            lastExecutionTime = ScheduledFutureTask.nanoTime();
+            if (lastExecutionTime >= deadline) {
+                break;
+            }
+        }
+
+        task = pollTask();
+        if (task == null) {
+            lastExecutionTime = ScheduledFutureTask.nanoTime();
+            break;
+        }
+    }
+
+    afterRunningAllTasks();
+    this.lastExecutionTime = lastExecutionTime;
+    return true;
+}
 
 总结：
+单线程事件执行器，执行任务，首先判断任务是否为null，为空抛出空指针异常，
+否则，判断线程是否在当前事件循环中，在则添加任务到任务队列，否则开启当前单线程事件执行器，并
+添加任务到任务队列，如果此时事件执行器已关闭，并可以移除任务，则抛出拒绝执行器任务异常；
+如果需要启动事件执行器唤醒线程，则添加唤醒线程到任务队列。
+
+
+
+
+添加，移除，poll任务操作，实际委托给任务队列，
+添加，移除hook线程操作委托给关闭hooks线程集合。
+
+
+单线程事件执行器take任务，首先从调度任务队列peek头部调度任务，
+如果任务不为空，则获取调度任务延时时间，如果延时时间大于0，则从任务队列超时poll任务
+，否则从调度任务队列抓取调度任务，添加到任务队列，并从任务队列poll任务；如果调度任务为空，
+则从任务队列take一个任务，如果是唤醒任务，则忽略。
+
