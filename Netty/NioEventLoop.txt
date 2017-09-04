@@ -46,19 +46,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
  * {@link Selector} and so does the multi-plexing of these in the event loop.
+ Nio单线程事件循环，注册关联通道到同一个选择器，以便复用事件循环。
  *
  */
 public final class NioEventLoop extends SingleThreadEventLoop {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioEventLoop.class);
-
+    //取消选择key计数器，清理间隔，当取消的选择key达到256个时，重置计数器，并重新进行选择操作
     private static final int CLEANUP_INTERVAL = 256; // XXX Hard-coded value, but won't need customization.
-
+    //是否优化选择器key集合，默认为不优化
     private static final boolean DISABLE_KEYSET_OPTIMIZATION =
             SystemPropertyUtil.getBoolean("io.netty.noKeySetOptimization", false);
 
-    private static final int MIN_PREMATURE_SELECTOR_RETURNS = 3;
-    private static final int SELECTOR_AUTO_REBUILD_THRESHOLD;
+    private static final int MIN_PREMATURE_SELECTOR_RETURNS = 3;//最小的选择器重构阈值
+    private static final int SELECTOR_AUTO_REBUILD_THRESHOLD;//选择器自动重构阈值，默认选择操作发生512次，重构
 
     private final IntSupplier selectNowSupplier = new IntSupplier() {
         @Override
@@ -66,6 +67,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             return selectNow();
         }
     };
+    //Nio事件循环任务数量Callable
     private final Callable<Integer> pendingTasksCallable = new Callable<Integer>() {
         @Override
         public Integer call() throws Exception {
@@ -79,9 +81,11 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     // - http://bugs.sun.com/view_bug.do?bug_id=6427854
     // - https://github.com/netty/netty/issues/203
     static {
+        //获取java的bug等级
         final String key = "sun.nio.ch.bugLevel";
         final String buglevel = SystemPropertyUtil.get(key);
         if (buglevel == null) {
+	    //如果bug等级为空，则在当前任务线程相同访问控制权限下，设置nio的bug等级为空
             try {
                 AccessController.doPrivileged(new PrivilegedAction<Void>() {
                     @Override
@@ -94,9 +98,10 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 logger.debug("Unable to get/set System Property: " + key, e);
             }
         }
-
+       //初始选择器重构阈值
         int selectorAutoRebuildThreshold = SystemPropertyUtil.getInt("io.netty.selectorAutoRebuildThreshold", 512);
         if (selectorAutoRebuildThreshold < MIN_PREMATURE_SELECTOR_RETURNS) {
+	    //不需要重构选择器
             selectorAutoRebuildThreshold = 0;
         }
 
@@ -111,41 +116,449 @@ public final class NioEventLoop extends SingleThreadEventLoop {
     /**
      * The NIO {@link Selector}.
      */
-    private Selector selector;
-    private Selector unwrappedSelector;
-    private SelectedSelectionKeySet selectedKeys;
+    private Selector selector;//就绪选择key集合优化后的选择器
+    private Selector unwrappedSelector;//没有包装过的选择器，即选择器提供者打开的原始选择器
+    private SelectedSelectionKeySet selectedKeys;//选择key就绪集合
 
-    private final SelectorProvider provider;
+    private final SelectorProvider provider;//选择器提供者
 
     /**
      * Boolean that controls determines if a blocked Selector.select should
      * break out of its selection process. In our case we use a timeout for
      * the select method and the select method will block for that time unless
      * waken up.
+     当选择器的选择操作阻塞时，wakenUp属性决定是否应该break选择操作过程。在我们的实现中，
+     我们给选择操作一个超时时间， 除非选择操作被wakeup，否则选择操作达到超时时间，则break选择操作。
+    
      */
     private final AtomicBoolean wakenUp = new AtomicBoolean();
 
-    private final SelectStrategy selectStrategy;
+    private final SelectStrategy selectStrategy;//选择策略
 
-    private volatile int ioRatio = 50;
-    private int cancelledKeys;
-    private boolean needsToSelectAgain;
+    private volatile int ioRatio = 50;//Nio处理Io事件的时间占比，以便可以处理器其他非IO事件
+    private int cancelledKeys;//取消选择key计数器
+    private boolean needsToSelectAgain;//是否需要重新选择
+}
+来看一下Nio事件循环中，变量的类型声明：
+//IntSupplier
+package io.netty.util;
 
-    NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
-                 SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler) {
-        super(parent, executor, false, DEFAULT_MAX_PENDING_TASKS, rejectedExecutionHandler);
-        if (selectorProvider == null) {
-            throw new NullPointerException("selectorProvider");
+/**
+ * Represents a supplier of {@code int}-valued results.
+  表示一个int值供应者
+ */
+public interface IntSupplier {
+
+    /**
+     * Gets a result.
+     *
+     * @return a result
+     */
+    int get() throws Exception;
+}
+再来看Nio事件循环内部实现：
+private final IntSupplier selectNowSupplier = new IntSupplier() {
+   //获取选择操作返回值，用于判断注册到当前选择器的选择通道是否有IO事件就绪
+    @Override
+    public int get() throws Exception {
+        return selectNow();
+    }
+};
+再来关注一下选择Now操作：
+int selectNow() throws IOException {
+    try {
+        //直接委托个Nio事件循环选择器
+        return selector.selectNow();
+    } finally {
+        // restore wakeup state if needed
+	//如果选择操作后，需要唤醒等待选择操作的线程，则唤醒
+        if (wakenUp.get()) {
+            selector.wakeup();
         }
-        if (strategy == null) {
-            throw new NullPointerException("selectStrategy");
+    }
+}
+再来看选择策略：
+private final SelectStrategy selectStrategy;//选择策略
+
+package io.netty.channel;
+import io.netty.util.IntSupplier;
+
+/**
+ * Select strategy interface.
+ *
+ * Provides the ability to control the behavior of the select loop. For example a blocking select
+ * operation can be delayed or skipped entirely if there are events to process immediately.
+ 选择策略接口提供了控制选择循环行为的方法。比如，如果有事件需要立刻处理，则可以阻塞选择操作或
+ 完全直接跳过。
+ */
+public interface SelectStrategy {
+
+    /**
+     * Indicates a blocking select should follow.
+     阻塞选择操作
+     */
+    int SELECT = -1;
+    /**
+     * Indicates the IO loop should be retried, no blocking select to follow directly.
+     如果没有选择操作阻塞，预示着应该重试IO事件循环，处理IO事件
+     */
+    int CONTINUE = -2;
+
+    /**
+     * The {@link SelectStrategy} can be used to steer the outcome of a potential select
+     * call.
+     *选择策略可以用于控制潜在的选择操作结果
+     * @param selectSupplier The supplier with the result of a select result.
+     选择结果提供者
+     * @param hasTasks true if tasks are waiting to be processed.
+     是否有任务待处理
+     * @return {@link #SELECT} if the next step should be blocking select {@link #CONTINUE} if
+     *         the next step should be to not select but rather jump back to the IO loop and try
+     *         again. Any value >= 0 is treated as an indicator that work needs to be done.
+     如果返回结果为-1，则下一步应该阻塞选择操作，如果返回结果为-2，则下一步应该调回IO事件循环，处理
+     IO事件，而不是继续执行选择操作，返回值大于0，表示需要有工作要做，即注册到选择器的选择通道有IO事件
+     就绪。
+     */
+    int calculateStrategy(IntSupplier selectSupplier, boolean hasTasks) throws Exception;
+}
+从上面可以看出，Nio事件循环内部有一个取消选择key计数器清理间隔CLEANUP_INTERVAL，用于
+当取消的选择key达到256个时，重置取消选择key计数器cancelledKeys（int），并重新进行选择操作；
+选择器自动重构阈值SELECTOR_AUTO_REBUILD_THRESHOLD，默认选择操作发生512次，用于控制当选择器发生
+多少次选择操作时，重构选择器；选择器状态判断器selectNowSupplier，用于获取Nio事件循环内部选择器的
+选择操作结果；同时有一个选择器selector，未包装过的选择器unwrappedSelector和一个选择器提供者provider，
+一个选择key就绪集合selectedKeys（SelectedSelectionKeySet）；当选择器的选择操作阻塞时，wakenUp（AtomicBoolean）
+属性决定是否应该break选择操作过程；一个Nio处理Io事件的时间占比ioRatio(int),默认为50，即IO事件处理时间和
+其他事件处理时间各占Nio事件循环一半；一个选择策略selectStrategy用于控制选择循环，如果返回结果为-1，
+则下一步应该阻塞选择操作，如果返回结果为-2，则下一步应该调回IO事件循环，处理IO事件，而不是继续执行选择操作，
+返回值大于0，表示需要有工作要做，即注册到选择器的选择通道有IO事件就绪。
+
+回到Nio事件循环构造：
+NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
+             SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler) {
+    super(parent, executor, false, DEFAULT_MAX_PENDING_TASKS, rejectedExecutionHandler);
+    if (selectorProvider == null) {
+        throw new NullPointerException("selectorProvider");
+    }
+    if (strategy == null) {
+        throw new NullPointerException("selectStrategy");
+    }
+    provider = selectorProvider;
+    //打开选择器
+    final SelectorTuple selectorTuple = openSelector();
+    selector = selectorTuple.selector;
+    unwrappedSelector = selectorTuple.unwrappedSelector;
+    selectStrategy = strategy;
+}
+先看一下选择器元组SelectorTuple的定义：
+private static final class SelectorTuple {
+    final Selector unwrappedSelector;
+    final Selector selector;
+    SelectorTuple(Selector unwrappedSelector) {
+        this.unwrappedSelector = unwrappedSelector;
+        this.selector = unwrappedSelector;
+    }
+    SelectorTuple(Selector unwrappedSelector, Selector selector) {
+        this.unwrappedSelector = unwrappedSelector;
+        this.selector = selector;
+    }
+}
+选择器元组SelectorTuple实际为选择器和未包装选择器的包装类
+再来看打开选择器:
+//打开选择器
+final SelectorTuple selectorTuple = openSelector();
+private SelectorTuple openSelector() {
+    final Selector unwrappedSelector;
+    try {
+        //从选择器提供者打开一个选择器，刚打开的选择器是未包装的选择器，裸选择器
+        unwrappedSelector = provider.openSelector();
+    } catch (IOException e) {
+        throw new ChannelException("failed to open a new selector", e);
+    }
+    //如果key集合不优化，则选择器默认为选择器提供者打开的选择器
+    if (DISABLE_KEYSET_OPTIMIZATION) {
+        return new SelectorTuple(unwrappedSelector);
+    }
+    //下面是优化选择器集合
+    final SelectedSelectionKeySet selectedKeySet = new SelectedSelectionKeySet();
+    //在当前线程访问控制选择下，加载选择器实现类，不初始化
+    Object maybeSelectorImplClass = AccessController.doPrivileged(new PrivilegedAction<Object>() {
+        @Override
+        public Object run() {
+            try {
+                return Class.forName(
+                        "sun.nio.ch.SelectorImpl",
+                        false,
+                        PlatformDependent.getSystemClassLoader());
+            } catch (Throwable cause) {
+                return cause;
+            }
         }
-        provider = selectorProvider;
-        final SelectorTuple selectorTuple = openSelector();
-        selector = selectorTuple.selector;
-        unwrappedSelector = selectorTuple.unwrappedSelector;
-        selectStrategy = strategy;
+    });
+    //如果从系统类加载器加载的选择key实现类不是Class实例，或不是裸选择器类型，不进行选择器key集合优化
+    if (!(maybeSelectorImplClass instanceof Class) ||
+            // ensure the current selector implementation is what we can instrument.
+            !((Class<?>) maybeSelectorImplClass).isAssignableFrom(unwrappedSelector.getClass())) {
+        if (maybeSelectorImplClass instanceof Throwable) {
+            Throwable t = (Throwable) maybeSelectorImplClass;
+            logger.trace("failed to instrument a special java.util.Set into: {}", unwrappedSelector, t);
+        }
+        return new SelectorTuple(unwrappedSelector);
+    }
+
+    final Class<?> selectorImplClass = (Class<?>) maybeSelectorImplClass;
+
+    Object maybeException = AccessController.doPrivileged(new PrivilegedAction<Object>() {
+        @Override
+        public Object run() {
+            try {
+	        //在当前线程相同访问控制权限下，获取系统选择器实现类的
+		//选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField
+                Field selectedKeysField = selectorImplClass.getDeclaredField("selectedKeys");
+                Field publicSelectedKeysField = selectorImplClass.getDeclaredField("publicSelectedKeys");
+                //设置选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField访问控制权限
+                Throwable cause = ReflectionUtil.trySetAccessible(selectedKeysField);
+                if (cause != null) {
+                    return cause;
+                }
+                cause = ReflectionUtil.trySetAccessible(publicSelectedKeysField);
+                if (cause != null) {
+                    return cause;
+                }
+                //将系统选择器的就绪key集合selectedKeysField及其代理publicSelectedKeysField
+		//设置为selectedKeySet
+                selectedKeysField.set(unwrappedSelector, selectedKeySet);
+                publicSelectedKeysField.set(unwrappedSelector, selectedKeySet);
+                return null;
+            } catch (NoSuchFieldException e) {
+                return e;
+            } catch (IllegalAccessException e) {
+                return e;
+            }
+        }
+    });
+
+    if (maybeException instanceof Exception) {
+        selectedKeys = null;
+        Exception e = (Exception) maybeException;
+        logger.trace("failed to instrument a special java.util.Set into: {}", unwrappedSelector, e);
+        return new SelectorTuple(unwrappedSelector);
+    }
+    //初始化选择key集合
+    selectedKeys = selectedKeySet;
+    logger.trace("instrumented a special java.util.Set into: {}", unwrappedSelector);
+    return new SelectorTuple(unwrappedSelector,
+                             new SelectedSelectionKeySetSelector(unwrappedSelector, selectedKeySet));
+}
+再来看选择器包装类
+//SelectedSelectionKeySetSelector
+package io.netty.channel.nio;
+
+import java.io.IOException;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.spi.SelectorProvider;
+import java.util.Set;
+
+final class SelectedSelectionKeySetSelector extends Selector {
+    private final SelectedSelectionKeySet selectionKeys;//就绪的选择key集合
+    private final Selector delegate;//选择器代理
+    SelectedSelectionKeySetSelector(Selector delegate, SelectedSelectionKeySet selectionKeys) {
+        this.delegate = delegate;
+        this.selectionKeys = selectionKeys;
+    }
+    @Override
+    public boolean isOpen() {
+        return delegate.isOpen();
+    }
+
+    @Override
+    public SelectorProvider provider() {
+        return delegate.provider();
+    }
+
+    @Override
+    public Set<SelectionKey> keys() {
+        return delegate.keys();
+    }
+
+    @Override
+    public Set<SelectionKey> selectedKeys() {
+        return delegate.selectedKeys();
+    }
+    //每次选择操作，重置就绪选择key集合
+    @Override
+    public int selectNow() throws IOException {
+        selectionKeys.reset();
+        return delegate.selectNow();
+    }
+
+    @Override
+    public int select(long timeout) throws IOException {
+        selectionKeys.reset();
+        return delegate.select(timeout);
+    }
+
+    @Override
+    public int select() throws IOException {
+        selectionKeys.reset();
+        return delegate.select();
+    }
+
+    @Override
+    public Selector wakeup() {
+        return delegate.wakeup();
+    }
+
+    @Override
+    public void close() throws IOException {
+        delegate.close();
+    }
+}
+选择器包装类的每次选择操作，首先重置就绪选择key集合，再讲相应的操作委托给内部选择器代理，
+其他打开唤醒等方法直接委托给内部选择器代理。
+
+从上面可以看出，打开选择器，主要是委托给选择器提供者，如果需要优化选择器的，
+在当前线程访问控制选择下，加载选择器实现类，不初始化，如果从系统类加载器加载的选择key实现类不是Class实例，
+或不是裸选择器类型，不进行选择器key集合优化，及选择器为选择器提供者打开的裸选择器；
+否则在当前线程相同访问控制权限下，获取系统选择器实现类的，
+选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField，设置选择器就绪key集合selectedKeysField
+及其代理publicSelectedKeysField访问控制权限，将系统选择器的就绪key集合selectedKeysField及其代理publicSelectedKeysField
+设值为selectedKeySet（SelectedSelectionKeySet），并将选择器selector包装为SelectedSelectionKeySetSelector。
+
+Nio事件循环初始化，主要是将Nio事件循环组和事件执行器及任务拒绝策略传给父类，同时
+打开一个选择器。
+
+总结：
+
+Nio事件循环内部有一个取消选择key计数器清理间隔CLEANUP_INTERVAL，用于
+当取消的选择key达到256个时，重置取消选择key计数器cancelledKeys（int），并重新进行选择操作；
+选择器自动重构阈值SELECTOR_AUTO_REBUILD_THRESHOLD，默认选择操作发生512次，用于控制当选择器发生
+多少次选择操作时，重构选择器；选择器状态判断器selectNowSupplier，用于获取Nio事件循环内部选择器的
+选择操作结果；同时有一个选择器selector，未包装过的选择器unwrappedSelector和一个选择器提供者provider，
+一个选择key就绪集合selectedKeys（SelectedSelectionKeySet）；当选择器的选择操作阻塞时，wakenUp（AtomicBoolean）
+属性决定是否应该break选择操作过程；一个Nio处理Io事件的时间占比ioRatio(int),默认为50，即IO事件处理时间和
+其他事件处理时间各占Nio事件循环一半；一个选择策略selectStrategy用于控制选择循环，如果返回结果为-1，
+则下一步应该阻塞选择操作，如果返回结果为-2，则下一步应该调回IO事件循环，处理IO事件，而不是继续执行选择操作，
+返回值大于0，表示需要有工作要做，即注册到选择器的选择通道有IO事件就绪。
+
+Nio事件循环初始化，主要是将Nio事件循环组和事件执行器及任务拒绝策略传给父类，同时
+打开一个选择器。
+
+
+打开选择器过程，委托给选择器提供者打开一个选择器，如果需要优化选择器的，
+在当前线程访问控制选择下，加载选择器实现类，不初始化，如果从系统类加载器加载的选择key实现类不是Class实例，
+或不是裸选择器类型，不进行选择器key集合优化，及选择器为选择器提供者打开的裸选择器；
+否则在当前线程相同访问控制权限下，获取系统选择器实现类的，
+选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField，设置选择器就绪key集合selectedKeysField
+及其代理publicSelectedKeysField访问控制权限，将系统选择器的就绪key集合selectedKeysField及其代理publicSelectedKeysField
+设值为selectedKeySet（SelectedSelectionKeySet），并将选择器selector包装为SelectedSelectionKeySetSelector。
+
+
+
+
+
+附：
+下面的选择key集合和反射工具，简单看看就行，没有太多要将的。
+//SelectedSelectionKeySet
+package io.netty.channel.nio;
+
+import java.nio.channels.SelectionKey;
+import java.util.AbstractSet;
+import java.util.Arrays;
+import java.util.Iterator;
+
+final class SelectedSelectionKeySet extends AbstractSet<SelectionKey> {
+
+    SelectionKey[] keys;
+    int size;
+
+    SelectedSelectionKeySet() {
+        keys = new SelectionKey[1024];
+    }
+
+    @Override
+    public boolean add(SelectionKey o) {
+        if (o == null) {
+            return false;
+        }
+
+        keys[size++] = o;
+        if (size == keys.length) {
+            increaseCapacity();
+        }
+
+        return true;
+    }
+
+    @Override
+    public int size() {
+        return size;
+    }
+
+    @Override
+    public boolean remove(Object o) {
+        return false;
+    }
+
+    @Override
+    public boolean contains(Object o) {
+        return false;
+    }
+
+    @Override
+    public Iterator<SelectionKey> iterator() {
+        throw new UnsupportedOperationException();
+    }
+
+    void reset() {
+        reset(0);
+    }
+
+    void reset(int start) {
+        Arrays.fill(keys, start, size, null);
+        size = 0;
+    }
+
+    private void increaseCapacity() {
+        SelectionKey[] newKeys = new SelectionKey[keys.length << 1];
+        System.arraycopy(keys, 0, newKeys, 0, size);
+        keys = newKeys;
     }
 }
 
 
+//ReflectionUtil
+package io.netty.util.internal;
+
+import java.lang.reflect.AccessibleObject;
+
+public final class ReflectionUtil {
+
+    private ReflectionUtil() { }
+
+    /**
+     * Try to call {@link AccessibleObject#setAccessible(boolean)} but will catch any {@link SecurityException} and
+     * {@link java.lang.reflect.InaccessibleObjectException} and return it.
+     * The caller must check if it returns {@code null} and if not handle the returned exception.
+     */
+    public static Throwable trySetAccessible(AccessibleObject object) {
+        try {
+            object.setAccessible(true);
+            return null;
+        } catch (SecurityException e) {
+            return e;
+        } catch (RuntimeException e) {
+            return handleInaccessibleObjectException(e);
+        }
+    }
+
+    private static RuntimeException handleInaccessibleObjectException(RuntimeException e) {
+        // JDK 9 can throw an inaccessible object exception here; since Netty compiles
+        // against JDK 7 and this exception was only added in JDK 9, we have to weakly
+        // check the type
+        if ("java.lang.reflect.InaccessibleObjectException".equals(e.getClass().getName())) {
+            return e;
+        }
+        throw e;
+    }
+}
