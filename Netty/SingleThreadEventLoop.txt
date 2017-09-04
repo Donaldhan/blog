@@ -1,0 +1,35 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]
+引言：
+上一篇文章看了单线程事件执行器的任务执行与执行器关闭，先来回顾一下：
+      单线程事件执行器，执行任务，首先判断任务是否为null，为空抛出空指针异常，否则，判断线程是否在当前事件循环中，在则添加任务到任务队列，否则开启当前单线程事件执行器，并添加任务到任务队列，如果此时事件执行器已关闭，并可以移除任务，则抛出拒绝执行器任务异常；如果需要启动事件执行器唤醒线程，则添加唤醒线程到任务队列。
+      添加，移除，poll任务操作，实际委托给任务队列，添加，移除hook线程操作委托给关闭hooks线程集合。
+      单线程事件执行器take任务，首先从调度任务队列peek头部调度任务，如果任务不为空，则获取调度任务延时时间，如果延时时间大于0，则从任务队列超时poll任务，否则从调度任务队列抓取调度任务，添加到任务队列，并从任务队列poll任务；如果调度任务为空，则从任务队列take一个任务，如果是唤醒任务，则忽略。
+      关闭单线程执行器，首先检查间隔、超时时间，时间单元参数，并且间隔时间要小于超时时间，如果已经关闭，则返回异步关闭任务结果，否则检查线程是否在当前事务循环中，如果是则更新状态为正在关闭，并计算计算关闭间隔和超时时间。
+今天来看一下单线程事件循环：
+package io.netty.channel;
+
+import io.netty.util.concurrent.RejectedExecutionHandler;
+import io.netty.util.concurrent.RejectedExecutionHandlers;
+import io.netty.util.concurrent.SingleThreadEventExecutor;
+import io.netty.util.internal.ObjectUtil;
+import io.netty.util.internal.SystemPropertyUtil;
+import io.netty.util.internal.UnstableApi;
+
+import java.util.Queue;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadFactory;
+
+/**
+ * Abstract base class for {@link EventLoop}s that execute all its submitted tasks in a single thread.
+ *
+ */
+public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor implements EventLoop {
+
+
+总结：
+

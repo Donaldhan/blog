@@ -42,3 +42,4 @@ netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/239
 netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
 netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
 netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]

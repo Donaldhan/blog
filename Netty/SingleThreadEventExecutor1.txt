@@ -50,16 +50,16 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
     private volatile Thread thread;//当前事件执行器线程
     @SuppressWarnings("unused")//线程属性
     private volatile ThreadProperties threadProperties;
-    private final Executor executor;
+    private final Executor executor;//内部执行器
     private volatile boolean interrupted;//是否中断
-    private final Semaphore threadLock = new Semaphore(0);//事件执行器关闭信号量
+    private final Semaphore threadLock = new Semaphore(0);//事件执行器终止信号量
     private final Set<Runnable> shutdownHooks = new LinkedHashSet<Runnable>();//关闭Hooks任务
     private final boolean addTaskWakesUp;
     private final int maxPendingTasks;//最大执行器任务
     private final RejectedExecutionHandler rejectedExecutionHandler;//任务拒绝策略
     private long lastExecutionTime;//上次执行器时间
     @SuppressWarnings({ "FieldMayBeFinal", "unused" })
-    private volatile int state = ST_NOT_STARTED;
+    private volatile int state = ST_NOT_STARTED;//执行器初始状态
 
     private volatile long gracefulShutdownQuietPeriod;//关闭间隔QuietPeriod
     private volatile long gracefulShutdownTimeout;//关闭超时时间
@@ -93,6 +93,7 @@ public abstract class SingleThreadEventExecutor extends AbstractScheduledEventEx
             wakeup(inEventLoop);
         }
 }
+上面方法有一下几点要看：
 1.
 //判断线程是否在当前事务循环中
 boolean inEventLoop = inEventLoop();
@@ -737,32 +738,38 @@ protected Runnable takeTask() {
  /**
  * Poll all tasks from the task queue and run them via {@link Runnable#run()} method.  This method stops running
  * the tasks in the task queue and returns if it ran longer than {@code timeoutNanos}.
+ 超时运行所有任务，即从任务队列拉取任务，并执行，如果任务执行时间超过timeoutNanos，则停止执行任务
  */
 protected boolean runAllTasks(long timeoutNanos) {
+    //从调度任务抓取任务队列，并添加到任务队列
     fetchFromScheduledTaskQueue();
+    //从任务队列poll任务
     Runnable task = pollTask();
     if (task == null) {
+        //任务为空，则完成执行结束任务
         afterRunningAllTasks();
         return false;
     }
-
+    //超时时间
     final long deadline = ScheduledFutureTask.nanoTime() + timeoutNanos;
     long runTasks = 0;
     long lastExecutionTime;
     for (;;) {
+        //自旋安全执行任务
         safeExecute(task);
 
         runTasks ++;
 
         // Check timeout every 64 tasks because nanoTime() is relatively expensive.
         // XXX: Hard-coded value - will make it configurable if it is really a problem.
+	//没64个任务检查一下任务执行时间有没有超时
         if ((runTasks & 0x3F) == 0) {
             lastExecutionTime = ScheduledFutureTask.nanoTime();
             if (lastExecutionTime >= deadline) {
                 break;
             }
         }
-
+        
         task = pollTask();
         if (task == null) {
             lastExecutionTime = ScheduledFutureTask.nanoTime();
@@ -774,6 +781,219 @@ protected boolean runAllTasks(long timeoutNanos) {
     this.lastExecutionTime = lastExecutionTime;
     return true;
 }
+从上面可以看出，超时运行所有任务，即从调度任务队列，抓取任务，方法任务队列，
+从任务队列拉取任务，并执行，如果任务执行时间超过timeoutNanos，则停止执行任务。
+
+来看关闭单线程执行器
+@Override
+public Future<?> shutdownGracefully(long quietPeriod, long timeout, TimeUnit unit) {
+    //检查间隔、超时时间，时间单元参数，并且间隔时间要小于超时时间
+    if (quietPeriod < 0) {
+        throw new IllegalArgumentException("quietPeriod: " + quietPeriod + " (expected >= 0)");
+    }
+    if (timeout < quietPeriod) {
+        throw new IllegalArgumentException(
+                "timeout: " + timeout + " (expected >= quietPeriod (" + quietPeriod + "))");
+    }
+    if (unit == null) {
+        throw new NullPointerException("unit");
+    }
+    //如果已经关闭，则返回异步关闭任务结果
+    if (isShuttingDown()) {
+        return terminationFuture();
+    }
+    boolean inEventLoop = inEventLoop();
+    boolean wakeup;
+    int oldState;
+    for (;;) {
+         //如果已经关闭，则返回异步关闭任务结果
+        if (isShuttingDown()) {
+            return terminationFuture();
+        }
+        int newState;
+        wakeup = true;
+        oldState = state;
+	//如果线程在当前事务循环，则更新状态为正在关闭
+        if (inEventLoop) {
+            newState = ST_SHUTTING_DOWN;
+        } else {
+            switch (oldState) {
+                case ST_NOT_STARTED:
+                case ST_STARTED:
+                    newState = ST_SHUTTING_DOWN;
+                    break;
+                default:
+                    newState = oldState;
+                    wakeup = false;
+            }
+        }
+	//更新状态
+        if (STATE_UPDATER.compareAndSet(this, oldState, newState)) {
+            break;
+        }
+    }
+    //计算关闭间隔和超时时间，这个会在执行任务方法中的finally语句块中，用到
+    gracefulShutdownQuietPeriod = unit.toNanos(quietPeriod);
+    gracefulShutdownTimeout = unit.toNanos(timeout);
+    if (oldState == ST_NOT_STARTED) {
+        doStartThread();
+    }
+
+    if (wakeup) {
+        //执行唤醒任务线程
+        wakeup(inEventLoop);
+    }
+
+    return terminationFuture();
+}
+
+从上面可以看出，关闭单线程执行器，首先检查间隔、超时时间，时间单元参数，并且间隔时间要小于超时时间，
+如果已经关闭，则返回异步关闭任务结果，否则检查线程是否在当前事务循环中，如果是则更新状态为正在关闭，
+并计算计算关闭间隔和超时时间。
+
+来看已经丢弃的关闭方法
+ @Override
+ @Deprecated
+ public void shutdown() {
+     if (isShutdown()) {
+         return;
+     }
+
+     boolean inEventLoop = inEventLoop();
+     boolean wakeup;
+     int oldState;
+     for (;;) {
+         if (isShuttingDown()) {
+             return;
+         }
+         int newState;
+         wakeup = true;
+         oldState = state;
+         if (inEventLoop) {
+             newState = ST_SHUTDOWN;
+         } else {
+             switch (oldState) {
+                 case ST_NOT_STARTED:
+                 case ST_STARTED:
+                 case ST_SHUTTING_DOWN:
+                     newState = ST_SHUTDOWN;
+                     break;
+                 default:
+                     newState = oldState;
+                     wakeup = false;
+             }
+         }
+         if (STATE_UPDATER.compareAndSet(this, oldState, newState)) {
+             break;
+         }
+     }
+
+     if (oldState == ST_NOT_STARTED) {
+         doStartThread();
+     }
+
+     if (wakeup) {
+         wakeup(inEventLoop);
+     }
+ }
+shutdown与shutdownGracefully方法的不同在于，关闭执行器时，shutdownGracefully有一个
+缓冲的时间和任务执行的超时时间，以便将任务队列中的任务尽量在超时时间内执行完。
+ @Override
+ public boolean isShuttingDown() {
+     return state >= ST_SHUTTING_DOWN;
+ }
+
+ @Override
+ public boolean isShutdown() {
+     return state >= ST_SHUTDOWN;
+ }
+
+ @Override
+ public boolean isTerminated() {
+     return state == ST_TERMINATED;
+ }
+@Override
+ public Future<?> terminationFuture() {
+     return terminationFuture;
+ }
+
+再来看超时等待终止执行器
+ @Override
+ public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+     if (unit == null) {
+         throw new NullPointerException("unit");
+     }
+
+     if (inEventLoop()) {
+         throw new IllegalStateException("cannot await termination of the current thread");
+     }
+     //尝试获取线程锁，这个锁在执行器终止时，释放。
+     if (threadLock.tryAcquire(timeout, unit)) {
+         threadLock.release();
+     }
+
+     return isTerminated();
+ }
+再来看获取执行器线程属性：
+/**
+  * Returns the {@link ThreadProperties} of the {@link Thread} that powers the {@link SingleThreadEventExecutor}.
+  * If the {@link SingleThreadEventExecutor} is not started yet, this operation will start it and block until the
+  * it is fully started.
+  返回执行器线程的属性，如果执行器没启动，则阻塞到其启动
+  */
+ public final ThreadProperties threadProperties() {
+     ThreadProperties threadProperties = this.threadProperties;
+     if (threadProperties == null) {
+         Thread thread = this.thread;
+         if (thread == null) {
+             assert !inEventLoop();
+             submit(NOOP_TASK).syncUninterruptibly();
+             thread = this.thread;
+             assert thread != null;
+         }
+	 //构造线程属性，并更新
+         threadProperties = new DefaultThreadProperties(thread);
+         if (!PROPERTIES_UPDATER.compareAndSet(this, null, threadProperties)) {
+             threadProperties = this.threadProperties;
+         }
+     }
+
+     return threadProperties;
+ }
+再来看其他方法：
+下面几个方法的思想都是首先检查线程是否在当前事件循环中，如果不在，则抛出拒绝执行器异常，
+否则将相应的操作委托给父类。
+@Override
+public <T> T invokeAny(Collection<? extends Callable<T>> tasks) throws InterruptedException, ExecutionException {
+    throwIfInEventLoop("invokeAny");
+    return super.invokeAny(tasks);
+}
+@Override
+public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
+        throws InterruptedException, ExecutionException, TimeoutException {
+    throwIfInEventLoop("invokeAny");
+    return super.invokeAny(tasks, timeout, unit);
+}
+
+@Override
+public <T> List<java.util.concurrent.Future<T>> invokeAll(Collection<? extends Callable<T>> tasks)
+        throws InterruptedException {
+    throwIfInEventLoop("invokeAll");
+    return super.invokeAll(tasks);
+}
+
+@Override
+public <T> List<java.util.concurrent.Future<T>> invokeAll(
+        Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit) throws InterruptedException {
+    throwIfInEventLoop("invokeAll");
+    return super.invokeAll(tasks, timeout, unit);
+}
+//如果不在当前事件循环中，则抛出拒绝执行器异常
+private void throwIfInEventLoop(String method) {
+    if (inEventLoop()) {
+        throw new RejectedExecutionException("Calling " + method + " from within the EventLoop is not allowed");
+    }
+}
 
 总结：
 单线程事件执行器，执行任务，首先判断任务是否为null，为空抛出空指针异常，
@@ -781,15 +1001,14 @@ protected boolean runAllTasks(long timeoutNanos) {
 添加任务到任务队列，如果此时事件执行器已关闭，并可以移除任务，则抛出拒绝执行器任务异常；
 如果需要启动事件执行器唤醒线程，则添加唤醒线程到任务队列。
 
-
-
-
-添加，移除，poll任务操作，实际委托给任务队列，
-添加，移除hook线程操作委托给关闭hooks线程集合。
-
+添加，移除，poll任务操作，实际委托给任务队列，添加，移除hook线程操作委托给关闭hooks线程集合。
 
 单线程事件执行器take任务，首先从调度任务队列peek头部调度任务，
 如果任务不为空，则获取调度任务延时时间，如果延时时间大于0，则从任务队列超时poll任务
 ，否则从调度任务队列抓取调度任务，添加到任务队列，并从任务队列poll任务；如果调度任务为空，
 则从任务队列take一个任务，如果是唤醒任务，则忽略。
+
+关闭单线程执行器，首先检查间隔、超时时间，时间单元参数，并且间隔时间要小于超时时间，
+如果已经关闭，则返回异步关闭任务结果，否则检查线程是否在当前事务循环中，如果是则更新状态为正在关闭，
+并计算计算关闭间隔和超时时间。
 
