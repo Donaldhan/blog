@@ -1,0 +1,151 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]
+netty 单线程事件循环：[url]http://donald-draper.iteye.com/blog/2392067[/url]
+前面一篇文章我们看了单线程事件循环，来简单回顾一下：
+单线程事件循环SingleThreadEventLoop，继承了单线程事件执行器，实现了事件循环接口，内部一个事件循环任务队列，我们可以把单线程事件循环看为一个简单的事件执行器，单线程事件循环中多了一个通道注册的方法，实际注册工作委托给通道关联的UnSafe。
+今天我们来看一下Nio事件循环：
+package io.netty.channel.nio;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelException;
+import io.netty.channel.EventLoop;
+import io.netty.channel.EventLoopException;
+import io.netty.channel.SelectStrategy;
+import io.netty.channel.SingleThreadEventLoop;
+import io.netty.util.IntSupplier;
+import io.netty.util.concurrent.RejectedExecutionHandler;
+import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.ReflectionUtil;
+import io.netty.util.internal.SystemPropertyUtil;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.channels.CancelledKeyException;
+import java.nio.channels.SelectableChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.spi.SelectorProvider;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Iterator;
+import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/**
+ * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
+ * {@link Selector} and so does the multi-plexing of these in the event loop.
+ *
+ */
+public final class NioEventLoop extends SingleThreadEventLoop {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioEventLoop.class);
+
+    private static final int CLEANUP_INTERVAL = 256; // XXX Hard-coded value, but won't need customization.
+
+    private static final boolean DISABLE_KEYSET_OPTIMIZATION =
+            SystemPropertyUtil.getBoolean("io.netty.noKeySetOptimization", false);
+
+    private static final int MIN_PREMATURE_SELECTOR_RETURNS = 3;
+    private static final int SELECTOR_AUTO_REBUILD_THRESHOLD;
+
+    private final IntSupplier selectNowSupplier = new IntSupplier() {
+        @Override
+        public int get() throws Exception {
+            return selectNow();
+        }
+    };
+    private final Callable<Integer> pendingTasksCallable = new Callable<Integer>() {
+        @Override
+        public Integer call() throws Exception {
+            return NioEventLoop.super.pendingTasks();
+        }
+    };
+
+    // Workaround for JDK NIO bug.
+    //
+    // See:
+    // - http://bugs.sun.com/view_bug.do?bug_id=6427854
+    // - https://github.com/netty/netty/issues/203
+    static {
+        final String key = "sun.nio.ch.bugLevel";
+        final String buglevel = SystemPropertyUtil.get(key);
+        if (buglevel == null) {
+            try {
+                AccessController.doPrivileged(new PrivilegedAction<Void>() {
+                    @Override
+                    public Void run() {
+                        System.setProperty(key, "");
+                        return null;
+                    }
+                });
+            } catch (final SecurityException e) {
+                logger.debug("Unable to get/set System Property: " + key, e);
+            }
+        }
+
+        int selectorAutoRebuildThreshold = SystemPropertyUtil.getInt("io.netty.selectorAutoRebuildThreshold", 512);
+        if (selectorAutoRebuildThreshold < MIN_PREMATURE_SELECTOR_RETURNS) {
+            selectorAutoRebuildThreshold = 0;
+        }
+
+        SELECTOR_AUTO_REBUILD_THRESHOLD = selectorAutoRebuildThreshold;
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("-Dio.netty.noKeySetOptimization: {}", DISABLE_KEYSET_OPTIMIZATION);
+            logger.debug("-Dio.netty.selectorAutoRebuildThreshold: {}", SELECTOR_AUTO_REBUILD_THRESHOLD);
+        }
+    }
+
+    /**
+     * The NIO {@link Selector}.
+     */
+    private Selector selector;
+    private Selector unwrappedSelector;
+    private SelectedSelectionKeySet selectedKeys;
+
+    private final SelectorProvider provider;
+
+    /**
+     * Boolean that controls determines if a blocked Selector.select should
+     * break out of its selection process. In our case we use a timeout for
+     * the select method and the select method will block for that time unless
+     * waken up.
+     */
+    private final AtomicBoolean wakenUp = new AtomicBoolean();
+
+    private final SelectStrategy selectStrategy;
+
+    private volatile int ioRatio = 50;
+    private int cancelledKeys;
+    private boolean needsToSelectAgain;
+
+    NioEventLoop(NioEventLoopGroup parent, Executor executor, SelectorProvider selectorProvider,
+                 SelectStrategy strategy, RejectedExecutionHandler rejectedExecutionHandler) {
+        super(parent, executor, false, DEFAULT_MAX_PENDING_TASKS, rejectedExecutionHandler);
+        if (selectorProvider == null) {
+            throw new NullPointerException("selectorProvider");
+        }
+        if (strategy == null) {
+            throw new NullPointerException("selectStrategy");
+        }
+        provider = selectorProvider;
+        final SelectorTuple selectorTuple = openSelector();
+        selector = selectorTuple.selector;
+        unwrappedSelector = selectorTuple.unwrappedSelector;
+        selectStrategy = strategy;
+    }
+}
+
+

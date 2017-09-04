@@ -10,7 +10,7 @@ netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://
       添加，移除，poll任务操作，实际委托给任务队列，添加，移除hook线程操作委托给关闭hooks线程集合。
       单线程事件执行器take任务，首先从调度任务队列peek头部调度任务，如果任务不为空，则获取调度任务延时时间，如果延时时间大于0，则从任务队列超时poll任务，否则从调度任务队列抓取调度任务，添加到任务队列，并从任务队列poll任务；如果调度任务为空，则从任务队列take一个任务，如果是唤醒任务，则忽略。
       关闭单线程执行器，首先检查间隔、超时时间，时间单元参数，并且间隔时间要小于超时时间，如果已经关闭，则返回异步关闭任务结果，否则检查线程是否在当前事务循环中，如果是则更新状态为正在关闭，并计算计算关闭间隔和超时时间。
-今天来看一下单线程事件循环：
+今天来看一下单线程事件循环SingleThreadEventLoop：
 package io.netty.channel;
 
 import io.netty.util.concurrent.RejectedExecutionHandler;
@@ -26,10 +26,151 @@ import java.util.concurrent.ThreadFactory;
 
 /**
  * Abstract base class for {@link EventLoop}s that execute all its submitted tasks in a single thread.
+ 单线程事件循环在单个线程中执行所有提交的任务
  *
  */
 public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor implements EventLoop {
+ protected static final int DEFAULT_MAX_PENDING_TASKS = Math.max(16,
+            SystemPropertyUtil.getInt("io.netty.eventLoop.maxPendingTasks", Integer.MAX_VALUE));
+    //当前循环任务队列
+    private final Queue<Runnable> tailTasks;
+    //下面几个构造方法与单线程事件执行器基本相同，就不说了
+    protected SingleThreadEventLoop(EventLoopGroup parent, ThreadFactory threadFactory, boolean addTaskWakesUp) {
+        this(parent, threadFactory, addTaskWakesUp, DEFAULT_MAX_PENDING_TASKS, RejectedExecutionHandlers.reject());
+    }
 
+    protected SingleThreadEventLoop(EventLoopGroup parent, Executor executor, boolean addTaskWakesUp) {
+        this(parent, executor, addTaskWakesUp, DEFAULT_MAX_PENDING_TASKS, RejectedExecutionHandlers.reject());
+    }
+
+    protected SingleThreadEventLoop(EventLoopGroup parent, ThreadFactory threadFactory,
+                                    boolean addTaskWakesUp, int maxPendingTasks,
+                                    RejectedExecutionHandler rejectedExecutionHandler) {
+        super(parent, threadFactory, addTaskWakesUp, maxPendingTasks, rejectedExecutionHandler);
+        tailTasks = newTaskQueue(maxPendingTasks);
+    }
+
+    protected SingleThreadEventLoop(EventLoopGroup parent, Executor executor,
+                                    boolean addTaskWakesUp, int maxPendingTasks,
+                                    RejectedExecutionHandler rejectedExecutionHandler) {
+        super(parent, executor, addTaskWakesUp, maxPendingTasks, rejectedExecutionHandler);
+        tailTasks = newTaskQueue(maxPendingTasks);
+    }
+    //获取所属事件循环组
+    @Override
+    public EventLoopGroup parent() {
+        return (EventLoopGroup) super.parent();
+    }
+    //获取当前事件循环
+    @Override
+    public EventLoop next() {
+        return (EventLoop) super.next();
+    }
+   //注册通道
+    @Override
+    public ChannelFuture register(Channel channel) {
+        return register(new DefaultChannelPromise(channel, this));
+    }
+    //注册通道
+    @Override
+    public ChannelFuture register(final ChannelPromise promise) {
+        ObjectUtil.checkNotNull(promise, "promise");
+	//委托给通道关联的UnSafe，这个具体我们在后面再说
+        promise.channel().unsafe().register(this, promise);
+        return promise;
+    }
+    //此注册方法已丢弃
+    @Deprecated
+    @Override
+    public ChannelFuture register(final Channel channel, final ChannelPromise promise) {
+        if (channel == null) {
+            throw new NullPointerException("channel");
+        }
+        if (promise == null) {
+            throw new NullPointerException("promise");
+        }
+
+        channel.unsafe().register(this, promise);
+        return promise;
+    }
+
+    /**
+     * Adds a task to be run once at the end of next (or current) {@code eventloop} iteration.
+     *在事件循环迭代后，运行指定任务
+     * @param task to be added.
+     */
+    @UnstableApi
+    public final void executeAfterEventLoopIteration(Runnable task) {
+        ObjectUtil.checkNotNull(task, "task");
+        if (isShutdown()) {
+	   //事件循环关闭，则抛出拒绝执行异常
+            reject();
+        }
+        //如果添加任务到任务队列失败，则拒绝执行任务
+        if (!tailTasks.offer(task)) {
+            reject(task);
+        }
+        //如果需要为任务，启动唤醒线程，则添加唤醒线程到任务队列
+        if (wakesUpForTask(task)) {
+            wakeup(inEventLoop());
+        }
+    }
+
+    /**
+     * Removes a task that was added previously via {@link #executeAfterEventLoopIteration(Runnable)}.
+     *在在事件循环迭代后，移除指定任务
+     * @param task to be removed.
+     *
+     * @return {@code true} if the task was removed as a result of this call.
+     */
+    @UnstableApi
+    final boolean removeAfterEventLoopIterationTask(Runnable task) {
+        return tailTasks.remove(ObjectUtil.checkNotNull(task, "task"));
+    }
+    //是否启动唤醒任务线程
+    @Override
+    protected boolean wakesUpForTask(Runnable task) {
+        return !(task instanceof NonWakeupRunnable);
+    }
+    //在运行所有任务结束后，执行tailTasks任务队列中的任务
+    @Override
+    protected void afterRunningAllTasks() {
+        runAllTasksFrom(tailTasks);
+    }
+    //判断tailTasks任务队列中是否有任务
+    @Override
+    protected boolean hasTasks() {
+        return super.hasTasks() || !tailTasks.isEmpty();
+    }
+    //获取任务队列中的任务数
+    @Override
+    public int pendingTasks() {
+        return super.pendingTasks() + tailTasks.size();
+    }
+
+    /**
+     * Marker interface for {@link Runnable} that will not trigger an {@link #wakeup(boolean)} in all cases.
+     标记线程不会触发唤醒线程
+     */
+    interface NonWakeupRunnable extends Runnable { }
+}
+从上面来看，单线程事件循环SingleThreadEventLoop，继承了单线程事件执行器，实现了事件循环接口，
+内部一个事件循环任务队列，我们可以把单线程事件循环看为一个简单的事件执行器，单线程事件循环中多了
+一个通道注册的方法，实际注册工作委托给通道关联的UnSafe。
+
+再来看一下Nio事件循环的定义：
+/**
+ * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
+ * {@link Selector} and so does the multi-plexing of these in the event loop.
+ *
+ */
+public final class NioEventLoop extends SingleThreadEventLoop {
+
+nio事件循环实际为一个单线程事件循环，这样做的目的是，事件循环关联的通道注册到一个
+选择器，可以复用循环事件，即保证通道的IO操作线程安全。
 
 总结：
 
+单线程事件循环SingleThreadEventLoop，继承了单线程事件执行器，实现了事件循环接口，
+内部一个事件循环任务队列，我们可以把单线程事件循环看为一个简单的事件执行器，单线程事件循环中多了
+一个通道注册的方法，实际注册工作委托给通道关联的UnSafe。
