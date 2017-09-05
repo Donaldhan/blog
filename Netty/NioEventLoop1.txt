@@ -110,6 +110,7 @@ protected void run() {
                 case SelectStrategy.CONTINUE:
                     continue;//如果结果为CONTINU则，跳出当前这次事件循环，进入下一次事件循环
                 case SelectStrategy.SELECT:
+		    //选择操作
                     select(wakenUp.getAndSet(false));
 
                     // 'wakenUp.compareAndSet(false, true)' is always evaluated
@@ -162,9 +163,11 @@ protected void run() {
             final int ioRatio = this.ioRatio;
             if (ioRatio == 100) {
                 try {
+		    //选择器中就绪的选择key集合
                     processSelectedKeys();
                 } finally {
                     // Ensure we always run tasks.
+		    //运行任务队列中的任务，这个在前面的文章已将
                     runAllTasks();
                 }
             } else {
@@ -174,16 +177,20 @@ protected void run() {
                 } finally {
                     // Ensure we always run tasks.
                     final long ioTime = System.nanoTime() - ioStartTime;
+		    //超时运行任务队列，这个在前面的文章已将
                     runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
                 }
             }
         } catch (Throwable t) {
+	    //如果有异常则处理事件循环异常
             handleLoopException(t);
         }
         // Always handle shutdown even if the loop processing threw an exception.
         try {
+	    //事件循环正在关闭，则反注册选择器中的选择通道，并关闭。
             if (isShuttingDown()) {
                 closeAll();
+		//确定事件循环关闭，这个方法在单线程事件执行器中定义
                 if (confirmShutdown()) {
                     return;
                 }
@@ -193,3 +200,163 @@ protected void run() {
         }
     }
 }
+从上面可以看出：Nio事件循环启动后，首先选择策略根据选择器结果提供者和任务队列是否有任务生成
+下一步的操作策略，如果选择操作结果返回为SelectStrategy.CONTINUE，则跳出当前事件循环，如果为
+SelectStrategy.SELECT，则执行选择操作，并阻塞下一次选择操作，如果需要唤醒选择器，则唤醒；
+然后重置取消选择key计数器cancelledKeys为0，置是否需要重新选择属性needsToSelectAgain为false，
+然后处理选择器就绪的选择key，在根据当前IO事件处理时间百分比ioRatio，决定是执行任务队列所有任务还是超时
+执行任务队列任务，如果ioRatio小于100，则为超时执行任务队列中任务；最后检查事件循环是否正在关闭，
+是则反注册选择器中的选择通道，并关闭，确定事件循环关闭；上述整个过程在事件循环运行期间，不断地重复。
+
+上述run方法有几点要看
+1.
+//选择操作
+select(wakenUp.getAndSet(false));
+
+2.
+//选择器中就绪的选择key集合
+processSelectedKeys();
+
+3.
+//如果有异常则处理事件循环异常
+handleLoopException(t);
+
+4.
+//事件循环正在关闭，则反注册选择器中的选择通道，并关闭。
+if (isShuttingDown()) {
+    closeAll();
+	//确定事件循环关闭，这个方法在单线程事件执行器中定义
+    if (confirmShutdown()) {
+        return;
+    }
+}
+
+下面我们分别来看这几点：
+
+1.
+//选择操作
+select(wakenUp.getAndSet(false));
+
+private void select(boolean oldWakenUp) throws IOException {
+    Selector selector = this.selector;
+    try {
+        int selectCnt = 0;//选择操作计数器
+        long currentTimeNanos = System.nanoTime();
+	//选择操作延时时间
+        long selectDeadLineNanos = currentTimeNanos + delayNanos(currentTimeNanos);
+        for (;;) {
+            long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
+            if (timeoutMillis <= 0) {
+	        //如果延时时间已过去0.5毫秒，且选择操作计数器当前为0，第一次执行选择操作
+                if (selectCnt == 0) {
+		    //执行立刻执行选择操作，更新选择操作计数器
+                    selector.selectNow();
+                    selectCnt = 1;
+                }
+		//并跳出当前选择操作过程
+                break;
+            }
+
+            // If a task was submitted when wakenUp value was true, the task didn't get a chance to call
+            // Selector#wakeup. So we need to check task queue again before executing select operation.
+            // If we don't, the task might be pended until select operation was timed out.
+            // It might be pended until idle timeout if IdleStateHandler existed in pipeline.
+	    //如果在wakeUp属性为true时，一个任务提交到事件循环，这个任务将没有机会调用选择器唤醒操作。
+	    //所以在执行器选择操作之前，需要检查任务队列是否有任务。如果我们不检查，任务可能直到选择操作超时,
+	    //才能被添加到任务队列。如果管道中有空闲状态处理Handler，任务也许会在空闲状态超时的时候，添加到任务队列。
+            if (hasTasks() && wakenUp.compareAndSet(false, true)) {
+	        //如果任务队列中有任务，且wakeUp属性为false，并更新为true成功，则立刻执行选择操作，更新选择操作计数器
+                selector.selectNow();
+                selectCnt = 1;
+                break;
+            }
+            //执行超时选择操作
+            int selectedKeys = selector.select(timeoutMillis);
+            selectCnt ++;//更新选择操作计数器
+            if (selectedKeys != 0 || oldWakenUp || wakenUp.get() || hasTasks() || hasScheduledTasks()) {
+                // - Selected something,
+                // - waken up by user, or
+                // - the task queue has a pending task.
+                // - a scheduled task is ready for processing
+		//如果有选择key就绪，或原始wakeUp属性为true，或当前wakeUp属性为true，或任务队列有任务，或调度任务队列有调度任务，
+		//则跳出当前选择操作
+                break;
+            }
+            if (Thread.interrupted()) {
+                // Thread was interrupted so reset selected keys and break so we not run into a busy loop.
+                // As this is most likely a bug in the handler of the user or it's client library we will
+                // also log it.
+                //
+                // See https://github.com/netty/netty/issues/2426
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Selector.select() returned prematurely because " +
+                            "Thread.currentThread().interrupt() was called. Use " +
+                            "NioEventLoop.shutdownGracefully() to shutdown the NioEventLoop.");
+                }
+                selectCnt = 1;
+                break;
+            }
+
+            long time = System.nanoTime();
+            if (time - TimeUnit.MILLISECONDS.toNanos(timeoutMillis) >= currentTimeNanos) {
+                // timeoutMillis elapsed without anything selected.
+                selectCnt = 1;
+            } else if (SELECTOR_AUTO_REBUILD_THRESHOLD > 0 &&
+                    selectCnt >= SELECTOR_AUTO_REBUILD_THRESHOLD) {
+                // The selector returned prematurely many times in a row.
+                // Rebuild the selector to work around the problem.
+                logger.warn(
+                        "Selector.select() returned prematurely {} times in a row; rebuilding Selector {}.",
+                        selectCnt, selector);
+
+                rebuildSelector();
+                selector = this.selector;
+
+                // Select again to populate selectedKeys.
+                selector.selectNow();
+                selectCnt = 1;
+                break;
+            }
+
+            currentTimeNanos = time;
+        }
+
+        if (selectCnt > MIN_PREMATURE_SELECTOR_RETURNS) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Selector.select() returned prematurely {} times in a row for Selector {}.",
+                        selectCnt - 1, selector);
+            }
+        }
+    } catch (CancelledKeyException e) {
+        if (logger.isDebugEnabled()) {
+            logger.debug(CancelledKeyException.class.getSimpleName() + " raised by a Selector {} - JDK bug?",
+                    selector, e);
+        }
+        // Harmless exception - log anyway
+    }
+}
+2.
+//选择器中就绪的选择key集合
+processSelectedKeys();
+
+3.
+//如果有异常则处理事件循环异常
+handleLoopException(t);
+
+4.
+//事件循环正在关闭，则反注册选择器中的选择通道，并关闭。
+if (isShuttingDown()) {
+    closeAll();
+	//确定事件循环关闭，这个方法在单线程事件执行器中定义
+    if (confirmShutdown()) {
+        return;
+    }
+}
+总结：
+Nio事件循环启动后，首先选择策略根据选择器结果提供者和任务队列是否有任务生成
+下一步的操作策略，如果选择操作结果返回为SelectStrategy.CONTINUE，则跳出当前事件循环，如果为
+SelectStrategy.SELECT，则执行选择操作，并阻塞下一次选择操作，如果需要唤醒选择器，则唤醒；
+然后重置取消选择key计数器cancelledKeys为0，置是否需要重新选择属性needsToSelectAgain为false，
+然后处理选择器就绪的选择key，在根据当前IO事件处理时间百分比ioRatio，决定是执行任务队列所有任务还是超时
+执行任务队列任务，如果ioRatio小于100，则为超时执行任务队列中任务；最后检查事件循环是否正在关闭，
+是则反注册选择器中的选择通道，并关闭，确定事件循环关闭；上述整个过程在事件循环运行期间，不断地重复。
