@@ -1,0 +1,135 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]
+netty 单线程事件循环：[url]http://donald-draper.iteye.com/blog/2392067[/url]
+netty nio事件循环初始化：[url]http://donald-draper.iteye.com/blog/2392161[/url]
+netty nio事件循环后续：[url]http://donald-draper.iteye.com/blog/2392264[/url]
+引言：
+前面的文章我们看了Nio事件循环，先来回顾一下：
+    Nio事件循环内部有一个取消选择key计数器清理间隔CLEANUP_INTERVAL，用于当取消的选择key达到256个时，重置取消选择key计数器cancelledKeys（int），并重新进行选择操作；选择器自动重构阈值SELECTOR_AUTO_REBUILD_THRESHOLD，默认选择操作发生512次，用于控制当选择器发生多少次选择操作时，重构选择器；选择器状态判断器selectNowSupplier，用于获取Nio事件循环内部选择器的选择操作结果；同时有一个选择器selector，未包装过的选择器unwrappedSelector和一个选择器提供者provider，一个选择key就绪集合selectedKeys（SelectedSelectionKeySet）；当选择器的选择操作阻塞时，wakenUp（AtomicBoolean）属性决定是否应该break选择操作过程；一个Nio处理Io事件的时间占比ioRatio(int),默认为50，即IO事件处理时间和其他事件处理时间各占Nio事件循环一半；一个选择策略selectStrategy用于控制选择循环，如果返回结果为-1，则下一步应该阻塞选择操作，如果返回结果为-2，则下一步应该调回IO事件循环，处理IO事件，而不是继续执行选择操作，返回值大于0，表示需要有工作要做，即注册到选择器的选择通道有IO事件就绪。
+    Nio事件循环初始化，主要是将Nio事件循环组和事件执行器及任务拒绝策略传给父类单线程事件循环（单线程事件执行器），同时打开一个选择器。
+    打开选择器过程，委托给选择器提供者打开一个选择器，如果需要优化选择器的，在当前线程访问控制选择下，加载选择器实现类，不初始化，如果从系统类加载器加载的选择key实现类不是Class实例，或不是裸选择器类型，不进行选择器key集合优化，及选择器为选择器提供者打开的裸选择器；否则在当前线程相同访问控制权限下，获取系统选择器实现类的，选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField，设置选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField访问控制权限，将系统选择器的就绪key集合selectedKeysField及其代理publicSelectedKeysField设值为selectedKeySet（SelectedSelectionKeySet），并将选择器selector包装为SelectedSelectionKeySetSelector。 
+    Nio事件循环启动后，首先选择策略根据选择器结果提供者和任务队列是否有任务生成下一步的操作策略，如果选择操作结果返回为SelectStrategy.CONTINUE，则跳出当前事件循环，如果为SelectStrategy.SELECT，则执行选择操作，并阻塞下一次选择操作，如果需要唤醒选择器，则唤醒；然后重置取消选择key计数器cancelledKeys为0，置是否需要重新选择属性needsToSelectAgain为false，然后处理选择器就绪的选择key，在根据当前IO事件处理时间百分比ioRatio，决定是执行任务队列所有任务还是超时执行任务队列任务，如果ioRatio小于100，则为超时执行任务队列中任务；最后检查事件循环是否正在关闭，是则反注册选择器中的选择通道，并关闭，确定事件循环关闭；上述整个过程在事件循环运行期间，不断地重复。在事件循环的每次处理过程中，在最后都要检查意见事件循环是否关闭，如果正在关闭，则关闭注册到选择器的所有通道，并确保事件循环关闭。
+    选择操作的过程为，首先重置选择操作计数器为0，计算选择操作延时时间；如果延时时间已过去0.5毫秒，且选择操作计数器当前为0，即第一次执行选择操作，执行立刻执行选择操作，更新选择操作计数器，并跳出当前选择操作过程；如果任务队列中有任务，且wakeUp属性为false，并更新为true成功，则立刻执行选择操作，更新选择操作计数器，跳出当前选择操作过程；如果上面两种情况都不是，则执行超时选择操作，如果有选择key就绪，或原始wakeUp属性为true，或当前wakeUp属性为true，或任务队列有任务，或调度任务队列有调度任务，则跳出当前选择操作；如果选择器重构阈值大于0，且当前选择操作计数器的值大于阈值，则重新构造选择器，即创建新的选择器将原始选择器关联的选择key，注册到新的选择器中。
+    默认的处理选择器就绪选择key集合过程，为遍历选择key集合，处理就绪的选择key，首先选择key当前必须有效，再判断选择key通道事件循环是否是当前循环，否则直接返回，是则判断就绪key的就绪事件是连接请求事件，写事件还是读事件，如果事件连接操作，则委托通道的Unsafe完成通道连接，并移除连接事件；如果是如果是写事件，则委托通道的Unsafe刷新写请求队列，释放内存；果是读事件，则委托给通道的Unsafe的read方法；如果在处理就绪选择key的过程，需要重新执行选择操作，则立刻执行，并更新当前就绪选择key集合及其迭代器。
+    Nio事件循环内部有一个选择器，所有注册到选择器的通道都在一个事件循环中，Nio事件循环是单线程事件循环，即单线程事件执行器，在处理选择器的就绪选择key时，当且仅当，就绪选择key关联通道所在的事件循环为当前事件循环时，才出来就绪选择key关联通道的就绪IO事件，从而保证通道的读写等操作线程安全。
+    Nio事件循环实际的工作就是执行选择操作，并处理选择器的就绪选择key，Nio事件循环与Mina的IoProcessor有点相似，都可以看着一个线程执行器，执行通道的IO事件操作，而不同的是Nio管理的是选择器Selector,而Mina的IoProcessor管理的会话IoSession。
+
+今天我们来看一下Nio事件循环组NioEventLoopGroup：
+package io.netty.channel.nio;
+
+import io.netty.channel.Channel;
+import io.netty.channel.EventLoop;
+import io.netty.channel.DefaultSelectStrategyFactory;
+import io.netty.channel.MultithreadEventLoopGroup;
+import io.netty.channel.SelectStrategyFactory;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.EventExecutorChooserFactory;
+import io.netty.util.concurrent.RejectedExecutionHandler;
+import io.netty.util.concurrent.RejectedExecutionHandlers;
+
+import java.nio.channels.Selector;
+import java.nio.channels.spi.SelectorProvider;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadFactory;
+
+/**
+ * {@link MultithreadEventLoopGroup} implementations which is used for NIO {@link Selector} based {@link Channel}s.
+ */
+public class NioEventLoopGroup extends MultithreadEventLoopGroup {
+
+    /**
+     * Create a new instance using the default number of threads, the default {@link ThreadFactory} and
+     * the {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
+     */
+    public NioEventLoopGroup() {
+        this(0);
+    }
+
+    /**
+     * Create a new instance using the specified number of threads, {@link ThreadFactory} and the
+     * {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
+     */
+    public NioEventLoopGroup(int nThreads) {
+        this(nThreads, (Executor) null);
+    }
+
+    /**
+     * Create a new instance using the specified number of threads, the given {@link ThreadFactory} and the
+     * {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
+     */
+    public NioEventLoopGroup(int nThreads, ThreadFactory threadFactory) {
+        this(nThreads, threadFactory, SelectorProvider.provider());
+    }
+
+    public NioEventLoopGroup(int nThreads, Executor executor) {
+        this(nThreads, executor, SelectorProvider.provider());
+    }
+
+    /**
+     * Create a new instance using the specified number of threads, the given {@link ThreadFactory} and the given
+     * {@link SelectorProvider}.
+     */
+    public NioEventLoopGroup(
+            int nThreads, ThreadFactory threadFactory, final SelectorProvider selectorProvider) {
+        this(nThreads, threadFactory, selectorProvider, DefaultSelectStrategyFactory.INSTANCE);
+    }
+
+    public NioEventLoopGroup(int nThreads, ThreadFactory threadFactory,
+        final SelectorProvider selectorProvider, final SelectStrategyFactory selectStrategyFactory) {
+        super(nThreads, threadFactory, selectorProvider, selectStrategyFactory, RejectedExecutionHandlers.reject());
+    }
+
+    public NioEventLoopGroup(
+            int nThreads, Executor executor, final SelectorProvider selectorProvider) {
+        this(nThreads, executor, selectorProvider, DefaultSelectStrategyFactory.INSTANCE);
+    }
+
+    public NioEventLoopGroup(int nThreads, Executor executor, final SelectorProvider selectorProvider,
+                             final SelectStrategyFactory selectStrategyFactory) {
+        super(nThreads, executor, selectorProvider, selectStrategyFactory, RejectedExecutionHandlers.reject());
+    }
+
+    public NioEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                             final SelectorProvider selectorProvider,
+                             final SelectStrategyFactory selectStrategyFactory) {
+        super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory,
+                RejectedExecutionHandlers.reject());
+    }
+
+    public NioEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                             final SelectorProvider selectorProvider,
+                             final SelectStrategyFactory selectStrategyFactory,
+                             final RejectedExecutionHandler rejectedExecutionHandler) {
+        super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory, rejectedExecutionHandler);
+    }
+
+    /**
+     * Sets the percentage of the desired amount of time spent for I/O in the child event loops.  The default value is
+     * {@code 50}, which means the event loop will try to spend the same amount of time for I/O as for non-I/O tasks.
+     */
+    public void setIoRatio(int ioRatio) {
+        for (EventExecutor e: this) {
+            ((NioEventLoop) e).setIoRatio(ioRatio);
+        }
+    }
+
+    /**
+     * Replaces the current {@link Selector}s of the child event loops with newly created {@link Selector}s to work
+     * around the  infamous epoll 100% CPU bug.
+     */
+    public void rebuildSelectors() {
+        for (EventExecutor e: this) {
+            ((NioEventLoop) e).rebuildSelector();
+        }
+    }
+
+    @Override
+    protected EventLoop newChild(Executor executor, Object... args) throws Exception {
+        return new NioEventLoop(this, executor, (SelectorProvider) args[0],
+            ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
+    }
+}
