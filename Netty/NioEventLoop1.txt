@@ -1,0 +1,195 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]
+netty 单线程事件循环：[url]http://donald-draper.iteye.com/blog/2392067[/url]
+netty nio事件循环初始化：[url]http://donald-draper.iteye.com/blog/2392161[/url]
+引言：
+前面一篇文章我们看了nio事件循环初始化，先来回顾一下：
+    Nio事件循环内部有一个取消选择key计数器清理间隔CLEANUP_INTERVAL，用于当取消的选择key达到256个时，重置取消选择key计数器cancelledKeys（int），并重新进行选择操作；选择器自动重构阈值SELECTOR_AUTO_REBUILD_THRESHOLD，默认选择操作发生512次，用于控制当选择器发生多少次选择操作时，重构选择器；选择器状态判断器selectNowSupplier，用于获取Nio事件循环内部选择器的选择操作结果；同时有一个选择器selector，未包装过的选择器unwrappedSelector和一个选择器提供者provider，一个选择key就绪集合selectedKeys（SelectedSelectionKeySet）；当选择器的选择操作阻塞时，wakenUp（AtomicBoolean）属性决定是否应该break选择操作过程；一个Nio处理Io事件的时间占比ioRatio(int),默认为50，即IO事件处理时间和其他事件处理时间各占Nio事件循环一半；一个选择策略selectStrategy用于控制选择循环，如果返回结果为-1，则下一步应该阻塞选择操作，如果返回结果为-2，则下一步应该调回IO事件循环，处理IO事件，而不是继续执行选择操作，返回值大于0，表示需要有工作要做，即注册到选择器的选择通道有IO事件就绪。
+    Nio事件循环初始化，主要是将Nio事件循环组和事件执行器及任务拒绝策略传给父类单线程事件循环（单线程事件执行器），同时打开一个选择器。
+    打开选择器过程，委托给选择器提供者打开一个选择器，如果需要优化选择器的，在当前线程访问控制选择下，加载选择器实现类，不初始化，如果从系统类加载器加载的选择key实现类不是Class实例，或不是裸选择器类型，不进行选择器key集合优化，及选择器为选择器提供者打开的裸选择器；否则在当前线程相同访问控制权限下，获取系统选择器实现类的，选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField，设置选择器就绪key集合selectedKeysField及其代理publicSelectedKeysField访问控制权限，将系统选择器的就绪key集合selectedKeysField及其代理publicSelectedKeysField设值为selectedKeySet（SelectedSelectionKeySet），并将选择器selector包装为SelectedSelectionKeySetSelector。
+今天我们接着来看nio事件循环的其他方法：
+先把nio事件循环的变量声明贴出来，以便理解其他方法，
+/**
+ * {@link SingleThreadEventLoop} implementation which register the {@link Channel}'s to a
+ * {@link Selector} and so does the multi-plexing of these in the event loop.
+ Nio单线程事件循环，注册关联通道到同一个选择器，以便复用事件循环。
+ *
+ */
+public final class NioEventLoop extends SingleThreadEventLoop {
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(NioEventLoop.class);
+    //取消选择key计数器，清理间隔，当取消的选择key达到256个时，重置计数器，并重新进行选择操作
+    private static final int CLEANUP_INTERVAL = 256; // XXX Hard-coded value, but won't need customization.
+    //是否优化选择器key集合，默认为不优化
+    private static final boolean DISABLE_KEYSET_OPTIMIZATION =
+            SystemPropertyUtil.getBoolean("io.netty.noKeySetOptimization", false);
+    private static final int MIN_PREMATURE_SELECTOR_RETURNS = 3;//最小的选择器重构阈值
+    private static final int SELECTOR_AUTO_REBUILD_THRESHOLD;//选择器自动重构阈值，默认选择操作发生512次，重构
+
+    private final IntSupplier selectNowSupplier = new IntSupplier() {
+        @Override
+        public int get() throws Exception {
+            return selectNow();
+        }
+    };
+    //Nio事件循环任务数量Callable
+    private final Callable<Integer> pendingTasksCallable = new Callable<Integer>() {
+        @Override
+        public Integer call() throws Exception {
+            return NioEventLoop.super.pendingTasks();
+        }
+    };
+    // Workaround for JDK NIO bug.
+    //
+    // See:
+    // - http://bugs.sun.com/view_bug.do?bug_id=6427854
+    // - https://github.com/netty/netty/issues/203
+    static {
+        //获取java的bug等级
+        final String key = "sun.nio.ch.bugLevel";
+        final String buglevel = SystemPropertyUtil.get(key);
+        if (buglevel == null) {
+	    //如果bug等级为空，则在当前任务线程相同访问控制权限下，设置nio的bug等级为空
+            try {
+                AccessController.doPrivileged(new PrivilegedAction<Void>() {
+                    @Override
+                    public Void run() {
+                        System.setProperty(key, "");
+                        return null;
+                    }
+                });
+            } catch (final SecurityException e) {
+                logger.debug("Unable to get/set System Property: " + key, e);
+            }
+        }
+       //初始选择器重构阈值
+        int selectorAutoRebuildThreshold = SystemPropertyUtil.getInt("io.netty.selectorAutoRebuildThreshold", 512);
+        if (selectorAutoRebuildThreshold < MIN_PREMATURE_SELECTOR_RETURNS) {
+	    //不需要重构选择器
+            selectorAutoRebuildThreshold = 0;
+        }
+        SELECTOR_AUTO_REBUILD_THRESHOLD = selectorAutoRebuildThreshold;
+        if (logger.isDebugEnabled()) {
+            logger.debug("-Dio.netty.noKeySetOptimization: {}", DISABLE_KEYSET_OPTIMIZATION);
+            logger.debug("-Dio.netty.selectorAutoRebuildThreshold: {}", SELECTOR_AUTO_REBUILD_THRESHOLD);
+        }
+    }
+    /**
+     * The NIO {@link Selector}.
+     */
+    private Selector selector;//就绪选择key集合优化后的选择器
+    private Selector unwrappedSelector;//没有包装过的选择器，即选择器提供者打开的原始选择器
+    private SelectedSelectionKeySet selectedKeys;//选择key就绪集合
+    private final SelectorProvider provider;//选择器提供者
+    /**
+     * Boolean that controls determines if a blocked Selector.select should
+     * break out of its selection process. In our case we use a timeout for
+     * the select method and the select method will block for that time unless
+     * waken up.
+     当选择器的选择操作阻塞时，wakenUp属性决定是否应该break选择操作过程。在我们的实现中，
+     我们给选择操作一个超时时间， 除非选择操作被wakeup，否则选择操作达到超时时间，则break选择操作。
+    
+     */
+    private final AtomicBoolean wakenUp = new AtomicBoolean();
+    private final SelectStrategy selectStrategy;//选择策略
+    private volatile int ioRatio = 50;//Nio处理Io事件的时间占比，以便可以处理器其他非IO事件
+    private int cancelledKeys;//取消选择key计数器
+    private boolean needsToSelectAgain;//是否需要重新选择
+}
+我们来从nio事件循环的启动方法run开启，这个方法的声明在单线程事件执行器中，在启动执行器时，调用，
+忘记的，可以查阅前面的相关文章：
+@Override
+protected void run() {
+    for (;;) {
+        try {
+	    //检查选择策略结果
+            switch (selectStrategy.calculateStrategy(selectNowSupplier, hasTasks())) {
+                case SelectStrategy.CONTINUE:
+                    continue;//如果结果为CONTINU则，跳出当前这次事件循环，进入下一次事件循环
+                case SelectStrategy.SELECT:
+                    select(wakenUp.getAndSet(false));
+
+                    // 'wakenUp.compareAndSet(false, true)' is always evaluated
+                    // before calling 'selector.wakeup()' to reduce the wake-up
+                    // overhead. (Selector.wakeup() is an expensive operation.)
+                    //在调用选择器唤醒方法，之前，先确定wakenUp的值，以减少唤醒负载，因为
+		    //唤醒选择器是一个耗时的操作。
+                    // However, there is a race condition in this approach.
+                    // The race condition is triggered when 'wakenUp' is set to
+                    // true too early.
+                    //但这种捷径有一个竞争条件，当wakenUp属性设值为true过早时，将会触发竞争。
+                    // 'wakenUp' is set to true too early if:
+                    // 1) Selector is waken up between 'wakenUp.set(false)' and
+                    //    'selector.select(...)'. (BAD)
+                    // 2) Selector is waken up between 'selector.select(...)' and
+                    //    'if (wakenUp.get()) { ... }'. (OK)
+		    //以下情况可能引起竞争
+		    // 1)选择器在wakenUp属性更新为false和选择操作之间被唤醒（BAD）
+                    // 2）选择器在选择操作和获取wakenUp属性之间。（OK）
+                    // In the first case, 'wakenUp' is set to true and the
+                    // following 'selector.select(...)' will wake up immediately.
+                    // Until 'wakenUp' is set to false again in the next round,
+                    // 'wakenUp.compareAndSet(false, true)' will fail, and therefore
+                    // any attempt to wake up the Selector will fail, too, causing
+                    // the following 'selector.select(...)' call to block
+                    // unnecessarily.
+                    //在第一种情况下，当wakenUp属性更新为true，接下来的选择操作就会立刻被唤醒，
+		    //直到在下一次循环中wakenUp属性更新为false，wakenUp.compareAndSet(false, true)
+		    //将会失败，同时引起下一次不必要的选择操作阻塞。
+		    //
+                    // To fix this problem, we wake up the selector again if wakenUp
+                    // is true immediately after selector.select(...).
+                    // It is inefficient in that it wakes up the selector for both
+                    // the first case (BAD - wake-up required) and the second case
+                    // (OK - no wake-up required).
+                    //为了修复这个问题，在选择操作后，如果wakenUp属性为true，则唤醒选择器。
+		    //在上面两种情况下，这可能不是一个有效的唤醒选择器的方式。
+                    if (wakenUp.get()) {
+		        //如果需要唤醒选择器，则唤醒
+                        selector.wakeup();
+                    }
+                default:
+                    // fallthrough
+            }
+            //每一次选择操作，重置取消选择key计数器
+            cancelledKeys = 0;
+	    //置是否需要重新选择为false
+            needsToSelectAgain = false;
+	    //获取当前IO事件处理时间百分比
+            final int ioRatio = this.ioRatio;
+            if (ioRatio == 100) {
+                try {
+                    processSelectedKeys();
+                } finally {
+                    // Ensure we always run tasks.
+                    runAllTasks();
+                }
+            } else {
+                final long ioStartTime = System.nanoTime();
+                try {
+                    processSelectedKeys();
+                } finally {
+                    // Ensure we always run tasks.
+                    final long ioTime = System.nanoTime() - ioStartTime;
+                    runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
+                }
+            }
+        } catch (Throwable t) {
+            handleLoopException(t);
+        }
+        // Always handle shutdown even if the loop processing threw an exception.
+        try {
+            if (isShuttingDown()) {
+                closeAll();
+                if (confirmShutdown()) {
+                    return;
+                }
+            }
+        } catch (Throwable t) {
+            handleLoopException(t);
+        }
+    }
+}
