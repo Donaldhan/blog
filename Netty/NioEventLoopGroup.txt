@@ -38,12 +38,15 @@ import java.util.concurrent.ThreadFactory;
 
 /**
  * {@link MultithreadEventLoopGroup} implementations which is used for NIO {@link Selector} based {@link Channel}s.
+ nio事件循环组实际为一个多线程事件循环组，用于管理基于通道的选择器
  */
 public class NioEventLoopGroup extends MultithreadEventLoopGroup {
 
     /**
      * Create a new instance using the default number of threads, the default {@link ThreadFactory} and
      * the {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
+     创建一个默认线程数，默认线程工厂的选择器提供者nio事件循环组，如果没有配置io.netty.eventLoopThreads系统属性的话，
+     默认线程数为处理器的2倍，see#MultithreadEventLoopGroup
      */
     public NioEventLoopGroup() {
         this(0);
@@ -52,11 +55,12 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
     /**
      * Create a new instance using the specified number of threads, {@link ThreadFactory} and the
      * {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
+     创建指定线程数量的事件循环组
      */
     public NioEventLoopGroup(int nThreads) {
         this(nThreads, (Executor) null);
     }
-
+    //这些构造都和简单，不一一讲了see##MultithreadEventLoopGroup讲解
     /**
      * Create a new instance using the specified number of threads, the given {@link ThreadFactory} and the
      * {@link SelectorProvider} which is returned by {@link SelectorProvider#provider()}.
@@ -106,12 +110,13 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
                              final RejectedExecutionHandler rejectedExecutionHandler) {
         super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory, rejectedExecutionHandler);
     }
-
     /**
      * Sets the percentage of the desired amount of time spent for I/O in the child event loops.  The default value is
      * {@code 50}, which means the event loop will try to spend the same amount of time for I/O as for non-I/O tasks.
+     设置nio事件循环组的IO事件处理时间百分比
      */
     public void setIoRatio(int ioRatio) {
+        //遍历事件循环组，设置nio事件循环的IO事件处理时间百分比
         for (EventExecutor e: this) {
             ((NioEventLoop) e).setIoRatio(ioRatio);
         }
@@ -120,16 +125,85 @@ public class NioEventLoopGroup extends MultithreadEventLoopGroup {
     /**
      * Replaces the current {@link Selector}s of the child event loops with newly created {@link Selector}s to work
      * around the  infamous epoll 100% CPU bug.
+     重构nio事件循环组选择器
      */
     public void rebuildSelectors() {
+        //遍历事件循环组，重构nio事件循环的选择器
         for (EventExecutor e: this) {
             ((NioEventLoop) e).rebuildSelector();
         }
     }
-
+    //创建Nio事件循环
     @Override
     protected EventLoop newChild(Executor executor, Object... args) throws Exception {
         return new NioEventLoop(this, executor, (SelectorProvider) args[0],
             ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
     }
 }
+从上面可以看出，nio事件循环组实际为一个多线程事件循环组，主要用于管理nio事件循环；从设置nio事件循环组的IO事件处理时间百分比
+和重构nio事件循环组选择器方法，可以看出事件循环组继承迭代器的原因；nio事件循环组可以统一设置组内的nio事件循环的IO事件处理时间百分比，
+而nio事件可以动态变更自己的IO事件处理时间百分比，重构选择器也有这么点意思。
+nio事件循环组是多线程的，而nio事件循环时单线程的，这个与Mina的IoProcessor和processor的关系有点像。
+
+public interface EventLoopGroup extends EventExecutorGroup {
+public interface EventExecutorGroup extends ScheduledExecutorService, Iterable<EventExecutor> {
+
+
+
+我们来看构造：
+public NioEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                         final SelectorProvider selectorProvider,
+                         final SelectStrategyFactory selectStrategyFactory,
+                         final RejectedExecutionHandler rejectedExecutionHandler) {
+    super(nThreads, executor, chooserFactory, selectorProvider, selectStrategyFactory, rejectedExecutionHandler);
+}
+
+//MultithreadEventLoopGroup
+/**
+ * @see MultithreadEventExecutorGroup#MultithreadEventExecutorGroup(int, Executor,
+ * EventExecutorChooserFactory, Object...)
+ */
+protected MultithreadEventLoopGroup(int nThreads, Executor executor, EventExecutorChooserFactory chooserFactory,
+                                 Object... args) {
+    super(nThreads == 0 ? DEFAULT_EVENT_LOOP_THREADS : nThreads, executor, chooserFactory, args);
+}
+参数args为选择器提供者，选择策略工厂，和拒绝执行策略，传递给父类，我们往下看，看这些参数给予了谁？
+//MultithreadEventExecutorGroup
+  protected MultithreadEventExecutorGroup(int nThreads, Executor executor,
+                                            EventExecutorChooserFactory chooserFactory, Object... args) {
+       ...
+        children = new EventExecutor[nThreads];
+        for (int i = 0; i < nThreads; i ++) {
+            boolean success = false;
+            try {
+	        //关键在这，创建事件执行器
+                children[i] = newChild(executor, args);
+                success = true;
+         }
+	...
+}
+/**
+ * Create a new EventExecutor which will later then accessible via the {@link #next()}  method. This method will be
+ * called for each thread that will serve this {@link MultithreadEventExecutorGroup}.
+ *待子类扩展
+ */
+protected abstract EventExecutor newChild(Executor executor, Object... args) throws Exception;
+
+回到nio事件循环组：
+有一个newChild方法，返回的是nio事件循环，即单线程事件循环（单线程事件执行器）
+
+//创建Nio事件循环
+@Override
+protected EventLoop newChild(Executor executor, Object... args) throws Exception {
+    return new NioEventLoop(this, executor, (SelectorProvider) args[0],
+        ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
+}
+当这里，我们看到了上是的args参数，事件传给了Nio事件循环。
+
+
+总结：
+nio事件循环组实际为一个多线程事件循环组，主要用于管理nio事件循环；从设置nio事件循环组的IO事件处理时间百分比
+和重构nio事件循环组选择器方法，可以看出事件循环组继承迭代器的原因；nio事件循环组可以统一设置组内的nio事件循环的IO事件处理时间百分比，
+而nio事件可以动态变更自己的IO事件处理时间百分比，重构选择器也有这么点意思。
+nio事件循环组是多线程的，而nio事件循环时单线程的，这个与Mina的IoProcessor和processor的关系有点像。
+不同的是nio事件循环面向的是选择器Selector，而processor面向的是会话IoSession。
