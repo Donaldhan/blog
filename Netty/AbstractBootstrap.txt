@@ -1,0 +1,827 @@
+netty 事件执行器组和事件执行器定义及抽象实现：[url]http://donald-draper.iteye.com/blog/2391257[/url]
+netty 多线程事件执行器组：[url]http://donald-draper.iteye.com/blog/2391270[/url]
+netty 多线程事件循环组：[url]http://donald-draper.iteye.com/blog/2391276[/url]
+netty 抽象调度事件执行器：[url]http://donald-draper.iteye.com/blog/2391379[/url]
+netty 单线程事件执行器初始化：[url]http://donald-draper.iteye.com/blog/2391895[/url]
+netty 单线程事件执行器执行任务与graceful方式关闭：[url]http://donald-draper.iteye.com/blog/2392051[/url]
+netty 单线程事件循环：[url]http://donald-draper.iteye.com/blog/2392067[/url]
+netty nio事件循环初始化：[url]http://donald-draper.iteye.com/blog/2392161[/url]
+netty nio事件循环后续：[url]http://donald-draper.iteye.com/blog/2392264[/url]
+netty nio事件循环组：[url]http://donald-draper.iteye.com/blog/2392300[/url]
+前面我们来看netty的事件循环，从今天起，我们来看一下BootStap和ServerBootStrap：
+在netty的相关测试实例中服务端有如下代码：
+EventLoopGroup bossGroup = new NioEventLoopGroup(); // (1)
+EventLoopGroup workerGroup = new NioEventLoopGroup();
+try {
+	//ServerBootstrap，用于配置服务端，一般为ServerSocket通道
+    ServerBootstrap serverBoot = new ServerBootstrap(); 
+    serverBoot.group(bossGroup, workerGroup)
+     .channel(NioServerSocketChannel.class) 
+     .childHandler(new ChannelInitializer<SocketChannel>() { 
+         @Override
+         public void initChannel(SocketChannel ch) throws Exception {
+        	//添加通道处理器到通道关联的管道，准确的中文翻译为管道线， 此管道线与Mina中过滤链十分相似,
+        	//ChannelInitializer用于配置通道的管道线，ChannelPipeline
+        	 ChannelPipeline pipeline = ch.pipeline();
+             if (sslCtx != null) {
+            	 pipeline.addLast(sslCtx.newHandler(ch.alloc()));
+             }
+             pipeline.addLast(new LoggingHandler(LogLevel.INFO));
+             pipeline.addLast(new EchoServerHandler());
+         }
+     })
+     .option(ChannelOption.SO_BACKLOG, 128)//socket监听器连接队列大小、
+     .childOption(ChannelOption.SO_KEEPALIVE, true); //保活，此配置针对ServerSocket通道接收连接产生的Socket通道
+    InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+    // 绑定地址，开始监听
+    ChannelFuture f = serverBoot.bind(inetSocketAddress).sync();
+    log.info("=========Server is start=========");
+    //等待，直到ServerSocket关闭
+    f.channel().closeFuture().sync();
+} finally {
+    workerGroup.shutdownGracefully();
+    bossGroup.shutdownGracefully();
+}
+而客户端的为：
+EventLoopGroup workerGroup = new NioEventLoopGroup();
+try {
+	//Bootstrap，用于配置客户端，一般为Socket通道
+    Bootstrap bootstrap = new Bootstrap();
+    bootstrap.group(workerGroup)
+     .channel(NioSocketChannel.class)
+     .handler(new ChannelInitializer<SocketChannel>() {
+         @Override
+         protected void initChannel(SocketChannel ch) throws Exception {
+        	 //添加安全套接字处理器和通道处理器到
+             ChannelPipeline pipeline = ch.pipeline();
+             if (sslCtx != null) {
+            	 pipeline.addLast(sslCtx.newHandler(ch.alloc(), ip, port));
+             }
+             pipeline.addLast(new LoggingHandler(LogLevel.INFO));
+             pipeline.addLast(new EchoClientHandler());
+         }
+     });
+    InetSocketAddress inetSocketAddress = new InetSocketAddress(ip,port);
+    //连接socket地址
+    ChannelFuture f = bootstrap.connect(inetSocketAddress).sync();
+    log.info("=========Client is start=========");
+    //等待，直到连接关闭
+    f.channel().closeFuture().sync();
+} finally {
+	workerGroup.shutdownGracefully();
+}
+上面有两个类型我们需要关注，是下面两句：
+ServerBootstrap serverBoot = new ServerBootstrap();
+Bootstrap bootstrap = new Bootstrap();
+从上面来看服务端引导配置ServerBootstrap用于配置服务端的Nio事件循环组，通道，通道处理器，
+及通道相关配置，客户端引导配置Bootstap用于配置客户端的Nio事件循环组，通道，通道处理器，及通道相关配置。
+我们来看一下两种引导配置的定义：
+public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel> 
+
+public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
+
+两种引导配置都继承与AbstractBootstrap，只是类型参数不同，服务端通道类型参数为ServerChannel，
+客户端为Channel。
+
+我们先来看一下AbstractBootstrap：
+package io.netty.bootstrap;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPromise;
+import io.netty.channel.DefaultChannelPromise;
+import io.netty.channel.EventLoop;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ReflectiveChannelFactory;
+import io.netty.util.internal.SocketUtils;
+import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.GlobalEventExecutor;
+import io.netty.util.internal.StringUtil;
+import io.netty.util.internal.logging.InternalLogger;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * {@link AbstractBootstrap} is a helper class that makes it easy to bootstrap a {@link Channel}. It support
+ * method-chaining to provide an easy way to configure the {@link AbstractBootstrap}.
+ *抽象引导程序AbstractBootstrap使启动一个通道更容易的工具类。支持链式方法编程，提供配置抽象引导程序的便捷方式。
+ * <p>When not used in a {@link ServerBootstrap} context, the {@link #bind()} methods are useful for connectionless
+ * transports such as datagram (UDP).</p>
+ 当不在Server引导程序上下文下使用时，绑定方法可以用于无连接的传输，比如报文传输
+ */
+public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C extends Channel> implements Cloneable {
+
+    volatile EventLoopGroup group;//事件循环组
+    @SuppressWarnings("deprecation")
+    private volatile ChannelFactory<? extends C> channelFactory;//通道工厂，已丢器	
+    private volatile SocketAddress localAddress;//本地socket地址
+    //通道配置项
+    private final Map<ChannelOption<?>, Object> options = new LinkedHashMap<ChannelOption<?>, Object>();
+    //通道属性
+    private final Map<AttributeKey<?>, Object> attrs = new LinkedHashMap<AttributeKey<?>, Object>();
+    private volatile ChannelHandler handler;//通道处理器
+
+    AbstractBootstrap() {
+        // Disallow extending from a different package.
+    }
+
+    AbstractBootstrap(AbstractBootstrap<B, C> bootstrap) {
+        group = bootstrap.group;
+        channelFactory = bootstrap.channelFactory;
+        handler = bootstrap.handler;
+        localAddress = bootstrap.localAddress;
+        synchronized (bootstrap.options) {
+            options.putAll(bootstrap.options);
+        }
+        synchronized (bootstrap.attrs) {
+            attrs.putAll(bootstrap.attrs);
+        }
+    }
+}
+从上面来看抽象引导程序AbstractBootstrap，内部关联的一个事件循环组EventLoopGroup，
+一个通道处理器ChannelHandler，一个通道配置集和一个本地Socket地址及一个通道属性集。
+
+下面来看其他方法：
+/**
+ * The {@link EventLoopGroup} which is used to handle all the events for the to-be-created
+ * {@link Channel}
+ 配置事件循环组，处理所有创建的事件
+ */
+@SuppressWarnings("unchecked")
+public B group(EventLoopGroup group) {
+    if (group == null) {
+        throw new NullPointerException("group");
+    }
+    if (this.group != null) {
+        throw new IllegalStateException("group set already");
+    }
+    this.group = group;
+    return (B) this;
+}
+
+/**
+ * The {@link Class} which is used to create {@link Channel} instances from.
+ * You either use this or {@link #channelFactory(io.netty.channel.ChannelFactory)} if your
+ * {@link Channel} implementation has no no-args constructor.
+ 通道类channelClass，用于创建通道实例，如果你的通道实现为无参构造可以使用此方法或
+ #channelFactory
+ */
+public B channel(Class<? extends C> channelClass) {
+    if (channelClass == null) {
+        throw new NullPointerException("channelClass");
+    }
+    return channelFactory(new ReflectiveChannelFactory<C>(channelClass));
+}
+/**
+ * {@link io.netty.channel.ChannelFactory} which is used to create {@link Channel} instances from
+ * when calling {@link #bind()}. This method is usually only used if {@link #channel(Class)}
+ * is not working for you because of some more complex needs. If your {@link Channel} implementation
+ * has a no-args constructor, its highly recommend to just use {@link #channel(Class)} for
+ * simplify your code.
+ 当调用绑定方法时，通道工厂由于创建通道实例。
+ */
+@SuppressWarnings({ "unchecked", "deprecation" })
+public B channelFactory(io.netty.channel.ChannelFactory<? extends C> channelFactory) {
+    return channelFactory((ChannelFactory<C>) channelFactory);
+}
+**
+ * @deprecated Use {@link #channelFactory(io.netty.channel.ChannelFactory)} instead.
+ */
+@Deprecated
+@SuppressWarnings("unchecked")
+public B channelFactory(ChannelFactory<? extends C> channelFactory) {
+    if (channelFactory == null) {
+        throw new NullPointerException("channelFactory");
+    }
+    if (this.channelFactory != null) {
+        throw new IllegalStateException("channelFactory set already");
+    }
+
+    this.channelFactory = channelFactory;
+    return (B) this;
+}
+回到配置通道方法的这一句：
+return channelFactory(new ReflectiveChannelFactory<C>(channelClass));
+我们来看一下反射通道工厂：
+package io.netty.channel;
+
+import io.netty.util.internal.StringUtil;
+
+/**
+ * A {@link ChannelFactory} that instantiates a new {@link Channel} by invoking its default constructor reflectively.
+ */
+public class ReflectiveChannelFactory<T extends Channel> implements ChannelFactory<T> {
+    private final Class<? extends T> clazz;
+    public ReflectiveChannelFactory(Class<? extends T> clazz) {
+        if (clazz == null) {
+            throw new NullPointerException("clazz");
+        }
+        this.clazz = clazz;
+    }
+    //创建通道实例
+    @Override
+    public T newChannel() {
+        try {
+            return clazz.newInstance();
+        } catch (Throwable t) {
+            throw new ChannelException("Unable to create Channel from class " + clazz, t);
+        }
+    }
+    @Override
+    public String toString() {
+        return StringUtil.simpleClassName(clazz) + ".class";
+    }
+}
+再来看配置本地地址：
+/**
+ * The {@link SocketAddress} which is used to bind the local "end" to.
+ */
+@SuppressWarnings("unchecked")
+public B localAddress(SocketAddress localAddress) {
+    this.localAddress = localAddress;
+    return (B) this;
+}
+/**
+ * @see #localAddress(SocketAddress)
+ */
+public B localAddress(int inetPort) {
+    return localAddress(new InetSocketAddress(inetPort));
+}
+/**
+ * @see #localAddress(SocketAddress)
+ */
+public B localAddress(String inetHost, int inetPort) {
+    return localAddress(SocketUtils.socketAddress(inetHost, inetPort));
+}
+/**
+ * @see #localAddress(SocketAddress)
+ */
+public B localAddress(InetAddress inetHost, int inetPort) {
+    return localAddress(new InetSocketAddress(inetHost, inetPort));
+}
+ 再来看配置通道选项
+/**
+ * Allow to specify a {@link ChannelOption} which is used for the {@link Channel} instances once they got
+ * created. Use a value of {@code null} to remove a previous set {@link ChannelOption}.
+
+ */
+@SuppressWarnings("unchecked")
+public <T> B option(ChannelOption<T> option, T value) {
+    if (option == null) {
+        throw new NullPointerException("option");
+    }
+    if (value == null) {
+       //置为空，则移除通道配置选项
+        synchronized (options) {
+            options.remove(option);
+        }
+    } else {
+       //否则添加通道配置选择到配置选项集
+        synchronized (options) {
+            options.put(option, value);
+        }
+    }
+    return (B) this;
+}
+ChannelOption定义见附篇。
+//配置通道属性，与配置通道选项思路相同
+/**
+ * Allow to specify an initial attribute of the newly created {@link Channel}.  If the {@code value} is
+ * {@code null}, the attribute of the specified {@code key} is removed.
+ */
+@SuppressWarnings("unchecked")
+public <T> B attr(AttributeKey<T> key, T value) {
+    if (key == null) {
+        throw new NullPointerException("key");
+    }
+    if (value == null) {
+        synchronized (attrs) {
+            attrs.remove(key);
+        }
+    } else {
+        synchronized (attrs) {
+            attrs.put(key, value);
+        }
+    }
+    return (B) this;
+}
+AttributeKey定义见附篇。
+
+/**
+ * Validate all the parameters. Sub-classes may override this, but should
+ * call the super method in that case.
+ 验证参数，子类可以重写此方法
+ */
+@SuppressWarnings("unchecked")
+public B validate() {
+    if (group == null) {
+        throw new IllegalStateException("group not set");
+    }
+    if (channelFactory == null) {
+        throw new IllegalStateException("channel or channelFactory not set");
+    }
+    return (B) this;
+}
+
+/**
+ * Returns a deep clone of this bootstrap which has the identical configuration.  This method is useful when making
+ * multiple {@link Channel}s with similar settings.  Please note that this method does not clone the
+ * {@link EventLoopGroup} deeply but shallowly, making the group a shared resource.
+ 克隆引导配置
+ */
+@Override
+@SuppressWarnings("CloneDoesntDeclareCloneNotSupportedException")
+public abstract B clone();
+
+/**
+ * Create a new {@link Channel} and register it with an {@link EventLoop}.
+ 创建一个通道，注册到事件循环
+ */
+public ChannelFuture register() {
+    validate();
+    return initAndRegister();
+}
+//初始化通道，注册通道到事件循环
+final ChannelFuture initAndRegister() {
+    Channel channel = null;
+    try {
+        //创建通道实例
+        channel = channelFactory.newChannel();
+        init(channel);//初始化通道
+    } catch (Throwable t) {
+        if (channel != null) {
+            // channel can be null if newChannel crashed (eg SocketException("too many open files"))
+            channel.unsafe().closeForcibly();
+        }
+        // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
+        return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
+    }
+    //委托给事件循环组
+    ChannelFuture regFuture = config().group().register(channel);
+    if (regFuture.cause() != null) {
+        if (channel.isRegistered()) {
+            channel.close();
+        } else {
+            channel.unsafe().closeForcibly();
+        }
+    }
+
+    // If we are here and the promise is not failed, it's one of the following cases:
+    // 1) If we attempted registration from the event loop, the registration has been completed at this point.
+    //    i.e. It's safe to attempt bind() or connect() now because the channel has been registered.
+    // 2) If we attempted registration from the other thread, the registration request has been successfully
+    //    added to the event loop's task queue for later execution.
+    //    i.e. It's safe to attempt bind() or connect() now:
+    //         because bind() or connect() will be executed *after* the scheduled registration task is executed
+    //         because register(), bind(), and connect() are all bound to the same thread.
+
+    return regFuture;
+}
+//初始化通道
+abstract void init(Channel channel) throws Exception;
+/**
+ * Returns the {@link AbstractBootstrapConfig} object that can be used to obtain the current config
+ * of the bootstrap.
+ 获取启动项当前配置
+ */
+public abstract AbstractBootstrapConfig<B, C> config();
+
+总结：
+抽象引导程序AbstractBootstrap，内部关联的一个事件循环组EventLoopGroup，
+一个通道处理器ChannelHandler，一个通道选项集和一个本地Socket地址及一个通道属性集。
+
+
+内部的方法主要配置事件循环组，通道处理，通道选项集，socket地址，及通道属性。
+
+
+
+
+
+
+
+
+
+附：
+package io.netty.channel;
+
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.AbstractConstant;
+import io.netty.util.ConstantPool;
+
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+
+/**
+ * A {@link ChannelOption} allows to configure a {@link ChannelConfig} in a type-safe
+ * way. Which {@link ChannelOption} is supported depends on the actual implementation
+ * of {@link ChannelConfig} and may depend on the nature of the transport it belongs
+ * to.
+ *通道配置项运行以类型安全的方式配置通道选项，具体支持何种通道选项，依赖于具体的通道配置实现
+ 或所属的传输类型transport
+ * @param <T>   the type of the value which is valid for the {@link ChannelOption}
+ */
+public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
+    //常量池，存放配置选项常量
+    private static final ConstantPool<ChannelOption<Object>> pool = new ConstantPool<ChannelOption<Object>>() {
+        @Override
+        protected ChannelOption<Object> newConstant(int id, String name) {
+            return new ChannelOption<Object>(id, name);
+        }
+    };
+    /**
+     * Returns the {@link ChannelOption} of the specified name.
+     获取name对象的通道选项值
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ChannelOption<T> valueOf(String name) {
+        return (ChannelOption<T>) pool.valueOf(name);
+    }
+
+    /**
+     * Shortcut of {@link #valueOf(String) valueOf(firstNameComponent.getName() + "#" + secondNameComponent)}.
+     获取firstNameComponent.getName() + "#" + secondNameComponent的属性值
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ChannelOption<T> valueOf(Class<?> firstNameComponent, String secondNameComponent) {
+        return (ChannelOption<T>) pool.valueOf(firstNameComponent, secondNameComponent);
+    }
+
+    /**
+     * Returns {@code true} if a {@link ChannelOption} exists for the given {@code name}.
+     判断是否存在name对应的通道选项
+     */
+    public static boolean exists(String name) {
+        return pool.exists(name);
+    }
+
+    /**
+     * Creates a new {@link ChannelOption} for the given {@code name} or fail with an
+     * {@link IllegalArgumentException} if a {@link ChannelOption} for the given {@code name} exists.
+     根据名字创建通道配置选项
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> ChannelOption<T> newInstance(String name) {
+        return (ChannelOption<T>) pool.newInstance(name);
+    }
+    //字节buf分配器
+    public static final ChannelOption<ByteBufAllocator> ALLOCATOR = valueOf("ALLOCATOR");
+    //接受buf分配器
+    public static final ChannelOption<RecvByteBufAllocator> RCVBUF_ALLOCATOR = valueOf("RCVBUF_ALLOCATOR");
+    //消息大小估算器
+    public static final ChannelOption<MessageSizeEstimator> MESSAGE_SIZE_ESTIMATOR = valueOf("MESSAGE_SIZE_ESTIMATOR");
+    //连接超时时间
+    public static final ChannelOption<Integer> CONNECT_TIMEOUT_MILLIS = valueOf("CONNECT_TIMEOUT_MILLIS");
+    /**
+     * @deprecated Use {@link MaxMessagesRecvByteBufAllocator}
+     每次读取，允许读取的最大消息
+     */
+    @Deprecated
+    public static final ChannelOption<Integer> MAX_MESSAGES_PER_READ = valueOf("MAX_MESSAGES_PER_READ");
+    //每次写的自旋次数
+    public static final ChannelOption<Integer> WRITE_SPIN_COUNT = valueOf("WRITE_SPIN_COUNT");
+    /**
+     * @deprecated Use {@link #WRITE_BUFFER_WATER_MARK}
+     */
+    @Deprecated
+    public static final ChannelOption<Integer> WRITE_BUFFER_HIGH_WATER_MARK = valueOf("WRITE_BUFFER_HIGH_WATER_MARK");
+    /**
+     * @deprecated Use {@link #WRITE_BUFFER_WATER_MARK}
+     */
+    @Deprecated
+    public static final ChannelOption<Integer> WRITE_BUFFER_LOW_WATER_MARK = valueOf("WRITE_BUFFER_LOW_WATER_MARK");
+    public static final ChannelOption<WriteBufferWaterMark> WRITE_BUFFER_WATER_MARK =
+            valueOf("WRITE_BUFFER_WATER_MARK");
+    
+    public static final ChannelOption<Boolean> ALLOW_HALF_CLOSURE = valueOf("ALLOW_HALF_CLOSURE");
+    public static final ChannelOption<Boolean> AUTO_READ = valueOf("AUTO_READ");
+
+    /**
+     * @deprecated  Auto close will be removed in a future release.
+     *
+     * If {@code true} then the {@link Channel} is closed automatically and immediately on write failure.
+     * The default value is {@code true}.
+     */
+    @Deprecated
+    public static final ChannelOption<Boolean> AUTO_CLOSE = valueOf("AUTO_CLOSE");
+    //下面这些配置项就与socket的相关配置，我们在nio分类博客中有讲，下面这些用于socket通道
+    public static final ChannelOption<Boolean> SO_BROADCAST = valueOf("SO_BROADCAST");
+    public static final ChannelOption<Boolean> SO_KEEPALIVE = valueOf("SO_KEEPALIVE");
+    public static final ChannelOption<Integer> SO_SNDBUF = valueOf("SO_SNDBUF");
+    public static final ChannelOption<Integer> SO_RCVBUF = valueOf("SO_RCVBUF");
+    public static final ChannelOption<Boolean> SO_REUSEADDR = valueOf("SO_REUSEADDR");
+    public static final ChannelOption<Integer> SO_LINGER = valueOf("SO_LINGER");
+    public static final ChannelOption<Integer> SO_BACKLOG = valueOf("SO_BACKLOG");
+    public static final ChannelOption<Integer> SO_TIMEOUT = valueOf("SO_TIMEOUT");
+    //用于报文通道
+    public static final ChannelOption<Integer> IP_TOS = valueOf("IP_TOS");
+    public static final ChannelOption<InetAddress> IP_MULTICAST_ADDR = valueOf("IP_MULTICAST_ADDR");
+    public static final ChannelOption<NetworkInterface> IP_MULTICAST_IF = valueOf("IP_MULTICAST_IF");
+    public static final ChannelOption<Integer> IP_MULTICAST_TTL = valueOf("IP_MULTICAST_TTL");
+    public static final ChannelOption<Boolean> IP_MULTICAST_LOOP_DISABLED = valueOf("IP_MULTICAST_LOOP_DISABLED");
+
+    public static final ChannelOption<Boolean> TCP_NODELAY = valueOf("TCP_NODELAY");
+
+    @Deprecated
+    public static final ChannelOption<Boolean> DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION =
+            valueOf("DATAGRAM_CHANNEL_ACTIVE_ON_REGISTRATION");
+    public static final ChannelOption<Boolean> SINGLE_EVENTEXECUTOR_PER_GROUP =
+            valueOf("SINGLE_EVENTEXECUTOR_PER_GROUP");
+    /**
+     * Creates a new {@link ChannelOption} with the specified unique {@code name}.
+     创建通道选项
+     */
+    private ChannelOption(int id, String name) {
+        super(id, name);
+    }
+    @Deprecated
+    protected ChannelOption(String name) {
+        this(pool.nextId(), name);
+    }
+    /**
+     * Validate the value which is set for the {@link ChannelOption}. Sub-classes
+     * may override this for special checks.
+     校验通道选项的值
+     */
+    public void validate(T value) {
+        if (value == null) {
+            throw new NullPointerException("value");
+        }
+    }
+}
+从上面可以看出通道选项实际为一个抽象常量，主要的操作都是委托给内部的常量池ConstantPool，
+下面来看常量池的定义：
+package io.netty.util;
+
+import io.netty.util.internal.ObjectUtil;
+import io.netty.util.internal.PlatformDependent;
+
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * A pool of {@link Constant}s.
+ *
+ * @param <T> the type of the constant
+ */
+public abstract class ConstantPool<T extends Constant<T>> {
+    //常量集
+    private final ConcurrentMap<String, T> constants = PlatformDependent.newConcurrentHashMap();
+    //常量id生产器
+    private final AtomicInteger nextId = new AtomicInteger(1);
+
+    /**
+     * Shortcut of {@link #valueOf(String) valueOf(firstNameComponent.getName() + "#" + secondNameComponent)}.
+     获取firstNameComponent.getName() + "#" + secondNameComponent对应的常量
+     */
+    public T valueOf(Class<?> firstNameComponent, String secondNameComponent) {
+        if (firstNameComponent == null) {
+            throw new NullPointerException("firstNameComponent");
+        }
+        if (secondNameComponent == null) {
+            throw new NullPointerException("secondNameComponent");
+        }
+
+        return valueOf(firstNameComponent.getName() + '#' + secondNameComponent);
+    }
+
+    /**
+     * Returns the {@link Constant} which is assigned to the specified {@code name}.
+     * If there's no such {@link Constant}, a new one will be created and returned.
+     * Once created, the subsequent calls with the same {@code name} will always return the previously created one
+     * (i.e. singleton.)
+     *返回name对应常量
+     * @param name the name of the {@link Constant}
+     */
+    public T valueOf(String name) {
+        checkNotNullAndNotEmpty(name);
+        return getOrCreate(name);
+    }
+
+    /**
+     * Get existing constant by name or creates new one if not exists. Threadsafe
+     *获取name对应的常量，没有则创建
+     * @param name the name of the {@link Constant}
+     */
+    private T getOrCreate(String name) {
+        T constant = constants.get(name);
+        if (constant == null) {
+            final T tempConstant = newConstant(nextId(), name);
+            constant = constants.putIfAbsent(name, tempConstant);
+            if (constant == null) {
+                return tempConstant;
+            }
+        }
+        return constant;
+    }
+
+    /**
+     * Returns {@code true} if a {@link AttributeKey} exists for the given {@code name}.
+     检查name常量是否存在
+     */
+    public boolean exists(String name) {
+        checkNotNullAndNotEmpty(name);
+        return constants.containsKey(name);
+    }
+
+    /**
+     * Creates a new {@link Constant} for the given {@code name} or fail with an
+     * {@link IllegalArgumentException} if a {@link Constant} for the given {@code name} exists.
+     创建name常量
+     */
+    public T newInstance(String name) {
+        checkNotNullAndNotEmpty(name);
+        return createOrThrow(name);
+    }
+
+    /**
+     * Creates constant by name or throws exception. Threadsafe
+     *创建name对应的常量
+     * @param name the name of the {@link Constant}
+     */
+    private T createOrThrow(String name) {
+        T constant = constants.get(name);
+        if (constant == null) {
+            final T tempConstant = newConstant(nextId(), name);
+            constant = constants.putIfAbsent(name, tempConstant);
+            if (constant == null) {
+                return tempConstant;
+            }
+        }
+
+        throw new IllegalArgumentException(String.format("'%s' is already in use", name));
+    }
+
+    private static String checkNotNullAndNotEmpty(String name) {
+        ObjectUtil.checkNotNull(name, "name");
+
+        if (name.isEmpty()) {
+            throw new IllegalArgumentException("empty name");
+        }
+
+        return name;
+    }
+    //创建常量实例
+    protected abstract T newConstant(int id, String name);
+
+    @Deprecated
+    public final int nextId() {
+        return nextId.getAndIncrement();
+    }
+}
+从上面可以看出常量池，实际上用一个并发Map来存放常量，所有的操作委托为Map。
+再来看通道选项的父类，抽象常量
+public class ChannelOption<T> extends AbstractConstant<ChannelOption<T>> {
+
+package io.netty.util;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Base implementation of {@link Constant}.
+ */
+public abstract class AbstractConstant<T extends AbstractConstant<T>> implements Constant<T> {
+
+    private static final AtomicLong uniqueIdGenerator = new AtomicLong();
+    private final int id;//常量id
+    private final String name;//常量name
+    private final long uniquifier;//常量唯一识别号
+
+    /**
+     * Creates a new instance.
+     */
+    protected AbstractConstant(int id, String name) {
+        this.id = id;
+        this.name = name;
+        this.uniquifier = uniqueIdGenerator.getAndIncrement();
+    }
+
+    @Override
+    public final String name() {
+        return name;
+    }
+
+    @Override
+    public final int id() {
+        return id;
+    }
+
+    @Override
+    public final String toString() {
+        return name();
+    }
+
+    @Override
+    public final int hashCode() {
+        return super.hashCode();
+    }
+
+    @Override
+    public final boolean equals(Object obj) {
+        return super.equals(obj);
+    }
+
+    @Override
+    public final int compareTo(T o) {
+        if (this == o) {
+            return 0;
+        }
+
+        @SuppressWarnings("UnnecessaryLocalVariable")
+        AbstractConstant<T> other = o;
+        int returnCode;
+
+        returnCode = hashCode() - other.hashCode();
+        if (returnCode != 0) {
+            return returnCode;
+        }
+
+        if (uniquifier < other.uniquifier) {
+            return -1;
+        }
+        if (uniquifier > other.uniquifier) {
+            return 1;
+        }
+        throw new Error("failed to compare two different constants");
+    }
+}
+//Constant
+package io.netty.util;
+
+/**
+ * A singleton which is safe to compare via the {@code ==} operator. Created and managed by {@link ConstantPool}.
+ */
+public interface Constant<T extends Constant<T>> extends Comparable<T> {
+
+    /**
+     * Returns the unique number assigned to this {@link Constant}.
+     */
+    int id();
+
+    /**
+     * Returns the name of this {@link Constant}.
+     */
+    String name();
+}
+
+再来看属性key
+package io.netty.util;
+
+/**
+ * Key which can be used to access {@link Attribute} out of the {@link AttributeMap}. Be aware that it is not be
+ * possible to have multiple keys with the same name.
+ *
+ * @param <T>   the type of the {@link Attribute} which can be accessed via this {@link AttributeKey}.
+ */
+@SuppressWarnings("UnusedDeclaration") // 'T' is used only at compile time
+public final class AttributeKey<T> extends AbstractConstant<AttributeKey<T>> {
+    //常量池
+    private static final ConstantPool<AttributeKey<Object>> pool = new ConstantPool<AttributeKey<Object>>() {
+        @Override
+        protected AttributeKey<Object> newConstant(int id, String name) {
+            return new AttributeKey<Object>(id, name);
+        }
+    };
+
+    /**
+     * Returns the singleton instance of the {@link AttributeKey} which has the specified {@code name}.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> AttributeKey<T> valueOf(String name) {
+        return (AttributeKey<T>) pool.valueOf(name);
+    }
+
+    /**
+     * Returns {@code true} if a {@link AttributeKey} exists for the given {@code name}.
+     */
+    public static boolean exists(String name) {
+        return pool.exists(name);
+    }
+
+    /**
+     * Creates a new {@link AttributeKey} for the given {@code name} or fail with an
+     * {@link IllegalArgumentException} if a {@link AttributeKey} for the given {@code name} exists.
+     */
+    @SuppressWarnings("unchecked")
+    public static <T> AttributeKey<T> newInstance(String name) {
+        return (AttributeKey<T>) pool.newInstance(name);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static <T> AttributeKey<T> valueOf(Class<?> firstNameComponent, String secondNameComponent) {
+        return (AttributeKey<T>) pool.valueOf(firstNameComponent, secondNameComponent);
+    }
+
+    private AttributeKey(int id, String name) {
+        super(id, name);
+    }
+}
+从上面来看属性key也是一个常量，内部用常量池存放属性常量。
