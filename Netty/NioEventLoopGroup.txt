@@ -198,9 +198,46 @@ protected EventLoop newChild(Executor executor, Object... args) throws Exception
     return new NioEventLoop(this, executor, (SelectorProvider) args[0],
         ((SelectStrategyFactory) args[1]).newSelectStrategy(), (RejectedExecutionHandler) args[2]);
 }
-当这里，我们看到了上是的args参数，事件传给了Nio事件循环。
+到这里，我们看到了上是的args参数，事件传给了Nio事件循环。
 
+下面来看一下选择策略工厂：
+ public NioEventLoopGroup(
+            int nThreads, Executor executor, final SelectorProvider selectorProvider) {
+        this(nThreads, executor, selectorProvider, DefaultSelectStrategyFactory.INSTANCE);
+}
+//DefaultSelectStrategyFactory
+public final class DefaultSelectStrategyFactory implements SelectStrategyFactory {
+    public static final SelectStrategyFactory INSTANCE = new DefaultSelectStrategyFactory();
 
+    private DefaultSelectStrategyFactory() { }
+
+    @Override
+    public SelectStrategy newSelectStrategy() {
+        return DefaultSelectStrategy.INSTANCE;
+    }
+}
+//DefaultSelectStrategy
+package io.netty.channel;
+
+import io.netty.util.IntSupplier;
+
+/**
+ * Default select strategy.
+ */
+final class DefaultSelectStrategy implements SelectStrategy {
+    static final SelectStrategy INSTANCE = new DefaultSelectStrategy();
+
+    private DefaultSelectStrategy() { }
+    //获取选择器当前状态
+    @Override
+    public int calculateStrategy(IntSupplier selectSupplier, boolean hasTasks) throws Exception {
+        //如果有任务则返回，选择器选择后的结果值，否则返回为SelectStrategy.SELECT
+        return hasTasks ? selectSupplier.get() : SelectStrategy.SELECT;
+    }
+}
+从上面可以看出，默认选择策略DefaultSelectStrategy，策略方法主要根据任务队列是否有任务，来确定第一步的工作，
+如果没有任务，则下一步执行选择操作，否则返回选择器选择操作后的结果值，不执行选操作，然后处理操作就绪选择key和
+任务队列中的任务。
 总结：
 nio事件循环组实际为一个多线程事件循环组，主要用于管理nio事件循环；从设置nio事件循环组的IO事件处理时间百分比
 和重构nio事件循环组选择器方法，可以看出事件循环组继承迭代器的原因；nio事件循环组可以统一设置组内的nio事件循环的IO事件处理时间百分比，
