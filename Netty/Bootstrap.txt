@@ -1,0 +1,60 @@
+netty 抽象BootStrap定义：[url]http://donald-draper.iteye.com/blog/2392492[/url]
+netty ServerBootStrap解析：[url]http://donald-draper.iteye.com/blog/2392572[/url]
+引言：
+上面一篇文章我们看了ServerBootstrap，先来回顾一下：
+      服务端Bootstrap虽然继承与抽象Bootstrap，但他有自己的child通道选项及属性集，事件循环组和通道处理器，这些是用于配置，当Server通道接收客户端的请求，创建与客户端交互的通道。当构造Server引导配置时，如果传递一个事件循环，则Server通道监听器和客户端交互的通道公用一个事件循环组，否则parentGroup事件循环组用于监听器ServerChannel接受连接,childGroup事件循环组用于处理与客户端交互的通道相关事件和IO操作。
+      Server引导配置绑定socket地址，首先初始化通道，对于Server引导配置，这个通道为NioServerSocketChannel，初始化通道，即初始化Server通道；初始化Server通道，首先将Server引导配置的父类抽象Bootstrap的选项和属性配置给Server通道，然后添加ServerBootstrapAcceptor到Server通道内部的Channel管道内，然后将Server通道注册到事件循环组parentGroup中，然后通过Server通道#bind方法完成实际socket地址；Server引导配置监听器实际为一个Inbound通道处理器，每当有客户端连接请求时，则创建一个与客户端交互的通道，将child通道选项及属性配置给通道，并将通道注册到childGroup事件循环组，然后将通道处理器添加到与客户端交互的通道内部的Channel管道中。 
+今天我们来看客户端Bootstrap：
+package io.netty.bootstrap;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
+import io.netty.channel.EventLoop;
+import io.netty.channel.EventLoopGroup;
+import io.netty.resolver.AddressResolver;
+import io.netty.resolver.DefaultAddressResolverGroup;
+import io.netty.resolver.NameResolver;
+import io.netty.resolver.AddressResolverGroup;
+import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.FutureListener;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Map;
+import java.util.Map.Entry;
+
+/**
+ * A {@link Bootstrap} that makes it easy to bootstrap a {@link Channel} to use
+ * for clients.
+ *
+ * <p>The {@link #bind()} methods are useful in combination with connectionless transports such as datagram (UDP).
+ * For regular TCP connections, please use the provided {@link #connect()} methods.</p>
+ */
+public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(Bootstrap.class);
+
+    private static final AddressResolverGroup<?> DEFAULT_RESOLVER = DefaultAddressResolverGroup.INSTANCE;
+
+    private final BootstrapConfig config = new BootstrapConfig(this);
+
+    @SuppressWarnings("unchecked")
+    private volatile AddressResolverGroup<SocketAddress> resolver =
+            (AddressResolverGroup<SocketAddress>) DEFAULT_RESOLVER;
+    private volatile SocketAddress remoteAddress;
+     public Bootstrap() { }
+
+    private Bootstrap(Bootstrap bootstrap) {
+        super(bootstrap);
+        resolver = bootstrap.resolver;
+        remoteAddress = bootstrap.remoteAddress;
+    }
+}

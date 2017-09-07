@@ -1,0 +1,373 @@
+netty 抽象BootStrap定义：[url]http://donald-draper.iteye.com/blog/2392492[/url]
+引言：
+前面一篇文章我们看了抽象Bootstrap的定义，先来回顾一下：
+   抽象引导程序AbstractBootstrap，内部关联的一个事件循环组EventLoopGroup，一个通道处理器ChannelHandler，一个通道选项集和一个本地Socket地址及一个通道属性集。内部的方法主要配置事件循环组，通道处理，通道选项集，socket地址，及通道属性，通道注册，地址绑定。注册通道到事件循环组，首先由通道工厂创建通道实例，然后初始化通道，初始化工作待子类实现；然后将实际注册工作委托给事件循环组。绑定定socket地址，首先注册通道到事件循环组，待注册完成时，创建一个绑定任务线程完成地址绑定，实际将地址绑定工作委托给通道，并将绑定任务线程交由通道关联的事件循环的事件执行器执行。
+
+今天我们来看服务端Bootstrap：
+package io.netty.bootstrap;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelConfig;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandler;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.ServerChannel;
+import io.netty.util.AttributeKey;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * {@link Bootstrap} sub-class which allows easy bootstrap of {@link ServerChannel}
+ *
+ */
+public class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel> {
+ private static final InternalLogger logger = InternalLoggerFactory.getInstance(ServerBootstrap.class);
+    //通道选项及属性集
+    private final Map<ChannelOption<?>, Object> childOptions = new LinkedHashMap<ChannelOption<?>, Object>();
+    private final Map<AttributeKey<?>, Object> childAttrs = new LinkedHashMap<AttributeKey<?>, Object>();
+    private final ServerBootstrapConfig config = new ServerBootstrapConfig(this);//当前配置
+    private volatile EventLoopGroup childGroup;//事件循环组
+    private volatile ChannelHandler childHandler;//通道处理器
+    public ServerBootstrap() { }
+    private ServerBootstrap(ServerBootstrap bootstrap) {
+        super(bootstrap);
+        childGroup = bootstrap.childGroup;
+        childHandler = bootstrap.childHandler;
+        synchronized (bootstrap.childOptions) {
+            childOptions.putAll(bootstrap.childOptions);
+        }
+        synchronized (bootstrap.childAttrs) {
+            childAttrs.putAll(bootstrap.childAttrs);
+        }
+    }
+}
+从上面可看出，服务端Bootstrap虽然继承与抽象Bootstrap，但他有自己的通道选项及属性集，事件循环组和通道处理器。
+/**
+ * Specify the {@link EventLoopGroup} which is used for the parent (acceptor) and the child (client).
+ 父监听器和孩子客户端同用一个事件循环组
+ */
+@Override
+public ServerBootstrap group(EventLoopGroup group) {
+    return group(group, group);
+}
+
+/**
+ * Set the {@link EventLoopGroup} for the parent (acceptor) and the child (client). These
+ * {@link EventLoopGroup}'s are used to handle all the events and IO for {@link ServerChannel} and
+ * {@link Channel}'s.
+ 设置父监听器和孩子客户端的事件循环，两者用于处理SeverChannel和Channel的所有事件循环
+ */
+public ServerBootstrap group(EventLoopGroup parentGroup, EventLoopGroup childGroup) {
+    super.group(parentGroup);
+    if (childGroup == null) {
+        throw new NullPointerException("childGroup");
+    }
+    if (this.childGroup != null) {
+        throw new IllegalStateException("childGroup set already");
+    }
+    this.childGroup = childGroup;
+    return this;
+}
+大胆猜测一下，parentGroup事件循环组用于监听器ServerChannel接受连接,childGroup事件循环组
+用于当Server通道接收客户端的连接时，产生一个通道用于与客户端交互，childGroup事件循环组用于
+处理与客户端交互的通道相关事件和IO操作。
+
+/**
+ * Allow to specify a {@link ChannelOption} which is used for the {@link Channel} instances once they get created
+ * (after the acceptor accepted the {@link Channel}). Use a value of {@code null} to remove a previous set
+ * {@link ChannelOption}.
+ 用于Server通道接收客户端的连接时，产生的通道选项配置
+ */
+public <T> ServerBootstrap childOption(ChannelOption<T> childOption, T value) {
+    if (childOption == null) {
+        throw new NullPointerException("childOption");
+    }
+    if (value == null) {
+        synchronized (childOptions) {
+            childOptions.remove(childOption);
+        }
+    } else {
+        synchronized (childOptions) {
+            childOptions.put(childOption, value);
+        }
+    }
+    return this;
+}
+从这个方法来看，上面的猜测是正确的。
+
+
+/**
+ * Set the specific {@link AttributeKey} with the given value on every child {@link Channel}. If the value is
+ * {@code null} the {@link AttributeKey} is removed
+ 客户端交互通道属性配置
+ */
+public <T> ServerBootstrap childAttr(AttributeKey<T> childKey, T value) {
+    if (childKey == null) {
+        throw new NullPointerException("childKey");
+    }
+    if (value == null) {
+        childAttrs.remove(childKey);
+    } else {
+        childAttrs.put(childKey, value);
+    }
+    return this;
+}
+
+/**
+ * Set the {@link ChannelHandler} which is used to serve the request for the {@link Channel}'s.
+配置与客户端交互通道的通道处理器
+ */
+public ServerBootstrap childHandler(ChannelHandler childHandler) {
+    if (childHandler == null) {
+        throw new NullPointerException("childHandler");
+    }
+    this.childHandler = childHandler;
+    return this;
+}
+//验证通道配置是否有效
+@Override
+public ServerBootstrap validate() {
+    super.validate();
+    if (childHandler == null) {
+        throw new IllegalStateException("childHandler not set");
+    }
+    if (childGroup == null) {
+        logger.warn("childGroup is not set. Using parentGroup instead.");
+        childGroup = config.group();
+    }
+    return this;
+}
+//获取当前Server引导配置
+@Override
+public final ServerBootstrapConfig config() {
+    return config;
+}
+下面我们来看初始化通道，这个是重点：
+@Override
+void init(Channel channel) throws Exception {
+    final Map<ChannelOption<?>, Object> options = options0();
+    synchronized (options) {
+        //设置父Server通道选项
+        setChannelOptions(channel, options, logger);
+    }
+
+    final Map<AttributeKey<?>, Object> attrs = attrs0();
+    synchronized (attrs) {
+        for (Entry<AttributeKey<?>, Object> e: attrs.entrySet()) {
+            @SuppressWarnings("unchecked")
+            AttributeKey<Object> key = (AttributeKey<Object>) e.getKey();
+            //设置父Server通道属性
+            channel.attr(key).set(e.getValue());
+        }
+    }
+   //获取Server通道的Channel管道
+    ChannelPipeline p = channel.pipeline();
+    final EventLoopGroup currentChildGroup = childGroup;
+    final ChannelHandler currentChildHandler = childHandler;
+    final Entry<ChannelOption<?>, Object>[] currentChildOptions;
+    final Entry<AttributeKey<?>, Object>[] currentChildAttrs;
+
+    synchronized (childOptions) {
+        currentChildOptions = childOptions.entrySet().toArray(newOptionArray(childOptions.size()));
+    }
+
+    synchronized (childAttrs) {
+        currentChildAttrs = childAttrs.entrySet().toArray(newAttrArray(childAttrs.size()));
+    }
+
+    p.addLast(new ChannelInitializer<Channel>() {
+        @Override
+        public void initChannel(final Channel ch) throws Exception {
+            final ChannelPipeline pipeline = ch.pipeline();
+            ChannelHandler handler = config.handler();
+            if (handler != null) {
+	        //将通道处理器添加到通道内部的Channel管道内
+                pipeline.addLast(handler);
+            }
+            
+            ch.eventLoop().execute(new Runnable() {
+                @Override
+                public void run() {
+		    //将Server引导配置监听器添加到通道内部的Channel管道内
+                    pipeline.addLast(new ServerBootstrapAcceptor(
+                            ch, currentChildGroup, currentChildHandler, currentChildOptions, currentChildAttrs));
+                }
+            });
+        }
+    });
+}
+我们来看引导配置监听器，实际为一个Inbound通道处理器
+ private static class ServerBootstrapAcceptor extends ChannelInboundHandlerAdapter {
+     private final EventLoopGroup childGroup;//与客户端交互通道注册的事件循环组
+     private final ChannelHandler childHandler;//与客户端交互通道的通道处理器
+     private final Entry<ChannelOption<?>, Object>[] childOptions;//与客户端交互通道的选项配置
+     private final Entry<AttributeKey<?>, Object>[] childAttrs;//与客户端交互通道的属性
+     private final Runnable enableAutoReadTask;
+
+     ServerBootstrapAcceptor(
+             final Channel channel, EventLoopGroup childGroup, ChannelHandler childHandler,
+             Entry<ChannelOption<?>, Object>[] childOptions, Entry<AttributeKey<?>, Object>[] childAttrs) {
+         this.childGroup = childGroup;
+         this.childHandler = childHandler;
+         this.childOptions = childOptions;
+         this.childAttrs = childAttrs;
+
+         // Task which is scheduled to re-enable auto-read.
+         // It's important to create this Runnable before we try to submit it as otherwise the URLClassLoader may
+         // not be able to load the class because of the file limit it already reached.
+         // 此任务用于开启通道自动读取配置，将会被所在的事件循环调度。
+         // See https://github.com/netty/netty/issues/1328
+         enableAutoReadTask = new Runnable() {
+             @Override
+             public void run() {
+	         //开启通道自动读取配置
+                 channel.config().setAutoRead(true);
+             }
+         };
+     }
+
+     @Override
+     @SuppressWarnings("unchecked")
+     public void channelRead(ChannelHandlerContext ctx, Object msg) {
+         //与客户端交互通道
+         final Channel child = (Channel) msg;
+         //配置与客户端交互通道的通道处理器
+         child.pipeline().addLast(childHandler);
+         //配置与客户端交互通道的选项
+         setChannelOptions(child, childOptions, logger);
+
+         for (Entry<AttributeKey<?>, Object> e: childAttrs) {
+	    //配置与客户端交互通道的属性
+             child.attr((AttributeKey<Object>) e.getKey()).set(e.getValue());
+         }
+
+         try {
+	    //注册与客户端交互通道到childGroup事件循环组
+             childGroup.register(child).addListener(new ChannelFutureListener() {
+                 @Override
+                 public void operationComplete(ChannelFuture future) throws Exception {
+                     if (!future.isSuccess()) {
+		         //注册失败，则关闭通道
+                         forceClose(child, future.cause());
+                     }
+                 }
+             });
+         } catch (Throwable t) {
+             forceClose(child, t);
+         }
+     }
+      //关闭通道
+     private static void forceClose(Channel child, Throwable t) {
+         child.unsafe().closeForcibly();
+         logger.warn("Failed to register an accepted channel: {}", child, t);
+     }
+
+     @Override
+     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+         final ChannelConfig config = ctx.channel().config();
+         if (config.isAutoRead()) {
+             // stop accept new connections for 1 second to allow the channel to recover
+	     //发生异常，则停止接受连接请求1秒钟，允许通道恢复
+             // See https://github.com/netty/netty/issues/1328
+             config.setAutoRead(false);
+             ctx.channel().eventLoop().schedule(enableAutoReadTask, 1, TimeUnit.SECONDS);
+         }
+         // still let the exceptionCaught event flow through the pipeline to give the user
+         // a chance to do something with it
+	 //触发异常
+         ctx.fireExceptionCaught(cause);
+     }
+ }
+
+//ChannelConfig
+ /**
+  * Sets if {@link ChannelHandlerContext#read()} will be invoked automatically so that a user application doesn't
+  * need to call it at all. The default value is {@code true}.
+  */
+ ChannelConfig setAutoRead(boolean autoRead);
+
+
+回到服务端引导配置:
+ ServerBootstrap serverBoot = new ServerBootstrap(); 
+            serverBoot.group(bossGroup, workerGroup)
+             .channel(NioServerSocketChannel.class) 
+	   ...
+ChannelFuture f = serverBoot.bind(inetSocketAddress).sync();
+
+结合前一篇定义抽象Bootstrap定义，我们来理一下ServerBootstrap绑定，完成的任务：
+Server引导配置绑定socket地址，首先初始化通道，对于Server引导配置，这个通道为
+NioServerSocketChannel，初始化通道，即初始化Server通道，从上面的初始化通道方法来看，
+初始化通道，首先将Server引导配置的父类抽象Bootstrap的选项和属性配置给Server通道，
+然后将ServerBootstrapAcceptor添加到Server通道内部的Channel管道内，然后将Server通道注册到
+parentGroup事件循环组中，然后通过Server通道#bind方法完成实际socket地址；
+Server引导配置监听器实际为一个Inbound通道处理器，每当有客户端连接请求时，
+则创建一个与客户端交互的通道，将child通道选项及属性配置给通道，并将通道注册到childGroup事件循环组，
+然后将通道处理器添加到与客户端交互的通道内部的Channel管道中。
+
+再来看其他方法：
+//创建属性和选项组
+@SuppressWarnings("unchecked")
+private static Entry<AttributeKey<?>, Object>[] newAttrArray(int size) {
+    return new Entry[size];
+}
+@SuppressWarnings("unchecked")
+private static Map.Entry<ChannelOption<?>, Object>[] newOptionArray(int size) {
+    return new Map.Entry[size];
+}
+下面几个方法，没有什么好讲的，很简单：
+ @Override
+@SuppressWarnings("CloneDoesntCallSuperClone")
+public ServerBootstrap clone() {
+    return new ServerBootstrap(this);
+}
+
+/**
+ * Return the configured {@link EventLoopGroup} which will be used for the child channels or {@code null}
+ * if non is configured yet.
+ *
+ * @deprecated Use {@link #config()} instead.
+ */
+@Deprecated
+public EventLoopGroup childGroup() {
+    return childGroup;
+}
+
+final ChannelHandler childHandler() {
+    return childHandler;
+}
+
+final Map<ChannelOption<?>, Object> childOptions() {
+    return copiedMap(childOptions);
+}
+
+final Map<AttributeKey<?>, Object> childAttrs() {
+    return copiedMap(childAttrs);
+}
+
+总结：
+服务端Bootstrap虽然继承与抽象Bootstrap，但他有自己的child通道选项及属性集，事件循环组和通道处理器，
+这些是用于配置，当Server通道接收客户端的请求，创建与客户端交互的通道。当构造Server引导配置时，
+如果传递一个事件循环，则Server通道监听器和客户端交互的通道公用一个事件循环组，否则
+parentGroup事件循环组用于监听器ServerChannel接受连接,childGroup事件循环组用于
+处理与客户端交互的通道相关事件和IO操作。
+
+Server引导配置绑定socket地址，首先初始化通道，对于Server引导配置，这个通道为
+NioServerSocketChannel，初始化通道，即初始化Server通道；
+初始化Server通道，首先将Server引导配置的父类抽象Bootstrap的选项和属性配置给Server通道，
+然后将ServerBootstrapAcceptor添加到Server通道内部的Channel管道内，然后将Server通道注册到
+parentGroup事件循环组中，然后通过Server通道#bind方法完成实际socket地址；
+Server引导配置监听器实际为一个Inbound通道处理器，每当有客户端连接请求时，
+则创建一个与客户端交互的通道，将child通道选项及属性配置给通道，并将通道注册到childGroup事件循环组，
+然后将通道处理器添加到与客户端交互的通道内部的Channel管道中。
+

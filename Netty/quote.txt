@@ -50,3 +50,6 @@ netty nio事件循环组：[url]http://donald-draper.iteye.com/blog/2392300[/url
 ######################################################
 BootStrap
 ######################################################
+netty 抽象BootStrap定义：[url]http://donald-draper.iteye.com/blog/2392492[/url]
+netty ServerBootStrap解析：[url]http://donald-draper.iteye.com/blog/2392572[/url]
+
