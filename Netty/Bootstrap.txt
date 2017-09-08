@@ -34,22 +34,24 @@ import java.util.Map.Entry;
 /**
  * A {@link Bootstrap} that makes it easy to bootstrap a {@link Channel} to use
  * for clients.
+ 引导程序Bootstrap使客户端很容易启动一个通道。
  *
  * <p>The {@link #bind()} methods are useful in combination with connectionless transports such as datagram (UDP).
  * For regular TCP connections, please use the provided {@link #connect()} methods.</p>
+ 绑定方法#bind对无连接的报文通信UDP非常有用。对于Socket连接TCP，可以使用#connect连接方法。
  */
 public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(Bootstrap.class);
 
     private static final AddressResolverGroup<?> DEFAULT_RESOLVER = DefaultAddressResolverGroup.INSTANCE;
-
+   //引导配置
     private final BootstrapConfig config = new BootstrapConfig(this);
 
     @SuppressWarnings("unchecked")
     private volatile AddressResolverGroup<SocketAddress> resolver =
             (AddressResolverGroup<SocketAddress>) DEFAULT_RESOLVER;
-    private volatile SocketAddress remoteAddress;
+    private volatile SocketAddress remoteAddress;//远端socket地址
      public Bootstrap() { }
 
     private Bootstrap(Bootstrap bootstrap) {
@@ -57,4 +59,939 @@ public class Bootstrap extends AbstractBootstrap<Bootstrap, Channel> {
         resolver = bootstrap.resolver;
         remoteAddress = bootstrap.remoteAddress;
     }
+}
+由于客户端引导配置Bootstrap，不像Server引导配置需要创建交互通道，所以可以看到客户端引导配置没有在配置
+子事件循环。在客户端实例中有这么几句：
+EventLoopGroup workerGroup = new NioEventLoopGroup();
+try {
+	//Bootstrap，用于配置客户端，一般为Socket通道
+	Bootstrap bootstrap = new Bootstrap();
+	bootstrap.group(workerGroup)
+	 .channel(NioSocketChannel.class)
+	 .handler(new ChannelInitializer<SocketChannel>() {
+	     @Override
+	     protected void initChannel(SocketChannel ch) throws Exception {
+		 //添加安全套接字处理器和通道处理器到
+		 ChannelPipeline pipeline = ch.pipeline();
+		 if (sslCtx != null) {
+			 pipeline.addLast(sslCtx.newHandler(ch.alloc(), ip, port));
+		 }
+		 pipeline.addLast(new LoggingHandler(LogLevel.INFO));
+		 pipeline.addLast(new EchoClientHandler());
+	     }
+	 });
+	 ...
+	//连接socket地址
+	ChannelFuture f = bootstrap.connect(inetSocketAddress).sync();
+...
+}
+我们需要关注的是这一句：
+ bootstrap.connect(inetSocketAddress).sync();
+ 引导配置连接远端socket地址：
+ 
+/**
+ * Connect a {@link Channel} to the remote peer.
+ */
+public ChannelFuture connect(String inetHost, int inetPort) {
+    return connect(InetSocketAddress.createUnresolved(inetHost, inetPort));
+}
+
+/**
+ * Connect a {@link Channel} to the remote peer.
+ */
+public ChannelFuture connect(InetAddress inetHost, int inetPort) {
+    return connect(new InetSocketAddress(inetHost, inetPort));
+}
+
+/**
+ * Connect a {@link Channel} to the remote peer.
+ */
+public ChannelFuture connect(SocketAddress remoteAddress) {
+    if (remoteAddress == null) {
+        throw new NullPointerException("remoteAddress");
+    }
+
+    validate();
+    return doResolveAndConnect(remoteAddress, config.localAddress());
+}
+
+
+/**
+ * Connect a {@link Channel} to the remote peer.
+ */
+public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
+    if (remoteAddress == null) {
+        throw new NullPointerException("remoteAddress");
+    }
+    validate();
+    return doResolveAndConnect(remoteAddress, localAddress);
+}
+
+
+从上面来了，连接远端socket地址，实际委托给doResolveAndConnect方法：
+
+/**
+ * @see #connect()
+ 连接操作
+ */
+private ChannelFuture doResolveAndConnect(final SocketAddress remoteAddress, final SocketAddress localAddress) {
+    //初始化通道，并注册通道到事件循环组
+    final ChannelFuture regFuture = initAndRegister();
+    final Channel channel = regFuture.channel();
+
+    if (regFuture.isDone()) {
+        if (!regFuture.isSuccess()) {
+            return regFuture;
+        }
+	//初始化成功，则委托给doResolveAndConnect0完成实际连接操作
+        return doResolveAndConnect0(channel, remoteAddress, localAddress, channel.newPromise());
+    } else {
+       //如果初始化和注册工作没有完成，添加任务结果监听器，待完成时，更新注册状态，完成实际连接操作
+        // Registration future is almost always fulfilled already, but just in case it's not.
+        final PendingRegistrationPromise promise = new PendingRegistrationPromise(channel);
+        regFuture.addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+                // Directly obtain the cause and do a null check so we only need one volatile read in case of a
+                // failure.
+                Throwable cause = future.cause();
+                if (cause != null) {
+                    // Registration on the EventLoop failed so fail the ChannelPromise directly to not cause an
+                    // IllegalStateException once we try to access the EventLoop of the Channel.
+                    promise.setFailure(cause);
+                } else {
+                    // Registration was successful, so set the correct executor to use.
+                    // See https://github.com/netty/netty/issues/2586
+                    promise.registered();
+                    doResolveAndConnect0(channel, remoteAddress, localAddress, promise);
+                }
+            }
+        });
+        return promise;
+    }
+}
+下面我们先看一下初始化通道方法，再来看实际连接完成方法doResolveAndConnect0。
+//初始化通道
+@Override
+@SuppressWarnings("unchecked")
+void init(Channel channel) throws Exception {
+   //添加通道处理器到通道内存的Channel管道中
+    ChannelPipeline p = channel.pipeline();
+    p.addLast(config.handler());
+
+   //配置通道选项和属性
+    final Map<ChannelOption<?>, Object> options = options0();
+    synchronized (options) {
+        setChannelOptions(channel, options, logger);
+    }
+
+    final Map<AttributeKey<?>, Object> attrs = attrs0();
+    synchronized (attrs) {
+        for (Entry<AttributeKey<?>, Object> e: attrs.entrySet()) {
+            channel.attr((AttributeKey<Object>) e.getKey()).set(e.getValue());
+        }
+    }
+}
+
+//实际连接操作
+private ChannelFuture doResolveAndConnect0(final Channel channel, SocketAddress remoteAddress,
+                                           final SocketAddress localAddress, final ChannelPromise promise) {
+    try {
+        final EventLoop eventLoop = channel.eventLoop();
+        final AddressResolver<SocketAddress> resolver = this.resolver.getResolver(eventLoop);
+        if (!resolver.isSupported(remoteAddress) || resolver.isResolved(remoteAddress)) {
+            // Resolver has no idea about what to do with the specified remote address or it's resolved already.
+	    //如果地址解析器不知道如何应对远端地址，或已经解决则连接远端地址，完成实际连接
+            doConnect(remoteAddress, localAddress, promise);
+            return promise;
+        }
+
+        final Future<SocketAddress> resolveFuture = resolver.resolve(remoteAddress);
+
+        if (resolveFuture.isDone()) {
+	    
+            final Throwable resolveFailureCause = resolveFuture.cause();
+
+            if (resolveFailureCause != null) {
+                // Failed to resolve immediately
+                channel.close();
+                promise.setFailure(resolveFailureCause);
+            } else {
+	         //远端地址解析完毕，并支持，完成实际连接
+                // Succeeded to resolve immediately; cached? (or did a blocking lookup)
+                doConnect(resolveFuture.getNow(), localAddress, promise);
+            }
+            return promise;
+        }
+        //如果地址解析任务没有完成，添加监听器，待任务完成时，完成连接操作
+        // Wait until the name resolution is finished.
+        resolveFuture.addListener(new FutureListener<SocketAddress>() {
+            @Override
+            public void operationComplete(Future<SocketAddress> future) throws Exception {
+                if (future.cause() != null) {
+                    channel.close();
+                    promise.setFailure(future.cause());
+                } else {
+                    doConnect(future.getNow(), localAddress, promise);
+                }
+            }
+        });
+    } catch (Throwable cause) {
+        promise.tryFailure(cause);
+    }
+    return promise;
+}
+//连接远端地址
+private static void doConnect(
+        final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise connectPromise) {
+
+    // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
+    // the pipeline in its channelRegistered() implementation.
+    final Channel channel = connectPromise.channel();
+    //创建一个任务线程完成实际连接远端地址操作，实际委托给通道的连接方法，任务线程交由通道所在的事件循环去执行
+    channel.eventLoop().execute(new Runnable() {
+        @Override
+        public void run() {
+            if (localAddress == null) {
+                channel.connect(remoteAddress, connectPromise);
+            } else {
+	       //实际委托给通道的连接方法
+                channel.connect(remoteAddress, localAddress, connectPromise);
+            }
+            connectPromise.addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
+        }
+    });
+}
+我们来理一下，客户端引导配置的连接操作，首先初始化通道，主要是配置通道的，选型和属性，将通道处理器添加
+到通道内部的Channel管道中，注册通道到事件循环组，然后委托通道完成实际的连接操作。
+再来看其他方法：
+//配置远端socket地址
+/**
+ * The {@link SocketAddress} to connect to once the {@link #connect()} method
+ * is called.
+ */
+public Bootstrap remoteAddress(SocketAddress remoteAddress) {
+    this.remoteAddress = remoteAddress;
+    return this;
+}
+
+/**
+ * @see #remoteAddress(SocketAddress)
+ */
+public Bootstrap remoteAddress(String inetHost, int inetPort) {
+    remoteAddress = InetSocketAddress.createUnresolved(inetHost, inetPort);
+    return this;
+}
+
+/**
+ * @see #remoteAddress(SocketAddress)
+ */
+public Bootstrap remoteAddress(InetAddress inetHost, int inetPort) {
+    remoteAddress = new InetSocketAddress(inetHost, inetPort);
+    return this;
+}
+
+/**
+ * Connect a {@link Channel} to the remote peer.
+ 连接远端peer通道
+ */
+public ChannelFuture connect() {
+    validate();
+    SocketAddress remoteAddress = this.remoteAddress;
+    if (remoteAddress == null) {
+        throw new IllegalStateException("remoteAddress not set");
+    }
+    return doResolveAndConnect(remoteAddress, config.localAddress());
+}
+
+//验证引导配置是否有效
+@Override
+public Bootstrap validate() {
+    super.validate();
+    if (config.handler() == null) {
+        throw new IllegalStateException("handler not set");
+    }
+    return this;
+}
+//克隆配置
+@Override
+@SuppressWarnings("CloneDoesntCallSuperClone")
+public Bootstrap clone() {
+    return new Bootstrap(this);
+}
+
+/**
+ * Returns a deep clone of this bootstrap which has the identical configuration except that it uses
+ * the given {@link EventLoopGroup}. This method is useful when making multiple {@link Channel}s with similar
+ * settings.
+ */
+public Bootstrap clone(EventLoopGroup group) {
+    Bootstrap bs = new Bootstrap(this);
+    bs.group = group;
+    return bs;
+}
+//获取引导配置
+@Override
+public final BootstrapConfig config() {
+    return config;
+}
+//获取远端socket地址
+final SocketAddress remoteAddress() {
+    return remoteAddress;
+}
+//获取地址解析组
+final AddressResolverGroup<?> resolver() {
+    return resolver;
+}
+
+总结：
+客户端引导配置的连接操作，首先初始化通道，主要是配置通道的，选型和属性，将通道处理器添加
+到通道内部的Channel管道中，注册通道到事件循环组，然后委托通道完成实际的连接操作。
+
+附：
+在客户端引导配置有一个地址解析组配置
+private static final AddressResolverGroup<?> DEFAULT_RESOLVER = DefaultAddressResolverGroup.INSTANCE;
+我们来简单看一下：
+//DefaultAddressResolverGroup,默认地址解析组
+package io.netty.resolver;
+
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.internal.UnstableApi;
+
+import java.net.InetSocketAddress;
+
+/**
+ * A {@link AddressResolverGroup} of {@link DefaultNameResolver}s.
+ */
+@UnstableApi
+public final class DefaultAddressResolverGroup extends AddressResolverGroup<InetSocketAddress> {
+
+    public static final DefaultAddressResolverGroup INSTANCE = new DefaultAddressResolverGroup();
+    private DefaultAddressResolverGroup() { }
+    //创建地址解析器
+    @Override
+    protected AddressResolver<InetSocketAddress> newResolver(EventExecutor executor) throws Exception {
+        return new DefaultNameResolver(executor).asAddressResolver();
+    }
+}
+
+//DefaultNameResolver，默认命名解析器
+package io.netty.resolver;
+
+import io.netty.util.internal.SocketUtils;
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.UnstableApi;
+
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * A {@link InetNameResolver} that resolves using JDK's built-in domain name lookup mechanism.
+ * Note that this resolver performs a blocking name lookup from the caller thread.
+ */
+@UnstableApi
+public class DefaultNameResolver extends InetNameResolver {
+
+    public DefaultNameResolver(EventExecutor executor) {
+        super(executor);
+    }
+
+    @Override
+    protected void doResolve(String inetHost, Promise<InetAddress> promise) throws Exception {
+        try {
+            promise.setSuccess(SocketUtils.addressByName(inetHost));
+        } catch (UnknownHostException e) {
+            promise.setFailure(e);
+        }
+    }
+
+    @Override
+    protected void doResolveAll(String inetHost, Promise<List<InetAddress>> promise) throws Exception {
+        try {
+            promise.setSuccess(Arrays.asList(SocketUtils.allAddressesByName(inetHost)));
+        } catch (UnknownHostException e) {
+            promise.setFailure(e);
+        }
+    }
+}
+
+//命名解析器InetNameResolver
+
+package io.netty.resolver;
+
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.internal.UnstableApi;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+
+/**
+ * A skeletal {@link NameResolver} implementation that resolves {@link InetAddress}.
+ */
+@UnstableApi
+public abstract class InetNameResolver extends SimpleNameResolver<InetAddress> {
+    private volatile AddressResolver<InetSocketAddress> addressResolver;//地址解析器
+
+    /**
+     * @param executor the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     *                 by {@link #resolve(String)}
+     */
+    protected InetNameResolver(EventExecutor executor) {
+        super(executor);
+    }
+
+    /**
+     * Return a {@link AddressResolver} that will use this name resolver underneath.
+     * It's cached internally, so the same instance is always returned.
+     这个方法时我们要找的
+     */
+    public AddressResolver<InetSocketAddress> asAddressResolver() {
+        AddressResolver<InetSocketAddress> result = addressResolver;
+        if (result == null) {
+            synchronized (this) {
+                result = addressResolver;
+                if (result == null) {
+		    //如果内部地址解析器为空，则创建一个socket地址解析器
+                    addressResolver = result = new InetSocketAddressResolver(executor(), this);
+                }
+            }
+        }
+        return result;
+    }
+}
+
+
+先把InetNameResolver的父类SimpleNameResolver看一下，在看socket地址解析器InetSocketAddressResolver
+
+//SimpleNameResolver
+package io.netty.resolver;
+
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.UnstableApi;
+
+import java.util.List;
+
+import static io.netty.util.internal.ObjectUtil.*;
+
+/**
+ * A skeletal {@link NameResolver} implementation.
+ */
+@UnstableApi
+public abstract class SimpleNameResolver<T> implements NameResolver<T> {
+
+    private final EventExecutor executor;
+
+    /**
+     * @param executor the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     *                 by {@link #resolve(String)}
+     */
+    protected SimpleNameResolver(EventExecutor executor) {
+        this.executor = checkNotNull(executor, "executor");
+    }
+
+    /**
+     * Returns the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     * by {@link #resolve(String)}.
+     */
+    protected EventExecutor executor() {
+        return executor;
+    }
+
+    @Override
+    public final Future<T> resolve(String inetHost) {
+        final Promise<T> promise = executor().newPromise();
+        return resolve(inetHost, promise);
+    }
+
+    @Override
+    public Future<T> resolve(String inetHost, Promise<T> promise) {
+        checkNotNull(promise, "promise");
+
+        try {
+            doResolve(inetHost, promise);
+            return promise;
+        } catch (Exception e) {
+            return promise.setFailure(e);
+        }
+    }
+
+    @Override
+    public final Future<List<T>> resolveAll(String inetHost) {
+        final Promise<List<T>> promise = executor().newPromise();
+        return resolveAll(inetHost, promise);
+    }
+
+    @Override
+    public Future<List<T>> resolveAll(String inetHost, Promise<List<T>> promise) {
+        checkNotNull(promise, "promise");
+
+        try {
+            doResolveAll(inetHost, promise);
+            return promise;
+        } catch (Exception e) {
+            return promise.setFailure(e);
+        }
+    }
+
+    /**
+     * Invoked by {@link #resolve(String)} to perform the actual name resolution.
+     */
+    protected abstract void doResolve(String inetHost, Promise<T> promise) throws Exception;
+
+    /**
+     * Invoked by {@link #resolveAll(String)} to perform the actual name resolution.
+     */
+    protected abstract void doResolveAll(String inetHost, Promise<List<T>> promise) throws Exception;
+
+    @Override
+    public void close() { }
+}
+//NameResolver
+package io.netty.resolver;
+
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.UnstableApi;
+
+import java.io.Closeable;
+import java.util.List;
+
+/**
+ * Resolves an arbitrary string that represents the name of an endpoint into an address.
+ */
+@UnstableApi
+public interface NameResolver<T> extends Closeable {
+
+    /**
+     * Resolves the specified name into an address.
+     *
+     * @param inetHost the name to resolve
+     *
+     * @return the address as the result of the resolution
+     */
+    Future<T> resolve(String inetHost);
+
+    /**
+     * Resolves the specified name into an address.
+     *
+     * @param inetHost the name to resolve
+     * @param promise the {@link Promise} which will be fulfilled when the name resolution is finished
+     *
+     * @return the address as the result of the resolution
+     */
+    Future<T> resolve(String inetHost, Promise<T> promise);
+
+    /**
+     * Resolves the specified host name and port into a list of address.
+     *
+     * @param inetHost the name to resolve
+     *
+     * @return the list of the address as the result of the resolution
+     */
+    Future<List<T>> resolveAll(String inetHost);
+
+    /**
+     * Resolves the specified host name and port into a list of address.
+     *
+     * @param inetHost the name to resolve
+     * @param promise the {@link Promise} which will be fulfilled when the name resolution is finished
+     *
+     * @return the list of the address as the result of the resolution
+     */
+    Future<List<T>> resolveAll(String inetHost, Promise<List<T>> promise);
+
+    /**
+     * Closes all the resources allocated and used by this resolver.
+     */
+    @Override
+    void close();
+}
+
+回到InetNameResolver的asAddressResolver方法的这一句
+//如果内部地址解析器为空，则创建一个socket地址解析器
+addressResolver = result = new InetSocketAddressResolver(executor(), this);
+
+//socket地址解析器,InetSocketAddressResolver
+package io.netty.resolver;
+
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.FutureListener;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.UnstableApi;
+
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * A {@link AbstractAddressResolver} that resolves {@link InetSocketAddress}.
+ */
+@UnstableApi
+public class InetSocketAddressResolver extends AbstractAddressResolver<InetSocketAddress> {
+
+    final NameResolver<InetAddress> nameResolver;//命名解决器，默认为DefaultNameResolver
+
+    /**
+     * @param executor the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     *                 by {@link #resolve(java.net.SocketAddress)}
+     * @param nameResolver the {@link NameResolver} used for name resolution
+     */
+    public InetSocketAddressResolver(EventExecutor executor, NameResolver<InetAddress> nameResolver) {
+        super(executor, InetSocketAddress.class);
+        this.nameResolver = nameResolver;
+    }
+    @Override
+    public void close() {
+	  nameResolver.close();
+    }
+}
+来看地址解析方法，
+//地址是否可以解析
+@Override
+protected boolean doIsResolved(InetSocketAddress address) {
+    return !address.isUnresolved();
+}
+
+//InetSocketAddress
+/**
+  * Checks whether the address has been resolved or not.
+  *
+  * @return <code>true</code> if the hostname couldn't be resolved into
+  *          an <code>InetAddress</code>.
+  */
+ public final boolean isUnresolved() {
+     return holder.isUnresolved();
+ }
+
+再看另外两个地址解决方法，
+@Override
+protected void doResolve(final InetSocketAddress unresolvedAddress, final Promise<InetSocketAddress> promise)
+        throws Exception {
+    // Note that InetSocketAddress.getHostName() will never incur a reverse lookup here,
+    // because an unresolved address always has a host name.
+    //委托给命令解决器
+    nameResolver.resolve(unresolvedAddress.getHostName())
+            .addListener(new FutureListener<InetAddress>() {
+                @Override
+                public void operationComplete(Future<InetAddress> future) throws Exception {
+                    if (future.isSuccess()) {
+                        promise.setSuccess(new InetSocketAddress(future.getNow(), unresolvedAddress.getPort()));
+                    } else {
+                        promise.setFailure(future.cause());
+                    }
+                }
+            });
+}
+
+@Override
+protected void doResolveAll(final InetSocketAddress unresolvedAddress,
+                            final Promise<List<InetSocketAddress>> promise) throws Exception {
+    // Note that InetSocketAddress.getHostName() will never incur a reverse lookup here,
+    // because an unresolved address always has a host name.
+     //委托给命令解决器
+    nameResolver.resolveAll(unresolvedAddress.getHostName())
+            .addListener(new FutureListener<List<InetAddress>>() {
+                @Override
+                public void operationComplete(Future<List<InetAddress>> future) throws Exception {
+                    if (future.isSuccess()) {
+                        List<InetAddress> inetAddresses = future.getNow();
+                        List<InetSocketAddress> socketAddresses =
+                                new ArrayList<InetSocketAddress>(inetAddresses.size());
+                        for (InetAddress inetAddress : inetAddresses) {
+                            socketAddresses.add(new InetSocketAddress(inetAddress, unresolvedAddress.getPort()));
+                        }
+                        promise.setSuccess(socketAddresses);
+                    } else {
+                        promise.setFailure(future.cause());
+                    }
+                }
+            });
+}
+这个命名Resolver为DefaultNameResolver，可以回到DefaultNameResolver的定义在上面就不说了，
+
+来看InetSocketAddressResolver的父类AbstractAddressResolver：
+package io.netty.resolver;
+
+import io.netty.util.concurrent.EventExecutor;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.TypeParameterMatcher;
+import io.netty.util.internal.UnstableApi;
+
+import java.net.SocketAddress;
+import java.nio.channels.UnsupportedAddressTypeException;
+import java.util.Collections;
+import java.util.List;
+
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
+
+/**
+ * A skeletal {@link AddressResolver} implementation.
+ */
+@UnstableApi
+public abstract class AbstractAddressResolver<T extends SocketAddress> implements AddressResolver<T> {
+
+    private final EventExecutor executor;//事件执行器
+    private final TypeParameterMatcher matcher;//socket地址匹配器
+
+    /**
+     * @param executor the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     *                 by {@link #resolve(SocketAddress)}
+     */
+    protected AbstractAddressResolver(EventExecutor executor) {
+        this.executor = checkNotNull(executor, "executor");
+        matcher = TypeParameterMatcher.find(this, AbstractAddressResolver.class, "T");
+    }
+
+    /**
+     * @param executor the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     *                 by {@link #resolve(SocketAddress)}
+     * @param addressType the type of the {@link SocketAddress} supported by this resolver
+     */
+    protected AbstractAddressResolver(EventExecutor executor, Class<? extends T> addressType) {
+        this.executor = checkNotNull(executor, "executor");
+        matcher = TypeParameterMatcher.get(addressType);
+    }
+
+    /**
+     * Returns the {@link EventExecutor} which is used to notify the listeners of the {@link Future} returned
+     * by {@link #resolve(SocketAddress)}.
+     */
+    protected EventExecutor executor() {
+        return executor;
+    }
+    //命名Resolver是否支持socket地址
+    @Override
+    public boolean isSupported(SocketAddress address) {
+        return matcher.match(address);
+    }
+    //socket地址是否可以Resolve
+    @Override
+    public final boolean isResolved(SocketAddress address) {
+        if (!isSupported(address)) {
+            throw new UnsupportedAddressTypeException();
+        }
+
+        @SuppressWarnings("unchecked")
+        final T castAddress = (T) address;
+	//具体Resolve工作委托给doIsResolved方法
+        return doIsResolved(castAddress);
+    }
+
+    /**
+     * Invoked by {@link #isResolved(SocketAddress)} to check if the specified {@code address} has been resolved
+     * already.
+     */
+    protected abstract boolean doIsResolved(T address);
+
+    @Override
+    public final Future<T> resolve(SocketAddress address) {
+        if (!isSupported(checkNotNull(address, "address"))) {
+            // Address type not supported by the resolver
+            return executor().newFailedFuture(new UnsupportedAddressTypeException());
+        }
+
+        if (isResolved(address)) {
+            // Resolved already; no need to perform a lookup
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            return executor.newSucceededFuture(cast);
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            final Promise<T> promise = executor().newPromise();
+	    //具体Resolve工作委托给doIsResolved方法
+            doResolve(cast, promise);
+            return promise;
+        } catch (Exception e) {
+            return executor().newFailedFuture(e);
+        }
+    }
+
+    @Override
+    public final Future<T> resolve(SocketAddress address, Promise<T> promise) {
+        checkNotNull(address, "address");
+        checkNotNull(promise, "promise");
+
+        if (!isSupported(address)) {
+            // Address type not supported by the resolver
+            return promise.setFailure(new UnsupportedAddressTypeException());
+        }
+
+        if (isResolved(address)) {
+            // Resolved already; no need to perform a lookup
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            return promise.setSuccess(cast);
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+	    //具体Resolve工作委托给doIsResolved方法
+            doResolve(cast, promise);
+            return promise;
+        } catch (Exception e) {
+            return promise.setFailure(e);
+        }
+    }
+
+    @Override
+    public final Future<List<T>> resolveAll(SocketAddress address) {
+        if (!isSupported(checkNotNull(address, "address"))) {
+            // Address type not supported by the resolver
+            return executor().newFailedFuture(new UnsupportedAddressTypeException());
+        }
+
+        if (isResolved(address)) {
+            // Resolved already; no need to perform a lookup
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            return executor.newSucceededFuture(Collections.singletonList(cast));
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            final Promise<List<T>> promise = executor().newPromise();
+	    //具体Resolve工作委托给doResolveAll方法
+            doResolveAll(cast, promise);
+            return promise;
+        } catch (Exception e) {
+            return executor().newFailedFuture(e);
+        }
+    }
+
+    @Override
+    public final Future<List<T>> resolveAll(SocketAddress address, Promise<List<T>> promise) {
+        checkNotNull(address, "address");
+        checkNotNull(promise, "promise");
+
+        if (!isSupported(address)) {
+            // Address type not supported by the resolver
+            return promise.setFailure(new UnsupportedAddressTypeException());
+        }
+
+        if (isResolved(address)) {
+            // Resolved already; no need to perform a lookup
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+            return promise.setSuccess(Collections.singletonList(cast));
+        }
+
+        try {
+            @SuppressWarnings("unchecked")
+            final T cast = (T) address;
+	    //具体Resolve工作委托给doResolveAll方法
+            doResolveAll(cast, promise);
+            return promise;
+        } catch (Exception e) {
+            return promise.setFailure(e);
+        }
+    }
+    //下面几个方法待子类实现,见InetSocketAddressResolver的定义
+    /**
+     * Invoked by {@link #resolve(SocketAddress)} to perform the actual name
+     * resolution.
+     */
+    protected abstract void doResolve(T unresolvedAddress, Promise<T> promise) throws Exception;
+
+    /**
+     * Invoked by {@link #resolveAll(SocketAddress)} to perform the actual name
+     * resolution.
+     */
+    protected abstract void doResolveAll(T unresolvedAddress, Promise<List<T>> promise) throws Exception;
+
+    @Override
+    public void close() { }
+}
+
+
+//AddressResolver接口定义，这个就不说，看看就行
+package io.netty.resolver;
+
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.Promise;
+import io.netty.util.internal.UnstableApi;
+
+import java.io.Closeable;
+import java.net.SocketAddress;
+import java.nio.channels.UnsupportedAddressTypeException;
+import java.util.List;
+
+/**
+ * Resolves a possibility unresolved {@link SocketAddress}.
+ */
+@UnstableApi
+public interface AddressResolver<T extends SocketAddress> extends Closeable {
+
+  /**
+   * Returns {@code true} if and only if the specified address is supported by this resolved.
+   */
+  boolean isSupported(SocketAddress address);
+
+  /**
+   * Returns {@code true} if and only if the specified address has been resolved.
+   *
+   * @throws UnsupportedAddressTypeException if the specified address is not supported by this resolver
+   */
+  boolean isResolved(SocketAddress address);
+
+  /**
+   * Resolves the specified address. If the specified address is resolved already, this method does nothing
+   * but returning the original address.
+   *
+   * @param address the address to resolve
+   *
+   * @return the {@link SocketAddress} as the result of the resolution
+   */
+  Future<T> resolve(SocketAddress address);
+
+  /**
+   * Resolves the specified address. If the specified address is resolved already, this method does nothing
+   * but returning the original address.
+   *
+   * @param address the address to resolve
+   * @param promise the {@link Promise} which will be fulfilled when the name resolution is finished
+   *
+   * @return the {@link SocketAddress} as the result of the resolution
+   */
+  Future<T> resolve(SocketAddress address, Promise<T> promise);
+
+  /**
+   * Resolves the specified address. If the specified address is resolved already, this method does nothing
+   * but returning the original address.
+   *
+   * @param address the address to resolve
+   *
+   * @return the list of the {@link SocketAddress}es as the result of the resolution
+   */
+  Future<List<T>> resolveAll(SocketAddress address);
+
+  /**
+   * Resolves the specified address. If the specified address is resolved already, this method does nothing
+   * but returning the original address.
+   *
+   * @param address the address to resolve
+   * @param promise the {@link Promise} which will be fulfilled when the name resolution is finished
+   *
+   * @return the list of the {@link SocketAddress}es as the result of the resolution
+   */
+  Future<List<T>> resolveAll(SocketAddress address, Promise<List<T>> promise);
+
+  /**
+   * Closes all the resources allocated and used by this resolver.
+   */
+  @Override
+  void close();
 }
