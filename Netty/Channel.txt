@@ -509,49 +509,56 @@ public interface DuplexChannel extends Channel {
 
     /**
      * @see Socket#shutdownInput()
+     关闭通道socket输入流
      */
     ChannelFuture shutdownInput();
 
     /**
      * Will shutdown the input and notify {@link ChannelPromise}.
-     *
+     *与上面不同的是，多了一个异步任务结果
      * @see Socket#shutdownInput()
      */
     ChannelFuture shutdownInput(ChannelPromise promise);
 
     /**
      * @see Socket#isOutputShutdown()
+     判断是否关闭socket输出流
      */
     boolean isOutputShutdown();
 
     /**
      * @see Socket#shutdownOutput()
+     关闭socket输出流
      */
     ChannelFuture shutdownOutput();
 
     /**
      * Will shutdown the output and notify {@link ChannelPromise}.
-     *
+     *与上面不同的是，多了一个异步任务结果
      * @see Socket#shutdownOutput()
      */
     ChannelFuture shutdownOutput(ChannelPromise promise);
 
     /**
      * Determine if both the input and output of this channel have been shutdown.
+     判断输出流和输入流是否都关闭
      */
     boolean isShutdown();
     /**
      * Will shutdown the input and output sides of this channel.
      * @return will be completed when both shutdown operations complete.
+     关闭通道的输入输出流，完成时，并通知异步任务结果ChannelFuture
      */
     ChannelFuture shutdown();
     /**
      * Will shutdown the input and output sides of this channel.
      * @param promise will be completed when both shutdown operations complete.
      * @return will be completed when both shutdown operations complete.
+     关闭通道的输入输出流，完成时，并通知异步可写任务结果ChannelPromise
      */
     ChannelFuture shutdown(ChannelPromise promise);
 }
+从上面看出Socket通道实际上是一个可写可读的流通道。
 
 总结：
 

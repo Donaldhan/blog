@@ -1,0 +1,60 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+引言：
+前一篇文章，我们看了通道接口的定义，先来回顾一下：
+通道Channel，关联一个事件循环，及通道注册的事件循环EventLoop，一个Channel管道ChannelPipeline，用于存放通道处理器；一个字节buf分配器ByteBufAllocator，用于分配字节buf，还有一些获取通道状态的方式，是否注册到事件循环，通道是否打开，是否可写；另外还要获取通道配置ChannelConfig，通道元数据ChannelMetadata的方法；最重要的是，关联一个Unsafe，用于通道的地址绑定，连接操作以及断开，通道的读写，注册到事件循环以及反注册。
+今天我们来看一下通道接口的抽象实现AbstractChannel ：
+package io.netty.channel;
+
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.DefaultAttributeMap;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.internal.PlatformDependent;
+import io.netty.util.internal.ThrowableUtil;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.io.IOException;
+import java.net.ConnectException;
+import java.net.InetSocketAddress;
+import java.net.NoRouteToHostException;
+import java.net.SocketAddress;
+import java.net.SocketException;
+import java.nio.channels.ClosedChannelException;
+import java.nio.channels.NotYetConnectedException;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+
+/**
+ * A skeletal {@link Channel} implementation.
+ */
+public abstract class AbstractChannel extends DefaultAttributeMap implements Channel {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannel.class);
+
+    private static final ClosedChannelException FLUSH0_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(
+            new ClosedChannelException(), AbstractUnsafe.class, "flush0()");
+    private static final ClosedChannelException ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(
+            new ClosedChannelException(), AbstractUnsafe.class, "ensureOpen(...)");
+    private static final ClosedChannelException CLOSE_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(
+            new ClosedChannelException(), AbstractUnsafe.class, "close(...)");
+    private static final ClosedChannelException WRITE_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(
+            new ClosedChannelException(), AbstractUnsafe.class, "write(...)");
+    private static final NotYetConnectedException FLUSH0_NOT_YET_CONNECTED_EXCEPTION = ThrowableUtil.unknownStackTrace(
+            new NotYetConnectedException(), AbstractUnsafe.class, "flush0()");
+
+    private final Channel parent;
+    private final ChannelId id;
+    private final Unsafe unsafe;
+    private final DefaultChannelPipeline pipeline;
+    private final VoidChannelPromise unsafeVoidPromise = new VoidChannelPromise(this, false);
+    private final CloseFuture closeFuture = new CloseFuture(this);
+
+    private volatile SocketAddress localAddress;
+    private volatile SocketAddress remoteAddress;
+    private volatile EventLoop eventLoop;
+    private volatile boolean registered;
+
+    /** Cache for the string representation of this channel */
+    private boolean strValActive;
+    private String strVal;
+
