@@ -1,5 +1,5 @@
 netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
-netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
 引言：
 上一篇文章我们看来netty的抽象通道初始化，先来回顾一下：
  抽象通道AbstractChannel内部关联一个硬件底层操作类Unsafe，个事件循环，即通道注册的事件循环EventLoop，一个Channel管道ChannelPipeline，用于存放通道处理器，默认为DefaultChannelPipeline。通道构造主要是初始化通道所属父通道，通道id，底层操作类Unsafe，Channel管道线程，默认的Channel管道线为DefaultChannelPipeline，底层操作类Unsafe为AbstractUnsafe。

@@ -1,0 +1,670 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+引言：
+前面篇文章我们看了抽象通道的内部类抽象Unsafe，先来回顾一下：
+      抽象Unsafe内部关联一个通道Outbound buf（ChannelOutboundBuffer），一个接收字节buf分配器Hander（ RecvByteBufAllocator.Handle）。
+      通道注册到事件循环，首先检查事件循环是否为空，通道是否已注册到事件循环，通道是否兼容事件循环，检查通过后，如果线程在当前事件循环，则委托给register0完成实际注册任务，否则创建一个任务线程，完成通道注册事件循环实际工作register0，并将任务线程交由事件循环执行。register0方法首先确保任务没取消，通道打开，调用doRegister完成注册，确保在实际通知注册任务完成前，调用handlerAdded事件，触发通道已注册事件fireChannelRegistered，如果通道激活且第一次注册，则触发通道已激活事件fireChannelActive，否则如果通道配置为自动读取，则读取数据beginRead，实际委托给
+doBeginRead方法，待子类实现。这个过程中触发的事件，则传递给通道内部的Channel管道。
+地址绑定方法委托给doBind，待子类实现。
+      关闭通道方法，首先确保异步关闭任务没有取消，如果Outbound buf为空，则添加异步结果监听器；再次检查关闭任务有没有执行完，执行完则更新异步任务结果；获取关闭线程执行器，如果关闭执行器不为空，则创建关闭任务线程，并由关闭执行器执行，否则在当前事务循环中执行实际关闭任务。实际关闭任务过程为，调用doClose0完成通道关闭任务，待子类实现，然后设置刷新Outbound 写请求队列数据失败，关闭OutBound buf，如果通道正在刷新，则延迟触发ChannelInactive事件，并反注册，否则直接触发ChannelInactive事件并反注册。
+     写消息，首先检查Outbound buf是否为null，为空，则通道关闭，设置任务失败，否则转换消息，估算消息大小，添加消息到OutBound Buf中。
+     刷新操作，首先将Outbound buf中写请求，添加到刷新队列中，然后将实际刷新工作委托给doWrite，doWrite方法，待子类实现。
+在抽象通道的变量声明中，我们看到一个有Outbound buf，在抽象Unsafe的中的写消息，实际为将消息添加的
+Outbound buf中，刷新操作，即将Outbound buf中为未刷新的消息队列添加到刷新队列中，然后发送刷新队列消息。
+今天我们就来看一下ChannelOutboundBuffer
+package io.netty.channel;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufHolder;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.util.Recycler;
+import io.netty.util.Recycler.Handle;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.internal.InternalThreadLocalMap;
+import io.netty.util.internal.PromiseNotificationUtil;
+import io.netty.util.internal.SystemPropertyUtil;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.nio.ByteBuffer;
+import java.nio.channels.ClosedChannelException;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicLongFieldUpdater;
+
+/**
+ * (Transport implementors only) an internal data structure used by {@link AbstractChannel} to store its pending
+ * outbound write requests.
+ 抽象通道用通道Outbound  buf 存放写请求消息
+ * <p>
+ * All methods must be called by a transport implementation from an I/O thread, except the following ones:
+ * <ul>
+ * <li>{@link #size()} and {@link #isEmpty()}</li>
+ * <li>{@link #isWritable()}</li>
+ * <li>{@link #getUserDefinedWritability(int)} and {@link #setUserDefinedWritability(int, boolean)}</li>
+ * </ul>
+ * </p>
+ */
+public final class ChannelOutboundBuffer {
+    // Assuming a 64-bit JVM:
+    //  - 16 bytes object header
+    //  - 8 reference fields
+    //  - 2 long fields
+    //  - 2 int fields
+    //  - 1 boolean field
+    //  - padding
+    //Entry buf 头部数据size
+    static final int CHANNEL_OUTBOUND_BUFFER_ENTRY_OVERHEAD =
+            SystemPropertyUtil.getInt("io.netty.transport.outboundBufferEntrySizeOverhead", 96);
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(ChannelOutboundBuffer.class);
+    //通道Outbound buf 线程本地Buf
+    private static final FastThreadLocal<ByteBuffer[]> NIO_BUFFERS = new FastThreadLocal<ByteBuffer[]>() {
+        @Override
+        protected ByteBuffer[] initialValue() throws Exception {
+            return new ByteBuffer[1024];
+        }
+    };
+   //buf 关联通道
+    private final Channel channel;
+
+    // Entry(flushedEntry) --> ... Entry(unflushedEntry) --> ... Entry(tailEntry)
+    //
+    // The Entry that is the first in the linked-list structure that was flushed
+    private Entry flushedEntry;刷新写请求链的链头
+    // The Entry which is the first unflushed in the linked-list structure
+    private Entry unflushedEntry;//未刷新的写请求链的链头
+    // The Entry which represents the tail of the buffer
+    private Entry tailEntry;
+    // The number of flushed entries that are not written yet
+    private int flushed;//刷新Entry链上待发送的写请求数
+
+    private int nioBufferCount;
+    private long nioBufferSize;
+
+    private boolean inFail;
+    //通道待发送的字节数
+    private static final AtomicLongFieldUpdater<ChannelOutboundBuffer> TOTAL_PENDING_SIZE_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "totalPendingSize");
+
+    @SuppressWarnings("UnusedDeclaration")
+    private volatile long totalPendingSize;
+
+    private static final AtomicIntegerFieldUpdater<ChannelOutboundBuffer> UNWRITABLE_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "unwritable");
+
+    @SuppressWarnings("UnusedDeclaration")
+    private volatile int unwritable;//通道写状态
+   //触发通道ChannelWritabilityChanged事件任务线程
+    private volatile Runnable fireChannelWritabilityChangedTask;
+
+    ChannelOutboundBuffer(AbstractChannel channel) {
+        this.channel = channel;
+    }
+}
+从上面来看，通道Outbound缓存区内部关联一个通道，同时有一个线程本地buf数组，
+一个未刷新的buf链表和一个刷新buf链表。
+
+我们来看一下buf Entry的定义
+static final class Entry {
+   //Entry回收器
+    private static final Recycler<Entry> RECYCLER = new Recycler<Entry>() {
+        @Override
+        protected Entry newObject(Handle<Entry> handle) {
+            return new Entry(handle);
+        }
+    };
+
+    private final Handle<Entry> handle;//Entry 对象回收Handle
+    Entry next;//后继
+    Object msg;//消息对象
+    ByteBuffer[] bufs;
+    ByteBuffer buf;
+    ChannelPromise promise;//写请求任务
+    long progress;
+    long total;//消息size
+    int pendingSize;//Entry消息字节数
+    int count = -1;
+    boolean cancelled;
+
+    private Entry(Handle<Entry> handle) {
+        this.handle = handle;
+    }
+    //创建Entry实例
+    static Entry newInstance(Object msg, int size, long total, ChannelPromise promise) {
+        Entry entry = RECYCLER.get();
+        entry.msg = msg;
+        entry.pendingSize = size + CHANNEL_OUTBOUND_BUFFER_ENTRY_OVERHEAD;//待发送的消息字节数
+        entry.total = total;
+        entry.promise = promise;
+        return entry;
+    }
+    //取消写请求
+    int cancel() {
+        if (!cancelled) {
+            cancelled = true;
+            int pSize = pendingSize;
+            // release message and replace with an empty buffer
+	    //释放消息对象
+            ReferenceCountUtil.safeRelease(msg);
+            msg = Unpooled.EMPTY_BUFFER;
+
+            pendingSize = 0;
+            total = 0;
+            progress = 0;
+            bufs = null;
+            buf = null;
+            return pSize;
+        }
+        return 0;
+    }
+    //回收写请求，委托给
+    void recycle() {
+        next = null;
+        bufs = null;
+        buf = null;
+        msg = null;
+        promise = null;
+        progress = 0;
+        total = 0;
+        pendingSize = 0;
+        count = -1;
+        cancelled = false;
+        handle.recycle(this);
+    }
+    //回收Entry，返回后继写请求
+    Entry recycleAndGetNext() {
+        Entry next = this.next;
+        recycle();
+        return next;
+    }
+}
+通道写消息时，消息将会被包装成写请求Entry。
+
+来看添加消息到通道Outbound缓冲区
+/**
+ * Add given message to this {@link ChannelOutboundBuffer}. The given {@link ChannelPromise} will be notified once
+ * the message was written.
+ */
+public void addMessage(Object msg, int size, ChannelPromise promise) {
+   //包装消息，为写请求Entry
+    Entry entry = Entry.newInstance(msg, size, total(msg), promise);
+    if (tailEntry == null) {
+        flushedEntry = null;
+        tailEntry = entry;
+    } else {
+        Entry tail = tailEntry;
+        tail.next = entry;
+        tailEntry = entry;
+    }
+    if (unflushedEntry == null) {
+        unflushedEntry = entry;
+    }
+
+    // increment pending bytes after adding message to the unflushed arrays.
+    // See https://github.com/netty/netty/issues/1619
+    //在添加消息到未刷新写请求链表后，更新待发送的字节数
+    incrementPendingOutboundBytes(entry.pendingSize, false);
+}
+//计算消息size
+private static long total(Object msg) {
+    if (msg instanceof ByteBuf) {
+        return ((ByteBuf) msg).readableBytes();
+    }
+    if (msg instanceof FileRegion) {
+        return ((FileRegion) msg).count();
+    }
+    if (msg instanceof ByteBufHolder) {
+        return ((ByteBufHolder) msg).content().readableBytes();
+    }
+    return -1;
+}
+//在添加消息到未刷新写请求链表后，更新待发送的字节数
+private void incrementPendingOutboundBytes(long size, boolean invokeLater) {
+    if (size == 0) {
+        return;
+    }
+    long newWriteBufferSize = TOTAL_PENDING_SIZE_UPDATER.addAndGet(this, size);
+    //如果待发送的字节数，大于通道写buf大小，则更新通道可状态
+    if (newWriteBufferSize > channel.config().getWriteBufferHighWaterMark()) {
+        //更新通道写状态
+        setUnwritable(invokeLater);
+    }
+}
+//ChannelConfig
+/**
+ * Returns the high water mark of the write buffer.  If the number of bytes
+ * queued in the write buffer exceeds this value, {@link Channel#isWritable()}
+ * will start to return {@code false}.
+ */
+int getWriteBufferHighWaterMark();
+
+//更新通道写状态
+private void setUnwritable(boolean invokeLater) {
+    for (;;) {
+        final int oldValue = unwritable;
+        final int newValue = oldValue | 1;
+        if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
+            if (oldValue == 0 && newValue != 0) {
+	        //写状态改变，则触发通道ChannelWritabilityChanged事件
+                fireChannelWritabilityChanged(invokeLater);
+            }
+            break;
+        }
+    }
+}
+
+private void fireChannelWritabilityChanged(boolean invokeLater) {
+    final ChannelPipeline pipeline = channel.pipeline();
+    if (invokeLater) {
+       //如果需要延时通知，则创建ChannelWritabilityChanged事件触发任务线程
+        Runnable task = fireChannelWritabilityChangedTask;
+        if (task == null) {
+            fireChannelWritabilityChangedTask = task = new Runnable() {
+                @Override
+                public void run() {
+		    //通知通道，通道写状态已改变
+                    pipeline.fireChannelWritabilityChanged();
+                }
+            };
+        }
+	//将ChannelWritabilityChanged事件触发线程，交由通道事件循环执行
+        channel.eventLoop().execute(task);
+    } else {
+        //否则直接触发ChannelWritabilityChanged事件
+        pipeline.fireChannelWritabilityChanged();
+    }
+}
+
+从上面可以看出，添加消息到通道Outbound缓冲区，首先包装消息为写请求Entry，
+将写请求Entry添加到未刷新写请求链表上，并更新通道当前待发送的字节数据，
+如果通道待发送的字节数大于通道写bufsize，则更新通道写状态，并触发通道ChannelWritabilityChanged事件。
+触发事件实际操作委托给通道的Channel管道。
+
+//更新通道待发送字节数的另一个版本，与上面不同道是，如果
+通道待发送的字节数大于通道写bufsize，延时触发通道ChannelWritabilityChanged事件。
+ /**
+  * Increment the pending bytes which will be written at some point.
+  * This method is thread-safe!
+  */
+ void incrementPendingOutboundBytes(long size) {
+     incrementPendingOutboundBytes(size, true);
+ }
+再来看刷新操作：
+/**
+ * Add a flush to this {@link ChannelOutboundBuffer}. This means all previous added messages are marked as flushed
+ * and so you will be able to handle them.
+ 刷新通道Outbound缓存区，即将先前添加的消息，标记为刷新
+ */
+public void addFlush() {
+    // There is no need to process all entries if there was already a flush before and no new messages
+    // where added in the meantime.
+    //
+    // See https://github.com/netty/netty/issues/2577
+    Entry entry = unflushedEntry;
+    if (entry != null) {
+        if (flushedEntry == null) {
+            // there is no flushedEntry yet, so start with the entry
+            flushedEntry = entry;
+        }
+	//遍历未刷新写请求链表，将写请求添加到刷新链表中
+        do {
+            flushed ++;
+            if (!entry.promise.setUncancellable()) {
+                // Was cancelled so make sure we free up memory and notify about the freed bytes
+		//如果写请求取消，则更新通道待发送字节数
+                int pending = entry.cancel();
+                decrementPendingOutboundBytes(pending, false, true);
+            }
+            entry = entry.next;
+        } while (entry != null);
+
+        // All flushed so reset unflushedEntry
+	//置空未刷新写请求链表
+        unflushedEntry = null;
+    }
+}
+我们来看:
+//如果写请求取消，则更新通道待发送字节数
+int pending = entry.cancel();
+decrementPendingOutboundBytes(pending, false, true);
+
+
+
+private void decrementPendingOutboundBytes(long size, boolean invokeLater, boolean notifyWritability) {
+    if (size == 0) {
+        return;
+    }
+    //更新通道待发送字节数
+    long newWriteBufferSize = TOTAL_PENDING_SIZE_UPDATER.addAndGet(this, -size);
+    //待发送字节数消息，小于通道配置的写buf size
+    if (notifyWritability && newWriteBufferSize < channel.config().getWriteBufferLowWaterMark()) {
+        //更新通道可写状态
+        setWritable(invokeLater);
+    }
+}
+
+
+//ChannelConfig
+/**
+ * Returns the low water mark of the write buffer.  Once the number of bytes
+ * queued in the write buffer exceeded the
+ * {@linkplain #setWriteBufferHighWaterMark(int) high water mark} and then
+ * dropped down below this value, {@link Channel#isWritable()} will start to return
+ * {@code true} again.
+ 一旦通道待发送字节数大于通道写buf的 high water mark，则丢弃如下值，Channel#isWritable将返回true
+ */
+int getWriteBufferLowWaterMark();
+
+//更新通道可写状态
+private void setWritable(boolean invokeLater) {
+    for (;;) {
+        final int oldValue = unwritable;
+        final int newValue = oldValue & ~1;
+        if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
+            if (oldValue != 0 && newValue == 0) {
+                fireChannelWritabilityChanged(invokeLater);
+            }
+            break;
+        }
+    }
+}
+
+//更新通道待发送字节数,另一个版本
+/**
+ * Decrement the pending bytes which will be written at some point.
+ * This method is thread-safe!
+ */
+void decrementPendingOutboundBytes(long size) {
+    decrementPendingOutboundBytes(size, true, true);
+}
+从上面可以出，添加刷新操作，即遍历未刷新写请求链表，将写请求添加到刷新链表中，
+如果写请求取消，则更新通道待发送字节数，如果待发送字节数消息，小于通道配置的写buf size，则更新通道可写状态。
+
+
+
+
+总结：
+通道Outbound缓存区内部关联一个通道，同时有一个线程本地buf数组，
+一个未刷新的buf链表和一个刷新buf链表。
+
+通道写消息时，消息将会被包装成写请求Entry。
+
+添加消息到通道Outbound缓冲区，首先包装消息为写请求Entry，
+将写请求Entry添加到未刷新写请求链表上，并更新通道当前待发送的字节数据，
+如果通道待发送的字节数大于通道写bufsize，则更新通道写状态，并触发ChannelWritabilityChanged事件。
+触发事件实际操作委托给通道的Channel管道。
+
+添加刷新操作，即遍历未刷新写请求链表，将写请求添加到刷新链表中，
+如果写请求取消，则更新通道待发送字节数，如果待发送字节数消息，小于通道配置的写buf size，则更新通道可写状态。
+
+
+
+附：
+package io.netty.util;
+
+import io.netty.util.concurrent.FastThreadLocal;
+import io.netty.util.internal.SystemPropertyUtil;
+import io.netty.util.internal.logging.InternalLogger;
+import io.netty.util.internal.logging.InternalLoggerFactory;
+
+import java.lang.ref.WeakReference;
+import java.util.Arrays;
+import java.util.Map;
+import java.util.WeakHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static io.netty.util.internal.MathUtil.safeFindNextPositivePowerOfTwo;
+import static java.lang.Math.max;
+import static java.lang.Math.min;
+
+/**
+ * Light-weight object pool based on a thread-local stack.
+ *基于线程本地栈的轻量级对象池
+ * @param <T> the type of the pooled object
+ */
+public abstract class Recycler<T> {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(Recycler.class);
+
+    @SuppressWarnings("rawtypes")
+    private static final Handle NOOP_HANDLE = new Handle() {
+        @Override
+        public void recycle(Object object) {
+            // NOOP
+        }
+    };
+    private static final AtomicInteger ID_GENERATOR = new AtomicInteger(Integer.MIN_VALUE);
+    private static final int OWN_THREAD_ID = ID_GENERATOR.getAndIncrement();
+    private static final int DEFAULT_INITIAL_MAX_CAPACITY_PER_THREAD = 32768; // Use 32k instances as default.
+    private static final int DEFAULT_MAX_CAPACITY_PER_THREAD;
+    private static final int INITIAL_CAPACITY;
+    private static final int MAX_SHARED_CAPACITY_FACTOR;
+    private static final int MAX_DELAYED_QUEUES_PER_THREAD;
+    private static final int LINK_CAPACITY;
+    private static final int RATIO;
+
+    static {
+        // In the future, we might have different maxCapacity for different object types.
+        // e.g. io.netty.recycler.maxCapacity.writeTask
+        //      io.netty.recycler.maxCapacity.outboundBuffer
+        int maxCapacityPerThread = SystemPropertyUtil.getInt("io.netty.recycler.maxCapacityPerThread",
+                SystemPropertyUtil.getInt("io.netty.recycler.maxCapacity", DEFAULT_INITIAL_MAX_CAPACITY_PER_THREAD));
+        if (maxCapacityPerThread < 0) {
+            maxCapacityPerThread = DEFAULT_INITIAL_MAX_CAPACITY_PER_THREAD;
+        }
+
+        DEFAULT_MAX_CAPACITY_PER_THREAD = maxCapacityPerThread;
+
+        MAX_SHARED_CAPACITY_FACTOR = max(2,
+                SystemPropertyUtil.getInt("io.netty.recycler.maxSharedCapacityFactor",
+                        2));
+
+        MAX_DELAYED_QUEUES_PER_THREAD = max(0,
+                SystemPropertyUtil.getInt("io.netty.recycler.maxDelayedQueuesPerThread",
+                        // We use the same value as default EventLoop number
+                        NettyRuntime.availableProcessors() * 2));
+
+        LINK_CAPACITY = safeFindNextPositivePowerOfTwo(
+                max(SystemPropertyUtil.getInt("io.netty.recycler.linkCapacity", 16), 16));
+
+        // By default we allow one push to a Recycler for each 8th try on handles that were never recycled before.
+        // This should help to slowly increase the capacity of the recycler while not be too sensitive to allocation
+        // bursts.
+        RATIO = safeFindNextPositivePowerOfTwo(SystemPropertyUtil.getInt("io.netty.recycler.ratio", 8));
+
+        if (logger.isDebugEnabled()) {
+            if (DEFAULT_MAX_CAPACITY_PER_THREAD == 0) {
+                logger.debug("-Dio.netty.recycler.maxCapacityPerThread: disabled");
+                logger.debug("-Dio.netty.recycler.maxSharedCapacityFactor: disabled");
+                logger.debug("-Dio.netty.recycler.linkCapacity: disabled");
+                logger.debug("-Dio.netty.recycler.ratio: disabled");
+            } else {
+                logger.debug("-Dio.netty.recycler.maxCapacityPerThread: {}", DEFAULT_MAX_CAPACITY_PER_THREAD);
+                logger.debug("-Dio.netty.recycler.maxSharedCapacityFactor: {}", MAX_SHARED_CAPACITY_FACTOR);
+                logger.debug("-Dio.netty.recycler.linkCapacity: {}", LINK_CAPACITY);
+                logger.debug("-Dio.netty.recycler.ratio: {}", RATIO);
+            }
+        }
+
+        INITIAL_CAPACITY = min(DEFAULT_MAX_CAPACITY_PER_THREAD, 256);
+    }
+
+    private final int maxCapacityPerThread;//每个线程的最大对象容量
+    private final int maxSharedCapacityFactor;//容量共享因子
+    private final int ratioMask;
+    private final int maxDelayedQueuesPerThread;
+    //回收器线程本地对象栈
+    private final FastThreadLocal<Stack<T>> threadLocal = new FastThreadLocal<Stack<T>>() {
+        @Override
+        protected Stack<T> initialValue() {
+            return new Stack<T>(Recycler.this, Thread.currentThread(), maxCapacityPerThread, maxSharedCapacityFactor,
+                    ratioMask, maxDelayedQueuesPerThread);
+        }
+    };
+
+    protected Recycler() {
+        this(DEFAULT_MAX_CAPACITY_PER_THREAD);
+    }
+
+    protected Recycler(int maxCapacityPerThread) {
+        this(maxCapacityPerThread, MAX_SHARED_CAPACITY_FACTOR);
+    }
+
+    protected Recycler(int maxCapacityPerThread, int maxSharedCapacityFactor) {
+        this(maxCapacityPerThread, maxSharedCapacityFactor, RATIO, MAX_DELAYED_QUEUES_PER_THREAD);
+    }
+
+    protected Recycler(int maxCapacityPerThread, int maxSharedCapacityFactor,
+                       int ratio, int maxDelayedQueuesPerThread) {
+        ratioMask = safeFindNextPositivePowerOfTwo(ratio) - 1;
+        if (maxCapacityPerThread <= 0) {
+            this.maxCapacityPerThread = 0;
+            this.maxSharedCapacityFactor = 1;
+            this.maxDelayedQueuesPerThread = 0;
+        } else {
+            this.maxCapacityPerThread = maxCapacityPerThread;
+            this.maxSharedCapacityFactor = max(1, maxSharedCapacityFactor);
+            this.maxDelayedQueuesPerThread = max(0, maxDelayedQueuesPerThread);
+        }
+    }
+    //获取本线程的对象
+    @SuppressWarnings("unchecked")
+    public final T get() {
+        if (maxCapacityPerThread == 0) {
+	    //创建对象
+            return newObject((Handle<T>) NOOP_HANDLE);
+        }
+	//否则从栈pop一个handle对象，
+        Stack<T> stack = threadLocal.get();
+        DefaultHandle<T> handle = stack.pop();
+        if (handle == null) {
+	    //handle对象为空，则创建对象
+            handle = stack.newHandle();
+            handle.value = newObject(handle);
+        }
+	//否则返回handle对象的值
+        return (T) handle.value;
+    }
+
+    //创建对象，在子列扩展
+    protected abstract T newObject(Handle<T> handle);
+
+    public interface Handle<T> {
+        void recycle(T object);
+    }
+
+
+    static final class DefaultHandle<T> implements Handle<T> {
+        private int lastRecycledId;
+        private int recycleId;
+
+        boolean hasBeenRecycled;
+
+        private Stack<?> stack;
+        private Object value;//Handle对象值
+
+        DefaultHandle(Stack<?> stack) {
+            this.stack = stack;
+        }
+
+        @Override
+        public void recycle(Object object) {
+            if (object != value) {
+                throw new IllegalArgumentException("object does not belong to handle");
+            }
+	    //回收对象，将对象放入线程本地栈
+            stack.push(this);
+        }
+    }
+     /**
+     * @deprecated use {@link Handle#recycle(Object)}.
+     回收对象
+     */
+    @Deprecated
+    public final boolean recycle(T o, Handle<T> handle) {
+        if (handle == NOOP_HANDLE) {
+            return false;
+        }
+
+        DefaultHandle<T> h = (DefaultHandle<T>) handle;
+        if (h.stack.parent != this) {
+            return false;
+        }
+
+        h.recycle(o);
+        return true;
+    }
+    //延时回收队列
+    private static final FastThreadLocal<Map<Stack<?>, WeakOrderQueue>> DELAYED_RECYCLED =
+            new FastThreadLocal<Map<Stack<?>, WeakOrderQueue>>() {
+        @Override
+        protected Map<Stack<?>, WeakOrderQueue> initialValue() {
+            return new WeakHashMap<Stack<?>, WeakOrderQueue>();
+        }
+    };
+
+     static final class Stack<T> {
+
+        // we keep a queue of per-thread queues, which is appended to once only, each time a new thread other
+        // than the stack owner recycles: when we run out of items in our stack we iterate this collection
+        // to scavenge those that can be reused. this permits us to incur minimal thread synchronisation whilst
+        // still recycling all items.
+        final Recycler<T> parent;
+        final Thread thread;
+        final AtomicInteger availableSharedCapacity;
+        final int maxDelayedQueues;
+
+        private final int maxCapacity;
+        private final int ratioMask;
+        private DefaultHandle<?>[] elements;
+        private int size;
+        private int handleRecycleCount = -1; // Start with -1 so the first one will be recycled.
+        private WeakOrderQueue cursor, prev;
+        private volatile WeakOrderQueue head;
+	...
+   }
+    // a queue that makes only moderate guarantees about visibility: items are seen in the correct order,
+    // but we aren't absolutely guaranteed to ever see anything at all, thereby keeping the queue cheap to maintain
+    private static final class WeakOrderQueue {
+
+        static final WeakOrderQueue DUMMY = new WeakOrderQueue();
+
+        // Let Link extend AtomicInteger for intrinsics. The Link itself will be used as writerIndex.
+        @SuppressWarnings("serial")
+        private static final class Link extends AtomicInteger {
+            private final DefaultHandle<?>[] elements = new DefaultHandle[LINK_CAPACITY];
+
+            private int readIndex;
+            private Link next;
+        }
+
+        // chain of data items
+        private Link head, tail;
+        // pointer to another queue of delayed items for the same stack
+        private WeakOrderQueue next;
+        private final WeakReference<Thread> owner;
+        private final int id = ID_GENERATOR.getAndIncrement();
+        private final AtomicInteger availableSharedCapacity;
+
+        private WeakOrderQueue() {
+            owner = null;
+            availableSharedCapacity = null;
+        }
+
+        private WeakOrderQueue(Stack<?> stack, Thread thread) {
+            head = tail = new Link();
+            owner = new WeakReference<Thread>(thread);
+
+            // Its important that we not store the Stack itself in the WeakOrderQueue as the Stack also is used in
+            // the WeakHashMap as key. So just store the enclosed AtomicInteger which should allow to have the
+            // Stack itself GCed.
+            availableSharedCapacity = stack.availableSharedCapacity;
+        }
+	...
+  }
+...
+}
