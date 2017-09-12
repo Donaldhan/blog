@@ -90,7 +90,7 @@ protected abstract class AbstractUnsafe implements Unsafe {
          }
      }
  }
-
+//AbstractChannel
 /**
  * Return {@code true} if the given {@link EventLoop} is compatible with this instance.
  通道是否兼容事件循环，待子类实现
@@ -108,6 +108,7 @@ protected abstract boolean isCompatible(EventLoop loop);
              return;
          }
          boolean firstRegistration = neverRegistered;
+	 //完成实际注册
          doRegister();
          neverRegistered = false;
          registered = true;
@@ -142,7 +143,526 @@ protected abstract boolean isCompatible(EventLoop loop);
          closeFuture.setClosed();//更新异步关闭任务结果为已关闭
          safeSetFailure(promise, t);//设置任务注册失败
      }
+}
+在实际注册方法中我们有几点要看，
+1.
+//确保任务没取消，通道打开
+if (!promise.setUncancellable() || !ensureOpen(promise)) {
+    return;
+}
+
+ @Deprecated
+ protected final boolean ensureOpen(ChannelPromise promise) {
+     if (isOpen()) {
+         return true;
+     }
+
+     safeSetFailure(promise, ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION);
+     return false;
  }
+2.
+//完成实际注册
+doRegister();
+
+3.
+//更新注册通道到事件循环成功
+safeSetSuccess(promise);
+
+4.
+if (isActive()) {
+     if (firstRegistration) {
+        //触发通道已激活事件
+         pipeline.fireChannelActive();
+     } else if (config().isAutoRead()) {
+         // This channel was registered before and autoRead() is set. This means we need to begin read
+         // again so that we process inbound data.
+         //
+         // See https://github.com/netty/netty/issues/4805
+	 //如果通道配置为自动读取，则读取数据
+         beginRead();
+     }
+ }
+5.
+ // Close the channel directly to avoid FD leak.
+//异常，则强制关闭通道
+closeForcibly();
+closeFuture.setClosed();//更新异步关闭任务结果为已关闭
+
+6.
+safeSetFailure(promise, t);//设置任务注册失败
+
+
+
+下面分别来看这几点：
+
+1.
+//确保任务没取消，通道打开
+if (!promise.setUncancellable() || !ensureOpen(promise)) {
+    return;
+}
+
+@Deprecated
+protected final boolean ensureOpen(ChannelPromise promise) {
+    if (isOpen()) {
+        return true;
+    }
+
+    safeSetFailure(promise, ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION);
+    return false;
+}
+
+2.
+//完成实际注册
+doRegister();
+
+//AbstractChannel
+/**
+ * Is called after the {@link Channel} is registered with its {@link EventLoop} as part of the register process.
+ *
+ * Sub-classes may override this method
+ 待子类实现
+ */
+protected void doRegister() throws Exception {
+    // NOOP
+}
+
+
+3.
+//更新注册通道到事件循环成功
+safeSetSuccess(promise);
+
+
+/**
+ * Marks the specified {@code promise} as success.  If the {@code promise} is done already, log a message.
+ */
+protected final void safeSetSuccess(ChannelPromise promise) {
+    if (!(promise instanceof VoidChannelPromise) && !promise.trySuccess()) {
+        logger.warn("Failed to mark a promise as success because it is done already: {}", promise);
+    }
+}
+
+
+4.
+if (isActive()) {
+     if (firstRegistration) {
+        //触发通道已激活事件
+         pipeline.fireChannelActive();
+     } else if (config().isAutoRead()) {
+         // This channel was registered before and autoRead() is set. This means we need to begin read
+         // again so that we process inbound data.
+         //
+         // See https://github.com/netty/netty/issues/4805
+	 //如果通道配置为自动读取，则读取数据
+         beginRead();
+     }
+}
+
+//Channel
+/**
+ * Return {@code true} if the {@link Channel} is active and so connected.
+ */
+boolean isActive();
+
+
+//如果通道配置为自动读取，则读取数据
+beginRead();
+
+@Override
+public final void beginRead() {
+    assertEventLoop();
+
+    if (!isActive()) {
+        return;
+    }
+
+    try {
+        //实际读取方法
+        doBeginRead();
+    } catch (final Exception e) {
+        //否则延后触发异常事件
+        invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                pipeline.fireExceptionCaught(e);
+            }
+        });
+        close(voidPromise());
+    }
+}
+
+//AbstractChannel
+/**
+ * Schedule a read operation.
+ */
+protected abstract void doBeginRead() throws Exception;
+
+
+//否则延后触发异常事件
+private void invokeLater(Runnable task) {
+    try {
+        // This method is used by outbound operation implementations to trigger an inbound event later.
+        // They do not trigger an inbound event immediately because an outbound operation might have been
+        // triggered by another inbound event handler method.  If fired immediately, the call stack
+        // will look like this for example:
+        //
+        //   handlerA.inboundBufferUpdated() - (1) an inbound handler method closes a connection.
+        //   -> handlerA.ctx.close()
+        //      -> channel.unsafe.close()
+        //         -> handlerA.channelInactive() - (2) another inbound handler method called while in (1) yet
+        //
+        // which means the execution of two inbound handler methods of the same handler overlap undesirably.
+        eventLoop().execute(task);
+    } catch (RejectedExecutionException e) {
+        logger.warn("Can't invoke task later as EventLoop rejected it", e);
+    }
+}
+
+
+5.
+ // Close the channel directly to avoid FD leak.
+//异常，则强制关闭通道
+closeForcibly();
+closeFuture.setClosed();//更新异步关闭任务结果为已关闭
+
+
+//异常，则强制关闭通道
+@Override
+public final void closeForcibly() {
+    assertEventLoop();
+
+    try {
+        doClose();
+    } catch (Exception e) {
+        logger.warn("Failed to close a channel.", e);
+    }
+}
+
+//AbstractChannel
+ /**
+ * Close the {@link Channel}
+ */
+protected abstract void doClose() throws Exception;
+
+6.
+safeSetFailure(promise, t);//设置任务注册失败
+
+/**
+ * Marks the specified {@code promise} as failure.  If the {@code promise} is done already, log a message.
+ */
+protected final void safeSetFailure(ChannelPromise promise, Throwable cause) {
+    if (!(promise instanceof VoidChannelPromise) && !promise.tryFailure(cause)) {
+        logger.warn("Failed to mark a promise as failure because it's done already: {}", promise, cause);
+    }
+}
+
+从上面可以看出，通道注册到事件循环，首先检查事件循环是否为空，通道是否已注册到事件循环，通道是否兼容事件循环，
+检查通过后，如果线程在当前事件循环，则委托给register0完成实际注册任务，否则创建一个任务线程，
+完成通道注册事件循环实际工作register0，并将任务线程交由事件循环执行。register0方法首先确保任务没取消，通道打开，
+调用doRegister完成注册，确保在实际通知注册任务完成前，调用handlerAdded事件，触发通道已注册事件fireChannelRegistered，
+如果通道激活且第一次注册，则触发通道已激活事件fireChannelActive，否则如果通道配置为自动读取，则读取数据beginRead。
+这个过程中触发的事件，则传递给通道内部的Channel管道。
+
+再来看绑定
+
+
+@Override
+public final void bind(final SocketAddress localAddress, final ChannelPromise promise) {
+    assertEventLoop();
+     //首先检查绑定任务是否取消，确保通道打开
+    if (!promise.setUncancellable() || !ensureOpen(promise)) {
+        return;
+    }
+
+    // See: https://github.com/netty/netty/issues/576
+    if (Boolean.TRUE.equals(config().getOption(ChannelOption.SO_BROADCAST)) &&
+        localAddress instanceof InetSocketAddress &&
+        !((InetSocketAddress) localAddress).getAddress().isAnyLocalAddress() &&
+        !PlatformDependent.isWindows() && !PlatformDependent.maybeSuperUser()) {
+        // Warn a user about the fact that a non-root user can't receive a
+        // broadcast packet on *nix if the socket is bound on non-wildcard address.
+	//非root用户，不能接受一个广播消息
+        logger.warn(
+                "A non-root user can't receive a broadcast packet if the socket " +
+                "is not bound to a wildcard address; binding to a non-wildcard " +
+                "address (" + localAddress + ") anyway as requested.");
+    }
+
+    boolean wasActive = isActive();
+    try {
+        //委托给doBind
+        doBind(localAddress);
+    } catch (Throwable t) {
+        safeSetFailure(promise, t);
+        closeIfClosed();
+        return;
+    }
+
+    if (!wasActive && isActive()) {
+        //通道第一次激活，触发ChannelActive事件
+        invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                pipeline.fireChannelActive();
+            }
+        });
+    }
+    safeSetSuccess(promise);
+}
+
+//AbstractChannel
+/**
+  * Bind the {@link Channel} to the {@link SocketAddress},待子类实现
+  */
+ protected abstract void doBind(SocketAddress localAddress) throws Exception;
+
+从上面可以看出，地址绑定方法委托给doBind，待子类实现。
+
+再来看如果需要，则关闭通道的方法：
+closeIfClosed();
+
+
+protected final void closeIfClosed() {
+    //通道打开，则直接返回，否则关闭
+    if (isOpen()) {
+        return;
+    }
+    close(voidPromise());
+}
+
+@Override
+public final void close(final ChannelPromise promise) {
+    assertEventLoop();
+    close(promise, CLOSE_CLOSED_CHANNEL_EXCEPTION, CLOSE_CLOSED_CHANNEL_EXCEPTION, false);
+}
+
+private void close(final ChannelPromise promise, final Throwable cause,
+                   final ClosedChannelException closeCause, final boolean notify) {
+   //确保异步任务没有取消
+    if (!promise.setUncancellable()) {
+        return;
+    }
+    final ChannelOutboundBuffer outboundBuffer = this.outboundBuffer;
+    if (outboundBuffer == null) {
+        // Only needed if no VoidChannelPromise.
+	//如果Outbound buf为空，则添加异步结果监听器
+        if (!(promise instanceof VoidChannelPromise)) {
+            // This means close() was called before so we just register a listener and return
+            closeFuture.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    promise.setSuccess();
+                }
+            });
+        }
+        return;
+    }
+    //如果通道关闭任务已完成，则更新异步任务结果
+    if (closeFuture.isDone()) {
+        // Closed already.
+        safeSetSuccess(promise);
+        return;
+    }
+
+    final boolean wasActive = isActive();
+    //到这里，已经不允许添加消息和刷新Outbound Buf
+    this.outboundBuffer = null; // Disallow adding any messages and flushes to outboundBuffer.
+    //获取关闭线程执行器
+    Executor closeExecutor = prepareToClose();
+    if (closeExecutor != null) {
+        //如果执行器不为空，则委托给关闭器，执行关闭任务线程
+        closeExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    // Execute the close.
+		    //实际关闭工作
+                    doClose0(promise);
+                } finally {
+                    // Call invokeLater so closeAndDeregister is executed in the EventLoop again!
+                    invokeLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            // Fail all the queued messages
+			    //最后设置刷新Outbound 写请求队列数据失败，关闭OutBound buf
+                            outboundBuffer.failFlushed(cause, notify);
+                            outboundBuffer.close(closeCause);
+			    //触发ChannelInactive事件，并反注册
+                            fireChannelInactiveAndDeregister(wasActive);
+                        }
+                    });
+                }
+            }
+        });
+    } else {
+       //否则在当前事件循环中执行关闭任务
+        try {
+            // Close the channel and fail the queued messages in all cases.
+            doClose0(promise);//实际关闭工作
+        } finally {
+            // Fail all the queued messages.
+            outboundBuffer.failFlushed(cause, notify);
+            outboundBuffer.close(closeCause);
+        }
+        if (inFlush0) {
+	    //正在刷新，则延迟触发ChannelInactive事件、反注册
+            invokeLater(new Runnable() {
+                @Override
+                public void run() {
+                    fireChannelInactiveAndDeregister(wasActive);
+                }
+            });
+        } else {
+	    //否则，直接触发ChannelInactive事件、反注册
+            fireChannelInactiveAndDeregister(wasActive);
+        }
+    }
+}
+
+关闭方法我们有几点要关注：
+1.
+ //获取关闭线程执行器
+ Executor closeExecutor = prepareToClose()
+
+
+2.
+// Close the channel and fail the queued messages in all cases.
+doClose0(promise);//实际关闭工作
+
+3.
+ //最后设置刷新Outbound 写请求队列数据失败，关闭OutBound buf
+outboundBuffer.failFlushed(cause, notify);
+outboundBuffer.close(closeCause);
+
+4.
+//触发ChannelInactive事件，并反注册
+fireChannelInactiveAndDeregister(wasActive);
+
+我们分别来看这几点：
+
+1.
+ //获取关闭线程执行器
+ Executor closeExecutor = prepareToClose()
+
+/**
+  * Prepares to close the {@link Channel}. If this method returns an {@link Executor}, the
+  * caller must call the {@link Executor#execute(Runnable)} method with a task that calls
+  * {@link #doClose()} on the returned {@link Executor}. If this method returns {@code null},
+  * {@link #doClose()} must be called from the caller thread. (i.e. {@link EventLoop})
+  */
+ protected Executor prepareToClose() {
+     return null;
+ }
+
+2.
+// Close the channel and fail the queued messages in all cases.
+doClose0(promise);//实际关闭工作
+
+ private void doClose0(ChannelPromise promise) {
+    try {
+        doClose();
+        closeFuture.setClosed();
+        safeSetSuccess(promise);
+    } catch (Throwable t) {
+        closeFuture.setClosed();
+        safeSetFailure(promise, t);
+    }
+}
+
+//AbstractChannel，待子类实现
+/**
+ * Close the {@link Channel}
+ */
+protected abstract void doClose() throws Exception;
+
+
+3.
+ //最后设置刷新Outbound 写请求队列数据失败，关闭OutBound buf
+outboundBuffer.failFlushed(cause, notify);
+outboundBuffer.close(closeCause);
+
+
+//ChannelOutboundBuffer
+
+这个我们单列一篇来讲
+
+
+4.
+//触发ChannelInactive事件，并反注册
+fireChannelInactiveAndDeregister(wasActive);
+
+private void fireChannelInactiveAndDeregister(final boolean wasActive) {
+    deregister(voidPromise(), wasActive && !isActive());
+}
+
+private void deregister(final ChannelPromise promise, final boolean fireChannelInactive) {
+    if (!promise.setUncancellable()) {
+        return;
+    }
+
+    if (!registered) {
+        safeSetSuccess(promise);
+        return;
+    }
+
+    // As a user may call deregister() from within any method while doing processing in the ChannelPipeline,
+    // we need to ensure we do the actual deregister operation later. This is needed as for example,
+    // we may be in the ByteToMessageDecoder.callDecode(...) method and so still try to do processing in
+    // the old EventLoop while the user already registered the Channel to a new EventLoop. Without delay,
+    // the deregister operation this could lead to have a handler invoked by different EventLoop and so
+    // threads.
+    //
+    // See:
+    // https://github.com/netty/netty/issues/4435
+    invokeLater(new Runnable() {
+        @Override
+        public void run() {
+            try {
+	        //实际反注册
+                doDeregister();
+            } catch (Throwable t) {
+                logger.warn("Unexpected exception occurred while deregistering a channel.", t);
+            } finally {
+                if (fireChannelInactive) {
+                    pipeline.fireChannelInactive();
+                }
+                // Some transports like local and AIO does not allow the deregistration of
+                // an open channel.  Their doDeregister() calls close(). Consequently,
+                // close() calls deregister() again - no need to fire channelUnregistered, so check
+                // if it was registered.
+                if (registered) {
+                    registered = false;
+                    pipeline.fireChannelUnregistered();
+                }
+                safeSetSuccess(promise);
+            }
+        }
+    });
+}
+
+//AbstractChannel待子类实现
+/**
+ * Deregister the {@link Channel} from its {@link EventLoop}.
+ *
+ * Sub-classes may override this method
+ */
+protected void doDeregister() throws Exception {
+    // NOOP
+}
+
+
+
+
 总结：
 抽象Unsafe内部关联一个通道Outbound buf（ChannelOutboundBuffer），
-一个接收字节buf分配器Hander（ RecvByteBufAllocator.Handle）
+一个接收字节buf分配器Hander（ RecvByteBufAllocator.Handle）。
+
+
+
+通道注册到事件循环，首先检查事件循环是否为空，通道是否已注册到事件循环，通道是否兼容事件循环，
+检查通过后，如果线程在当前事件循环，则委托给register0完成实际注册任务，否则创建一个任务线程，
+完成通道注册事件循环实际工作register0，并将任务线程交由事件循环执行。register0方法首先确保任务没取消，通道打开，
+调用doRegister完成注册，确保在实际通知注册任务完成前，调用handlerAdded事件，触发通道已注册事件fireChannelRegistered，
+如果通道激活且第一次注册，则触发通道已激活事件fireChannelActive，否则如果通道配置为自动读取，则读取数据beginRead，实际委托
+给doBeginRead方法，待子类实现。这个过程中触发的事件，则传递给通道内部的Channel管道。
+地址绑定方法委托给doBind，待子类实现。
+
