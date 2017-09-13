@@ -1,0 +1,83 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+引言：
+前一篇文章我们看了通道Outbound缓存区ChannelOutboundBuffer ,先来回顾一下：
+通道Outbound缓存区内部关联一个通道，同时有一个线程本地buf数组，一个未刷新的buf链表和一个刷新buf链表。通道写消息时，消息将会被包装成写请求Entry。
+
+添加消息到通道Outbound缓冲区，首先包装消息为写请求Entry，将写请求Entry添加到未刷新写请求链表上，并更新通道当前待发送的字节数据，如果通道待发送的字节数大于通道写bufsize，则更新通道写状态，并触发ChannelWritabilityChanged事件。触发事件实际操作委托给通道的Channel管道。
+
+添加刷新操作，即遍历未刷新写请求链表，将写请求添加到刷新链表中，如果写请求取消，则更新通道待发送字节数，如果待发送字节数消息，小于通道配置的写buf size，则更新通道可写状态。
+
+移除操作，主要是从刷新写请求链移除链头写请求，并则释放写请求消息，更新写请求任务结果，当前通道待发送字节数和可写状态，并触发相应的事件
+
+从刷新写请求链表，移除writtenBytes个字节数方法removeBytes，自旋，直至从刷新链中移除writtenBytes个字节数，如果链头消息的可读字节数小于writtenBytes，则移除写请求Entry，否则更新writtenBytes，继续从刷新链中的写请求消息中移除writtenBytes个字节数。
+
+将刷新链上的写请求消息，添加到nio buffer数组中方法nioBuffers，主要是将刷新链上的写请求消息包装成direct buf添加到通道Outbound缓存区的nio buf数组中，这个方法主要在NioSocketChannel#doWrite方法重用。方法调用后，#nioBufferCount和#nioBufferSize，将返回当前nio buf数组的长度和可读字节数。
+
+看完了抽象Unsafe定义和通道Outbound缓冲区，今天我们回到抽象通道，接着抽象通道初始化，
+继续看抽象通道的其他方法
+
+先把抽象通道的变量声明贴出来及构造，以便理解：
+public abstract class AbstractChannel extends DefaultAttributeMap implements Channel {  
+  
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractChannel.class);  
+  
+    private static final ClosedChannelException FLUSH0_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(  
+            new ClosedChannelException(), AbstractUnsafe.class, "flush0()");//flush0方法调用时，通道关闭异常  
+    private static final ClosedChannelException ENSURE_OPEN_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(  
+            new ClosedChannelException(), AbstractUnsafe.class, "ensureOpen(...)");//确保通道打开方法调用时，通道关闭异常  
+    private static final ClosedChannelException CLOSE_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(  
+            new ClosedChannelException(), AbstractUnsafe.class, "close(...)");//close方法调用时，通道关闭异常  
+    private static final ClosedChannelException WRITE_CLOSED_CHANNEL_EXCEPTION = ThrowableUtil.unknownStackTrace(  
+            new ClosedChannelException(), AbstractUnsafe.class, "write(...)");//write方法调用时，通道关闭异常  
+    private static final NotYetConnectedException FLUSH0_NOT_YET_CONNECTED_EXCEPTION = ThrowableUtil.unknownStackTrace(  
+            new NotYetConnectedException(), AbstractUnsafe.class, "flush0()");//flush0方法调用时，通道还未连接异常  
+  
+    private final Channel parent;//所属通道  
+    private final ChannelId id;//通道id  
+    private final Unsafe unsafe;//硬件底层操作类  
+    private final DefaultChannelPipeline pipeline;//Channel管道  
+    private final VoidChannelPromise unsafeVoidPromise = new VoidChannelPromise(this, false);//空异步任务  
+    private final CloseFuture closeFuture = new CloseFuture(this);//异步关闭任务  
+  
+    private volatile SocketAddress localAddress;//本地socket地址  
+    private volatile SocketAddress remoteAddress;//远端socket地址  
+    private volatile EventLoop eventLoop;//通道注册的事件循环  
+    private volatile boolean registered;//是否注册  
+    /** Cache for the string representation of this channel */  
+    private boolean strValActive;  
+    private String strVal;  
+    ...  
+        /** 
+     * Creates a new instance. 
+     * 
+     * @param parent 
+     *        the parent of this channel. {@code null} if there's no parent. 
+     */  
+    protected AbstractChannel(Channel parent) {  
+        this.parent = parent;  
+        //创建通道id  
+        id = newId();  
+        //创建底层操作类unsafe  
+        unsafe = newUnsafe();  
+        //新建Channel管道  
+        pipeline = newChannelPipeline();  
+    }  
+      
+    /** 
+     * Creates a new instance. 
+     * 
+     * @param parent 
+     *        the parent of this channel. {@code null} if there's no parent. 
+     */  
+    protected AbstractChannel(Channel parent, ChannelId id) {  
+        this.parent = parent;  
+        this.id = id;  
+        unsafe = newUnsafe();  
+        pipeline = newChannelPipeline();  
+    }  
+}  
+上面抽象通道的变量和构造有单独的文章讲述，这里不再说：
+来看：
