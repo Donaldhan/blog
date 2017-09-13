@@ -85,7 +85,7 @@ public final class ChannelOutboundBuffer {
     private int nioBufferCount;//当前待发送的消息buf数量
     private long nioBufferSize;//当前待发送的所有消息buf的字节数
 
-    private boolean inFail;
+    private boolean inFail;//是否刷新失败
     //通道待发送的字节数
     private static final AtomicLongFieldUpdater<ChannelOutboundBuffer> TOTAL_PENDING_SIZE_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "totalPendingSize");
@@ -712,6 +712,306 @@ private static int fillBufferArray(ByteBuffer[] nioBufs, ByteBuffer[] nioBuffers
 从上面可以看出：将刷新链上的写请求消息，添加到nio buffer数组中方法nioBuffers，主要是将刷新链上的写请求消息
 包装成direct buf添加到通道Outbound缓存区的nio buf数组中，这个方法主要在NioSocketChannel#doWrite方法重用。
 方法调用后，#nioBufferCount和#nioBufferSize，将返回当前nio buf数组的长度和可读字节数。
+
+
+再来看其他方法：
+//刷新失败
+void failFlushed(Throwable cause, boolean notify) {
+    // Make sure that this method does not reenter.  A listener added to the current promise can be notified by the
+    // current thread in the tryFailure() call of the loop below, and the listener can trigger another fail() call
+    // indirectly (usually by closing the channel.)
+    //
+    // See https://github.com/netty/netty/issues/1501
+    if (inFail) {
+        //已失败，直接返回
+        return;
+    }
+    try {
+        inFail = true;
+        for (;;) {
+	    //移除刷新链头部
+            if (!remove0(cause, notify)) {
+                break;
+            }
+        }
+    } finally {
+        inFail = false;
+    }
+}
+//关闭Outbound缓存区
+void close(final ClosedChannelException cause) {
+    if (inFail) {
+        //已将刷新失败，则创建关闭任务线程，委托给事件循环执行
+        channel.eventLoop().execute(new Runnable() {
+            @Override
+            public void run() {
+                close(cause);
+            }
+        });
+        return;
+    }
+
+    inFail = true;
+
+    if (channel.isOpen()) {
+        throw new IllegalStateException("close() must be invoked after the channel is closed.");
+    }
+
+    if (!isEmpty()) {
+        throw new IllegalStateException("close() must be invoked after all flushed writes are handled.");
+    }
+
+    // Release all unflushed messages.
+    try {
+        Entry e = unflushedEntry;
+	//遍历未刷新的写请求，更新写任务失败
+        while (e != null) {
+            // Just decrease; do not trigger any events via decrementPendingOutboundBytes()
+            int size = e.pendingSize;
+	    //更新通道待发送的字节数
+            TOTAL_PENDING_SIZE_UPDATER.addAndGet(this, -size);
+
+            if (!e.cancelled) {
+	        //如果写任务没有取消，则释放消息，更新任务状态为失败
+                ReferenceCountUtil.safeRelease(e.msg);
+                safeFail(e.promise, cause);
+            }
+	    //回收写请求
+            e = e.recycleAndGetNext();
+        }
+    } finally {
+        inFail = false;
+    }
+    //清除Nio buf数组
+    clearNioBuffers();
+}
+
+//更新任务成功
+private static void safeSuccess(ChannelPromise promise) {
+    // Only log if the given promise is not of type VoidChannelPromise as trySuccess(...) is expected to return
+    // false.
+    PromiseNotificationUtil.trySuccess(promise, null, promise instanceof VoidChannelPromise ? null : logger);
+}
+
+//PromiseNotificationUtil
+/**
+ * Try to mark the {@link Promise} as success and log if {@code logger} is not {@code null} in case this fails.
+ */
+public static <V> void trySuccess(Promise<? super V> p, V result, InternalLogger logger) {
+    if (!p.trySuccess(result) && logger != null) {
+        Throwable err = p.cause();
+        if (err == null) {
+            logger.warn("Failed to mark a promise as success because it has succeeded already: {}", p);
+        } else {
+            logger.warn(
+                    "Failed to mark a promise as success because it has failed already: {}, unnotified cause:",
+                    p, err);
+        }
+    }
+}
+
+//更新任务失败
+private static void safeFail(ChannelPromise promise, Throwable cause) {
+    // Only log if the given promise is not of type VoidChannelPromise as tryFailure(...) is expected to return
+    // false.
+    PromiseNotificationUtil.tryFailure(promise, cause, promise instanceof VoidChannelPromise ? null : logger);
+}
+//回收缓冲区
+@Deprecated
+public void recycle() {
+    // NOOP
+}
+//通道Outbound缓冲区中可写的字节数
+public long totalPendingWriteBytes() {
+    return totalPendingSize;
+}
+
+
+/**
+ * Returns the number of {@link ByteBuffer} that can be written out of the {@link ByteBuffer} array that was
+ * obtained via {@link #nioBuffers()}. This method <strong>MUST</strong> be called after {@link #nioBuffers()}
+ * was called.
+ 此方法必须在#nioBuffers方法后调用，用于获取当前缓冲区可写的字节buf数组的长度
+ */
+public int nioBufferCount() {
+    return nioBufferCount;
+}
+
+/**
+ * Returns the number of bytes that can be written out of the {@link ByteBuffer} array that was
+ * obtained via {@link #nioBuffers()}. This method <strong>MUST</strong> be called after {@link #nioBuffers()}
+ * was called.
+  此方法必须在#nioBuffers方法后调用，用于获取当前缓冲区可写的字节buf数组中的字节数
+ */
+ */
+public long nioBufferSize() {
+    return nioBufferSize;
+}
+
+/**
+ * Returns {@code true} if and only if {@linkplain #totalPendingWriteBytes() the total number of pending bytes} did
+ * not exceed the write watermark of the {@link Channel} and
+ * no {@linkplain #setUserDefinedWritability(int, boolean) user-defined writability flag} has been set to
+ * {@code false}.
+ 缓冲区是否可写，当且仅当#totalPendingWriteBytes方法的通道可写字节数，不超过通道的写watermark，同时
+ 用户没有使用#setUserDefinedWritability，设置可写标志为false
+ */
+public boolean isWritable() {
+    return unwritable == 0;
+}
+
+/**
+ * Returns {@code true} if and only if the user-defined writability flag at the specified index is set to
+ * {@code true}.
+ 获取用于定义的可写标志
+ */
+public boolean getUserDefinedWritability(int index) {
+    return (unwritable & writabilityMask(index)) == 0;
+}
+
+//可写掩码
+private static int writabilityMask(int index) {
+    if (index < 1 || index > 31) {
+        throw new IllegalArgumentException("index: " + index + " (expected: 1~31)");
+    }
+    return 1 << index;
+}
+
+
+/**
+ * Sets a user-defined writability flag at the specified index.
+ 根据可写状态，设置用户定义的可写标志
+ */
+public void setUserDefinedWritability(int index, boolean writable) {
+    if (writable) {
+        setUserDefinedWritability(index);
+    } else {
+        clearUserDefinedWritability(index);
+    }
+}
+//设置用户定义的可写标志
+private void setUserDefinedWritability(int index) {
+    final int mask = ~writabilityMask(index);
+    for (;;) {
+        final int oldValue = unwritable;
+        final int newValue = oldValue & mask;
+	//更新可写状态
+        if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
+            if (oldValue != 0 && newValue == 0) {
+	        //通知通道可写状态已改变
+                fireChannelWritabilityChanged(true);
+            }
+            break;
+        }
+    }
+}
+//清除可写状态
+private void clearUserDefinedWritability(int index) {
+    final int mask = writabilityMask(index);
+    for (;;) {
+        final int oldValue = unwritable;
+        final int newValue = oldValue | mask;
+        if (UNWRITABLE_UPDATER.compareAndSet(this, oldValue, newValue)) {
+            if (oldValue == 0 && newValue != 0) {
+                fireChannelWritabilityChanged(true);
+            }
+            break;
+        }
+    }
+}
+
+
+/**
+ * Returns the number of flushed messages in this {@link ChannelOutboundBuffer}.
+ 返回通道Outbound缓冲区中需要刷新的消息数
+ */
+public int size() {
+    return flushed;
+}
+
+/**
+ * Returns {@code true} if there are flushed messages in this {@link ChannelOutboundBuffer} or {@code false}
+ * otherwise.
+ 如果没有需要刷新的消息，则返回true
+ */
+public boolean isEmpty() {
+    return flushed == 0;
+}
+
+/**
+ * Get how many bytes can be written until {@link #isWritable()} returns {@code false}.
+ * This quantity will always be non-negative. If {@link #isWritable()} is {@code false} then 0.
+ 返回直到通道不可写，通道Outbound缓冲区还可以写多少字节的数。如果通道不可写，则返回0
+ */
+public long bytesBeforeUnwritable() {
+    //通道写缓存区大小-当前缓冲区字节数
+    long bytes = channel.config().getWriteBufferHighWaterMark() - totalPendingSize;
+    // If bytes is negative we know we are not writable, but if bytes is non-negative we have to check writability.
+    // Note that totalPendingSize and isWritable() use different volatile variables that are not synchronized
+    // together. totalPendingSize will be updated before isWritable().
+    if (bytes > 0) {
+        return isWritable() ? bytes : 0;
+    }
+    return 0;
+}
+
+/**
+ * Get how many bytes must be drained from the underlying buffer until {@link #isWritable()} returns {@code true}.
+ * This quantity will always be non-negative. If {@link #isWritable()} is {@code true} then 0.
+ 获取直到通道可写，通道底层buf有多少字节数据需要发送。如果可写返回0
+ */
+public long bytesBeforeWritable() {
+    //当前缓冲区字节数-通道写缓存的rLowWaterMark
+    long bytes = totalPendingSize - channel.config().getWriteBufferLowWaterMark();
+    // If bytes is negative we know we are writable, but if bytes is non-negative we have to check writability.
+    // Note that totalPendingSize and isWritable() use different volatile variables that are not synchronized
+    // together. totalPendingSize will be updated before isWritable().
+    if (bytes > 0) {
+        return isWritable() ? 0 : bytes;
+    }
+    return 0;
+}
+
+/**
+ * Call {@link MessageProcessor#processMessage(Object)} for each flushed message
+ * in this {@link ChannelOutboundBuffer} until {@link MessageProcessor#processMessage(Object)}
+ * returns {@code false} or there are no more flushed messages to process.
+ 当刷新消息时，调用消息处理器的处理消息方法#processMessage，处理每个消息，直到#processMessage方法
+ 返回false，或没有消息需要刷新
+ */
+public void forEachFlushedMessage(MessageProcessor processor) throws Exception {
+    if (processor == null) {
+        throw new NullPointerException("processor");
+    }
+    Entry entry = flushedEntry;
+    if (entry == null) {
+        return;
+    }
+    //遍历刷新链表
+    do {
+        if (!entry.cancelled) {
+	    //如果写任务没有取消，则处理消息
+            if (!processor.processMessage(entry.msg)) {
+                return;
+            }
+        }
+        entry = entry.next;
+    } while (isFlushedEntry(entry));
+}
+//判断写请求是否在刷新链表上
+private boolean isFlushedEntry(Entry e) {
+    return e != null && e != unflushedEntry;
+}
+//消息处理器
+public interface MessageProcessor {
+    /**
+     * Will be called for each flushed message until it either there are no more flushed messages or this
+     * method returns {@code false}.
+     在刷新消息时，将会调用
+     */
+    boolean processMessage(Object msg) throws Exception;
+}
+
 
 
 
