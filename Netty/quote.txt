@@ -60,6 +60,7 @@ netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
 netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
 netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
 netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
 
 
 

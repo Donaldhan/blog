@@ -34,20 +34,35 @@ protected abstract class AbstractUnsafe implements Unsafe {
      }
      return recvHandle;
  }
- @Override
- public final ChannelOutboundBuffer outboundBuffer() {
-     return outboundBuffer;
- }
+//获取通道Outbound缓冲区
+@Override
+public final ChannelOutboundBuffer outboundBuffer() {
+    return outboundBuffer;
+}
+//获取本地socket地址
+@Override
+public final SocketAddress localAddress() {
+    return localAddress0();
+}
 
- @Override
- public final SocketAddress localAddress() {
-     return localAddress0();
- }
+//AbstractChannel
+/**
+ * Returns the {@link SocketAddress} which is bound locally.
+ 待子类扩展
+ */
+protected abstract SocketAddress localAddress0();
 
- @Override
- public final SocketAddress remoteAddress() {
-     return remoteAddress0();
- }
+//获取远端socket地址
+@Override
+public final SocketAddress remoteAddress() {
+    return remoteAddress0();
+}
+//AbstractChannel
+/**
+ * Return the {@link SocketAddress} which the {@link Channel} is connected to.
+  待子类扩展
+ */
+protected abstract SocketAddress remoteAddress0();
 
 来看注册通道到事件循环
 //注册通道到事件循环
@@ -1017,6 +1032,7 @@ public synchronized Throwable fillInStackTrace() {
     return this;
 }
 private native Throwable fillInStackTrace(int dummy);
+
 
 
 总结：

@@ -1,3 +1,4 @@
+netty Inboudn/Outbound通道Invoker:[url]http://donald-draper.iteye.com/blog/2388233[/url]
 netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
 netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
 netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
@@ -80,4 +81,246 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
     }  
 }  
 上面抽象通道的变量和构造有单独的文章讲述，这里不再说：
-来看：
+来看其他方法
+//判断通道是否可写
+@Override
+public boolean isWritable() {
+    //如果unsafe关联的通道Outbound 缓冲区不为空，且可写返回true
+    ChannelOutboundBuffer buf = unsafe.outboundBuffer();
+    return buf != null && buf.isWritable();
+}
+
+//直到通道可写前，通道Outbound 缓冲区的字节数。如果通道不可写，则返回0 
+@Override
+public long bytesBeforeUnwritable() {
+    ChannelOutboundBuffer buf = unsafe.outboundBuffer();
+    // isWritable() is currently assuming if there is no outboundBuffer then the channel is not writable.
+    // We should be consistent with that here.
+    return buf != null ? buf.bytesBeforeUnwritable() : 0;
+}
+//获取直到通道可写，通道底层buf有多少字节数据需要发送。如果可写返回0
+@Override
+public long bytesBeforeWritable() {
+    ChannelOutboundBuffer buf = unsafe.outboundBuffer();
+    // isWritable() is currently assuming if there is no outboundBuffer then the channel is not writable.
+    // We should be consistent with that here.
+    return buf != null ? buf.bytesBeforeWritable() : Long.MAX_VALUE;
+}
+//获取所属通道
+@Override
+public Channel parent() {
+    return parent;
+}
+//获取通道内部Channel管道
+@Override
+public ChannelPipeline pipeline() {
+    return pipeline;
+}
+//获取通道字节buf分配器
+@Override
+public ByteBufAllocator alloc() {
+    return config().getAllocator();
+}
+//获取通道所在的事件循环
+@Override
+public EventLoop eventLoop() {
+    EventLoop eventLoop = this.eventLoop;
+    if (eventLoop == null) {
+        throw new IllegalStateException("channel not registered to an event loop");
+    }
+    return eventLoop;
+}
+//获取通道本地地址
+@Override
+public SocketAddress localAddress() {
+    SocketAddress localAddress = this.localAddress;
+    if (localAddress == null) {
+        try {
+            this.localAddress = localAddress = unsafe().localAddress();
+        } catch (Throwable t) {
+            // Sometimes fails on a closed socket in Windows.
+            return null;
+        }
+    }
+    return localAddress;
+}
+
+/**
+ * @deprecated no use-case for this.
+ */
+@Deprecated
+protected void invalidateLocalAddress() {
+    localAddress = null;
+}
+//获取远端socket地址
+@Override
+public SocketAddress remoteAddress() {
+    SocketAddress remoteAddress = this.remoteAddress;
+    if (remoteAddress == null) {
+        try {
+            this.remoteAddress = remoteAddress = unsafe().remoteAddress();
+        } catch (Throwable t) {
+            // Sometimes fails on a closed socket in Windows.
+            return null;
+        }
+    }
+    return remoteAddress;
+}
+
+/**
+ * @deprecated no use-case for this.
+ */
+@Deprecated
+protected void invalidateRemoteAddress() {
+    remoteAddress = null;
+}
+//判断通道是否注册到事件循环
+@Override
+public boolean isRegistered() {
+    return registered;
+}
+//绑定本地socket地址
+@Override
+public ChannelFuture bind(SocketAddress localAddress) {
+    return pipeline.bind(localAddress);
+}
+//连接远端socket地址
+@Override
+public ChannelFuture connect(SocketAddress remoteAddress) {
+    return pipeline.connect(remoteAddress);
+}
+//上面两个方法的合体
+@Override
+public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress) {
+    return pipeline.connect(remoteAddress, localAddress);
+}
+//断开通道连接
+@Override
+public ChannelFuture disconnect() {
+    return pipeline.disconnect();
+}
+//关闭通道
+@Override
+public ChannelFuture close() {
+    return pipeline.close();
+}
+//从事件循环反注册
+@Override
+public ChannelFuture deregister() {
+    return pipeline.deregister();
+}
+//刷新通道
+@Override
+public Channel flush() {
+    pipeline.flush();
+    return this;
+}
+下面几个方法与上面不同是，带了一个异步任务结果，在操作完成时，通道任务结果
+@Override
+public ChannelFuture bind(SocketAddress localAddress, ChannelPromise promise) {
+    return pipeline.bind(localAddress, promise);
+}
+
+@Override
+public ChannelFuture connect(SocketAddress remoteAddress, ChannelPromise promise) {
+    return pipeline.connect(remoteAddress, promise);
+}
+
+@Override
+public ChannelFuture connect(SocketAddress remoteAddress, SocketAddress localAddress, ChannelPromise promise) {
+    return pipeline.connect(remoteAddress, localAddress, promise);
+}
+
+@Override
+public ChannelFuture disconnect(ChannelPromise promise) {
+    return pipeline.disconnect(promise);
+}
+
+@Override
+public ChannelFuture close(ChannelPromise promise) {
+    return pipeline.close(promise);
+}
+
+@Override
+public ChannelFuture deregister(ChannelPromise promise) {
+    return pipeline.deregister(promise);
+}
+//通道读操作
+@Override
+public Channel read() {
+    pipeline.read();
+    return this;
+}
+//写消息
+@Override
+public ChannelFuture write(Object msg) {
+    return pipeline.write(msg);
+}
+
+@Override
+public ChannelFuture write(Object msg, ChannelPromise promise) {
+    return pipeline.write(msg, promise);
+}
+//写并刷新消息
+@Override
+public ChannelFuture writeAndFlush(Object msg) {
+    return pipeline.writeAndFlush(msg);
+}
+
+@Override
+public ChannelFuture writeAndFlush(Object msg, ChannelPromise promise) {
+    return pipeline.writeAndFlush(msg, promise);
+}
+//创建异步可写任务
+@Override
+public ChannelPromise newPromise() {
+    return pipeline.newPromise();
+}
+//创建异步可写进度任务
+@Override
+public ChannelProgressivePromise newProgressivePromise() {
+    return pipeline.newProgressivePromise();
+}
+//创建已经成功的任务
+@Override
+public ChannelFuture newSucceededFuture() {
+    return pipeline.newSucceededFuture();
+}
+//创建已经失败的任务
+@Override
+public ChannelFuture newFailedFuture(Throwable cause) {
+    return pipeline.newFailedFuture(cause);
+}
+//获取关闭异步任务
+@Override
+public ChannelFuture closeFuture() {
+    return closeFuture;
+}
+//获取通道unsafe
+@Override
+public Unsafe unsafe() {
+    return unsafe;
+}
+//创建空异步任务
+ @Override
+public final ChannelPromise voidPromise() {
+    return pipeline.voidPromise();
+}
+在上面我们看到好多方法时委托给通道的Channel管道，这是因为：
+public abstract class AbstractChannel extends DefaultAttributeMap implements Channel {
+
+public interface Channel extends AttributeMap, ChannelOutboundInvoker, Comparable<Channel> {
+
+即通道实际上是一个ChannelOutboundInvoker，当通道相关操作发生时，触发通道相关操作事件。
+
+从上面可以看出，通道的绑定操作、连接，写消息，读操作，刷新操作，反注册、断开连接，关闭通道
+等操作事件实际调用通道的Channel管道的相关方法，即触发通道相关事件，这些方法是重写了通道OutboundInvoker
+的相关方法。在抽象Unsafe那篇文章中，我们看到其内部也有绑定、注册，读操作，写操作和关闭操作，这些是通道的实际操作方法。
+
+
+总结：
+
+通道的绑定操作、连接，写消息，读操作，刷新操作，反注册、断开连接，关闭通道
+等操作事件实际调用通道的Channel管道的相关方法，即触发通道相关事件，这些方法是重写了通道OutboundInvoker
+的相关方法。在抽象Unsafe那篇文章中，我们看到其内部也有绑定、注册，读操作，写操作和关闭操作，这些是通道的实际操作方法。
+
