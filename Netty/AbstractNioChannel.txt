@@ -49,9 +49,9 @@ public abstract class AbstractNioChannel extends AbstractChannel {
             new ClosedChannelException(), AbstractNioChannel.class, "doClose()");
 
     private final SelectableChannel ch;//关联通道
-    protected final int readInterestOp;
+    protected final int readInterestOp;//读操作事件
     volatile SelectionKey selectionKey;//关联选择key
-    boolean readPending;
+    boolean readPending;//是否开始读操作
     private final Runnable clearReadPendingRunnable = new Runnable() {
         @Override
         public void run() {
@@ -75,14 +75,18 @@ public abstract class AbstractNioChannel extends AbstractChannel {
  * Create a new instance
  *
  * @param parent            the parent {@link Channel} by which this instance was created. May be {@code null}
+ 所属通道
  * @param ch                the underlying {@link SelectableChannel} on which it operates
+ 底层选择通道
  * @param readInterestOp    the ops to set to receive data from the {@link SelectableChannel}
+ 读操作事件
  */
 protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
     super(parent);
     this.ch = ch;
     this.readInterestOp = readInterestOp;
     try {
+        //初始化通道，并配置为非阻塞模式
         ch.configureBlocking(false);
     } catch (IOException e) {
         try {
@@ -97,3 +101,444 @@ protected AbstractNioChannel(Channel parent, SelectableChannel ch, int readInter
         throw new ChannelException("Failed to enter non-blocking mode.", e);
     }
 }
+从上面可以看出抽象Nio通道构造，主要是初始化通道并配置为非阻塞模式。
+下面几个方法，很简单，看一下就行
+//通道是否打开
+@Override
+public boolean isOpen() {
+    return ch.isOpen();
+}
+//获取底层选择通道
+protected SelectableChannel javaChannel() {
+    return ch;
+}
+//获取通道所在的事件循环
+@Override
+public NioEventLoop eventLoop() {
+    return (NioEventLoop) super.eventLoop();
+}
+
+来看抽象通道几个实际操作方法do*，
+先从注册方法开始
+ @Override
+protected void doRegister() throws Exception {
+    boolean selected = false;
+    for (;;) {
+        try {
+	   //注册可选择通道到通道所在事件循环的选择器中
+            selectionKey = javaChannel().register(eventLoop().unwrappedSelector(), 0, this);
+            return;
+        } catch (CancelledKeyException e) {
+            if (!selected) {
+                // Force the Selector to select now as the "canceled" SelectionKey may still be
+                // cached and not removed because no Select.select(..) operation was called yet.
+		//如果注册异常，并且没有选择，则执行选择操作，将选择key从选择器的取消key集合中移除
+                eventLoop().selectNow();
+                selected = true;
+            } else {
+                // We forced a select operation on the selector before but the SelectionKey is still cached
+                // for whatever reason. JDK bug ?
+                throw e;
+            }
+        }
+    }
+}
+
+从上面来看注册工作主要是，注册可选择通道到通道所在事件循环的选择器中。
+
+//再来看反注册
+@Override
+protected void doDeregister() throws Exception {
+    //委托给事件循环，取消选择key，即从事件循环关联选择器的选择key集合中移除当前选择key
+    eventLoop().cancel(selectionKey());
+}
+
+//读操作
+@Override
+protected void doBeginRead() throws Exception {
+    // Channel.read() or ChannelHandlerContext.read() was called
+    final SelectionKey selectionKey = this.selectionKey;
+    if (!selectionKey.isValid()) {
+        //选择key无效，直接返回
+        return;
+    }
+
+    readPending = true;
+    final int interestOps = selectionKey.interestOps();
+    if ((interestOps & readInterestOp) == 0) {
+        //将读操作事件，添加选择key的兴趣事件集
+        selectionKey.interestOps(interestOps | readInterestOp);
+    }
+}
+从上面可以看出，开始读操作，实际工作为将读操作事件，添加选择key的兴趣事件集
+
+再来看实际关闭任务操作：
+@Override
+protected void doClose() throws Exception {
+    ChannelPromise promise = connectPromise;
+    if (promise != null) {
+        // Use tryFailure() instead of setFailure() to avoid the race against cancel().
+        promise.tryFailure(DO_CLOSE_CLOSED_CHANNEL_EXCEPTION);
+        connectPromise = null;
+    }
+    //获取连接超时任务
+    ScheduledFuture<?> future = connectTimeoutFuture;
+    if (future != null) {
+        //取消任务
+        future.cancel(false);
+        connectTimeoutFuture = null;
+    }
+}
+来看其他方法：
+//获取通道Unsafe
+@Override
+public NioUnsafe unsafe() {
+    return (NioUnsafe) super.unsafe();
+}
+/**
+ * Return the current {@link SelectionKey}
+ 获取通道选择key
+ */
+protected SelectionKey selectionKey() {
+    assert selectionKey != null;
+    return selectionKey;
+}
+
+/**
+ * @deprecated No longer supported.
+ * No longer supported.
+ 是否正在进行读操作
+ */
+@Deprecated
+protected boolean isReadPending() {
+    return readPending;
+}
+
+/**
+ * @deprecated Use {@link #clearReadPending()} if appropriate instead.
+ * No longer supported.
+ 设置正在读标志
+ */
+@Deprecated
+protected void setReadPending(final boolean readPending) {
+    if (isRegistered()) {
+        EventLoop eventLoop = eventLoop();
+        if (eventLoop.inEventLoop()) {
+	    //在当前事件循环，完成实际设置读标志
+            setReadPending0(readPending);
+        } else {
+            eventLoop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    setReadPending0(readPending);
+                }
+            });
+        }
+    } else {
+        // Best effort if we are not registered yet clear readPending.
+        // NB: We only set the boolean field instead of calling clearReadPending0(), because the SelectionKey is
+        // not set yet so it would produce an assertion failure.
+        this.readPending = readPending;
+    }
+}
+//完成实际设置读标志
+private void setReadPending0(boolean readPending) {
+    this.readPending = readPending;
+    if (!readPending) {
+         //如果为不在读数据，委托给Unsafe，从选择key兴趣集中移除读操作事件
+        ((AbstractNioUnsafe) unsafe()).removeReadOp();
+    }
+}
+
+
+/**
+ * Set read pending to {@code false}.
+ 清除读操作标志，即设置标志为false
+ */
+protected final void clearReadPending() {
+    if (isRegistered()) {
+        EventLoop eventLoop = eventLoop();
+        if (eventLoop.inEventLoop()) {
+	   //在当前事件循环，完成实际清除
+            clearReadPending0();
+        } else {
+            eventLoop.execute(clearReadPendingRunnable);
+        }
+    } else {
+        // Best effort if we are not registered yet clear readPending. This happens during channel initialization.
+        // NB: We only set the boolean field instead of calling clearReadPending0(), because the SelectionKey is
+        // not set yet so it would produce an assertion failure.
+        readPending = false;
+    }
+}
+//完成实际清除
+private void clearReadPending0() {
+    readPending = false;
+    //委托给Unsafe，从选择key兴趣集中移除读操作事件
+    ((AbstractNioUnsafe) unsafe()).removeReadOp();
+}
+
+从下面一个方法：
+//获取通道Unsafe
+@Override
+public NioUnsafe unsafe() {
+    return (NioUnsafe) super.unsafe();
+}
+可以看出抽象nio通道的内部Unsafe为NioUnsafe
+
+/**
+ * Special {@link Unsafe} sub-type which allows to access the underlying {@link SelectableChannel}
+ 特殊的Unsafe，允许访问底层的选择通道
+ */
+public interface NioUnsafe extends Unsafe {
+    /**
+     * Return underlying {@link SelectableChannel}
+     返回底层选择通道
+     */
+    SelectableChannel ch();
+
+    /**
+     * Finish connect
+     完成连接
+     */
+    void finishConnect();
+
+    /**
+     * Read from underlying {@link SelectableChannel}
+     从底层选择操作，读取数据
+     */
+    void read();
+    //强制刷新
+    void forceFlush();
+}
+
+来看NioUnsafe的抽象实现AbstractNioUnsafe，为抽象nio通道的内部类，
+ protected abstract class AbstractNioUnsafe extends AbstractUnsafe implements NioUnsafe {
+        //移除读兴趣事件
+        protected final void removeReadOp() {
+	    //获取选择key
+            SelectionKey key = selectionKey();
+            // Check first if the key is still valid as it may be canceled as part of the deregistration
+            // from the EventLoop
+            // See https://github.com/netty/netty/issues/2104
+            if (!key.isValid()) {
+	        //选择key无效，直接返回
+                return;
+            }
+            int interestOps = key.interestOps();
+            if ((interestOps & readInterestOp) != 0) {
+                // only remove readInterestOp if needed
+		//从选择key兴趣事件集中，移除读操作事件
+                key.interestOps(interestOps & ~readInterestOp);
+            }
+        }
+        //获取选择通道，实际返回的抽象nio通道内部的底层可选择通道
+        @Override
+        public final SelectableChannel ch() {
+            return javaChannel();
+        }
+}
+从上面可以看出，抽象nioUnsafe为特殊的Unsafe，允许访问底层的选择通道。
+选择通道方法返回的实际为抽象nio通道内部的底层可选择通道。
+移除读兴趣事件removeReadOp，即从选择key兴趣事件集中，移除读操作事件。
+来看抽象NioUnsafe的其他方法
+//连接远端Socket地址，如果需要绑定本地socket地址，连接完成通知异步可写任务promise
+@Override
+public final void connect(
+        final SocketAddress remoteAddress, final SocketAddress localAddress, final ChannelPromise promise) {
+    if (!promise.setUncancellable() || !ensureOpen(promise)) {
+        //确保任务没有取消，通道打开
+        return;
+    }
+
+    try {
+        if (connectPromise != null) {
+	    //已连接
+            // Already a connect in process.
+            throw new ConnectionPendingException();
+        }
+
+        boolean wasActive = isActive();
+        if (doConnect(remoteAddress, localAddress)) {
+	   //如果连接成功，则更新任务结果，如果需要，则触发通道的激活事件fireChannelActive
+            fulfillConnectPromise(promise, wasActive);
+        } else {
+	    //连接失败，则添加异步连接任务
+            connectPromise = promise;
+            requestedRemoteAddress = remoteAddress;
+
+            // Schedule connect timeout.连接超时配置
+            int connectTimeoutMillis = config().getConnectTimeoutMillis();
+	    //更新连接异步任务结果为连接超时，并将任务交个事件循环区调度
+            if (connectTimeoutMillis > 0) {
+                connectTimeoutFuture = eventLoop().schedule(new Runnable() {
+                    @Override
+                    public void run() {
+                        ChannelPromise connectPromise = AbstractNioChannel.this.connectPromise;
+                        ConnectTimeoutException cause =
+                                new ConnectTimeoutException("connection timed out: " + remoteAddress);
+                        if (connectPromise != null && connectPromise.tryFailure(cause)) {
+                            close(voidPromise());
+                        }
+                    }
+                }, connectTimeoutMillis, TimeUnit.MILLISECONDS);
+            }
+            //添加任务监听器
+            promise.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    if (future.isCancelled()) {
+                        if (connectTimeoutFuture != null) {
+                            connectTimeoutFuture.cancel(false);
+                        }
+                        connectPromise = null;
+			//连接任务取消，则关闭任务
+                        close(voidPromise());
+                    }
+                }
+            });
+        }
+    } catch (Throwable t) {
+       //异常，则更新任务失败，如果需要则关闭通道
+        promise.tryFailure(annotateConnectException(t, remoteAddress));
+        closeIfClosed();
+    }
+}
+连接方法，我们需要关注为以下片段：
+
+if (doConnect(remoteAddress, localAddress)) {
+   //如果连接成功，则更新任务结果，如果需要，则触发通道的激活事件fireChannelActive
+    fulfillConnectPromise(promise, wasActive);
+} 
+
+//AbstractNioChannel
+/**
+ * Connect to the remote peer，待子类实现
+ */
+protected abstract boolean doConnect(SocketAddress remoteAddress, SocketAddress localAddress) throws Exception;
+
+
+//更新任务结果，触发通道的激活事件fireChannelActive
+private void fulfillConnectPromise(ChannelPromise promise, boolean wasActive) {
+    if (promise == null) {
+        // Closed via cancellation and the promise has been notified already.
+	通道已经关闭，直接返回
+        return;
+    }
+
+    // Get the state as trySuccess() may trigger an ChannelFutureListener that will close the Channel.
+    // We still need to ensure we call fireChannelActive() in this case.
+    boolean active = isActive();
+
+    // trySuccess() will return false if a user cancelled the connection attempt.
+    //更新连接任务成功完成
+    boolean promiseSet = promise.trySuccess();
+
+    // Regardless if the connection attempt was cancelled, channelActive() event should be triggered,
+    // because what happened is what happened.
+    if (!wasActive && active) {
+        //触发通道的激活事件fireChannelActive
+        pipeline().fireChannelActive();
+    }
+    // If a user cancelled the connection attempt, close the channel, which is followed by channelInactive().
+    if (!promiseSet) {
+        //关闭任务
+        close(voidPromise());
+    }
+}
+从上面可以看出，连接操作，将实际连接操作委托给doConnect，待子类实现，如果连接成功
+，则通知异步任务连接成功，如果是第一次连接，则触发通道的激活事件fireChannelActive。
+
+再来看完成连接方法
+@Override
+public final void finishConnect() {
+    // Note this method is invoked by the event loop only if the connection attempt was
+    // neither cancelled nor timed out.
+
+    assert eventLoop().inEventLoop();
+
+    try {
+        boolean wasActive = isActive();
+	//实际完成连接
+        doFinishConnect();
+	//
+        fulfillConnectPromise(connectPromise, wasActive);
+    } catch (Throwable t) {
+         //这个包装异常的方法annotateConnectException，在上一篇已看过，即将远端socket地址，添加的异常信息中
+        fulfillConnectPromise(connectPromise, annotateConnectException(t, requestedRemoteAddress));
+    } finally {
+        // Check for null as the connectTimeoutFuture is only created if a connectTimeoutMillis > 0 is used
+        // See https://github.com/netty/netty/issues/1770
+        if (connectTimeoutFuture != null) {
+            connectTimeoutFuture.cancel(false);
+        }
+        connectPromise = null;
+    }
+}
+//AbstractNioChannel
+/**
+ * Finish the connect,待子类实现
+ */
+protected abstract void doFinishConnect() throws Exception;
+
+
+//更新连接任务为异常失败
+private void fulfillConnectPromise(ChannelPromise promise, Throwable cause) {
+    if (promise == null) {
+        // Closed via cancellation and the promise has been notified already.
+        return;
+    }
+    // Use tryFailure() instead of setFailure() to avoid the race against cancel().
+    promise.tryFailure(cause);
+    closeIfClosed();
+}
+从上面可以看出，
+
+@Override
+protected final void flush0() {
+    // Flush immediately only when there's no pending flush.
+    // If there's a pending flush operation, event loop will call forceFlush() later,
+    // and thus there's no need to call it now.
+    if (isFlushPending()) {
+        return;
+    }
+    super.flush0();
+}
+
+@Override
+public final void forceFlush() {
+    // directly call super.flush0() to force a flush now
+    super.flush0();
+}
+
+private boolean isFlushPending() {
+    SelectionKey selectionKey = selectionKey();
+    return selectionKey.isValid() && (selectionKey.interestOps() & SelectionKey.OP_WRITE) != 0;
+}
+
+
+
+
+回到抽象nio通道，再来看抽象nio通道的其他方法：
+//判断事件循环为通道兼容，即判断事件循环是否为Nio事件循环
+@Override
+protected boolean isCompatible(EventLoop loop) {
+    return loop instanceof NioEventLoop;
+}
+总结：
+抽象nio通道AbstractNioChannel内部关联一个可选择通道（SelectableChannel）和一个选择key（selectionKey）。
+
+抽象Nio通道构造，主要是初始化通道并配置为非阻塞模式。
+
+注册doRegister工作主要是，注册可选择通道到通道所在事件循环的选择器中。
+
+反注册doDeregister，委托给事件循环，取消选择key，即从事件循环关联选择器的选择key集合中移除当前选择key。
+
+开始读操作doBeginRead，实际工作为将读操作事件，添加选择key的兴趣事件集
+
+抽象nioUnsafe为特殊的Unsafe，允许访问底层的选择通道。
+选择通道方法返回的实际为抽象nio通道内部的底层可选择通道。
+移除读兴趣事件removeReadOp，即从选择key兴趣事件集中，移除读操作事件。
+
+连接操作，将实际连接操作委托给doConnect，待子类实现，如果连接成功
+，则通知异步任务连接成功，如果是第一次连接，则触发通道的激活事件fireChannelActive。
