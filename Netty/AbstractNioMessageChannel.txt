@@ -1,0 +1,42 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+引言
+上一篇文章我们看了抽象nio字节通道，先来回顾一下：
+写通道Outbound缓冲区，即遍历刷新链上的写请求，如果写请求消息为字节buf，则调用doWriteBytes完成实际数据发送操作，待子类扩展，如果写请求消息为文件Region，调用doWriteFileRegion完成实际数据发送操作，待子类扩展，数据发送，则更新通道的数据发送进度，并从刷新链上移除写请求；如果所有写请求发送完毕，则重新添加写操作事件到选择key兴趣事件集，否则继续刷新通道Outbound缓冲区中的写请求。
+
+nio字节Unsafe读操作，从通道接收缓冲区读取数据，通知通道处理读取数据,触发Channel管道线的fireChannelRead事件，待数据读取完毕，触发Channel管道线的fireChannelReadComplete事件，如果在读数据的过程中，通道关闭，则触发通道输入关闭事件（fireUserEventTriggered），如果在读数据的过程中，发生异常，则读取缓存区中没有读完的数据，并通道通道处理剩余数据。
+抽象nio字节通道是面向字节的通道，为Socket通道的父类，
+今天我们来看ServerSocket通道的父类AbstractNioMessageChannel，面向消息的通道：
+package io.netty.channel.nio;
+
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelConfig;
+import io.netty.channel.ChannelOutboundBuffer;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.ServerChannel;
+
+import java.io.IOException;
+import java.net.PortUnreachableException;
+import java.nio.channels.SelectableChannel;
+import java.nio.channels.SelectionKey;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * {@link AbstractNioChannel} base class for {@link Channel}s that operate on messages.
+ */
+public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
+    boolean inputShutdown;
+
+    /**
+     * @see AbstractNioChannel#AbstractNioChannel(Channel, SelectableChannel, int)
+     */
+    protected AbstractNioMessageChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
+        super(parent, ch, readInterestOp);
+    }
