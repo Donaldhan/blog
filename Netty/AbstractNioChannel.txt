@@ -461,7 +461,7 @@ public final void finishConnect() {
         boolean wasActive = isActive();
 	//实际完成连接
         doFinishConnect();
-	//
+	//更新任务结果，触发通道的激活事件fireChannelActive
         fulfillConnectPromise(connectPromise, wasActive);
     } catch (Throwable t) {
          //这个包装异常的方法annotateConnectException，在上一篇已看过，即将远端socket地址，添加的异常信息中
@@ -492,8 +492,10 @@ private void fulfillConnectPromise(ChannelPromise promise, Throwable cause) {
     promise.tryFailure(cause);
     closeIfClosed();
 }
-从上面可以看出，
+从上面可以看出，完成连接操作，实际工作委托给抽象Nio通道的doFinishConnect方法，待子类实现，
+完成后更新任务结果，触发通道的激活事件fireChannelActive，如果出现异常，则更新连接任务为异常失败。
 
+//再来看刷新操作
 @Override
 protected final void flush0() {
     // Flush immediately only when there's no pending flush.
@@ -502,22 +504,22 @@ protected final void flush0() {
     if (isFlushPending()) {
         return;
     }
+    //委托给父类
     super.flush0();
 }
 
 @Override
 public final void forceFlush() {
     // directly call super.flush0() to force a flush now
+     //委托给父类
     super.flush0();
 }
 
 private boolean isFlushPending() {
     SelectionKey selectionKey = selectionKey();
+    //写操作事件，存在选择key兴趣事件集中
     return selectionKey.isValid() && (selectionKey.interestOps() & SelectionKey.OP_WRITE) != 0;
 }
-
-
-
 
 回到抽象nio通道，再来看抽象nio通道的其他方法：
 //判断事件循环为通道兼容，即判断事件循环是否为Nio事件循环
@@ -525,6 +527,195 @@ private boolean isFlushPending() {
 protected boolean isCompatible(EventLoop loop) {
     return loop instanceof NioEventLoop;
 }
+
+/**
+ * Returns an off-heap copy of the specified {@link ByteBuf}, and releases the original one.
+ * Note that this method does not create an off-heap copy if the allocation / deallocation cost is too high,
+ * but just returns the original {@link ByteBuf}..
+ 包装原始buf为direct buf，成功则释放原始buf，如果保证成本较高，则返回原始buf
+ */
+protected final ByteBuf newDirectBuffer(ByteBuf buf) {
+    //获取buf可读字节数
+    final int readableBytes = buf.readableBytes();
+    if (readableBytes == 0) {
+        //释放buf
+        ReferenceCountUtil.safeRelease(buf);
+        return Unpooled.EMPTY_BUFFER;
+    }
+    //获取字节buf分配器
+    final ByteBufAllocator alloc = alloc();
+    if (alloc.isDirectBufferPooled()) {
+        //如果分配器为Direct池Buffer类型，则分配字节Direct类型字节buf
+        ByteBuf directBuf = alloc.directBuffer(readableBytes);
+	//将原始buf中的数据，写到新的Direct buf中
+        directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
+	//释放原始buf
+        ReferenceCountUtil.safeRelease(buf);
+        return directBuf;
+    }
+    //否则，获取线程本地的direct buf
+    final ByteBuf directBuf = ByteBufUtil.threadLocalDirectBuffer();
+    if (directBuf != null) {
+       //将原始buf中的数据，写到新的Direct buf中
+        directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
+        ReferenceCountUtil.safeRelease(buf);
+        return directBuf;
+    }
+    // Allocating and deallocating an unpooled direct buffer is very expensive; give up.
+   //如果分配和回收一个非池类的Direct buf代价比较高，则直接返回原始buf。
+    return buf;
+}
+
+
+/**
+ * Returns an off-heap copy of the specified {@link ByteBuf}, and releases the specified holder.
+ * The caller must ensure that the holder releases the original {@link ByteBuf} when the holder is released by
+ * this method.  Note that this method does not create an off-heap copy if the allocation / deallocation cost is
+ * too high, but just returns the original {@link ByteBuf}..
+ 此方法与上面方法不同的是，释放的是buf的Holder，主要是保证原始buf能够释放
+ */
+protected final ByteBuf newDirectBuffer(ReferenceCounted holder, ByteBuf buf) {
+    final int readableBytes = buf.readableBytes();
+    if (readableBytes == 0) {
+        //释放的是buf的Holder
+        ReferenceCountUtil.safeRelease(holder);
+        return Unpooled.EMPTY_BUFFER;
+    }
+
+    final ByteBufAllocator alloc = alloc();
+    if (alloc.isDirectBufferPooled()) {
+        ByteBuf directBuf = alloc.directBuffer(readableBytes);
+        directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
+	//释放的是buf的Holder
+        ReferenceCountUtil.safeRelease(holder);
+        return directBuf;
+    }
+
+    final ByteBuf directBuf = ByteBufUtil.threadLocalDirectBuffer();
+    if (directBuf != null) {
+        directBuf.writeBytes(buf, buf.readerIndex(), readableBytes);
+	//释放的是buf的Holder
+        ReferenceCountUtil.safeRelease(holder);
+        return directBuf;
+    }
+
+    // Allocating and deallocating an unpooled direct buffer is very expensive; give up.
+    if (holder != buf) {
+        // Ensure to call holder.release() to give the holder a chance to release other resources than its content.
+        buf.retain();//buf引用计数器自增1
+        ReferenceCountUtil.safeRelease(holder);
+    }
+    return buf;
+}
+
+我们来看这句：
+//否则，获取线程本地的direct buf
+final ByteBuf directBuf = ByteBufUtil.threadLocalDirectBuffer();
+
+//ByteBufUtil
+
+**
+ * Returns a cached thread-local direct buffer, if available.
+ *
+ * @return a cached thread-local direct buffer, if available.  {@code null} otherwise.
+ */
+public static ByteBuf threadLocalDirectBuffer() {
+    if (THREAD_LOCAL_BUFFER_SIZE <= 0) {
+       //线程本地buffer size小于0，则直接返回
+        return null;
+    }
+    if (PlatformDependent.hasUnsafe()) {
+        return ThreadLocalUnsafeDirectByteBuf.newInstance();
+    } else {
+        return ThreadLocalDirectByteBuf.newInstance();
+    }
+}
+//PlatformDependent
+public final class PlatformDependent {
+private static final boolean HAS_UNSAFE = hasUnsafe0();
+ /**
+     * Return {@code true} if {@code sun.misc.Unsafe} was found on the classpath and can be used for accelerated
+     * direct memory access.
+     */
+    public static boolean hasUnsafe() {
+        return HAS_UNSAFE;
+    }
+    private static boolean hasUnsafe0() {
+        if (isAndroid()) {
+            logger.debug("sun.misc.Unsafe: unavailable (Android)");
+            return false;
+        }
+        if (PlatformDependent0.isExplicitNoUnsafe()) {
+            return false;
+        }
+        try {
+            boolean hasUnsafe = PlatformDependent0.hasUnsafe();
+            logger.debug("sun.misc.Unsafe: {}", hasUnsafe ? "available" : "unavailable");
+            return hasUnsafe;
+        } catch (Throwable ignored) {
+            // Probably failed to initialize PlatformDependent0.
+            return false;
+        }
+    }
+...
+}
+//PlatformDependent0
+/**
+ * The {@link PlatformDependent} operations which requires access to {@code sun.misc.*}.
+ */
+final class PlatformDependent0 {
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(PlatformDependent0.class);
+    private static final long ADDRESS_FIELD_OFFSET;
+    private static final long BYTE_ARRAY_BASE_OFFSET;
+    private static final Constructor<?> DIRECT_BUFFER_CONSTRUCTOR;
+    private static final boolean IS_EXPLICIT_NO_UNSAFE = explicitNoUnsafe0();
+    private static final Method ALLOCATE_ARRAY_METHOD;
+    private static final int JAVA_VERSION = javaVersion0();
+    private static final boolean IS_ANDROID = isAndroid0();
+    private static final Object INTERNAL_UNSAFE;
+    static final Unsafe UNSAFE;
+    static boolean hasUnsafe() {
+        return UNSAFE != null;
+    }
+    ...
+}
+下面两个字节部分都是ByteBufUtil的内部类
+//ThreadLocalDirectByteBuf
+static final class ThreadLocalDirectByteBuf extends UnpooledDirectByteBuf {
+    
+        private static final Recycler<ThreadLocalDirectByteBuf> RECYCLER = new Recycler<ThreadLocalDirectByteBuf>() {
+            @Override
+            protected ThreadLocalDirectByteBuf newObject(Handle<ThreadLocalDirectByteBuf> handle) {
+                return new ThreadLocalDirectByteBuf(handle);
+            }
+        };
+    
+        static ThreadLocalDirectByteBuf newInstance() {
+            ThreadLocalDirectByteBuf buf = RECYCLER.get();
+            buf.setRefCnt(1);
+            return buf;
+        }
+	...
+}
+
+ //ThreadLocalUnsafeDirectByteBuf
+static final class ThreadLocalUnsafeDirectByteBuf extends UnpooledUnsafeDirectByteBuf {
+	private static final Recycler<ThreadLocalUnsafeDirectByteBuf> RECYCLER =
+		new Recycler<ThreadLocalUnsafeDirectByteBuf>() {
+		    @Override
+		    protected ThreadLocalUnsafeDirectByteBuf newObject(Handle<ThreadLocalUnsafeDirectByteBuf> handle) {
+			return new ThreadLocalUnsafeDirectByteBuf(handle);
+		    }
+		};
+
+	static ThreadLocalUnsafeDirectByteBuf newInstance() {
+	    ThreadLocalUnsafeDirectByteBuf buf = RECYCLER.get();
+	    buf.setRefCnt(1);
+	    return buf;
+	}
+	...
+}
+
 总结：
 抽象nio通道AbstractNioChannel内部关联一个可选择通道（SelectableChannel）和一个选择key（selectionKey）。
 
@@ -542,3 +733,91 @@ protected boolean isCompatible(EventLoop loop) {
 
 连接操作，将实际连接操作委托给doConnect，待子类实现，如果连接成功
 ，则通知异步任务连接成功，如果是第一次连接，则触发通道的激活事件fireChannelActive。
+
+完成连接操作，实际工作委托给抽象Nio通道的doFinishConnect方法，待子类实现，
+完成后更新任务结果，触发通道的激活事件fireChannelActive，如果出现异常，则更新连接任务为异常失败。
+
+
+附：
+/**
+ * A collection of utility methods that is related with handling {@link ByteBuf},
+ * such as the generation of hex dump and swapping an integer's byte order.
+ */
+public final class ByteBufUtil {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(ByteBufUtil.class);
+    private static final FastThreadLocal<CharBuffer> CHAR_BUFFERS = new FastThreadLocal<CharBuffer>() {
+        @Override
+        protected CharBuffer initialValue() throws Exception {
+            return CharBuffer.allocate(1024);
+        }
+    };
+
+    //ThreadLocalDirectByteBuf
+    static final class ThreadLocalDirectByteBuf extends UnpooledDirectByteBuf {
+    
+        private static final Recycler<ThreadLocalDirectByteBuf> RECYCLER = new Recycler<ThreadLocalDirectByteBuf>() {
+            @Override
+            protected ThreadLocalDirectByteBuf newObject(Handle<ThreadLocalDirectByteBuf> handle) {
+                return new ThreadLocalDirectByteBuf(handle);
+            }
+        };
+    
+        static ThreadLocalDirectByteBuf newInstance() {
+            ThreadLocalDirectByteBuf buf = RECYCLER.get();
+            buf.setRefCnt(1);
+            return buf;
+        }
+    
+        private final Handle<ThreadLocalDirectByteBuf> handle;
+    
+        private ThreadLocalDirectByteBuf(Handle<ThreadLocalDirectByteBuf> handle) {
+            super(UnpooledByteBufAllocator.DEFAULT, 256, Integer.MAX_VALUE);
+            this.handle = handle;
+        }
+    
+        @Override
+        protected void deallocate() {
+            if (capacity() > THREAD_LOCAL_BUFFER_SIZE) {
+                super.deallocate();
+            } else {
+                clear();
+                handle.recycle(this);
+            }
+        }
+    }
+    //ThreadLocalUnsafeDirectByteBuf
+    static final class ThreadLocalUnsafeDirectByteBuf extends UnpooledUnsafeDirectByteBuf {
+
+        private static final Recycler<ThreadLocalUnsafeDirectByteBuf> RECYCLER =
+                new Recycler<ThreadLocalUnsafeDirectByteBuf>() {
+                    @Override
+                    protected ThreadLocalUnsafeDirectByteBuf newObject(Handle<ThreadLocalUnsafeDirectByteBuf> handle) {
+                        return new ThreadLocalUnsafeDirectByteBuf(handle);
+                    }
+                };
+
+        static ThreadLocalUnsafeDirectByteBuf newInstance() {
+            ThreadLocalUnsafeDirectByteBuf buf = RECYCLER.get();
+            buf.setRefCnt(1);
+            return buf;
+        }
+
+        private final Handle<ThreadLocalUnsafeDirectByteBuf> handle;
+
+        private ThreadLocalUnsafeDirectByteBuf(Handle<ThreadLocalUnsafeDirectByteBuf> handle) {
+            super(UnpooledByteBufAllocator.DEFAULT, 256, Integer.MAX_VALUE);
+            this.handle = handle;
+        }
+
+        @Override
+        protected void deallocate() {
+            if (capacity() > THREAD_LOCAL_BUFFER_SIZE) {
+                super.deallocate();
+            } else {
+                clear();
+                handle.recycle(this);
+            }
+        }
+    }
+}
