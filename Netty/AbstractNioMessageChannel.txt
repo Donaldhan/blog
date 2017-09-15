@@ -32,7 +32,7 @@ import java.util.List;
  * {@link AbstractNioChannel} base class for {@link Channel}s that operate on messages.
  */
 public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
-    boolean inputShutdown;
+    boolean inputShutdown;//是否关闭输入流
 
     /**
      * @see AbstractNioChannel#AbstractNioChannel(Channel, SelectableChannel, int)
@@ -40,3 +40,62 @@ public abstract class AbstractNioMessageChannel extends AbstractNioChannel {
     protected AbstractNioMessageChannel(Channel parent, SelectableChannel ch, int readInterestOp) {
         super(parent, ch, readInterestOp);
     }
+}
+来看实际写操作：
+@Override
+protected void doWrite(ChannelOutboundBuffer in) throws Exception {
+    final SelectionKey key = selectionKey();
+    final int interestOps = key.interestOps();
+
+    for (;;) {
+        Object msg = in.current();
+        if (msg == null) {
+            // Wrote all messages.
+            if ((interestOps & SelectionKey.OP_WRITE) != 0) {
+	       //消息已发送完，从选择key兴趣集中移除写操作事件
+                key.interestOps(interestOps & ~SelectionKey.OP_WRITE);
+            }
+            break;
+        }
+        try {
+            boolean done = false;
+            for (int i = config().getWriteSpinCount() - 1; i >= 0; i--) {
+	        //读取消息
+                if (doWriteMessage(msg, in)) {
+                    done = true;
+                    break;
+                }
+            }
+
+            if (done) {//如果读完消息，则从通道刷新链上移除写请求
+                in.remove();
+            } else {
+                // Did not write all messages.
+                if ((interestOps & SelectionKey.OP_WRITE) == 0) {
+		    //消息没发送完，如果需要添加写事件到选择key的兴趣事件集
+                    key.interestOps(interestOps | SelectionKey.OP_WRITE);
+                }
+                break;
+            }
+        } catch (IOException e) {
+            if (continueOnWriteError()) {
+                in.remove(e);
+            } else {
+                throw e;
+            }
+        }
+    }
+}
+
+/**
+ * Write a message to the underlying {@link java.nio.channels.Channel}.
+ *写一个消息到底层通道，待子类扩展
+ * @return {@code true} if and only if the message has been written
+ */
+protected abstract boolean doWriteMessage(Object msg, ChannelOutboundBuffer in) throws Exception;
+/**
+ * Returns {@code true} if we should continue the write loop on a write error.
+ */
+protected boolean continueOnWriteError() {
+    return false;
+}
