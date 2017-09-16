@@ -1,0 +1,40 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/url]
+netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
+
+上一篇文章，我们看了nio服务端socket通道，先来回顾一下：
+nio服务端socket通道NioServerSocketChannel内部有两个变量，一个为选择器提供者SelectorProvider，一个为通道配置ServerSocketChannelConfig。
+
+通道实际绑定socket地址，首先判断jdk版本信息，如果jdk版本大于1.7 则使用通道bind方法，绑定socket地址，否则为通道关联Socket的bind方法。
+
+doReadMessages方法，实际为当接受客户端的连接请求时，创建一个与客户端交互的socket通道，并添加到读操作结果集中，实际为socket通道集。并将socket通道集交给ServerBootStrap的引导配置监听器ServerBootstrapAcceptor处理，Server引导配置监听器实际为一个Inbound通道处理器，每当有客户端连接请求时，则创建一个与客户端交互的通道，将child通道选项及属性配置给通道，并将通道注册到childGroup事件循环组，然后将通道处理器添加到与客户端交互的通道内部的Channel管道中。 客户端连接服务端时，首先向服务端发送连接请求数据，服务端接受到连接请求时，创建一个与客户端交互的socket通道。
+
+由于服务端通道用于接受客户端的请求，所有不支持连接，写消息，消息过滤等等操作。
+
+上一篇文章中我们遗留了一点，即nio服务端通道配置，今天我们就来看一通道配置：
+//Nio服务端通道配置, 为NioServerSocketChannel的内部类，这个我们单独列一篇文章来说
+private final class NioServerSocketChannelConfig extends DefaultServerSocketChannelConfig {
+    private NioServerSocketChannelConfig(NioServerSocketChannel channel, ServerSocket javaSocket) {
+        super(channel, javaSocket);
+    }
+
+    @Override
+    protected void autoReadCleared() {
+        clearReadPending();
+    }
+}
+
+//DefaultChannelConfig
+/**
+ * The default {@link ChannelConfig} implementation.
+ */
+public class DefaultChannelConfig implements ChannelConfig {
+
+
+
