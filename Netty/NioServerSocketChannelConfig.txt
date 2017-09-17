@@ -29,12 +29,562 @@ private final class NioServerSocketChannelConfig extends DefaultServerSocketChan
         clearReadPending();
     }
 }
+//DefaultServerSocketChannelConfig
+/**
+ * The default {@link ServerSocketChannelConfig} implementation.
+ */
+public class DefaultServerSocketChannelConfig extends DefaultChannelConfig
+                                              implements ServerSocketChannelConfig {
+
+//ServerSocketChannelConfig
+public interface ServerSocketChannelConfig extends ChannelConfig {
 
 //DefaultChannelConfig
 /**
  * The default {@link ChannelConfig} implementation.
  */
 public class DefaultChannelConfig implements ChannelConfig {
+
+我们先来看通道配置接口ChannelConfig的定义：
+package io.netty.channel;
+
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.socket.SocketChannelConfig;
+
+import java.nio.ByteBuffer;
+import java.nio.channels.WritableByteChannel;
+import java.util.Map;
+
+/**
+ * A set of configuration properties of a {@link Channel}.
+ 通道配置属性集
+ * <p>
+ * Please down-cast to more specific configuration type such as
+ * {@link SocketChannelConfig} or use {@link #setOptions(Map)} to set the
+ * transport-specific properties:
+ * <pre>
+ * {@link Channel} ch = ...;
+ * {@link SocketChannelConfig} cfg = <strong>({@link SocketChannelConfig}) ch.getConfig();</strong>
+ * cfg.setTcpNoDelay(false);
+ * </pre>
+ *
+ * <h3>Option map</h3>
+ *
+ * An option map property is a dynamic write-only property which allows
+ * the configuration of a {@link Channel} without down-casting its associated
+ * {@link ChannelConfig}.  To update an option map, please call {@link #setOptions(Map)}.
+ * <p>
+ * All {@link ChannelConfig} has the following options:
+ *
+ * <table border="1" cellspacing="0" cellpadding="6">
+ * <tr>
+ * <th>Name</th><th>Associated setter method</th>
+ * </tr><tr>
+ * <td>{@link ChannelOption#CONNECT_TIMEOUT_MILLIS}</td><td>{@link #setConnectTimeoutMillis(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#WRITE_SPIN_COUNT}</td><td>{@link #setWriteSpinCount(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#WRITE_BUFFER_WATER_MARK}</td><td>{@link #setWriteBufferWaterMark(WriteBufferWaterMark)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#ALLOCATOR}</td><td>{@link #setAllocator(ByteBufAllocator)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#AUTO_READ}</td><td>{@link #setAutoRead(boolean)}</td>
+ * </tr>
+ * </table>
+ * <p>
+ * More options are available in the sub-types of {@link ChannelConfig}.  For
+ * example, you can configure the parameters which are specific to a TCP/IP
+ * socket as explained in {@link SocketChannelConfig}.
+ */
+public interface ChannelConfig {
+
+    /**
+     * Return all set {@link ChannelOption}'s.
+     获取所有通道选项
+     */
+    Map<ChannelOption<?>, Object> getOptions();
+
+    /**
+     * Sets the configuration properties from the specified {@link Map}.
+     配置通道选项
+     */
+    boolean setOptions(Map<ChannelOption<?>, ?> options);
+
+    /**
+     * Return the value of the given {@link ChannelOption}
+     获取给定通道选项的值
+     */
+    <T> T getOption(ChannelOption<T> option);
+
+    /**
+     * Sets a configuration property with the specified name and value.
+     * To override this method properly, you must call the super class:
+     * <pre>
+     * public boolean setOption(ChannelOption&lt;T&gt; option, T value) {
+     *     if (super.setOption(option, value)) {
+     *         return true;
+     *     }
+     *
+     *     if (option.equals(additionalOption)) {
+     *         ....
+     *         return true;
+     *     }
+     *
+     *     return false;
+     * }
+     * </pre>
+     *配置给定通道选项的值
+     * @return {@code true} if and only if the property has been set
+     */
+    <T> boolean setOption(ChannelOption<T> option, T value);
+
+    /**
+     * Returns the connect timeout of the channel in milliseconds.  If the
+     * {@link Channel} does not support connect operation, this property is not
+     * used at all, and therefore will be ignored.
+     *获取通道连接超时时间
+     * @return the connect timeout in milliseconds.  {@code 0} if disabled.
+     */
+    int getConnectTimeoutMillis();
+
+    /**
+     * Sets the connect timeout of the channel in milliseconds.  If the
+     * {@link Channel} does not support connect operation, this property is not
+     * used at all, and therefore will be ignored.
+     *设置通道连接超时时间
+     * @param connectTimeoutMillis the connect timeout in milliseconds.
+     *                             {@code 0} to disable.
+     */
+    ChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
+
+    /**
+     * @deprecated Use {@link MaxMessagesRecvByteBufAllocator}
+     * <p>
+     * Returns the maximum number of messages to read per read loop.
+     * a {@link ChannelInboundHandler#channelRead(ChannelHandlerContext, Object) channelRead()} event.
+     * If this value is greater than 1, an event loop might attempt to read multiple times to procure multiple messages.
+     这个方法已经被丢弃，返回每次通道处理器读操作事件，允许读取的最大消息数量，
+     如果值大于1，则每个事件循环尝试多次读操作，以产生多个消息。
+     */
+    @Deprecated
+    int getMaxMessagesPerRead();
+
+    /**
+     * @deprecated Use {@link MaxMessagesRecvByteBufAllocator}
+     设置每次读取允许读取的消息数，当前方法已丢弃，请使用MaxMessagesRecvByteBufAllocator
+     * <p>
+     * Sets the maximum number of messages to read per read loop.
+     * If this value is greater than 1, an event loop might attempt to read multiple times to procure multiple messages.
+     */
+    @Deprecated
+    ChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
+
+    /**
+     * Returns the maximum loop count for a write operation until
+     * {@link WritableByteChannel#write(ByteBuffer)} returns a non-zero value.
+     * It is similar to what a spin lock is used for in concurrency programming.
+     * It improves memory utilization and write throughput depending on
+     * the platform that JVM runs on.  The default value is {@code 16}.
+     返回直到可写字节通道写操作返回非零值时，允许循环写的次数。相当于并发编程中的
+     自旋锁。能否改善内存使用率和写吞吐量依赖句具体的JVM平台。默认值为16
+     */
+    int getWriteSpinCount();
+
+    /**
+     * Sets the maximum loop count for a write operation until
+     * {@link WritableByteChannel#write(ByteBuffer)} returns a non-zero value.
+     * It is similar to what a spin lock is used for in concurrency programming.
+     * It improves memory utilization and write throughput depending on
+     * the platform that JVM runs on.  The default value is {@code 16}.
+     *设置写操作最大自旋数
+     * @throws IllegalArgumentException
+     *         if the specified value is {@code 0} or less than {@code 0}
+     */
+    ChannelConfig setWriteSpinCount(int writeSpinCount);
+    //获取设置字节分配器
+    /**
+     * Returns {@link ByteBufAllocator} which is used for the channel
+     * to allocate buffers.
+     */
+    ByteBufAllocator getAllocator();
+
+    /**
+     * Set the {@link ByteBufAllocator} which is used for the channel
+     * to allocate buffers.
+     */
+    ChannelConfig setAllocator(ByteBufAllocator allocator);
+    //设置获取接受字节分配器
+    /**
+     * Returns {@link RecvByteBufAllocator} which is used for the channel to allocate receive buffers.
+     */
+    <T extends RecvByteBufAllocator> T getRecvByteBufAllocator();
+
+    /**
+     * Set the {@link RecvByteBufAllocator} which is used for the channel to allocate receive buffers.
+     */
+    ChannelConfig setRecvByteBufAllocator(RecvByteBufAllocator allocator);
+    //获取设置，通道上下文是否自动调用#read操作，默认为true
+    /**
+     * Returns {@code true} if and only if {@link ChannelHandlerContext#read()} will be invoked automatically so that
+     * a user application doesn't need to call it at all. The default value is {@code true}.
+     */
+    boolean isAutoRead();
+
+    /**
+     * Sets if {@link ChannelHandlerContext#read()} will be invoked automatically so that a user application doesn't
+     * need to call it at all. The default value is {@code true}.
+     */
+    ChannelConfig setAutoRead(boolean autoRead);
+    //是否自动关闭，已丢弃
+    /**
+     * @deprecated  Auto close will be removed in a future release.
+     *
+     * Returns {@code true} if and only if the {@link Channel} will be closed automatically and immediately on
+     * write failure.  The default is {@code false}.
+     */
+    @Deprecated
+    boolean isAutoClose();
+
+    /**
+     * @deprecated  Auto close will be removed in a future release.
+     *
+     * Sets whether the {@link Channel} should be closed automatically and immediately on write failure.
+     * The default is {@code false}.
+     */
+    @Deprecated
+    ChannelConfig setAutoClose(boolean autoClose);
+    //返回写buffer的高位掩码，如果写buf中缓存的字节数大于高位掩码值，则Channel#isWritabl方法返回false
+    /**
+     * Returns the high water mark of the write buffer.  If the number of bytes
+     * queued in the write buffer exceeds this value, {@link Channel#isWritable()}
+     * will start to return {@code false}.
+     */
+    int getWriteBufferHighWaterMark();
+
+    /**
+     * <p>
+     * Sets the high water mark of the write buffer.  If the number of bytes
+     * queued in the write buffer exceeds this value, {@link Channel#isWritable()}
+     * will start to return {@code false}.
+     */
+    ChannelConfig setWriteBufferHighWaterMark(int writeBufferHighWaterMark);
+    //返回写buffer的低位掩码，如果写buf中缓存的字节数大于高位掩码值，则Channel#isWritabl方法返回true
+    /**
+     * Returns the low water mark of the write buffer.  Once the number of bytes
+     * queued in the write buffer exceeded the
+     * {@linkplain #setWriteBufferHighWaterMark(int) high water mark} and then
+     * dropped down below this value, {@link Channel#isWritable()} will start to return
+     * {@code true} again.
+     */
+    int getWriteBufferLowWaterMark();
+
+    /**
+     * <p>
+     * Sets the low water mark of the write buffer.  Once the number of bytes
+     * queued in the write buffer exceeded the
+     * {@linkplain #setWriteBufferHighWaterMark(int) high water mark} and then
+     * dropped down below this value, {@link Channel#isWritable()} will start to return
+     * {@code true} again.
+     */
+    ChannelConfig setWriteBufferLowWaterMark(int writeBufferLowWaterMark);
+    //消息size估算器
+    /**
+     * Returns {@link MessageSizeEstimator} which is used for the channel
+     * to detect the size of a message.
+     */
+    MessageSizeEstimator getMessageSizeEstimator();
+
+    /**
+     * Set the {@link MessageSizeEstimator} which is used for the channel
+     * to detect the size of a message.
+     */
+    ChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);
+    //获取写buf高位掩码
+    /**
+     * Returns the {@link WriteBufferWaterMark} which is used for setting the high and low
+     * water mark of the write buffer.
+     */
+    WriteBufferWaterMark getWriteBufferWaterMark();
+
+    /**
+     * Set the {@link WriteBufferWaterMark} which is used for setting the high and low
+     * water mark of the write buffer.
+     */
+    ChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
+}
+从上面来看，通道配置接口，主要配置通道的字节buf分配器，接受buf分配器，消息size估算器，和通道选项。
+
+总结：
+
+通道配置接口，主要配置通道的字节buf分配器，接受buf分配器，消息size估算器，和通道选项。
+
+
+
+附：
+//ByteBufAllocator
+package io.netty.buffer;
+
+/**
+ * Implementations are responsible to allocate buffers. Implementations of this interface are expected to be
+ * thread-safe.
+ 字节buf分配器，主要负责分配buf，接口的实现必须是线程安全的
+ */
+public interface ByteBufAllocator {
+
+    ByteBufAllocator DEFAULT = ByteBufUtil.DEFAULT_ALLOCATOR;
+
+    /**
+     * Allocate a {@link ByteBuf}. If it is a direct or heap buffer
+     * depends on the actual implementation.
+     分配一个字节buf，具体buf是direct还是heap依赖于具体的实现
+     */
+    ByteBuf buffer();
+
+    /**
+     * Allocate a {@link ByteBuf} with the given initial capacity.
+     * If it is a direct or heap buffer depends on the actual implementation.
+    分配一个给定初始化容量的字节buf，具体buf是direct还是heap依赖于具体的实现
+     */
+    ByteBuf buffer(int initialCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity. If it is a direct or heap buffer depends on the actual
+     * implementation.
+     不上面不同的是，限制了最大容量
+     */
+    ByteBuf buffer(int initialCapacity, int maxCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     分配字节buf，优先为direct类型的buf
+     */
+    ByteBuf ioBuffer();
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     与上面不同的是，多一个初始化容量参数
+     */
+    ByteBuf ioBuffer(int initialCapacity);
+
+    /**
+     * Allocate a {@link ByteBuf}, preferably a direct buffer which is suitable for I/O.
+     与上面不同的是，限制了最大容量
+     */
+    ByteBuf ioBuffer(int initialCapacity, int maxCapacity);
+    //分配一个heap buf
+    /**
+     * Allocate a heap {@link ByteBuf}.
+     */
+    ByteBuf heapBuffer();
+
+    /**
+     * Allocate a heap {@link ByteBuf} with the given initial capacity.
+     */
+    ByteBuf heapBuffer(int initialCapacity);
+
+    /**
+     * Allocate a heap {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity.
+     */
+    ByteBuf heapBuffer(int initialCapacity, int maxCapacity);
+    //分配一个direct buf
+    /**
+     * Allocate a direct {@link ByteBuf}.
+     */
+    ByteBuf directBuffer();
+
+    /**
+     * Allocate a direct {@link ByteBuf} with the given initial capacity.
+     */
+    ByteBuf directBuffer(int initialCapacity);
+
+    /**
+     * Allocate a direct {@link ByteBuf} with the given initial capacity and the given
+     * maximal capacity.
+     */
+    ByteBuf directBuffer(int initialCapacity, int maxCapacity);
+    //分配复合buf，具体为direct还是heap，依赖于具体的实现
+    /**
+     * Allocate a {@link CompositeByteBuf}.
+     * If it is a direct or heap buffer depends on the actual implementation.
+     */
+    CompositeByteBuf compositeBuffer();
+
+    /**
+     * Allocate a {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     * If it is a direct or heap buffer depends on the actual implementation.
+     */
+    CompositeByteBuf compositeBuffer(int maxNumComponents);
+    //分配heap类型的复合buf
+    /**
+     * Allocate a heap {@link CompositeByteBuf}.
+     */
+    CompositeByteBuf compositeHeapBuffer();
+
+    /**
+     * Allocate a heap {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     */
+    CompositeByteBuf compositeHeapBuffer(int maxNumComponents);
+    //分配direct类型的复合buf
+    /**
+     * Allocate a direct {@link CompositeByteBuf}.
+     */
+    CompositeByteBuf compositeDirectBuffer();
+
+    /**
+     * Allocate a direct {@link CompositeByteBuf} with the given maximum number of components that can be stored in it.
+     */
+    CompositeByteBuf compositeDirectBuffer(int maxNumComponents);
+
+    /**
+     * Returns {@code true} if direct {@link ByteBuf}'s are pooled
+     判断buffer是否为direct类型的池buf
+     */
+    boolean isDirectBufferPooled();
+
+    /**
+     * Calculate the new capacity of a {@link ByteBuf} that is used when a {@link ByteBuf} needs to expand by the
+     * {@code minNewCapacity} with {@code maxCapacity} as upper-bound.
+     当buf在新的最小容量为minNewCapacity，最大容量为情况maxCapacity下，需要扩展时，计算buf的新容量
+     */
+    int calculateNewCapacity(int minNewCapacity, int maxCapacity);
+ }
+从上面来看字节buf分配器，主要定义了分配buf的方法，bufffer*方法分配的buffer具体类型依赖于具体的实现，
+可能为heap，可能为direct类型；ioBuffer*方法分配的buf，优先为direct类型；directBuffer*方法，分配的是direct类型
+的buf；heapBuffer*分配的是heap类型的buf，compositeBuffer方法，分配的是复合buf，具体可能为heap，可能为direct类型，
+依赖于具体的实现；compositeDirectBuffer*分配的为复合direct buf；compositeHeapBuffer*方法分配的为复合heap buf。
+
+再来看默认的字节buf分配器
+ByteBufAllocator DEFAULT = ByteBufUtil.DEFAULT_ALLOCATOR;
+
+public final class ByteBufUtil {
+ static {
+        String allocType = SystemPropertyUtil.get(
+                "io.netty.allocator.type", PlatformDependent.isAndroid() ? "unpooled" : "pooled");
+        allocType = allocType.toLowerCase(Locale.US).trim();
+        ByteBufAllocator alloc;
+        if ("unpooled".equals(allocType)) {
+            alloc = UnpooledByteBufAllocator.DEFAULT;
+            logger.debug("-Dio.netty.allocator.type: {}", allocType);
+        } else if ("pooled".equals(allocType)) {
+            alloc = PooledByteBufAllocator.DEFAULT;
+            logger.debug("-Dio.netty.allocator.type: {}", allocType);
+        } else {
+            alloc = PooledByteBufAllocator.DEFAULT;
+            logger.debug("-Dio.netty.allocator.type: pooled (unknown: {})", allocType);
+        }
+        DEFAULT_ALLOCATOR = alloc;
+
+        THREAD_LOCAL_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.threadLocalDirectBufferSize", 64 * 1024);
+        logger.debug("-Dio.netty.threadLocalDirectBufferSize: {}", THREAD_LOCAL_BUFFER_SIZE);
+
+        MAX_CHAR_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.maxThreadLocalCharBufferSize", 16 * 1024);
+        logger.debug("-Dio.netty.maxThreadLocalCharBufferSize: {}", MAX_CHAR_BUFFER_SIZE);
+    }
+}
+从字节buf工具类，可以看出，如果系统属性io.netty.allocator.type，配置的为unpooled，
+则默认的buf为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，对于Android平台，默认为
+UnpooledByteBufAllocator。
+public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
+
+    private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();
+    private final boolean disableLeakDetector;
+
+    /**
+     * Default instance which uses leak-detection for direct buffers.
+     */
+    public static final UnpooledByteBufAllocator DEFAULT =
+            new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
+	    ...
+}
+public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
+ public static final PooledByteBufAllocator DEFAULT =
+            new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
+	   ...
+}
+
+
+//WriteBufferWaterMark
+package io.netty.channel;
+
+/**
+ * WriteBufferWaterMark is used to set low water mark and high water mark for the write buffer.
+ * <p>
+ * If the number of bytes queued in the write buffer exceeds the
+ * {@linkplain #high high water mark}, {@link Channel#isWritable()}
+ * will start to return {@code false}.
+ * <p>
+ * If the number of bytes queued in the write buffer exceeds the
+ * {@linkplain #high high water mark} and then
+ * dropped down below the {@linkplain #low low water mark},
+ * {@link Channel#isWritable()} will start to return
+ * {@code true} again.
+ */
+public final class WriteBufferWaterMark {
+    private static final int DEFAULT_LOW_WATER_MARK = 32 * 1024;//默认低位掩码
+    private static final int DEFAULT_HIGH_WATER_MARK = 64 * 1024;//默认高位掩码
+    public static final WriteBufferWaterMark DEFAULT =
+            new WriteBufferWaterMark(DEFAULT_LOW_WATER_MARK, DEFAULT_HIGH_WATER_MARK, false);
+    private final int low;
+    private final int high;
+    /**
+     * Create a new instance.
+     *
+     * @param low low water mark for write buffer.
+     * @param high high water mark for write buffer
+     */
+    public WriteBufferWaterMark(int low, int high) {
+        this(low, high, true);
+    }
+    /**
+     * This constructor is needed to keep backward-compatibility.
+     */
+    WriteBufferWaterMark(int low, int high, boolean validate) {
+        if (validate) {
+            if (low < 0) {
+                throw new IllegalArgumentException("write buffer's low water mark must be >= 0");
+            }
+            if (high < low) {
+                throw new IllegalArgumentException(
+                        "write buffer's high water mark cannot be less than " +
+                                " low water mark (" + low + "): " +
+                                high);
+            }
+        }
+        this.low = low;
+        this.high = high;
+    }
+
+    /**
+     * Returns the low water mark for the write buffer.
+     */
+    public int low() {
+        return low;
+    }
+    /**
+     * Returns the high water mark for the write buffer.
+     */
+    public int high() {
+        return high;
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder(55)
+            .append("WriteBufferWaterMark(low: ")
+            .append(low)
+            .append(", high: ")
+            .append(high)
+            .append(")");
+        return builder.toString();
+    }
+}
+
+
+
+
+
 
 
 
