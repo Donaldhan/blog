@@ -1,0 +1,63 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/url]
+netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
+netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
+netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
+引言
+前一篇文章我们看了默认通道配置初始化，先来回顾一下：
+默认通道配置内部关联一个通道，一个消息大小估算器，默认为DefaultMessageSizeEstimator，，尝试写自旋次数默认为6，写操作失败，默认自动关闭通道，连接超时默认为30000ms，同时拥有一个字节buf 分配器和一个接收字节buf 分配器。通道配置构造，主要是初始化配置关联通道和接收字节buf分配器。如果系统属性io.netty.allocator.type，配置为unpooled，则默认的字节buf分配器为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，对于Android平台，默认为UnpooledByteBufAllocator。默认接收字节buf分配器为AdaptiveRecvByteBufAllocator。接收字节buf分配器，主要是控制下一次接收字节buf的容量，如果当前读取字节数大于消息上一次读取的字节buf容量，则减少下一次接收buf的容量，否则增加下一次接收buf的容量。
+
+今天我们来看默认通道的其他方法：
+
+现将默认通道配置的定义贴出来，以便理解：
+
+/**
+ * The default {@link ChannelConfig} implementation.
+ */
+public class DefaultChannelConfig implements ChannelConfig {
+    //消息大小估计器
+    private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
+
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000; //默认连接超时时间
+    //通道是否自动读取属性
+    private static final AtomicIntegerFieldUpdater<DefaultChannelConfig> AUTOREAD_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(DefaultChannelConfig.class, "autoRead");
+   //通道写buf掩码
+    private static final AtomicReferenceFieldUpdater<DefaultChannelConfig, WriteBufferWaterMark> WATERMARK_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(
+                    DefaultChannelConfig.class, WriteBufferWaterMark.class, "writeBufferWaterMark");
+
+    protected final Channel channel;//关联通道
+   //字节buf分配器
+    private volatile ByteBufAllocator allocator = ByteBufAllocator.DEFAULT;
+    //接收字节buf非配器
+    private volatile RecvByteBufAllocator rcvBufAllocator;
+    //消息大小估计器
+    private volatile MessageSizeEstimator msgSizeEstimator = DEFAULT_MSG_SIZE_ESTIMATOR;
+    //连接超时时间
+    private volatile int connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT;
+    private volatile int writeSpinCount = 16;//尝试写自旋次数
+    @SuppressWarnings("FieldMayBeFinal")
+    private volatile int autoRead = 1;//是否自动读取，
+    private volatile boolean autoClose = true;//写操作失败，是否自动关闭通道
+    //写buf掩码
+    private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
+    private volatile boolean pinEventExecutor = true;
+    
+    //构造默认通道配置
+    public DefaultChannelConfig(Channel channel) {
+        this(channel, new AdaptiveRecvByteBufAllocator());
+    }
+
+    protected DefaultChannelConfig(Channel channel, RecvByteBufAllocator allocator) {
+        setRecvByteBufAllocator(allocator, channel.metadata());
+        this.channel = channel;
+    }
+}
+
