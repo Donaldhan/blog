@@ -48,7 +48,7 @@ public class DefaultChannelConfig implements ChannelConfig {
     private volatile boolean autoClose = true;//写操作失败，是否自动关闭通道
     //写buf掩码
     private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
-    private volatile boolean pinEventExecutor = true;
+    private volatile boolean pinEventExecutor = true;//是否每个事件分组一个单线程的事件执行器
     
     //构造默认通道配置
     public DefaultChannelConfig(Channel channel) {
@@ -60,4 +60,5 @@ public class DefaultChannelConfig implements ChannelConfig {
         this.channel = channel;
     }
 }
+
 

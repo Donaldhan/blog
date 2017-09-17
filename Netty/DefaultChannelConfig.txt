@@ -69,7 +69,7 @@ public class DefaultChannelConfig implements ChannelConfig {
     private volatile boolean autoClose = true;//写操作失败，是否自动关闭通道
     //写buf掩码
     private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
-    private volatile boolean pinEventExecutor = true;
+    private volatile boolean pinEventExecutor = true;//是否每个事件分组一个单线程的事件执行器
     
     //构造默认通道配置
     public DefaultChannelConfig(Channel channel) {
@@ -542,9 +542,9 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
 字节buf 分配器和一个接收字节buf 分配器。通道配置构造，主要是初始化配置关联通道和接收字节buf分配器。
 如果系统属性io.netty.allocator.type，配置为unpooled，则默认的字节buf分配器为UnpooledByteBufAllocator，
 否则为PooledByteBufAllocator，对于Android平台，默认为UnpooledByteBufAllocator。
-默认接收字节buf分配器为AdaptiveRecvByteBufAllocator。
-
-
+默认接收字节buf分配器为AdaptiveRecvByteBufAllocator。接收字节buf分配器，
+主要是控制下一次接收字节buf的容量，如果当前读取字节数大于消息上一次读取的
+字节buf容量，则减少下一次接收buf的容量，否则增加下一次接收buf的容量。
 
 附：
 //UncheckedBooleanSupplier
