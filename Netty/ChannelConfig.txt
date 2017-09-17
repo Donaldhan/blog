@@ -62,6 +62,7 @@ import java.util.Map;
  * Please down-cast to more specific configuration type such as
  * {@link SocketChannelConfig} or use {@link #setOptions(Map)} to set the
  * transport-specific properties:
+ 可以强制转化为特殊的配置，不如socket通道配置，设置transport属性如下：
  * <pre>
  * {@link Channel} ch = ...;
  * {@link SocketChannelConfig} cfg = <strong>({@link SocketChannelConfig}) ch.getConfig();</strong>
@@ -73,9 +74,10 @@ import java.util.Map;
  * An option map property is a dynamic write-only property which allows
  * the configuration of a {@link Channel} without down-casting its associated
  * {@link ChannelConfig}.  To update an option map, please call {@link #setOptions(Map)}.
+ 选项Map是一个动态只写的集合，允许在没有转化为通道配置的情况下，配置选项：
  * <p>
  * All {@link ChannelConfig} has the following options:
- *
+ *所有通道配置选项
  * <table border="1" cellspacing="0" cellpadding="6">
  * <tr>
  * <th>Name</th><th>Associated setter method</th>
@@ -314,10 +316,302 @@ public interface ChannelConfig {
 }
 从上面来看，通道配置接口，主要配置通道的字节buf分配器，接受buf分配器，消息size估算器，和通道选项。
 
+socket通道配置和server socket通道配置，很简单，我们不再讲解，简单看一下：
+
+
+
+//ServerSocketChannelConfig
+
+package io.netty.channel.socket;
+
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.ChannelConfig;
+import io.netty.channel.MessageSizeEstimator;
+import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
+
+import java.net.ServerSocket;
+import java.net.StandardSocketOptions;
+
+/**
+ * A {@link ChannelConfig} for a {@link ServerSocketChannel}.
+ *
+ * <h3>Available options</h3>
+ *
+ * In addition to the options provided by {@link ChannelConfig},
+ * {@link ServerSocketChannelConfig} allows the following options in the
+ * option map:
+ *
+ * <table border="1" cellspacing="0" cellpadding="6">
+ * <tr>
+ * <th>Name</th><th>Associated setter method</th>
+ * </tr><tr>
+ * <td>{@code "backlog"}</td><td>{@link #setBacklog(int)}</td>
+ * </tr><tr>
+ * <td>{@code "reuseAddress"}</td><td>{@link #setReuseAddress(boolean)}</td>
+ * </tr><tr>
+ * <td>{@code "receiveBufferSize"}</td><td>{@link #setReceiveBufferSize(int)}</td>
+ * </tr>
+ * </table>
+ */
+public interface ServerSocketChannelConfig extends ChannelConfig {
+
+    /**
+     * Gets the backlog value to specify when the channel binds to a local
+     * address.
+     */
+    int getBacklog();
+
+    /**
+     * Sets the backlog value to specify when the channel binds to a local
+     * address.
+     */
+    ServerSocketChannelConfig setBacklog(int backlog);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_REUSEADDR} option.
+     */
+    boolean isReuseAddress();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_REUSEADDR} option.
+     */
+    ServerSocketChannelConfig setReuseAddress(boolean reuseAddress);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_RCVBUF} option.
+     */
+    int getReceiveBufferSize();
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_SNDBUF} option.
+     */
+    ServerSocketChannelConfig setReceiveBufferSize(int receiveBufferSize);
+
+    /**
+     * Sets the performance preferences as specified in
+     * {@link ServerSocket#setPerformancePreferences(int, int, int)}.
+     */
+    ServerSocketChannelConfig setPerformancePreferences(int connectionTime, int latency, int bandwidth);
+
+    @Override
+    ServerSocketChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
+
+    @Override
+    @Deprecated
+    ServerSocketChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
+
+    @Override
+    ServerSocketChannelConfig setWriteSpinCount(int writeSpinCount);
+
+    @Override
+    ServerSocketChannelConfig setAllocator(ByteBufAllocator allocator);
+
+    @Override
+    ServerSocketChannelConfig setRecvByteBufAllocator(RecvByteBufAllocator allocator);
+
+    @Override
+    ServerSocketChannelConfig setAutoRead(boolean autoRead);
+
+    @Override
+    ServerSocketChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);
+
+    @Override
+    ServerSocketChannelConfig setWriteBufferHighWaterMark(int writeBufferHighWaterMark);
+
+    @Override
+    ServerSocketChannelConfig setWriteBufferLowWaterMark(int writeBufferLowWaterMark);
+
+    @Override
+    ServerSocketChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
+
+}
+
+
+//SocketChannelConfig
+
+
+package io.netty.channel.socket;
+
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.channel.ChannelConfig;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandler;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.MessageSizeEstimator;
+import io.netty.channel.RecvByteBufAllocator;
+import io.netty.channel.WriteBufferWaterMark;
+
+import java.net.Socket;
+import java.net.StandardSocketOptions;
+
+/**
+ * A {@link ChannelConfig} for a {@link SocketChannel}.
+ *
+ * <h3>Available options</h3>
+ *
+ * In addition to the options provided by {@link ChannelConfig},
+ * {@link SocketChannelConfig} allows the following options in the option map:
+ *
+ * <table border="1" cellspacing="0" cellpadding="6">
+ * <tr>
+ * <th>Name</th><th>Associated setter method</th>
+ * </tr><tr>
+ * <td>{@link ChannelOption#SO_KEEPALIVE}</td><td>{@link #setKeepAlive(boolean)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#SO_REUSEADDR}</td><td>{@link #setReuseAddress(boolean)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#SO_LINGER}</td><td>{@link #setSoLinger(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#TCP_NODELAY}</td><td>{@link #setTcpNoDelay(boolean)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#SO_RCVBUF}</td><td>{@link #setReceiveBufferSize(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#SO_SNDBUF}</td><td>{@link #setSendBufferSize(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#IP_TOS}</td><td>{@link #setTrafficClass(int)}</td>
+ * </tr><tr>
+ * <td>{@link ChannelOption#ALLOW_HALF_CLOSURE}</td><td>{@link #setAllowHalfClosure(boolean)}</td>
+ * </tr>
+ * </table>
+ */
+public interface SocketChannelConfig extends ChannelConfig {
+
+    /**
+     * Gets the {@link StandardSocketOptions#TCP_NODELAY} option.  Please note that the default value of this option
+     * is {@code true} unlike the operating system default ({@code false}). However, for some buggy platforms, such as
+     * Android, that shows erratic behavior with Nagle's algorithm disabled, the default value remains to be
+     * {@code false}.
+     */
+    boolean isTcpNoDelay();
+
+    /**
+     * Sets the {@link StandardSocketOptions#TCP_NODELAY} option.  Please note that the default value of this option
+     * is {@code true} unlike the operating system default ({@code false}). However, for some buggy platforms, such as
+     * Android, that shows erratic behavior with Nagle's algorithm disabled, the default value remains to be
+     * {@code false}.
+     */
+    SocketChannelConfig setTcpNoDelay(boolean tcpNoDelay);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_LINGER} option.
+     */
+    int getSoLinger();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_LINGER} option.
+     */
+    SocketChannelConfig setSoLinger(int soLinger);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_SNDBUF} option.
+     */
+    int getSendBufferSize();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_SNDBUF} option.
+     */
+    SocketChannelConfig setSendBufferSize(int sendBufferSize);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_RCVBUF} option.
+     */
+    int getReceiveBufferSize();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_RCVBUF} option.
+     */
+    SocketChannelConfig setReceiveBufferSize(int receiveBufferSize);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_KEEPALIVE} option.
+     */
+    boolean isKeepAlive();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_KEEPALIVE} option.
+     */
+    SocketChannelConfig setKeepAlive(boolean keepAlive);
+
+    /**
+     * Gets the {@link StandardSocketOptions#IP_TOS} option.
+     */
+    int getTrafficClass();
+
+    /**
+     * Sets the {@link StandardSocketOptions#IP_TOS} option.
+     */
+    SocketChannelConfig setTrafficClass(int trafficClass);
+
+    /**
+     * Gets the {@link StandardSocketOptions#SO_REUSEADDR} option.
+     */
+    boolean isReuseAddress();
+
+    /**
+     * Sets the {@link StandardSocketOptions#SO_REUSEADDR} option.
+     */
+    SocketChannelConfig setReuseAddress(boolean reuseAddress);
+
+    /**
+     * Sets the performance preferences as specified in
+     * {@link Socket#setPerformancePreferences(int, int, int)}.
+     */
+    SocketChannelConfig setPerformancePreferences(int connectionTime, int latency, int bandwidth);
+
+    /**
+     * Returns {@code true} if and only if the channel should not close itself when its remote
+     * peer shuts down output to make the connection half-closed.  If {@code false}, the connection
+     * is closed automatically when the remote peer shuts down output.
+     */
+    boolean isAllowHalfClosure();
+
+    /**
+     * Sets whether the channel should not close itself when its remote peer shuts down output to
+     * make the connection half-closed.  If {@code true} the connection is not closed when the
+     * remote peer shuts down output. Instead,
+     * {@link ChannelInboundHandler#userEventTriggered(ChannelHandlerContext, Object)}
+     * is invoked with a {@link ChannelInputShutdownEvent} object. If {@code false}, the connection
+     * is closed automatically.
+     设置当远端peer关闭输出流，使连接半关闭时，通道是否应该关闭。如果是true，表示当远端peer关闭输出流，
+     不应该关闭通道
+     */
+    SocketChannelConfig setAllowHalfClosure(boolean allowHalfClosure);
+
+    @Override
+    SocketChannelConfig setConnectTimeoutMillis(int connectTimeoutMillis);
+
+    @Override
+    @Deprecated
+    SocketChannelConfig setMaxMessagesPerRead(int maxMessagesPerRead);
+
+    @Override
+    SocketChannelConfig setWriteSpinCount(int writeSpinCount);
+
+    @Override
+    SocketChannelConfig setAllocator(ByteBufAllocator allocator);
+
+    @Override
+    SocketChannelConfig setRecvByteBufAllocator(RecvByteBufAllocator allocator);
+
+    @Override
+    SocketChannelConfig setAutoRead(boolean autoRead);
+
+    @Override
+    SocketChannelConfig setAutoClose(boolean autoClose);
+
+    @Override
+    SocketChannelConfig setMessageSizeEstimator(MessageSizeEstimator estimator);
+
+    @Override
+    SocketChannelConfig setWriteBufferWaterMark(WriteBufferWaterMark writeBufferWaterMark);
+
+}
+
+
 总结：
-
 通道配置接口，主要配置通道的字节buf分配器，接受buf分配器，消息size估算器，和通道选项。
-
+通通配置有两类分别为Socket通道和ServerSocket通道配置，大部分配置与Socket和SeverSocket的基本相同。
 
 
 附：
@@ -486,6 +780,8 @@ public final class ByteBufUtil {
 从字节buf工具类，可以看出，如果系统属性io.netty.allocator.type，配置的为unpooled，
 则默认的buf为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，对于Android平台，默认为
 UnpooledByteBufAllocator。
+
+//UnpooledByteBufAllocator
 public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
 
     private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();
@@ -498,6 +794,7 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
             new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
 	    ...
 }
+//PooledByteBufAllocator
 public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
  public static final PooledByteBufAllocator DEFAULT =
             new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
@@ -581,10 +878,281 @@ public final class WriteBufferWaterMark {
     }
 }
 
+再来看MaxMessagesRecvByteBufAllocator：
+package io.netty.channel;
+
+/**
+ * {@link RecvByteBufAllocator} that limits the number of read operations that will be attempted when a read operation
+ * is attempted by the event loop.
+ 在事件循环中，尝试读操作是，限制读操作的尝试次数
+ */
+public interface MaxMessagesRecvByteBufAllocator extends RecvByteBufAllocator {
+    /**
+     * Returns the maximum number of messages to read per read loop.
+     * a {@link ChannelInboundHandler#channelRead(ChannelHandlerContext, Object) channelRead()} event.
+     * If this value is greater than 1, an event loop might attempt to read multiple times to procure multiple messages.
+     获取尝试读操作次数
+     */
+    int maxMessagesPerRead();
+
+    /**
+     设置最大尝试读操作次数
+     * Sets the maximum number of messages to read per read loop.
+     * If this value is greater than 1, an event loop might attempt to read multiple times to procure multiple messages.
+     */
+    MaxMessagesRecvByteBufAllocator maxMessagesPerRead(int maxMessagesPerRead);
+}
+
+//RecvByteBufAllocator
+package io.netty.channel;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.UncheckedBooleanSupplier;
+import io.netty.util.internal.UnstableApi;
+
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
+
+/**
+ * Allocates a new receive buffer whose capacity is probably large enough to read all inbound data and small enough
+ * not to waste its space.
+ */
+public interface RecvByteBufAllocator {
+    /**
+     * Creates a new handle.  The handle provides the actual operations and keeps the internal information which is
+     * required for predicting an optimal buffer capacity.
+     创建一个新的Handle，提供实际的操作和维护buf的容量等信息
+     */
+    Handle newHandle();
+
+    /**
+     * @deprecated Use {@link ExtendedHandle}.
+     */
+    @Deprecated
+    interface Handle {
+        /**
+         * Creates a new receive buffer whose capacity is probably large enough to read all inbound data and small
+         * enough not to waste its space.
+	 创建一个接收字节buf，可以存放从读取的inbound数据，并且不会浪费空间
+         */
+        ByteBuf allocate(ByteBufAllocator alloc);
+
+        /**
+         * Similar to {@link #allocate(ByteBufAllocator)} except that it does not allocate anything but just tells the
+         * capacity.
+	 返回分配buf的容量
+         */
+        int guess();
+
+        /**
+         * Reset any counters that have accumulated and recommend how many messages/bytes should be read for the next
+         * read loop.
+	 重置所有累计和下一次循环需要读取的字节数计数器
+         * <p>
+         * This may be used by {@link #continueReading()} to determine if the read operation should complete.
+	 用于#continueReading方法，决定读操作是否完成
+         * </p>
+         * This is only ever a hint and may be ignored by the implementation.
+         * @param config The channel configuration which may impact this object's behavior.
+         */
+        void reset(ChannelConfig config);
+
+        /**
+         * Increment the number of messages that have been read for the current read loop.
+         * @param numMessages The amount to increment by.
+	 增加当前读循环读取的消息数
+         */
+        void incMessagesRead(int numMessages);
+
+        /**
+         * Set the bytes that have been read for the last read operation.
+	 设置上一次读操作，读取的字节数
+         * This may be used to increment the number of bytes that have been read.
+	 用于增加读字节数计数器
+         * @param bytes The number of bytes from the previous read operation. This may be negative if an read error
+         * occurs. If a negative value is seen it is expected to be return on the next call to
+         * {@link #lastBytesRead()}. A negative value will signal a termination condition enforced externally
+         * to this class and is not required to be enforced in {@link #continueReading()}.
+	 上次读操作，读取的字节数。如果读错误发生，可以为一个负数，负数表示不需要继续读操作
+         */
+        void lastBytesRead(int bytes);
+
+        /**
+         * Get the amount of bytes for the previous read operation.
+	 获取先前读操作，读取的数据
+         * @return The amount of bytes for the previous read operation.
+         */
+        int lastBytesRead();
+
+        /**
+         * Set how many bytes the read operation will (or did) attempt to read.
+         * @param bytes How many bytes the read operation will (or did) attempt to read.
+	 设置读操作将会或已经读取多少字节数据
+         */
+        void attemptedBytesRead(int bytes);
+
+        /**
+         * Get how many bytes the read operation will (or did) attempt to read.
+	 获取读操作将会或已经读取多少字节数据
+         * @return How many bytes the read operation will (or did) attempt to read.
+         */
+        int attemptedBytesRead();
+
+        /**
+         * Determine if the current read loop should should continue.
+	 决定一个读循环是否应该继续
+         * @return {@code true} if the read loop should continue reading. {@code false} if the read loop is complete.
+         */
+        boolean continueReading();
+
+        /**
+         * The read has completed.
+         */
+        void readComplete();
+    }
+    //拓展Handle
+    @SuppressWarnings("deprecation")
+    @UnstableApi
+    interface ExtendedHandle extends Handle {
+        /**
+         * Same as {@link Handle#continueReading()} except "more data" is determined by the supplier parameter.
+         * @param maybeMoreDataSupplier A supplier that determines if there maybe more data to read.
+	 由于参数maybeMoreDataSupplier决定是否需要继续读取数据。
+         */
+        boolean continueReading(UncheckedBooleanSupplier maybeMoreDataSupplier);
+    }
+
+    /**
+     * A {@link Handle} which delegates all call to some other {@link Handle}.
+     Hanlder代理
+     */
+    class DelegatingHandle implements Handle {
+        private final Handle delegate;//代理Handle
+
+        public DelegatingHandle(Handle delegate) {
+            this.delegate = checkNotNull(delegate, "delegate");
+        }
+
+        /**
+         * Get the {@link Handle} which all methods will be delegated to.
+         * @return the {@link Handle} which all methods will be delegated to.
+         */
+        protected final Handle delegate() {
+            return delegate;
+        }
+
+        @Override
+        public ByteBuf allocate(ByteBufAllocator alloc) {
+            return delegate.allocate(alloc);
+        }
+
+        @Override
+        public int guess() {
+            return delegate.guess();
+        }
+
+        @Override
+        public void reset(ChannelConfig config) {
+            delegate.reset(config);
+        }
+
+        @Override
+        public void incMessagesRead(int numMessages) {
+            delegate.incMessagesRead(numMessages);
+        }
+
+        @Override
+        public void lastBytesRead(int bytes) {
+            delegate.lastBytesRead(bytes);
+        }
+
+        @Override
+        public int lastBytesRead() {
+            return delegate.lastBytesRead();
+        }
+
+        @Override
+        public boolean continueReading() {
+            return delegate.continueReading();
+        }
+
+        @Override
+        public int attemptedBytesRead() {
+            return delegate.attemptedBytesRead();
+        }
+
+        @Override
+        public void attemptedBytesRead(int bytes) {
+            delegate.attemptedBytesRead(bytes);
+        }
+
+        @Override
+        public void readComplete() {
+            delegate.readComplete();
+        }
+    }
+}
 
 
+//UncheckedBooleanSupplier
+package io.netty.util;
 
+/**
+ * Represents a supplier of {@code boolean}-valued results which doesn't throw any checked exceptions.
+ */
+public interface UncheckedBooleanSupplier extends BooleanSupplier {
+    /**
+     * Gets a boolean value.
+     * @return a boolean value.
+     */
+    @Override
+    boolean get();
 
+    /**
+     * A supplier which always returns {@code false} and never throws.
+     */
+    UncheckedBooleanSupplier FALSE_SUPPLIER = new UncheckedBooleanSupplier() {
+        @Override
+        public boolean get() {
+            return false;
+        }
+    };
 
+    /**
+     * A supplier which always returns {@code true} and never throws.
+     */
+    UncheckedBooleanSupplier TRUE_SUPPLIER = new UncheckedBooleanSupplier() {
+        @Override
+        public boolean get() {
+            return true;
+        }
+    };
+}
 
+//MessageSizeEstimator
+
+package io.netty.channel;
+
+/**
+ * Responsible to estimate size of a message. The size represent how much memory the message will ca. reserve in
+ * memory.
+ */
+public interface MessageSizeEstimator {
+
+    /**
+     * Creates a new handle. The handle provides the actual operations.
+     */
+    Handle newHandle();
+
+    interface Handle {
+
+        /**
+         * Calculate the size of the given message.
+         *计算给定消息的大小
+         * @param msg       The message for which the size should be calculated
+         * @return size     The size in bytes. The returned size must be >= 0
+         */
+        int size(Object msg);
+    }
+}
 
