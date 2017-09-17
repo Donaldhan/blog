@@ -1,0 +1,85 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/url]
+netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
+netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
+引言：
+上一篇文章，我们看了通道配置接口的定义，简单回顾一下：
+通道配置接口，主要配置通道的字节buf分配器，接受buf分配器，消息size估算器，和通道选项。通通配置有两类分别为Socket通道和ServerSocket通道配置，大部分配置与Socket和SeverSocket的基本相同
+
+今天我们来看通道配置的默认实现，并简单看一下Socket和ServerSocket通道配置的默认实现。
+先来看通道配置的默认实现：
+package io.netty.channel;
+
+import io.netty.buffer.ByteBufAllocator;
+
+import java.util.IdentityHashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+
+import static io.netty.channel.ChannelOption.ALLOCATOR;
+import static io.netty.channel.ChannelOption.AUTO_CLOSE;
+import static io.netty.channel.ChannelOption.AUTO_READ;
+import static io.netty.channel.ChannelOption.CONNECT_TIMEOUT_MILLIS;
+import static io.netty.channel.ChannelOption.MAX_MESSAGES_PER_READ;
+import static io.netty.channel.ChannelOption.MESSAGE_SIZE_ESTIMATOR;
+import static io.netty.channel.ChannelOption.RCVBUF_ALLOCATOR;
+import static io.netty.channel.ChannelOption.SINGLE_EVENTEXECUTOR_PER_GROUP;
+import static io.netty.channel.ChannelOption.WRITE_BUFFER_HIGH_WATER_MARK;
+import static io.netty.channel.ChannelOption.WRITE_BUFFER_LOW_WATER_MARK;
+import static io.netty.channel.ChannelOption.WRITE_BUFFER_WATER_MARK;
+import static io.netty.channel.ChannelOption.WRITE_SPIN_COUNT;
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
+
+/**
+ * The default {@link ChannelConfig} implementation.
+ */
+public class DefaultChannelConfig implements ChannelConfig {
+    private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
+
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
+
+    private static final AtomicIntegerFieldUpdater<DefaultChannelConfig> AUTOREAD_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(DefaultChannelConfig.class, "autoRead");
+    private static final AtomicReferenceFieldUpdater<DefaultChannelConfig, WriteBufferWaterMark> WATERMARK_UPDATER =
+            AtomicReferenceFieldUpdater.newUpdater(
+                    DefaultChannelConfig.class, WriteBufferWaterMark.class, "writeBufferWaterMark");
+
+    protected final Channel channel;
+
+    private volatile ByteBufAllocator allocator = ByteBufAllocator.DEFAULT;
+    private volatile RecvByteBufAllocator rcvBufAllocator;
+    private volatile MessageSizeEstimator msgSizeEstimator = DEFAULT_MSG_SIZE_ESTIMATOR;
+
+    private volatile int connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT;
+    private volatile int writeSpinCount = 16;
+    @SuppressWarnings("FieldMayBeFinal")
+    private volatile int autoRead = 1;
+    private volatile boolean autoClose = true;
+    private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
+    private volatile boolean pinEventExecutor = true;
+
+    public DefaultChannelConfig(Channel channel) {
+        this(channel, new AdaptiveRecvByteBufAllocator());
+    }
+
+    protected DefaultChannelConfig(Channel channel, RecvByteBufAllocator allocator) {
+        setRecvByteBufAllocator(allocator, channel.metadata());
+        this.channel = channel;
+    }
+}
+
+
+
+总结：
+
+
+附：
+//
