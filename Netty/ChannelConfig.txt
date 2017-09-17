@@ -778,7 +778,7 @@ public final class ByteBufUtil {
     }
 }
 从字节buf工具类，可以看出，如果系统属性io.netty.allocator.type，配置的为unpooled，
-则默认的buf为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，对于Android平台，默认为
+则默认的字节buf分配器为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，对于Android平台，默认为
 UnpooledByteBufAllocator。
 
 //UnpooledByteBufAllocator

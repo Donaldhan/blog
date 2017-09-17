@@ -42,30 +42,36 @@ import static io.netty.util.internal.ObjectUtil.checkNotNull;
  * The default {@link ChannelConfig} implementation.
  */
 public class DefaultChannelConfig implements ChannelConfig {
+    //消息大小估计器
     private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
 
-    private static final int DEFAULT_CONNECT_TIMEOUT = 30000;
-
+    private static final int DEFAULT_CONNECT_TIMEOUT = 30000; //默认连接超时时间
+    //通道是否自动读取属性
     private static final AtomicIntegerFieldUpdater<DefaultChannelConfig> AUTOREAD_UPDATER =
             AtomicIntegerFieldUpdater.newUpdater(DefaultChannelConfig.class, "autoRead");
+   //通道写buf掩码
     private static final AtomicReferenceFieldUpdater<DefaultChannelConfig, WriteBufferWaterMark> WATERMARK_UPDATER =
             AtomicReferenceFieldUpdater.newUpdater(
                     DefaultChannelConfig.class, WriteBufferWaterMark.class, "writeBufferWaterMark");
 
-    protected final Channel channel;
-
+    protected final Channel channel;//关联通道
+   //字节buf分配器
     private volatile ByteBufAllocator allocator = ByteBufAllocator.DEFAULT;
+    //接收字节buf非配器
     private volatile RecvByteBufAllocator rcvBufAllocator;
+    //消息大小估计器
     private volatile MessageSizeEstimator msgSizeEstimator = DEFAULT_MSG_SIZE_ESTIMATOR;
-
+    //连接超时时间
     private volatile int connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT;
-    private volatile int writeSpinCount = 16;
+    private volatile int writeSpinCount = 16;//尝试写自旋次数
     @SuppressWarnings("FieldMayBeFinal")
-    private volatile int autoRead = 1;
-    private volatile boolean autoClose = true;
+    private volatile int autoRead = 1;//是否自动读取，
+    private volatile boolean autoClose = true;//写操作失败，是否自动关闭通道
+    //写buf掩码
     private volatile WriteBufferWaterMark writeBufferWaterMark = WriteBufferWaterMark.DEFAULT;
     private volatile boolean pinEventExecutor = true;
-
+    
+    //构造默认通道配置
     public DefaultChannelConfig(Channel channel) {
         this(channel, new AdaptiveRecvByteBufAllocator());
     }
@@ -75,11 +81,497 @@ public class DefaultChannelConfig implements ChannelConfig {
         this.channel = channel;
     }
 }
+从上面来看默认通道配置内部关联一个通道，一个消息大小估算器，默认为DefaultMessageSizeEstimator，
+，尝试写自旋次数默认为6，写操作失败，默认自动关闭通道，连接超时默认为30000ms，同时拥有一个
+字节buf 分配器和一个接收字节buf 分配器。通道配置构造，主要是初始化配置关联通道和接收字节buf分配器。
+来看默认消息大小估算器:
+
+//消息大小估计器
+private static final MessageSizeEstimator DEFAULT_MSG_SIZE_ESTIMATOR = DefaultMessageSizeEstimator.DEFAULT;
+
+//DefaultMessageSizeEstimator
+package io.netty.channel;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufHolder;
+
+/**
+ * Default {@link MessageSizeEstimator} implementation which supports the estimation of the size of
+ * {@link ByteBuf}, {@link ByteBufHolder} and {@link FileRegion}.
+ 默认消息大小估算器，支持估算字节buf，字节buf Holder和文件Region
+ */
+public final class DefaultMessageSizeEstimator implements MessageSizeEstimator {
+    //Hanle实现
+    private static final class HandleImpl implements Handle {
+        private final int unknownSize;
+
+        private HandleImpl(int unknownSize) {
+            this.unknownSize = unknownSize;
+        }
+
+        @Override
+        public int size(Object msg) {
+            if (msg instanceof ByteBuf) {  
+	        //返回字节buf可读字节数
+                return ((ByteBuf) msg).readableBytes();
+            }
+            if (msg instanceof ByteBufHolder) {
+	        //返回字节buf Holder关联字节buf的可读字节数
+                return ((ByteBufHolder) msg).content().readableBytes();
+            }
+            if (msg instanceof FileRegion) {
+	        //如果消息为文件域，则返回0
+                return 0;
+            }
+            return unknownSize;
+        }
+    }
+
+    /**
+     * Return the default implementation which returns {@code 8} for unknown messages.
+     消息大小估算器，默认实现
+     */
+    public static final MessageSizeEstimator DEFAULT = new DefaultMessageSizeEstimator(8);
+
+    private final Handle handle;//估算器Hanlde
+
+    /**
+     * Create a new instance
+     *
+     * @param unknownSize       The size which is returned for unknown messages.
+     */
+    public DefaultMessageSizeEstimator(int unknownSize) {
+        if (unknownSize < 0) {
+            throw new IllegalArgumentException("unknownSize: " + unknownSize + " (expected: >= 0)");
+        }
+	//创建Handle
+        handle = new HandleImpl(unknownSize);
+    }
+
+    @Override
+    public Handle newHandle() {
+        return handle;
+    }
+}
+
+
+//我们来看默认的字节buf分配器：
+//字节buf分配器
+private volatile ByteBufAllocator allocator = ByteBufAllocator.DEFAULT;
+
+public final class ByteBufUtil {  
+     static final ByteBufAllocator DEFAULT_ALLOCATOR;//默认字节分配器
+     static {  
+            String allocType = SystemPropertyUtil.get(  
+                    "io.netty.allocator.type", PlatformDependent.isAndroid() ? "unpooled" : "pooled");  
+            allocType = allocType.toLowerCase(Locale.US).trim();  
+            ByteBufAllocator alloc;  
+            if ("unpooled".equals(allocType)) {  
+                alloc = UnpooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: {}", allocType);  
+            } else if ("pooled".equals(allocType)) {  
+                alloc = PooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: {}", allocType);  
+            } else {  
+                alloc = PooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: pooled (unknown: {})", allocType);  
+            }  
+            DEFAULT_ALLOCATOR = alloc;  
+      
+            THREAD_LOCAL_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.threadLocalDirectBufferSize", 64 * 1024);  
+            logger.debug("-Dio.netty.threadLocalDirectBufferSize: {}", THREAD_LOCAL_BUFFER_SIZE);  
+      
+            MAX_CHAR_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.maxThreadLocalCharBufferSize", 16 * 1024);  
+            logger.debug("-Dio.netty.maxThreadLocalCharBufferSize: {}", MAX_CHAR_BUFFER_SIZE);  
+        }  
+    }  
+
+
+从字节buf工具类，可以看出，如果系统属性io.netty.allocator.type，配置的为unpooled，
+则默认的字节buf分配器为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，
+对于Android平台，默认为UnpooledByteBufAllocator。
+
+//UnpooledByteBufAllocator
+
+
+    public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {  
+      
+        private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();  
+        private final boolean disableLeakDetector;  
+      
+        /** 
+         * Default instance which uses leak-detection for direct buffers. 
+         */  
+        public static final UnpooledByteBufAllocator DEFAULT =  
+                new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());  
+            ...  
+    }  
+
+
+//PooledByteBufAllocator
+public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {  
+     public static final PooledByteBufAllocator DEFAULT =  
+                new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());  
+           ...  
+    }  
+
+再来看默认的接收字节buf分配器：
+
+//接收字节buf非配器
+private volatile RecvByteBufAllocator rcvBufAllocator;
+
+//构造默认通道配置
+public DefaultChannelConfig(Channel channel) {
+    this(channel, new AdaptiveRecvByteBufAllocator());
+}
+
+//AdaptiveRecvByteBufAllocator
+public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufAllocator {
+
+
+先来看DefaultMaxMessagesRecvByteBufAllocator
+
+package io.netty.channel;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.UncheckedBooleanSupplier;
+
+/**
+ * Default implementation of {@link MaxMessagesRecvByteBufAllocator} which respects {@link ChannelConfig#isAutoRead()}
+ * and also prevents overflow.
+ */
+public abstract class DefaultMaxMessagesRecvByteBufAllocator implements MaxMessagesRecvByteBufAllocator {
+    private volatile int maxMessagesPerRead;//每次读取允许读取的最大消息数
+
+    public DefaultMaxMessagesRecvByteBufAllocator() {
+        //默认允许一次读取的最大消息数为1
+        this(1);
+    }
+    //构造
+    public DefaultMaxMessagesRecvByteBufAllocator(int maxMessagesPerRead) {
+        maxMessagesPerRead(maxMessagesPerRead);
+    }
+
+    @Override
+    public int maxMessagesPerRead() {
+        return maxMessagesPerRead;
+    }
+    //设置每次读取的最大消息数量
+    @Override
+    public MaxMessagesRecvByteBufAllocator maxMessagesPerRead(int maxMessagesPerRead) {
+        if (maxMessagesPerRead <= 0) {
+            throw new IllegalArgumentException("maxMessagesPerRead: " + maxMessagesPerRead + " (expected: > 0)");
+        }
+        this.maxMessagesPerRead = maxMessagesPerRead;
+        return this;
+    }
+
+    /**
+     * Focuses on enforcing the maximum messages per read condition for {@link #continueReading()}.
+     最大消息Handle
+     */
+    public abstract class MaxMessageHandle implements ExtendedHandle {
+        private ChannelConfig config;//通道配置
+        private int maxMessagePerRead;//每次读取的最大消息数据
+        private int totalMessages;//总共读取的消息数
+        private int totalBytesRead;//总共读取的字节数量
+        private int attemptedBytesRead;//尝试读取的字节数量
+        private int lastBytesRead;//上次读取的字节数量
+	//UncheckedBooleanSupplier的定义，见附篇
+        private final UncheckedBooleanSupplier defaultMaybeMoreSupplier = new UncheckedBooleanSupplier() {
+            @Override
+            public boolean get() {
+	        //当尝试读取的字节数，与上次读取的字节数相等，则继续读取消息
+                return attemptedBytesRead == lastBytesRead;
+            }
+        };
+
+        /**
+         * Only {@link ChannelConfig#getMaxMessagesPerRead()} is used.
+	 重置通道配置
+         */
+        @Override
+        public void reset(ChannelConfig config) {
+            this.config = config;
+            maxMessagePerRead = maxMessagesPerRead();
+            totalMessages = totalBytesRead = 0;
+        }
+        //分配一个字节buf，优先为direct类型
+        @Override
+        public ByteBuf allocate(ByteBufAllocator alloc) {
+            return alloc.ioBuffer(guess());
+        }
+        //更新消息计数器
+        @Override
+        public final void incMessagesRead(int amt) {
+            totalMessages += amt;
+        }
+        //更新字节计数器，和上次读取的字节数
+        @Override
+        public final void lastBytesRead(int bytes) {
+            lastBytesRead = bytes;
+            if (bytes > 0) {
+                totalBytesRead += bytes;
+            }
+        }
+        //返回上次读取的字节数
+        @Override
+        public final int lastBytesRead() {
+            return lastBytesRead;
+        }
+
+        @Override
+        public boolean continueReading() {
+            return continueReading(defaultMaybeMoreSupplier);
+        }
+
+        @Override
+        public boolean continueReading(UncheckedBooleanSupplier maybeMoreDataSupplier) {
+	    //如果通道配置自动读，有数据需要读取，总消息数消息小于maxMessagePerRead 且读取的字节数大于0，
+	    //方可继续读取
+            return config.isAutoRead() &&
+                   maybeMoreDataSupplier.get() &&
+                   totalMessages < maxMessagePerRead &&
+                   totalBytesRead > 0;
+        }
+
+        @Override
+        public void readComplete() {
+        }
+       //设置和返回尝试读取字节数
+        @Override
+        public int attemptedBytesRead() {
+            return attemptedBytesRead;
+        }
+
+        @Override
+        public void attemptedBytesRead(int bytes) {
+            attemptedBytesRead = bytes;
+        }
+        //获取总共读取的字节数
+        protected final int totalBytesRead() {
+            return totalBytesRead < 0 ? Integer.MAX_VALUE : totalBytesRead;
+        }
+    }
+}
+从上来看，默认每次允许读取的最大消息数量为1。
+
+再来看AdaptiveRecvByteBufAllocator
+
+package io.netty.channel;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * The {@link RecvByteBufAllocator} that automatically increases and
+ * decreases the predicted buffer size on feed back.
+ * <p>
+ * It gradually increases the expected number of readable bytes if the previous
+ * read fully filled the allocated buffer.  It gradually decreases the expected
+ * number of readable bytes if the read operation was not able to fill a certain
+ * amount of the allocated buffer two times consecutively.  Otherwise, it keeps
+ * returning the same prediction.
+ */
+public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufAllocator {
+
+    static final int DEFAULT_MINIMUM = 64;
+    static final int DEFAULT_INITIAL = 1024;
+    static final int DEFAULT_MAXIMUM = 65536;
+
+    private static final int INDEX_INCREMENT = 4;
+    private static final int INDEX_DECREMENT = 1;
+
+    private static final int[] SIZE_TABLE;
+
+    static {
+        List<Integer> sizeTable = new ArrayList<Integer>();
+        for (int i = 16; i < 512; i += 16) {
+            sizeTable.add(i);
+        }
+
+        for (int i = 512; i > 0; i <<= 1) {
+            sizeTable.add(i);
+        }
+
+        SIZE_TABLE = new int[sizeTable.size()];
+        for (int i = 0; i < SIZE_TABLE.length; i ++) {
+            SIZE_TABLE[i] = sizeTable.get(i);
+        }
+    }
+
+    /**
+     * @deprecated There is state for {@link #maxMessagesPerRead()} which is typically based upon channel type.
+     */
+    @Deprecated
+    public static final AdaptiveRecvByteBufAllocator DEFAULT = new AdaptiveRecvByteBufAllocator();
+
+    private static int getSizeTableIndex(final int size) {
+        for (int low = 0, high = SIZE_TABLE.length - 1;;) {
+            if (high < low) {
+                return low;
+            }
+            if (high == low) {
+                return high;
+            }
+
+            int mid = low + high >>> 1;
+            int a = SIZE_TABLE[mid];
+            int b = SIZE_TABLE[mid + 1];
+            if (size > b) {
+                low = mid + 1;
+            } else if (size < a) {
+                high = mid - 1;
+            } else if (size == a) {
+                return mid;
+            } else {
+                return mid + 1;
+            }
+        }
+    }
+
+    private final class HandleImpl extends MaxMessageHandle {
+        private final int minIndex;
+        private final int maxIndex;
+        private int index;
+        private int nextReceiveBufferSize;
+        private boolean decreaseNow;
+
+        public HandleImpl(int minIndex, int maxIndex, int initial) {
+            this.minIndex = minIndex;
+            this.maxIndex = maxIndex;
+
+            index = getSizeTableIndex(initial);
+            nextReceiveBufferSize = SIZE_TABLE[index];
+        }
+
+        @Override
+        public int guess() {
+            return nextReceiveBufferSize;
+        }
+
+        private void record(int actualReadBytes) {
+            if (actualReadBytes <= SIZE_TABLE[Math.max(0, index - INDEX_DECREMENT - 1)]) {
+                if (decreaseNow) {
+                    index = Math.max(index - INDEX_DECREMENT, minIndex);
+                    nextReceiveBufferSize = SIZE_TABLE[index];
+                    decreaseNow = false;
+                } else {
+                    decreaseNow = true;
+                }
+            } else if (actualReadBytes >= nextReceiveBufferSize) {
+                index = Math.min(index + INDEX_INCREMENT, maxIndex);
+                nextReceiveBufferSize = SIZE_TABLE[index];
+                decreaseNow = false;
+            }
+        }
+
+        @Override
+        public void readComplete() {
+            record(totalBytesRead());
+        }
+    }
+
+    private final int minIndex;
+    private final int maxIndex;
+    private final int initial;
+
+    /**
+     * Creates a new predictor with the default parameters.  With the default
+     * parameters, the expected buffer size starts from {@code 1024}, does not
+     * go down below {@code 64}, and does not go up above {@code 65536}.
+     */
+    public AdaptiveRecvByteBufAllocator() {
+        this(DEFAULT_MINIMUM, DEFAULT_INITIAL, DEFAULT_MAXIMUM);
+    }
+
+    /**
+     * Creates a new predictor with the specified parameters.
+     *
+     * @param minimum  the inclusive lower bound of the expected buffer size
+     * @param initial  the initial buffer size when no feed back was received
+     * @param maximum  the inclusive upper bound of the expected buffer size
+     */
+    public AdaptiveRecvByteBufAllocator(int minimum, int initial, int maximum) {
+        if (minimum <= 0) {
+            throw new IllegalArgumentException("minimum: " + minimum);
+        }
+        if (initial < minimum) {
+            throw new IllegalArgumentException("initial: " + initial);
+        }
+        if (maximum < initial) {
+            throw new IllegalArgumentException("maximum: " + maximum);
+        }
+
+        int minIndex = getSizeTableIndex(minimum);
+        if (SIZE_TABLE[minIndex] < minimum) {
+            this.minIndex = minIndex + 1;
+        } else {
+            this.minIndex = minIndex;
+        }
+
+        int maxIndex = getSizeTableIndex(maximum);
+        if (SIZE_TABLE[maxIndex] > maximum) {
+            this.maxIndex = maxIndex - 1;
+        } else {
+            this.maxIndex = maxIndex;
+        }
+
+        this.initial = initial;
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public Handle newHandle() {
+        return new HandleImpl(minIndex, maxIndex, initial);
+    }
+}
 
 
 
 总结：
+默认通道配置内部关联一个通道，一个消息大小估算器，默认为DefaultMessageSizeEstimator，
+，尝试写自旋次数默认为6，写操作失败，默认自动关闭通道，连接超时默认为30000ms，同时拥有一个
+字节buf 分配器和一个接收字节buf 分配器。通道配置构造，主要是初始化配置关联通道和接收字节buf分配器。
+如果系统属性io.netty.allocator.type，配置为unpooled，则默认的字节buf分配器为UnpooledByteBufAllocator，
+否则为PooledByteBufAllocator，对于Android平台，默认为UnpooledByteBufAllocator。
+默认接收字节buf分配器为AdaptiveRecvByteBufAllocator。
+
 
 
 附：
-//
+//UncheckedBooleanSupplier
+package io.netty.util;
+
+/**
+ * Represents a supplier of {@code boolean}-valued results which doesn't throw any checked exceptions.
+ */
+public interface UncheckedBooleanSupplier extends BooleanSupplier {
+    /**
+     * Gets a boolean value.
+     * @return a boolean value.
+     */
+    @Override
+    boolean get();
+
+    /**
+     * A supplier which always returns {@code false} and never throws.
+     */
+    UncheckedBooleanSupplier FALSE_SUPPLIER = new UncheckedBooleanSupplier() {
+        @Override
+        public boolean get() {
+            return false;
+        }
+    };
+
+    /**
+     * A supplier which always returns {@code true} and never throws.
+     */
+    UncheckedBooleanSupplier TRUE_SUPPLIER = new UncheckedBooleanSupplier() {
+        @Override
+        public boolean get() {
+            return true;
+        }
+    };
+}
