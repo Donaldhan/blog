@@ -375,17 +375,18 @@ import java.util.List;
  * returning the same prediction.
  */
 public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufAllocator {
+    //每次读取的字节数
+    static final int DEFAULT_MINIMUM = 64;//每次读取数据的最小默认size
+    static final int DEFAULT_INITIAL = 1024;每次读取数据的初始化size
+    static final int DEFAULT_MAXIMUM = 65536;每次读取数据的最大默认size
 
-    static final int DEFAULT_MINIMUM = 64;
-    static final int DEFAULT_INITIAL = 1024;
-    static final int DEFAULT_MAXIMUM = 65536;
+    private static final int INDEX_INCREMENT = 4;//索引增加步长
+    private static final int INDEX_DECREMENT = 1;//索引减少步长
 
-    private static final int INDEX_INCREMENT = 4;
-    private static final int INDEX_DECREMENT = 1;
-
-    private static final int[] SIZE_TABLE;
+    private static final int[] SIZE_TABLE;//随机读取字节数表
 
     static {
+        //初始化随机读取字节数表
         List<Integer> sizeTable = new ArrayList<Integer>();
         for (int i = 16; i < 512; i += 16) {
             sizeTable.add(i);
@@ -403,10 +404,11 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
 
     /**
      * @deprecated There is state for {@link #maxMessagesPerRead()} which is typically based upon channel type.
+     默认接收字节buf分配器为AdaptiveRecvByteBufAllocator
      */
     @Deprecated
     public static final AdaptiveRecvByteBufAllocator DEFAULT = new AdaptiveRecvByteBufAllocator();
-
+    //获取指定size字节数对应的索引
     private static int getSizeTableIndex(final int size) {
         for (int low = 0, high = SIZE_TABLE.length - 1;;) {
             if (high < low) {
@@ -430,22 +432,23 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
             }
         }
     }
-
+    //最大消息数hanle
     private final class HandleImpl extends MaxMessageHandle {
-        private final int minIndex;
+        private final int minIndex;//
         private final int maxIndex;
         private int index;
-        private int nextReceiveBufferSize;
+        private int nextReceiveBufferSize;//下一次接收buf的大小，即下一次读取的字节数量
         private boolean decreaseNow;
 
         public HandleImpl(int minIndex, int maxIndex, int initial) {
             this.minIndex = minIndex;
             this.maxIndex = maxIndex;
-
+            //初始化size对应的索引
             index = getSizeTableIndex(initial);
+	    //设置下一次读取的buf的size
             nextReceiveBufferSize = SIZE_TABLE[index];
         }
-
+       //获取下一次读取buf的size
         @Override
         public int guess() {
             return nextReceiveBufferSize;
@@ -454,6 +457,7 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         private void record(int actualReadBytes) {
             if (actualReadBytes <= SIZE_TABLE[Math.max(0, index - INDEX_DECREMENT - 1)]) {
                 if (decreaseNow) {
+		    //减少下一次接收buf的字节数数
                     index = Math.max(index - INDEX_DECREMENT, minIndex);
                     nextReceiveBufferSize = SIZE_TABLE[index];
                     decreaseNow = false;
@@ -461,21 +465,22 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
                     decreaseNow = true;
                 }
             } else if (actualReadBytes >= nextReceiveBufferSize) {
+	        //增加下一次接收buf的字节数
                 index = Math.min(index + INDEX_INCREMENT, maxIndex);
                 nextReceiveBufferSize = SIZE_TABLE[index];
                 decreaseNow = false;
             }
         }
-
+        //读取完毕，则记录读取的size数量
         @Override
         public void readComplete() {
             record(totalBytesRead());
         }
     }
 
-    private final int minIndex;
-    private final int maxIndex;
-    private final int initial;
+    private final int minIndex;//最小size索引
+    private final int maxIndex;//最大size索引
+    private final int initial;//初始接收bufsize，默认为1024
 
     /**
      * Creates a new predictor with the default parameters.  With the default
@@ -503,21 +508,21 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         if (maximum < initial) {
             throw new IllegalArgumentException("maximum: " + maximum);
         }
-
+        //获取最小buf size对应的size表索引
         int minIndex = getSizeTableIndex(minimum);
         if (SIZE_TABLE[minIndex] < minimum) {
             this.minIndex = minIndex + 1;
         } else {
             this.minIndex = minIndex;
         }
-
+        //获取最大buf size对应的size表索引
         int maxIndex = getSizeTableIndex(maximum);
         if (SIZE_TABLE[maxIndex] > maximum) {
             this.maxIndex = maxIndex - 1;
         } else {
             this.maxIndex = maxIndex;
         }
-
+        //初始接收buf size
         this.initial = initial;
     }
 
@@ -527,7 +532,8 @@ public class AdaptiveRecvByteBufAllocator extends DefaultMaxMessagesRecvByteBufA
         return new HandleImpl(minIndex, maxIndex, initial);
     }
 }
-
+从上面可以看出接收字节buf分配器，主要是控制下一次接收字节buf的容量，如果当前读取字节数大于消息上一次读取的
+字节buf容量，则减少下一次接收buf的容量，否则增加下一次接收buf的容量。
 
 
 总结：
