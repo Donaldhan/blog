@@ -1,0 +1,4 @@
+从上面可以看出，字节缓存ByteBuf，拥有一个最大容量限制，如果用户尝试用 #capacity(int)和 #ensureWritable(int)方法，
+增加buf容量超过最大容量，将会抛出非法参数异常；字节buf有两个索引，一个为读索引readerIndex，一个为写索引writerIndex，
+读索引不能大于写索引，写索引不能小于读索引，buf可读字节数为writerIndex - readerIndex，buf可写字节数为capacity - writerIndex，
+buf可写的最大字节数为maxCapacity - writerIndex；
