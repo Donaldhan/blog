@@ -38,16 +38,19 @@ package io.netty.util;
 public interface ReferenceCounted {
     /**
      * Returns the reference count of this object.  If {@code 0}, it means this object has been deallocated.
+     返回对象的引用计数器，为0，表示对象可以被回收
      */
     int refCnt();
 
     /**
      * Increases the reference count by {@code 1}.
+     对象引用计数器自增1
      */
     ReferenceCounted retain();
 
     /**
      * Increases the reference count by the specified {@code increment}.
+     增加引用计数器，增量为increment
      */
     ReferenceCounted retain(int increment);
 
@@ -55,6 +58,8 @@ public interface ReferenceCounted {
      * Records the current access location of this object for debugging purposes.
      * If this object is determined to be leaked, the information recorded by this operation will be provided to you
      * via {@link ResourceLeakDetector}.  This method is a shortcut to {@link #touch(Object) touch(null)}.
+     调试时，记录当前对象访问的位置。如果对象确定内存泄漏，可以通过ResourceLeakDetector获取操作的相关信息。
+     此方法为 #touch(Object) touch(null)的快捷方式
      */
     ReferenceCounted touch();
 
@@ -62,13 +67,14 @@ public interface ReferenceCounted {
      * Records the current access location of this object with an additional arbitrary information for debugging
      * purposes.  If this object is determined to be leaked, the information recorded by this operation will be
      * provided to you via {@link ResourceLeakDetector}.
+     调试时，记录当前对象访问的位置。如果对象确定内存泄漏，可以通过ResourceLeakDetector获取操作的相关信息。
      */
     ReferenceCounted touch(Object hint);
 
     /**
      * Decreases the reference count by {@code 1} and deallocates this object if the reference count reaches at
      * {@code 0}.
-     *
+     *自减对象引用计数器，如果引用数为0，则回收对象。当且仅当对象引用计数器为0，回收对象，返回true
      * @return {@code true} if and only if the reference count became {@code 0} and this object has been deallocated
      */
     boolean release();
@@ -76,12 +82,14 @@ public interface ReferenceCounted {
     /**
      * Decreases the reference count by the specified {@code decrement} and deallocates this object if the reference
      * count reaches at {@code 0}.
-     *
+     *减对象引用计数器，减量为decrement，如果引用数为0，则回收对象。当且仅当对象引用计数器为0，回收对象，返回true
      * @return {@code true} if and only if the reference count became {@code 0} and this object has been deallocated
      */
     boolean release(int decrement);
 }
-
+从上面可以看出，对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，
+在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，
+以便分析内存泄漏的原因。
 
 再来看字节buf的接口定义：
 package io.netty.buffer;
@@ -321,6 +329,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
     /**
      * Returns the number of bytes (octets) this buffer can contain.
+     获取buf容量
      */
     public abstract int capacity();
 
@@ -329,6 +338,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * capacity, the content of this buffer is truncated.  If the {@code newCapacity} is greater
      * than the current capacity, the buffer is appended with unspecified data whose length is
      * {@code (newCapacity - currentCapacity)}.
+     调整buf的容量，如果容量小于原始buf容量，则truncated buf的内容，如果新增量大于原始容量，
+     则buffer将会添加不确定的数，其长度为newCapacity - currentCapacity
      */
     public abstract ByteBuf capacity(int newCapacity);
 
@@ -337,18 +348,21 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * capacity of this buffer beyond the maximum capacity using {@link #capacity(int)} or
      * {@link #ensureWritable(int)}, those methods will raise an
      * {@link IllegalArgumentException}.
+     返回buf的最大允许容量。如果用户尝试用 #capacity(int)和 #ensureWritable(int)方法，
+     增加buf容量超过最大容量，将会抛出非法参数异常
      */
     public abstract int maxCapacity();
 
     /**
      * Returns the {@link ByteBufAllocator} which created this buffer.
+     返回创建buf的字节buf分配器
      */
     public abstract ByteBufAllocator alloc();
 
     /**
      * Returns the <a href="http://en.wikipedia.org/wiki/Endianness">endianness</a>
      * of this buffer.
-     *
+     *已丢弃
      * @deprecated use the Little Endian accessors, e.g. {@code getShortLE}, {@code getIntLE}
      * instead of creating a buffer with swapped {@code endianness}.
      */
@@ -362,7 +376,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * specified {@code endianness} is identical to this buffer's byte order, this method can
      * return {@code this}.  This method does not modify {@code readerIndex} or {@code writerIndex}
      * of this buffer.
-     *
+     *已丢弃
      * @deprecated use the Little Endian accessors, e.g. {@code getShortLE}, {@code getIntLE}
      * instead of creating a buffer with swapped {@code endianness}.
      */
@@ -371,7 +385,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
     /**
      * Return the underlying buffer instance if this buffer is a wrapper of another buffer.
-     *
+     *如果buf为另一个buf包装类，返回底层buf实例，即返回未包装的buf
      * @return {@code null} if this buffer is not a wrapper
      */
     public abstract ByteBuf unwrap();
@@ -379,27 +393,31 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Returns {@code true} if and only if this buffer is backed by an
      * NIO direct buffer.
+     判断buf是否是direct类型
      */
     public abstract boolean isDirect();
 
     /**
      * Returns {@code true} if and only if this buffer is read-only.
+     判断buf是否可读
      */
     public abstract boolean isReadOnly();
 
     /**
      * Returns a read-only version of this buffer.
+     返回buf的只读版本
      */
     public abstract ByteBuf asReadOnly();
 
     /**
      * Returns the {@code readerIndex} of this buffer.
+     获取buf的读索引
      */
     public abstract int readerIndex();
 
     /**
      * Sets the {@code readerIndex} of this buffer.
-     *
+     *设置buf的读索引
      * @throws IndexOutOfBoundsException
      *         if the specified {@code readerIndex} is
      *            less than {@code 0} or
@@ -409,12 +427,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
     /**
      * Returns the {@code writerIndex} of this buffer.
+     获取buf的写索引
      */
     public abstract int writerIndex();
 
     /**
      * Sets the {@code writerIndex} of this buffer.
-     *
+     *设置buf的写索引
      * @throws IndexOutOfBoundsException
      *         if the specified {@code writerIndex} is
      *            less than {@code this.readerIndex} or
@@ -427,7 +446,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * in one shot.  This method is useful when you have to worry about the
      * invocation order of {@link #readerIndex(int)} and {@link #writerIndex(int)}
      * methods.  For example, the following code will fail:
-     *
+     *设置buf读写索引的快捷方式。当你不得不关心读索引设置和写索引设置的顺序时，这个方法，非常有用。
+     以下代码将会失败：
      * <pre>
      * // Create a buffer whose readerIndex, writerIndex and capacity are
      * // 0, 0 and 8 respectively.
@@ -435,12 +455,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      *
      * // IndexOutOfBoundsException is thrown because the specified
      * // readerIndex (2) cannot be greater than the current writerIndex (0).
+     读索引不能大于当前的写索引
      * buf.readerIndex(2);
      * buf.writerIndex(4);
      * </pre>
      *
      * The following code will also fail:
-     *
+     *同样下面的代码会失败
      * <pre>
      * // Create a buffer whose readerIndex, writerIndex and capacity are
      * // 0, 8 and 8 respectively.
@@ -451,6 +472,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      *
      * // IndexOutOfBoundsException is thrown because the specified
      * // writerIndex (4) cannot be less than the current readerIndex (8).
+     写索引小于读索引
      * buf.writerIndex(4);
      * buf.readerIndex(2);
      * </pre>
@@ -459,11 +481,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * throws an {@link IndexOutOfBoundsException} as long as the specified
      * indexes meet basic constraints, regardless what the current index
      * values of the buffer are:
-     *
+     *相比之下，setIndex方法可以保证只要索引满足基本的约束，无论当前buf索引的值是什么,
+     索引越界异常不会抛出.
      * <pre>
      * // No matter what the current state of the buffer is, the following
      * // call always succeeds as long as the capacity of the buffer is not
      * // less than 4.
+     只要buf的容量大于4，就不会抛出异常
      * buf.setIndex(2, 4);
      * </pre>
      *
@@ -477,12 +501,14 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
     /**
      * Returns the number of readable bytes which is equal to
+     获取buf可读字节数为writerIndex - readerIndex
      * {@code (this.writerIndex - this.readerIndex)}.
      */
     public abstract int readableBytes();
 
     /**
      * Returns the number of writable bytes which is equal to
+     获取buf可写字节数为capacity - writerIndex
      * {@code (this.capacity - this.writerIndex)}.
      */
     public abstract int writableBytes();
@@ -490,6 +516,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Returns the maximum possible number of writable bytes, which is equal to
      * {@code (this.maxCapacity - this.writerIndex)}.
+     当前buf可写的最大字节数为maxCapacity - writerIndex
      */
     public abstract int maxWritableBytes();
 
@@ -497,11 +524,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Returns {@code true}
      * if and only if {@code (this.writerIndex - this.readerIndex)} is greater
      * than {@code 0}.
+     获取buf是否可读，如果当前可读字节数大于0，表示可读，返回true
      */
     public abstract boolean isReadable();
 
     /**
      * Returns {@code true} if and only if this buffer contains equal to or more than the specified number of elements.
+     buf的可读字节数据是否大于size
      */
     public abstract boolean isReadable(int size);
 
@@ -509,23 +538,27 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Returns {@code true}
      * if and only if {@code (this.capacity - this.writerIndex)} is greater
      * than {@code 0}.
+     buf是否可写，即this.capacity - this.writerIndex是否大于0
      */
     public abstract boolean isWritable();
 
     /**
      * Returns {@code true} if and only if this buffer has enough room to allow writing the specified number of
      * elements.
+     判断当前buf是否可容下size字节
      */
     public abstract boolean isWritable(int size);
 
     /**
      * Sets the {@code readerIndex} and {@code writerIndex} of this buffer to
      * {@code 0}.
+     重置buf的读写索引为0，等同于setIndex(0, 0)
      * This method is identical to {@link #setIndex(int, int) setIndex(0, 0)}.
      * <p>
      * Please note that the behavior of this method is different
      * from that of NIO buffer, which sets the {@code limit} to
      * the {@code capacity} of the buffer.
+     主要此方法，不同于Java nio buffer，设置buf的limit的位置为capacity
      */
     public abstract ByteBuf clear();
 
@@ -534,6 +567,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * reposition the current {@code readerIndex} to the marked
      * {@code readerIndex} by calling {@link #resetReaderIndex()}.
      * The initial value of the marked {@code readerIndex} is {@code 0}.
+
      */
     public abstract ByteBuf markReaderIndex();
 
@@ -2437,3 +2471,6 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
 总结：
 
+对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，
+在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，
+以便分析内存泄漏的原因。
