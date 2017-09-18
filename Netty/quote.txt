@@ -67,6 +67,8 @@ netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/
 netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
 netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
 netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
+netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/2393510[/url]
+
 
 
 
