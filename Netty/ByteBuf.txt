@@ -865,7 +865,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * buffer.  The 24 high-order bits of the specified value are ignored.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *从buf的索引index开始，设置特殊的字节，高24位将会被忽略，不会修改buf的读写索引
+     *从buf的索引index开始，设置特殊的字节，一些特殊值的高24位将会被忽略，不会修改buf的读写索引
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         {@code index + 1} is greater than {@code this.capacity}
@@ -883,7 +883,9 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * {@link #setBytes(int, ByteBuf, int, int)} does not.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * the source buffer (i.e. {@code this}).
-     *
+     *从源buf转移数据到当前buf的绝对索引index上，直到源buf不可读。此方法与setBytes(int, ByteBuf, int, int)
+     相同，不同的时此方法会增加源buf的索引，而setBytes(int, ByteBuf, int, int)不会。
+     此方法不为修改源buf的读写索引
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         if {@code index + src.readableBytes} is greater than
@@ -900,7 +902,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * {@link #setBytes(int, ByteBuf, int, int)} does not.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * the source buffer (i.e. {@code this}).
-     *
+     *与上面不同的时，从源buf转移指定长度的数据
      * @param length the number of bytes to transfer
      *
      * @throws IndexOutOfBoundsException
@@ -916,7 +918,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex}
      * of both the source (i.e. {@code this}) and the destination.
-     *
+     *与上面个方法不同的是，此方法是从源buf的srcIndex索引开始读数据，并且不会修改源buf和
+     目的buf的索引。
      * @param srcIndex the first index of the source
      * @param length   the number of bytes to transfer
      *
@@ -935,7 +938,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *转移源字节数组中的数据到当前buf的index位置，不会修改当前buf的索引。
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         if {@code index + src.length} is greater than
@@ -948,7 +951,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *与上面不同的是此方法是从源buf的srcIndex索引开始读数据，并且字节长度为length
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0},
      *         if the specified {@code srcIndex} is less than {@code 0},
@@ -964,7 +967,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * reaches its limit.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *转移nio ByteBuffer中的数据到当前buf，直到位置索引到达limit位置，此方法不会修改读写索引
      * @throws IndexOutOfBoundsException
      *         if the specified {@code index} is less than {@code 0} or
      *         if {@code index + src.remaining()} is greater than
@@ -977,7 +980,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * starting at the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *转移目的输入流的数据到当前buf，，此方法不会修改读写索引
      * @param length the number of bytes to transfer
      *
      * @return the actual number of bytes read in from the specified channel.
@@ -996,7 +999,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * starting at the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *转移目的分散字节通道的数据到当前buf，，此方法不会修改读写索引
      * @param length the maximum number of bytes to transfer
      *
      * @return the actual number of bytes read in from the specified channel.
@@ -1015,7 +1018,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * to this buffer starting at the specified absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer. This method does not modify the channel's position.
-     *
+     *转移目的文件通道的数据到当前buf，，此方法不会修改读写索引
      * @param position the file position at which the transfer is to begin
      * @param length the maximum number of bytes to transfer
      *
@@ -1035,7 +1038,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * absolute {@code index}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *从buf的index位置，填充字节buf为NUL (0x00)，此方法不会修改当前buf中的索引位置
      * @param length the number of <tt>NUL</tt>s to write to the buffer
      *
      * @throws IndexOutOfBoundsException
@@ -1047,7 +1050,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Writes the specified {@link CharSequence} at the current {@code writerIndex} and increases
      * the {@code writerIndex} by the written bytes.
-     *
+     *从当前写索引位置开始，写字符序列到当前buf，并更新写索引
      * @param index on which the sequence should be written
      * @param sequence to write
      * @param charset that should be used.
@@ -1062,7 +1065,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Gets a byte at the current {@code readerIndex} and increases
      * the {@code readerIndex} by {@code 1} in this buffer.
-     *
+     * 从buf当前的读索引开始，读取一个字节数据，读索引向前移一位
      * @throws IndexOutOfBoundsException
      *         if {@code this.readableBytes} is less than {@code 1}
      */
@@ -1076,7 +1079,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * by the number of the transferred bytes (= {@code length}).
      * The returned buffer's {@code readerIndex} and {@code writerIndex} are
      * {@code 0} and {@code length} respectively.
-     *
+     *从当前buf的读索引开始转移length字节数据到新创建的buf中，并增加当前buf的读索引，
+     新创建的buf的读索引为0，写索引为length
      * @param length the number of bytes to transfer
      *
      * @return the newly created buffer which contains the transferred bytes
@@ -1090,10 +1094,11 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Returns a new slice of this buffer's sub-region starting at the current
      * {@code readerIndex} and increases the {@code readerIndex} by the size
      * of the new slice (= {@code length}).
+     返回当前buf的读索引开始，长度为length的字节切片
      * <p>
      * Also be aware that this method will NOT call {@link #retain()} and so the
      * reference count will NOT be increased.
-     *
+     * 注意此方法不会调用retain方法，索引buf的引用计数器不会变
      * @param length the size of the new slice
      *
      * @return the newly created slice
@@ -1111,7 +1116,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Note that this method returns a {@linkplain #retain() retained} buffer unlike {@link #readSlice(int)}.
      * This method behaves similarly to {@code readSlice(...).retain()} except that this method may return
      * a buffer implementation that produces less garbage.
-     *
+     *与上面方法不同的时，会增加buf的引用计数器，会产生少量的垃圾
      * @param length the size of the new slice
      *
      * @return the newly created slice
@@ -1130,7 +1135,9 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * increases the {@code writerIndex} of the destination by the number of
      * the transferred bytes while {@link #readBytes(ByteBuf, int, int)}
      * does not.
-     *
+     *从当前buf的读索引开始，转移数据到目的buf，直到当前buf不可读，同时更新当前buf的读索引。
+     此方法，与#readBytes(ByteBuf, int, int)基本相同，不同的是此方法会增加目的字节buf的写索引，
+     而#readBytes(ByteBuf, int, int)不会。
      * @throws IndexOutOfBoundsException
      *         if {@code dst.writableBytes} is greater than
      *            {@code this.readableBytes}
@@ -1145,7 +1152,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * except that this method increases the {@code writerIndex} of the
      * destination by the number of the transferred bytes (= {@code length})
      * while {@link #readBytes(ByteBuf, int, int)} does not.
-     *
+     *与上面方法不同到的是，从当前buf读取指定长度的字节数据
      * @throws IndexOutOfBoundsException
      *         if {@code length} is greater than {@code this.readableBytes} or
      *         if {@code length} is greater than {@code dst.writableBytes}
@@ -1156,7 +1163,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers this buffer's data to the specified destination starting at
      * the current {@code readerIndex} and increases the {@code readerIndex}
      * by the number of the transferred bytes (= {@code length}).
-     *
+     *此方法，与上面方法不同的是，将当前buf的数据放到目的buf的dstIndex位置，同时，
+     此方法不会修改目的buf的写索引
      * @param dstIndex the first index of the destination
      * @param length   the number of bytes to transfer
      *
@@ -1172,7 +1180,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers this buffer's data to the specified destination starting at
      * the current {@code readerIndex} and increases the {@code readerIndex}
      * by the number of the transferred bytes (= {@code dst.length}).
-     *
+     *从当前buf的读索引开始，转移数据到目的字节数组中
      * @throws IndexOutOfBoundsException
      *         if {@code dst.length} is greater than {@code this.readableBytes}
      */
@@ -1182,7 +1190,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers this buffer's data to the specified destination starting at
      * the current {@code readerIndex} and increases the {@code readerIndex}
      * by the number of the transferred bytes (= {@code length}).
-     *
+     *与上面方法不同的是，转移字节长度为length，并方法目的字节数组的dstIndex上
      * @param dstIndex the first index of the destination
      * @param length   the number of bytes to transfer
      *
@@ -1198,7 +1206,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the current {@code readerIndex} until the destination's position
      * reaches its limit, and increases the {@code readerIndex} by the
      * number of the transferred bytes.
-     *
+     *从当前buf的读索引开始，转移数据到java nio ByteBuffer中，同时会更新当前buf的读索引
      * @throws IndexOutOfBoundsException
      *         if {@code dst.remaining()} is greater than
      *            {@code this.readableBytes}
@@ -1208,7 +1216,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Transfers this buffer's data to the specified stream starting at the
      * current {@code readerIndex}.
-     *
+     *从当前buf的读索引开始，转移数据到输出流OutputStream中
      * @param length the number of bytes to transfer
      *
      * @throws IndexOutOfBoundsException
@@ -1221,7 +1229,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Transfers this buffer's data to the specified stream starting at the
      * current {@code readerIndex}.
-     *
+     *从当前buf的读索引开始，转移数据到目的聚集通道中
      * @param length the maximum number of bytes to transfer
      *
      * @return the actual number of bytes written out to the specified channel
@@ -1236,7 +1244,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Gets a {@link CharSequence} with the given length at the current {@code readerIndex}
      * and increases the {@code readerIndex} by the given length.
-     *
+     *从当前buf的读索引开始，转移length长度的字节数据到目的字符序列中，同时会更新当前buf的读索引
      * @param length the length to read
      * @param charset that should be used
      * @return the sequence
@@ -1249,7 +1257,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers this buffer's data starting at the current {@code readerIndex}
      * to the specified channel starting at the given file position.
      * This method does not modify the channel's position.
-     *
+     *从当前buf的读索引开始，转移数据到目的文件通道中，不会修改文件通道的位置
      * @param position the file position at which the transfer is to begin
      * @param length the maximum number of bytes to transfer
      *
@@ -1265,7 +1273,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Increases the current {@code readerIndex} by the specified
      * {@code length} in this buffer.
-     *
+     *增加读索引位置length长度，向前移动length位置
      * @throws IndexOutOfBoundsException
      *         if {@code length} is greater than {@code this.readableBytes}
      */
@@ -1274,7 +1282,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Sets the specified boolean at the current {@code writerIndex}
      * and increases the {@code writerIndex} by {@code 1} in this buffer.
-     *
+     * 从buf当前写索引位置写一个布尔值，写索引向前移一位
      * @throws IndexOutOfBoundsException
      *         if {@code this.writableBytes} is less than {@code 1}
      */
@@ -1284,7 +1292,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Sets the specified byte at the current {@code writerIndex}
      * and increases the {@code writerIndex} by {@code 1} in this buffer.
      * The 24 high-order bits of the specified value are ignored.
-     *
+     * 从buf当前写索引位置写一个字节，写索引向前移一位。
+     一些特殊值的高24位将会被忽略
      * @throws IndexOutOfBoundsException
      *         if {@code this.writableBytes} is less than {@code 1}
      */

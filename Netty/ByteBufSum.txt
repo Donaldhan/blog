@@ -7,10 +7,17 @@ buf可写的最大字节数为maxCapacity - writerIndex；
 我们可以使用ensureWritable检测当buf是否有足够的空间写数据；
 
 提供了getBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
-GatheringByteChannel和文件域FileChannel中，这些方法不会修改当前buf读写索引，具体是否修改目的对象索引或位置，见java
+GatheringByteChannel和文件通道FileChannel中，这些方法不会修改当前buf读写索引，具体是否修改目的对象索引或位置，见java
 doc 描述。
 
-提供了setBytes方法，
+提供了setBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，InputputStream，分散字节通道
+ScatteringByteChannel和文件通道FileChannel中的数据转移到当前buf中，这些方法不会修改当前buf的读写索引和源对象索引或位置，见java
+doc 描述，一般不会修改当前索引的读写索引位置，不排除个别方法。
+
+提供了readBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
+GatheringByteChannel和文件通道FileChannel中，这些方法具体会不会修改当前buf读写索引，见java doc 描述，一般会修改当前buf的读索引。
+
+
 
 set*原始类型方法不会修改读写索引；
 get*原始类型方法不会修改读写索引；
