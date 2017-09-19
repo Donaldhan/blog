@@ -252,7 +252,8 @@ copy，包装的字节buf的写索引为#capacity() capacity
  * It does not clear the buffer content (e.g. filling with {@code 0}) but just
  * clears the two pointers.  Please also note that the semantic of this
  * operation is different from {@link ByteBuffer#clear()}.
- *
+ *我们可以调用#clear方法，设置读写索引为0。clear方法不会清除buf中的数据，仅仅调整
+ 读写索引。需要注意的是此方法不同于java nio ByteBuffer#clear方法。
  * <pre>
  *  BEFORE clear()
  *
@@ -273,24 +274,29 @@ copy，包装的字节buf的写索引为#capacity() capacity
  * </pre>
  *
  * <h3>Search operations</h3>
- *
+ *搜索操作
  * For simple single-byte searches, use {@link #indexOf(int, int, byte)} and {@link #bytesBefore(int, int, byte)}.
  * {@link #bytesBefore(byte)} is especially useful when you deal with a {@code NUL}-terminated string.
  * For complicated searches, use {@link #forEachByte(int, int, ByteProcessor)} with a {@link ByteProcessor}
  * implementation.
+ 对于简单的单个字节搜索，可是使用#indexOf和#bytesBefore方法。当需要处理一个空字节NUL（0x00）时，
+ #bytesBefore方法特别有用。 比如一些复杂的搜索，可以使用字节处理器ByteProcessor版的#forEachByte方法。
  *
  * <h3>Mark and reset</h3>
- *
+ *标记和重置
  * There are two marker indexes in every buffer. One is for storing
  * {@link #readerIndex() readerIndex} and the other is for storing
  * {@link #writerIndex() writerIndex}.  You can always reposition one of the
  * two indexes by calling a reset method.  It works in a similar fashion to
  * the mark and reset methods in {@link InputStream} except that there's no
  * {@code readlimit}.
- *
+ *在每个buf中有两个标记索引，一个是存储读索引的，一个是存储写索引的。你可以
+ 调用reset方法，重置读、写索引到标记的位置。除了没有readlimit之外，与输入流中标记和重置方法
+ 相似。
  * <h3>Derived buffers</h3>
- *
+ *衍生buf
  * You can create a view of an existing buffer by calling one of the following methods:
+ 你可通过如下方法，创建buf的视图：
  * <ul>
  *   <li>{@link #duplicate()}</li>
  *   <li>{@link #slice()}</li>
@@ -304,42 +310,47 @@ copy，包装的字节buf的写索引为#capacity() capacity
  * A derived buffer will have an independent {@link #readerIndex() readerIndex},
  * {@link #writerIndex() writerIndex} and marker indexes, while it shares
  * other internal data representation, just like a NIO buffer does.
+ 衍生buf，拥有自己独立的读写索引的标记索引，共享其他内部数据，就像java nio ByteBuffer
  * <p>
  * In case a completely fresh copy of an existing buffer is required, please
  * call {@link #copy()} method instead.
- *
+ *假如需要当前buf的完全拷贝，可以使用copy方法。
  * <h4>Non-retained and retained derived buffers</h4>
- *
+ *非retained和retained衍生buf
  * Note that the {@link #duplicate()}, {@link #slice()}, {@link #slice(int, int)} and {@link #readSlice(int)} does NOT
  * call {@link #retain()} on the returned derived buffer, and thus its reference count will NOT be increased. If you
  * need to create a derived buffer with increased reference count, consider using {@link #retainedDuplicate()},
  * {@link #retainedSlice()}, {@link #retainedSlice(int, int)} and {@link #readRetainedSlice(int)} which may return
  * a buffer implementation that produces less garbage.
- *
+ *注意#duplicate，#slice，#slice，#readSlice方法不会在衍生buf中调用#retain方法，这样buf的引用计数器将不会增加。
+ 如果需要创建衍生buf，需要增加引用计数器，可以考虑上述方法的#retained*版本方法，这样可能会产生一点内存垃圾。
  * <h3>Conversion to existing JDK types</h3>
- *
+ *转换ByteBuf为JDK 类型
  * <h4>Byte array</h4>
- *
+ *字节数组
  * If a {@link ByteBuf} is backed by a byte array (i.e. {@code byte[]}),
  * you can access it directly via the {@link #array()} method.  To determine
  * if a buffer is backed by a byte array, {@link #hasArray()} should be used.
- *
+ *如果字节是一个字节数组，你可以直接使用#array访问。判断一个方法是否为字节数组，可以
+ 使用#hasArray方法
  * <h4>NIO Buffers</h4>
- *
+ *nio ByteBuffer
  * If a {@link ByteBuf} can be converted into an NIO {@link ByteBuffer} which shares its
  * content (i.e. view buffer), you can get it via the {@link #nioBuffer()} method.  To determine
  * if a buffer can be converted into an NIO buffer, use {@link #nioBufferCount()}.
- *
+ *如果字节buf可以转换为java nio ByteBuffer，你可以调用#nioBuffer方法共享buf内容。
+ 你可以使用#nioBufferCount来判断字节buf可不可以转换为java nio ByteBuffer
  * <h4>Strings</h4>
- *
+ *字符串
  * Various {@link #toString(Charset)} methods convert a {@link ByteBuf}
  * into a {@link String}.  Please note that {@link #toString()} is not a
  * conversion method.
- *
+ *#toString(Charset)方法转换字节buf为字符串，注意#toString不是一个转换方法
  * <h4>I/O Streams</h4>
- *
+ *IO流
  * Please refer to {@link ByteBufInputStream} and
  * {@link ByteBufOutputStream}.
+ 参考ByteBufInputStream和ByteBufOutputStream
  */
 @SuppressWarnings("ClassMayBeInterface")
 public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
