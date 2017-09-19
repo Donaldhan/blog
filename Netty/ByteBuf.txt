@@ -112,21 +112,24 @@ import java.nio.charset.UnsupportedCharsetException;
  * A random and sequential accessible sequence of zero or more bytes (octets).
  * This interface provides an abstract view for one or more primitive byte
  * arrays ({@code byte[]}) and {@linkplain ByteBuffer NIO buffers}.
- *
+ *字节缓冲ByteBuf是一个可随机方法字节序列，字节数可以为0或更多。
+ 这个方法提供了一个或更多原始字节数组和java nio ByteBuffer的抽象视图。
  * <h3>Creation of a buffer</h3>
- *
+ *创建buf
  * It is recommended to create a new buffer using the helper methods in
  * {@link Unpooled} rather than calling an individual implementation's
  * constructor.
- *
+ *强烈建议使用Unpooled的辅助方法创建一个字节buf，而不是调用buf具体实现的构造方法。
  * <h3>Random Access Indexing</h3>
- *
+ *随机访问索引
  * Just like an ordinary primitive byte array, {@link ByteBuf} uses
  * <a href="http://en.wikipedia.org/wiki/Zero-based_numbering">zero-based indexing</a>.
  * It means the index of the first byte is always {@code 0} and the index of the last byte is
  * always {@link #capacity() capacity - 1}.  For example, to iterate all bytes of a buffer, you
  * can do the following, regardless of its internal implementation:
- *
+ *如一般的字节数组一样，字节buf索引也是从0开始。意味着第一个字节的索引总是为0，最后一个字节的
+ 索引总是为#capacity() capacity - 1。比如，遍历buf中的所有字节，忽略具体实现的情况下，
+ 可以按如下code
  * <pre>
  * {@link ByteBuf} buffer = ...;
  * for (int i = 0; i &lt; buffer.capacity(); i ++) {
@@ -136,13 +139,14 @@ import java.nio.charset.UnsupportedCharsetException;
  * </pre>
  *
  * <h3>Sequential Access Indexing</h3>
- *
+ *顺序访问索引
  * {@link ByteBuf} provides two pointer variables to support sequential
  * read and write operations - {@link #readerIndex() readerIndex} for a read
  * operation and {@link #writerIndex() writerIndex} for a write operation
  * respectively.  The following diagram shows how a buffer is segmented into
  * three areas by the two pointers:
- *
+ *字节buf提供了两个索引支持顺序读写操作，#readerIndex返回读操作使用的读索引readerIndex，
+#writerIndex返回写操作使用的写索引writerIndex。下图展示读写索引如何将buf分为三段。
  * <pre>
  *      +-------------------+------------------+------------------+
  *      | discardable bytes |  readable bytes  |  writable bytes  |
@@ -153,18 +157,22 @@ import java.nio.charset.UnsupportedCharsetException;
  * </pre>
  *
  * <h4>Readable bytes (the actual content)</h4>
- *
+ *可读字节（实际内容）
  * This segment is where the actual data is stored.  Any operation whose name
  * starts with {@code read} or {@code skip} will get or skip the data at the
  * current {@link #readerIndex() readerIndex} and increase it by the number of
  * read bytes.  If the argument of the read operation is also a
  * {@link ByteBuf} and no destination index is specified, the specified
  * buffer's {@link #writerIndex() writerIndex} is increased together.
+ 这段内容为实际存储的数据。任何以read和skip开头的操作方法，将会从当前的读索引开始，
+ 并增加读索引，增量为读取的字节数。如果读操作的参数为字节buf，并且没有目的索引，
+ 那么目的buf写索引也会增加。
  * <p>
  * If there's not enough content left, {@link IndexOutOfBoundsException} is
  * raised.  The default value of newly allocated, wrapped or copied buffer's
  * {@link #readerIndex() readerIndex} is {@code 0}.
- *
+ *如果没有足够的内容，将会抛出IndexOutOfBoundsException异常。默认新分配，
+ copy，包装的字节buf的读索引为0。
  * <pre>
  * // Iterates the readable bytes of a buffer.
  * {@link ByteBuf} buffer = ...;
@@ -174,13 +182,16 @@ import java.nio.charset.UnsupportedCharsetException;
  * </pre>
  *
  * <h4>Writable bytes</h4>
- *
+ *可写字节
  * This segment is a undefined space which needs to be filled.  Any operation
  * whose name starts with {@code write} will write the data at the current
  * {@link #writerIndex() writerIndex} and increase it by the number of written
  * bytes.  If the argument of the write operation is also a {@link ByteBuf},
  * and no source index is specified, the specified buffer's
  * {@link #readerIndex() readerIndex} is increased together.
+ 此段是需要填充的无定义空间。任何以write开头的操作方法，将会从当前的写索引开始写字节数据，
+ 并增加写索引，增量为写的字节数。如果写操作的参数为字节buf，并且没有源索引，则源buf的读索引
+ 将会增加
  * <p>
  * If there's not enough writable bytes left, {@link IndexOutOfBoundsException}
  * is raised.  The default value of newly allocated buffer's
@@ -188,8 +199,11 @@ import java.nio.charset.UnsupportedCharsetException;
  * wrapped or copied buffer's {@link #writerIndex() writerIndex} is the
  * {@link #capacity() capacity} of the buffer.
  *
+ 如果没有足够的可写字节，将抛出IndexOutOfBoundsException异常。默认新分配的buf的写索引为0。
+copy，包装的字节buf的写索引为#capacity() capacity
  * <pre>
  * // Fills the writable bytes of a buffer with random integers.
+ 写随机整数到buf
  * {@link ByteBuf} buffer = ...;
  * while (buffer.maxWritableBytes() >= 4) {
  *     buffer.writeInt(random.nextInt());
@@ -197,13 +211,15 @@ import java.nio.charset.UnsupportedCharsetException;
  * </pre>
  *
  * <h4>Discardable bytes</h4>
- *
+ *可丢弃的字节数
  * This segment contains the bytes which were read already by a read operation.
  * Initially, the size of this segment is {@code 0}, but its size increases up
  * to the {@link #writerIndex() writerIndex} as read operations are executed.
  * The read bytes can be discarded by calling {@link #discardReadBytes()} to
  * reclaim unused area as depicted by the following diagram:
- *
+ *这段包含了读操作已经读取的字节。初始情况下，这段长度为0，但是这段的长度随着
+ 读操作的执行，增加至写索引。这段数据可以调用#discardReadBytes方法丢弃，
+ 并重新收回没用的区域，具体描述如下图：
  * <pre>
  *  BEFORE discardReadBytes()
  *
@@ -227,9 +243,10 @@ import java.nio.charset.UnsupportedCharsetException;
  * after calling {@link #discardReadBytes()}.  The writable bytes will not be
  * moved in most cases and could even be filled with completely different data
  * depending on the underlying buffer implementation.
- *
+ *需要注意的是，在丢弃已经读取的字节时，并不能保证可写字节的内容。可写字节在大多数情况下不会
+ 移动，甚至可能填充不同的数据，这个依赖于具体的buf实现。
  * <h4>Clearing the buffer indexes</h4>
- *
+ *清除buf索引
  * You can set both {@link #readerIndex() readerIndex} and
  * {@link #writerIndex() writerIndex} to {@code 0} by calling {@link #clear()}.
  * It does not clear the buffer content (e.g. filling with {@code 0}) but just
@@ -1475,6 +1492,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * This method is identical to {@code buf.copy(buf.readerIndex(), buf.readableBytes())}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
+     返回当前buf 可读字节的拷贝。修改返回的copy buf，不会影响当前buf。此方法与
+     buf.copy(buf.readerIndex(), buf.readableBytes())方法相同，不会修改读写索引
      */
     public abstract ByteBuf copy();
 
@@ -1483,6 +1502,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the returned buffer or this buffer does not affect each other at all.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
+     此方法与上面方法，不同的是，限定了读数据开始索引和读取字节的长度
      */
     public abstract ByteBuf copy(int index, int length);
 
@@ -1493,11 +1513,29 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * identical to {@code buf.slice(buf.readerIndex(), buf.readableBytes())}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
+     返回当前buf的可读字节数据的切片slice，当他们维护各自的索引和标记时，
+     修改返回的切片buf或当前buf，会相互影响buf数据，此方法等同于
+     buf.slice(buf.readerIndex(), buf.readableBytes())，此方法不会修改读写索引
+
+     * <p>
+     * Also be aware that this method will NOT call {@link #retain()} and so the
+     * reference count will NOT be increased.
+     注意，此方法不会调用retain方法，即不会增加buf的引用计数器
+     */
+    public abstract ByteBuf slice();
+
+    /**
+     * Returns a slice of this buffer's sub-region. Modifying the content of
+     * the returned buffer or this buffer affects each other's content while
+     * they maintain separate indexes and marks.
+     * This method does not modify {@code readerIndex} or {@code writerIndex} of
+     * this buffer.
+     此方法与上面方法，不同的是，限定了切片数据开始索引和字节的长度
      * <p>
      * Also be aware that this method will NOT call {@link #retain()} and so the
      * reference count will NOT be increased.
      */
-    public abstract ByteBuf slice();
+    public abstract ByteBuf slice(int index, int length);
 
     /**
      * Returns a retained slice of this buffer's readable bytes. Modifying the content
@@ -1510,20 +1548,10 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Note that this method returns a {@linkplain #retain() retained} buffer unlike {@link #slice()}.
      * This method behaves similarly to {@code slice().retain()} except that this method may return
      * a buffer implementation that produces less garbage.
+     与#slice方法不同的是，会调用retain方法，即增加buf的引用计数器，同时可能会产生一些内存垃圾
      */
     public abstract ByteBuf retainedSlice();
 
-    /**
-     * Returns a slice of this buffer's sub-region. Modifying the content of
-     * the returned buffer or this buffer affects each other's content while
-     * they maintain separate indexes and marks.
-     * This method does not modify {@code readerIndex} or {@code writerIndex} of
-     * this buffer.
-     * <p>
-     * Also be aware that this method will NOT call {@link #retain()} and so the
-     * reference count will NOT be increased.
-     */
-    public abstract ByteBuf slice(int index, int length);
 
     /**
      * Returns a retained slice of this buffer's sub-region. Modifying the content of
@@ -1535,6 +1563,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Note that this method returns a {@linkplain #retain() retained} buffer unlike {@link #slice(int, int)}.
      * This method behaves similarly to {@code slice(...).retain()} except that this method may return
      * a buffer implementation that produces less garbage.
+     此方法与上面方法，不同的是，限定了切片数据开始索引和字节的长度
      */
     public abstract ByteBuf retainedSlice(int index, int length);
 
@@ -1544,12 +1573,17 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * each other's content while they maintain separate indexes and marks.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
+     返回buf的整个共享域，当他们维护各自的索引和标记时，
+     修改返回的buf或当前buf，会相互影响buf数据，此方法不会修改读写索引
      * <p>
      * The reader and writer marks will not be duplicated. Also be aware that this method will
      * NOT call {@link #retain()} and so the reference count will NOT be increased.
      * @return A buffer whose readable content is equivalent to the buffer returned by {@link #slice()}.
      * However this buffer will share the capacity of the underlying buffer, and therefore allows access to all of the
      * underlying content if necessary.
+     读写标记不会复制。同时此方法不会调用retain方法，即不会增加buf的引用计数器，
+     返回的buf的可读内容相当于#slice方法返回的buf。不同的是，此方法返回的buf与底层buf共享容量，
+     因此如果需要，运行方法底层的数据内容
      */
     public abstract ByteBuf duplicate();
 
@@ -1564,17 +1598,20 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Note that this method returns a {@linkplain #retain() retained} buffer unlike {@link #slice(int, int)}.
      * This method behaves similarly to {@code duplicate().retain()} except that this method may return
      * a buffer implementation that produces less garbage.
+     与上述方法不同的是，会调用retain方法，即增加buf的引用计数器，同时可能会产生一些内存垃圾
      */
     public abstract ByteBuf retainedDuplicate();
 
     /**
      * Returns the maximum number of NIO {@link ByteBuffer}s that consist this buffer.  Note that {@link #nioBuffers()}
      * or {@link #nioBuffers(int, int)} might return a less number of {@link ByteBuffer}s.
-     *
+     *返回包含当前buf的最大java nio ByteBuffer数量。注意#nioBuffers和#nioBuffers(int, int)方法，可能
+     返回更少数量的ByteBuffer
      * @return {@code -1} if this buffer has no underlying {@link ByteBuffer}.
      *         the number of the underlying {@link ByteBuffer}s if this buffer has at least one underlying
      *         {@link ByteBuffer}.  Note that this method does not return {@code 0} to avoid confusion.
-     *
+     * 如果当前buf没有底层ByteBuffer，则返回-1。如果当前buf至少有一个ByteBuffer，则返回数量。注意为了避免
+     冲突，此方法不会返回0。
      * @see #nioBuffer()
      * @see #nioBuffer(int, int)
      * @see #nioBuffers()
@@ -1590,7 +1627,10 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * modify {@code readerIndex} or {@code writerIndex} of this buffer.  Please note that the
      * returned NIO buffer will not see the changes of this buffer if this buffer is a dynamic
      * buffer and it adjusted its capacity.
-     *
+     * 暴露当前buf的可读数据到一个java nio ByteBuffer中。返回的java nio ByteBuffer与当前buf共享数据，
+     但修改java nio ByteBuffer的位置和limit，不会修改当前buf的索引和标记。
+     此方法与buf.nioBuffer(buf.readerIndex(), buf.readableBytes()相同。此方法不会修改当前buf的读写索引。
+     如果当前buf是一个动态的buf，调整buf容量时，java nio ByteBuffer 是看不到容量的改变的。
      * @throws UnsupportedOperationException
      *         if this buffer cannot create a {@link ByteBuffer} that shares the content with itself
      *
@@ -1607,7 +1647,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * modify {@code readerIndex} or {@code writerIndex} of this buffer.  Please note that the
      * returned NIO buffer will not see the changes of this buffer if this buffer is a dynamic
      * buffer and it adjusted its capacity.
-     *
+     *与上面不同的时，限定了共享region的开始索引和数据长度
      * @throws UnsupportedOperationException
      *         if this buffer cannot create a {@link ByteBuffer} that shares the content with itself
      *
@@ -1619,6 +1659,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 
     /**
      * Internal use only: Exposes the internal NIO buffer.
+     内部使用，暴露一个内部的nio buf
      */
     public abstract ByteBuffer internalNioBuffer(int index, int length);
 
@@ -1630,7 +1671,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * returned NIO buffer will not see the changes of this buffer if this buffer is a dynamic
      * buffer and it adjusted its capacity.
      *
-     *
+     *与#nioBuffer方法不同的是返回的是一个nio buf数组
      * @throws UnsupportedOperationException
      *         if this buffer cannot create a {@link ByteBuffer} that shares the content with itself
      *
@@ -1647,7 +1688,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * not modify {@code readerIndex} or {@code writerIndex} of this buffer.  Please note that the
      * returned NIO buffer will not see the changes of this buffer if this buffer is a dynamic
      * buffer and it adjusted its capacity.
-     *
+     *与上面不同的时，限定了共享region的开始索引和数据长度
      * @throws UnsupportedOperationException
      *         if this buffer cannot create a {@link ByteBuffer} that shares the content with itself
      *
@@ -1661,12 +1702,14 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Returns {@code true} if and only if this buffer has a backing byte array.
      * If this method returns true, you can safely call {@link #array()} and
      * {@link #arrayOffset()}.
+     当前仅当，buf由于有一个backing 字节数组，返回true。如果方法返回true，则可以调用
+     #array() 和 #arrayOffset()方法.
      */
     public abstract boolean hasArray();
 
     /**
      * Returns the backing byte array of this buffer.
-     *
+     *返回当前buf的backing字节数组
      * @throws UnsupportedOperationException
      *         if there no accessible backing byte array
      */
@@ -1675,7 +1718,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Returns the offset of the first byte within the backing byte array of
      * this buffer.
-     *
+     *返回当前buf backing数组第一个字节在buf中的位置
      * @throws UnsupportedOperationException
      *         if there no accessible backing byte array
      */
@@ -1684,12 +1727,13 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
     /**
      * Returns {@code true} if and only if this buffer has a reference to the low-level memory address that points
      * to the backing data.
+     当且仅当，当前buf有一个指向backing数据的低位内存地址引用时，返回true
      */
     public abstract boolean hasMemoryAddress();
 
     /**
      * Returns the low-level memory address that point to the first byte of ths backing data.
-     *
+     * 返回buf中第一个字节的低位内存地址
      * @throws UnsupportedOperationException
      *         if this buffer does not support accessing the low-level memory address
      */
@@ -1701,7 +1745,9 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * {@code buf.toString(buf.readerIndex(), buf.readableBytes(), charsetName)}.
      * This method does not modify {@code readerIndex} or {@code writerIndex} of
      * this buffer.
-     *
+     *解码可读字节数据为，更定字符编码的字符串，此方法相当与
+     buf.toString(buf.readerIndex(), buf.readableBytes(), charsetName)，
+     此方法不会修改读写索引。
      * @throws UnsupportedCharsetException
      *         if the specified character set name is not supported by the
      *         current VM
@@ -1712,6 +1758,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Decodes this buffer's sub-region into a string with the specified
      * character set.  This method does not modify {@code readerIndex} or
      * {@code writerIndex} of this buffer.
+     此方法与上面方法，不同的是，限定了buf数据开始索引和字节的长度
      */
     public abstract String toString(int index, int length, Charset charset);
 
@@ -1720,6 +1767,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * buffer.  If there's a byte array which is
      * {@linkplain #equals(Object) equal to} this array, both arrays should
      * return the same value.
+     返回buf内容的hash code。如果buf的字节数组相等，则返回相同hash code
      */
     @Override
     public abstract int hashCode();
@@ -1780,6 +1828,47 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
 对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，
 在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，
 以便分析内存泄漏的原因。
+
+字节缓存ByteBuf继承了对象引用计数器ReferenceCounted，拥有一个最大容量限制，如果用户尝试用 #capacity(int)和 
+#ensureWritable(int)方法，增加buf容量超过最大容量，将会抛出非法参数异常；字节buf有两个索引，
+一个为读索引readerIndex，一个为写索引writerIndex，读索引不能大于写索引，写索引不能小于读索引，
+buf可读字节数为writerIndex - readerIndex，buf可写字节数为capacity - writerIndex，
+buf可写的最大字节数为maxCapacity - writerIndex；
+
+可以使用markReader/WriterIndex标记当前buf读写索引位置，resetReader/WriterIndex方法可以重回先前标记的索引位置；
+
+当内存空间负载过度时，我们可以使用discardReadBytes丢弃一些数据，以节省空间；
+
+我们可以使用ensureWritable检测当buf是否有足够的空间写数据；
+
+提供了getBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
+GatheringByteChannel和文件通道FileChannel中，这些方法不会修改当前buf读写索引，具体是否修改目的对象索引或位置，见java
+doc 描述。
+
+提供了setBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，InputputStream，分散字节通道
+ScatteringByteChannel和文件通道FileChannel中的数据转移到当前buf中，这些方法不会修改当前buf的读写索引，至于源对象索引或位置，见java
+doc 描述。
+
+提供了readBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
+GatheringByteChannel和文件通道FileChannel中，这些方法具体会会修改当前buf读索引，至于会不会修改源对象索引或位置，见java doc 描述。
+
+提供了writeBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，InputputStream，分散字节通道
+ScatteringByteChannel和文件通道FileChannel中的数据写到当前buf中，这些方法会修改当前buf的写索引，至于会不会修改源对象索引或位置，见java
+doc 描述。
+
+
+set*原始类型方法不会修改读写索引；
+get*原始类型方法不会修改读写索引；
+
+write*原始类型方法会修改写索引；
+read*原始类型方法，会修改读索引；
+
+字节buf中的set/get*方法不会修改当前buf的读写索引，而write*修改写索引，read*会修改读索引；
+
+提供了copy，slice和retainSlice，duplicate和retainedDuplicate方法，用于拷贝，切割，复制当前buf数据；
+
+提供nioBuffer和nioBuffers方法，用于包装当前buf可读数据为java nio ByteBuffer和ByteBuffer数组。
+
 
 
 附：
