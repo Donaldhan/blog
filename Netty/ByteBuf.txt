@@ -1310,7 +1310,10 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * increases the {@code readerIndex} of the source buffer by the number of
      * the transferred bytes while {@link #writeBytes(ByteBuf, int, int)}
      * does not.
-     *
+     *从当前buf写索引开始，转移源buf中的数据到当前buf的中，直到源buf不可读，同时更新当前buf的写索引，
+     此方法与#writeBytes(ByteBuf, int, int)基本相同，除了此方法回修改源buf的读索引，而#writeBytes(ByteBuf, int, int)
+     不会。
+
      * @throws IndexOutOfBoundsException
      *         if {@code src.readableBytes} is greater than
      *            {@code this.writableBytes}
@@ -1325,7 +1328,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * except that this method increases the {@code readerIndex} of the source
      * buffer by the number of the transferred bytes (= {@code length}) while
      * {@link #writeBytes(ByteBuf, int, int)} does not.
-     *
+     * 与上面方法不同的时，限制源buf转移数据的长度
      * @param length the number of bytes to transfer
      *
      * @throws IndexOutOfBoundsException
@@ -1338,7 +1341,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers the specified source buffer's data to this buffer starting at
      * the current {@code writerIndex} and increases the {@code writerIndex}
      * by the number of the transferred bytes (= {@code length}).
-     *
+     * 与上面方法不同的是，转移数据从指定索引开始srcIndex
      * @param srcIndex the first index of the source
      * @param length   the number of bytes to transfer
      *
@@ -1354,7 +1357,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers the specified source array's data to this buffer starting at
      * the current {@code writerIndex} and increases the {@code writerIndex}
      * by the number of the transferred bytes (= {@code src.length}).
-     *
+     * 写字节数组中的数据到当前buf，并更新当前buf的写索引
      * @throws IndexOutOfBoundsException
      *         if {@code src.length} is greater than {@code this.writableBytes}
      */
@@ -1364,7 +1367,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers the specified source array's data to this buffer starting at
      * the current {@code writerIndex} and increases the {@code writerIndex}
      * by the number of the transferred bytes (= {@code length}).
-     *
+     *与上面方法不同的时，限定了字节数组的开始索引
      * @param srcIndex the first index of the source
      * @param length   the number of bytes to transfer
      *
@@ -1381,6 +1384,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * the current {@code writerIndex} until the source buffer's position
      * reaches its limit, and increases the {@code writerIndex} by the
      * number of the transferred bytes.
+     写java nio ByteBuffer中的数据到当前buf，直到ByteBuffer的位置索引到limit位置，同时更新写索引
      *
      * @throws IndexOutOfBoundsException
      *         if {@code src.remaining()} is greater than
@@ -1392,7 +1396,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers the content of the specified stream to this buffer
      * starting at the current {@code writerIndex} and increases the
      * {@code writerIndex} by the number of the transferred bytes.
-     *
+     *写输入流InputStream中的length个字节数据到当前buf，同时更新写索引
      * @param length the number of bytes to transfer
      *
      * @return the actual number of bytes read in from the specified stream
@@ -1408,7 +1412,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Transfers the content of the specified channel to this buffer
      * starting at the current {@code writerIndex} and increases the
      * {@code writerIndex} by the number of the transferred bytes.
-     *
+     *写分散字节通道ScatteringByteChannel中的length个字节数据到当前buf，同时更新写索引
      * @param length the maximum number of bytes to transfer
      *
      * @return the actual number of bytes read in from the specified channel
@@ -1425,7 +1429,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * to this buffer starting at the current {@code writerIndex} and increases the
      * {@code writerIndex} by the number of the transferred bytes.
      * This method does not modify the channel's position.
-     *
+     *写文件FileChannel中的length个字节数据到当前buf，同时更新写索引，不会修改通道的位置索引
      * @param position the file position at which the transfer is to begin
      * @param length the maximum number of bytes to transfer
      *
@@ -1442,7 +1446,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Fills this buffer with <tt>NUL (0x00)</tt> starting at the current
      * {@code writerIndex} and increases the {@code writerIndex} by the
      * specified {@code length}.
-     *
+     *从当前写索引开始，填充length个NUL (0x00)
      * @param length the number of <tt>NUL</tt>s to write to the buffer
      *
      * @throws IndexOutOfBoundsException
@@ -1454,7 +1458,7 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      * Writes the specified {@link CharSequence} at the current {@code writerIndex} and increases
      * the {@code writerIndex} by the written bytes.
      * in this buffer.
-     *
+     *从当前写索引，写字符序列到当前buf
      * @param sequence to write
      * @param charset that should be used
      * @return the written number of bytes
@@ -1463,102 +1467,8 @@ public abstract class ByteBuf implements ReferenceCounted, Comparable<ByteBuf> {
      */
     public abstract int writeCharSequence(CharSequence sequence, Charset charset);
 
-    /**
-     * Locates the first occurrence of the specified {@code value} in this
-     * buffer.  The search takes place from the specified {@code fromIndex}
-     * (inclusive)  to the specified {@code toIndex} (exclusive).
-     * <p>
-     * If {@code fromIndex} is greater than {@code toIndex}, the search is
-     * performed in a reversed order.
-     * <p>
-     * This method does not modify {@code readerIndex} or {@code writerIndex} of
-     * this buffer.
-     *
-     * @return the absolute index of the first occurrence if found.
-     *         {@code -1} otherwise.
-     */
-    public abstract int indexOf(int fromIndex, int toIndex, byte value);
-
-    /**
-     * Locates the first occurrence of the specified {@code value} in this
-     * buffer.  The search takes place from the current {@code readerIndex}
-     * (inclusive) to the current {@code writerIndex} (exclusive).
-     * <p>
-     * This method does not modify {@code readerIndex} or {@code writerIndex} of
-     * this buffer.
-     *
-     * @return the number of bytes between the current {@code readerIndex}
-     *         and the first occurrence if found. {@code -1} otherwise.
-     */
-    public abstract int bytesBefore(byte value);
-
-    /**
-     * Locates the first occurrence of the specified {@code value} in this
-     * buffer.  The search starts from the current {@code readerIndex}
-     * (inclusive) and lasts for the specified {@code length}.
-     * <p>
-     * This method does not modify {@code readerIndex} or {@code writerIndex} of
-     * this buffer.
-     *
-     * @return the number of bytes between the current {@code readerIndex}
-     *         and the first occurrence if found. {@code -1} otherwise.
-     *
-     * @throws IndexOutOfBoundsException
-     *         if {@code length} is greater than {@code this.readableBytes}
-     */
-    public abstract int bytesBefore(int length, byte value);
-
-    /**
-     * Locates the first occurrence of the specified {@code value} in this
-     * buffer.  The search starts from the specified {@code index} (inclusive)
-     * and lasts for the specified {@code length}.
-     * <p>
-     * This method does not modify {@code readerIndex} or {@code writerIndex} of
-     * this buffer.
-     *
-     * @return the number of bytes between the specified {@code index}
-     *         and the first occurrence if found. {@code -1} otherwise.
-     *
-     * @throws IndexOutOfBoundsException
-     *         if {@code index + length} is greater than {@code this.capacity}
-     */
-    public abstract int bytesBefore(int index, int length, byte value);
-
-    /**
-     * Iterates over the readable bytes of this buffer with the specified {@code processor} in ascending order.
-     *
-     * @return {@code -1} if the processor iterated to or beyond the end of the readable bytes.
-     *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
-     */
-    public abstract int forEachByte(ByteProcessor processor);
-
-    /**
-     * Iterates over the specified area of this buffer with the specified {@code processor} in ascending order.
-     * (i.e. {@code index}, {@code (index + 1)},  .. {@code (index + length - 1)})
-     *
-     * @return {@code -1} if the processor iterated to or beyond the end of the specified area.
-     *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
-     */
-    public abstract int forEachByte(int index, int length, ByteProcessor processor);
-
-    /**
-     * Iterates over the readable bytes of this buffer with the specified {@code processor} in descending order.
-     *
-     * @return {@code -1} if the processor iterated to or beyond the beginning of the readable bytes.
-     *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
-     */
-    public abstract int forEachByteDesc(ByteProcessor processor);
-
-    /**
-     * Iterates over the specified area of this buffer with the specified {@code processor} in descending order.
-     * (i.e. {@code (index + length - 1)}, {@code (index + length - 2)}, ... {@code index})
-     *
-     *
-     * @return {@code -1} if the processor iterated to or beyond the beginning of the specified area.
-     *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
-     */
-    public abstract int forEachByteDesc(int index, int length, ByteProcessor processor);
-
+   
+  
     /**
      * Returns a copy of this buffer's readable bytes.  Modifying the content
      * of the returned buffer or this buffer does not affect each other at all.
@@ -2525,3 +2435,234 @@ public abstract float readFloat();
  *         if {@code this.readableBytes} is less than {@code 8}
  */
 public abstract double readDouble();
+
+下面是一些字节搜索定位方法：
+ /**
+  * Locates the first occurrence of the specified {@code value} in this
+  * buffer.  The search takes place from the specified {@code fromIndex}
+  * (inclusive)  to the specified {@code toIndex} (exclusive).
+  查找在当buf的fromIndex(inclusive)和toIndex(exclusive)，之间是否存在指定的字节，
+  找到返回对应的索引，否则返回-1
+  * <p>
+  * If {@code fromIndex} is greater than {@code toIndex}, the search is
+  * performed in a reversed order.
+  如果fromIndex大于toIndex，则反向执行搜索
+  * <p>
+  * This method does not modify {@code readerIndex} or {@code writerIndex} of
+  * this buffer.
+  此方法不会修改读写索引
+  *
+  * @return the absolute index of the first occurrence if found.
+  *         {@code -1} otherwise.
+  */
+ public abstract int indexOf(int fromIndex, int toIndex, byte value);
+
+ /**
+  * Locates the first occurrence of the specified {@code value} in this
+  * buffer.  The search takes place from the current {@code readerIndex}
+  * (inclusive) to the current {@code writerIndex} (exclusive).
+  * <p>
+  从当前buf的读索引开始，到写索引之间，搜索是否存在指定字节，存在则返回第一次发生的索引，
+  否则返回-1
+  * This method does not modify {@code readerIndex} or {@code writerIndex} of
+  * this buffer.
+  此方法不会修改读写索引
+  *
+  * @return the number of bytes between the current {@code readerIndex}
+  *         and the first occurrence if found. {@code -1} otherwise.
+  */
+ public abstract int bytesBefore(byte value);
+
+ /**
+  * Locates the first occurrence of the specified {@code value} in this
+  * buffer.  The search starts from the current {@code readerIndex}
+  * (inclusive) and lasts for the specified {@code length}.
+  与上面方法不同的是，不是到写索引，而是指定了搜索返回即[readerIndex,readerIndex+length)
+  * <p>
+  * This method does not modify {@code readerIndex} or {@code writerIndex} of
+  * this buffer.
+  *此方法不会修改读写索引
+  * @return the number of bytes between the current {@code readerIndex}
+  *         and the first occurrence if found. {@code -1} otherwise.
+  *
+  * @throws IndexOutOfBoundsException
+  *         if {@code length} is greater than {@code this.readableBytes}
+  */
+ public abstract int bytesBefore(int length, byte value);
+
+ /**
+  * Locates the first occurrence of the specified {@code value} in this
+  * buffer.  The search starts from the specified {@code index} (inclusive)
+  * and lasts for the specified {@code length}.
+  与上面方法不同的是，从指定的索引开始搜索
+  * <p>
+  * This method does not modify {@code readerIndex} or {@code writerIndex} of
+  * this buffer.
+  *此方法不会修改读写索引
+  * @return the number of bytes between the specified {@code index}
+  *         and the first occurrence if found. {@code -1} otherwise.
+  *
+  * @throws IndexOutOfBoundsException
+  *         if {@code index + length} is greater than {@code this.capacity}
+  */
+ public abstract int bytesBefore(int index, int length, byte value);
+
+ 再来遍历buf，处理字节：
+ /**
+   * Iterates over the readable bytes of this buffer with the specified {@code processor} in ascending order.
+   * 遍历buf，以升序ByteProcessor#process处理字节
+   * @return {@code -1} if the processor iterated to or beyond the end of the readable bytes.
+   *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
+   如果迭代器超过可读索引位置，则返回-1，否则返回上次ByteProcessor#process(byte)方法，返回false的索引位置
+   */
+  public abstract int forEachByte(ByteProcessor processor);
+
+  /**
+   * Iterates over the specified area of this buffer with the specified {@code processor} in ascending order.
+   * (i.e. {@code index}, {@code (index + 1)},  .. {@code (index + length - 1)})
+   *与上面的不同的多了开始索引，和范围控制length
+   * @return {@code -1} if the processor iterated to or beyond the end of the specified area.
+   *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
+   */
+  public abstract int forEachByte(int index, int length, ByteProcessor processor);
+
+  /**
+   * Iterates over the readable bytes of this buffer with the specified {@code processor} in descending order.
+   *降序方式ByteProcessor#process处理字节
+   * @return {@code -1} if the processor iterated to or beyond the beginning of the readable bytes.
+   *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
+   */
+  public abstract int forEachByteDesc(ByteProcessor processor);
+
+  /**
+   * Iterates over the specified area of this buffer with the specified {@code processor} in descending order.
+   * (i.e. {@code (index + length - 1)}, {@code (index + length - 2)}, ... {@code index})
+   *与上面的不同的多了开始索引，和范围控制length
+   *
+   * @return {@code -1} if the processor iterated to or beyond the beginning of the specified area.
+   *         The last-visited index If the {@link ByteProcessor#process(byte)} returned {@code false}.
+   */
+  public abstract int forEachByteDesc(int index, int length, ByteProcessor processor);
+
+
+  //ByteProcessor
+  package io.netty.util;
+
+/**
+ * Provides a mechanism to iterate over a collection of bytes.
+ */
+public interface ByteProcessor {
+    /**
+     * A {@link ByteProcessor} which finds the first appearance of a specific byte.
+     */
+    class IndexOfProcessor implements ByteProcessor {
+        private final byte byteToFind;
+
+        public IndexOfProcessor(byte byteToFind) {
+            this.byteToFind = byteToFind;
+        }
+
+        @Override
+        public boolean process(byte value) {
+            return value != byteToFind;
+        }
+    }
+
+    /**
+     * A {@link ByteProcessor} which finds the first appearance which is not of a specific byte.
+     */
+    class IndexNotOfProcessor implements ByteProcessor {
+        private final byte byteToNotFind;
+
+        public IndexNotOfProcessor(byte byteToNotFind) {
+            this.byteToNotFind = byteToNotFind;
+        }
+
+        @Override
+        public boolean process(byte value) {
+            return value == byteToNotFind;
+        }
+    }
+
+    /**
+     * Aborts on a {@code NUL (0x00)}.
+     */
+    ByteProcessor FIND_NUL = new IndexOfProcessor((byte) 0);
+
+    /**
+     * Aborts on a non-{@code NUL (0x00)}.
+     */
+    ByteProcessor FIND_NON_NUL = new IndexNotOfProcessor((byte) 0);
+
+    /**
+     * Aborts on a {@code CR ('\r')}.
+     */
+    ByteProcessor FIND_CR = new IndexOfProcessor((byte) '\r');
+
+    /**
+     * Aborts on a non-{@code CR ('\r')}.
+     */
+    ByteProcessor FIND_NON_CR = new IndexNotOfProcessor((byte) '\r');
+
+    /**
+     * Aborts on a {@code LF ('\n')}.
+     */
+    ByteProcessor FIND_LF = new IndexOfProcessor((byte) '\n');
+
+    /**
+     * Aborts on a non-{@code LF ('\n')}.
+     */
+    ByteProcessor FIND_NON_LF = new IndexNotOfProcessor((byte) '\n');
+
+    /**
+     * Aborts on a {@code CR (';')}.
+     */
+    ByteProcessor FIND_SEMI_COLON = new IndexOfProcessor((byte) ';');
+
+    /**
+     * Aborts on a {@code CR ('\r')} or a {@code LF ('\n')}.
+     */
+    ByteProcessor FIND_CRLF = new ByteProcessor() {
+        @Override
+        public boolean process(byte value) {
+            return value != '\r' && value != '\n';
+        }
+    };
+
+    /**
+     * Aborts on a byte which is neither a {@code CR ('\r')} nor a {@code LF ('\n')}.
+     */
+    ByteProcessor FIND_NON_CRLF = new ByteProcessor() {
+        @Override
+        public boolean process(byte value) {
+            return value == '\r' || value == '\n';
+        }
+    };
+
+    /**
+     * Aborts on a linear whitespace (a ({@code ' '} or a {@code '\t'}).
+     */
+    ByteProcessor FIND_LINEAR_WHITESPACE = new ByteProcessor() {
+        @Override
+        public boolean process(byte value) {
+            return value != ' ' && value != '\t';
+        }
+    };
+
+    /**
+     * Aborts on a byte which is not a linear whitespace (neither {@code ' '} nor {@code '\t'}).
+     */
+    ByteProcessor FIND_NON_LINEAR_WHITESPACE = new ByteProcessor() {
+        @Override
+        public boolean process(byte value) {
+            return value == ' ' || value == '\t';
+        }
+    };
+
+    /**
+     * @return {@code true} if the processor wants to continue the loop and handle the next byte in the buffer.
+     *         {@code false} if the processor wants to stop handling bytes and abort the loop.
+     */
+    boolean process(byte value) throws Exception;
+}
+
