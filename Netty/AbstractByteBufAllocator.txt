@@ -1,0 +1,117 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/url]
+netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
+netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
+netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
+netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/2393510[/url]
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+引言
+上一篇文章我们看了字节buf接口的定义，先来回顾一下：
+对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，以便分析内存泄漏的原因。
+
+字节缓存ByteBuf继承了对象引用计数器ReferenceCounted，拥有一个最大容量限制，如果用户尝试用 #capacity(int)和 #ensureWritable(int)方法，增加buf容量超过最大容量，将会抛出非法参数异常；字节buf有两个索引，一个为读索引readerIndex，一个为写索引writerIndex，读索引不能大于写索引，写索引不能小于读索引，buf可读字节数为writerIndex - readerIndex，buf可写字节数为capacity - writerIndex，buf可写的最大字节数为maxCapacity - writerIndex；
+
+可以使用markReader/WriterIndex标记当前buf读写索引位置，resetReader/WriterIndex方法可以重回先前标记的索引位置；
+
+当内存空间负载过度时，我们可以使用discardReadBytes丢弃一些数据，以节省空间；
+
+我们可以使用ensureWritable检测当buf是否有足够的空间写数据；
+
+提供了getBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
+GatheringByteChannel和文件通道FileChannel中，这些方法不会修改当前buf读写索引，具体是否修改目的对象索引或位置，见java doc 描述。
+
+提供了setBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，InputputStream，分散字节通道ScatteringByteChannel和文件通道FileChannel中的数据转移到当前buf中，这些方法不会修改当前buf的读写索引，至于源对象索引或位置，见java doc 描述。
+
+提供了readBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道GatheringByteChannel和文件通道FileChannel中，这些方法具体会会修改当前buf读索引，至于会不会修改源对象索引或位置，见java doc 描述。
+
+提供了writeBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，
+InputputStream，分散字节通道ScatteringByteChannel和文件通道FileChannel中的数据写到当前buf中，这些方法会修改当前buf的写索引，至于会不会修改源对象索引或位置，见java
+doc 描述。
+
+
+set*原始类型方法不会修改读写索引；
+get*原始类型方法不会修改读写索引；
+
+write*原始类型方法会修改写索引；
+read*原始类型方法，会修改读索引；
+
+字节buf中的set/get*方法不会修改当前buf的读写索引，而write*修改写索引，read*会修改读索引；
+
+提供了copy，slice和retainSlice，duplicate和retainedDuplicate方法，用于拷贝，切割，复制当前buf数据，retained*方法会增加buf的
+引用计数器；
+
+提供nioBuffer和nioBuffers方法，用于包装当前buf可读数据为java nio ByteBuffer和ByteBuffer数组。 
+
+在netty 默认通道配置初始化（[url]http://donald-draper.iteye.com/blog/2393504[/url]）
+这篇文章，我们看到字节buf是由字节分配器来分配的，默认字节分配器，在ByteBufUtil中定义，我们先回到
+通道配置字节buf分配器的定义：
+//字节buf分配器
+private volatile ByteBufAllocator allocator = ByteBufAllocator.DEFAULT;
+
+public final class ByteBufUtil {  
+     static final ByteBufAllocator DEFAULT_ALLOCATOR;//默认字节分配器
+     static {  
+            String allocType = SystemPropertyUtil.get(  
+                    "io.netty.allocator.type", PlatformDependent.isAndroid() ? "unpooled" : "pooled");  
+            allocType = allocType.toLowerCase(Locale.US).trim();  
+            ByteBufAllocator alloc;  
+            if ("unpooled".equals(allocType)) {  
+                alloc = UnpooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: {}", allocType);  
+            } else if ("pooled".equals(allocType)) {  
+                alloc = PooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: {}", allocType);  
+            } else {  
+                alloc = PooledByteBufAllocator.DEFAULT;  
+                logger.debug("-Dio.netty.allocator.type: pooled (unknown: {})", allocType);  
+            }  
+            DEFAULT_ALLOCATOR = alloc;  
+      
+            THREAD_LOCAL_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.threadLocalDirectBufferSize", 64 * 1024);  
+            logger.debug("-Dio.netty.threadLocalDirectBufferSize: {}", THREAD_LOCAL_BUFFER_SIZE);  
+      
+            MAX_CHAR_BUFFER_SIZE = SystemPropertyUtil.getInt("io.netty.maxThreadLocalCharBufferSize", 16 * 1024);  
+            logger.debug("-Dio.netty.maxThreadLocalCharBufferSize: {}", MAX_CHAR_BUFFER_SIZE);  
+        }  
+    }  
+
+
+从字节buf工具类，可以看出，如果系统属性io.netty.allocator.type，配置的为unpooled，
+则默认的字节buf分配器为UnpooledByteBufAllocator，否则为PooledByteBufAllocator，
+对于Android平台，默认为UnpooledByteBufAllocator。
+
+//UnpooledByteBufAllocator
+ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {  
+      
+        private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();  
+        private final boolean disableLeakDetector;  
+      
+        /** 
+         * Default instance which uses leak-detection for direct buffers. 
+         */  
+        public static final UnpooledByteBufAllocator DEFAULT =  
+                new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());  
+            ...  
+    }  
+
+
+//PooledByteBufAllocator
+public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {  
+     public static final PooledByteBufAllocator DEFAULT =  
+                new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());  
+           ...  
+}  
+
+由于上面两个方法继承了AbstractByteBufAllocator，我们先来看一下抽象字节buf分配器，
+
+
+再来看字节buf分配器度量提供者ByteBufAllocatorMetricProvider
+
+
+
