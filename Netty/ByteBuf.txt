@@ -1876,7 +1876,8 @@ read*原始类型方法，会修改读索引；
 
 字节buf中的set/get*方法不会修改当前buf的读写索引，而write*修改写索引，read*会修改读索引；
 
-提供了copy，slice和retainSlice，duplicate和retainedDuplicate方法，用于拷贝，切割，复制当前buf数据；
+提供了copy，slice和retainSlice，duplicate和retainedDuplicate方法，用于拷贝，切割，复制当前buf数据，retained*方法会增加buf的
+引用计数器；
 
 提供nioBuffer和nioBuffers方法，用于包装当前buf可读数据为java nio ByteBuffer和ByteBuffer数组。
 
@@ -2095,118 +2096,6 @@ public abstract float getFloat(int index);
  */
 public abstract double getDouble(int index);
 
-下面是一些write*原始类型的方法，会增加写索引
-/**
- * Sets the specified 16-bit short integer at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 2}
- * in this buffer.  The 16 high-order bits of the specified value are ignored.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 2}
- */
-public abstract ByteBuf writeShort(int value);
-
-/**
- * Sets the specified 16-bit short integer in the Little Endian Byte
- * Order at the current {@code writerIndex} and increases the
- * {@code writerIndex} by {@code 2} in this buffer.
- * The 16 high-order bits of the specified value are ignored.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 2}
- */
-public abstract ByteBuf writeShortLE(int value);
-
-/**
- * Sets the specified 24-bit medium integer at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 3}
- * in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 3}
- */
-public abstract ByteBuf writeMedium(int value);
-
-/**
- * Sets the specified 24-bit medium integer at the current
- * {@code writerIndex} in the Little Endian Byte Order and
- * increases the {@code writerIndex} by {@code 3} in this
- * buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 3}
- */
-public abstract ByteBuf writeMediumLE(int value);
-
-/**
- * Sets the specified 32-bit integer at the current {@code writerIndex}
- * and increases the {@code writerIndex} by {@code 4} in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 4}
- */
-public abstract ByteBuf writeInt(int value);
-
-/**
- * Sets the specified 32-bit integer at the current {@code writerIndex}
- * in the Little Endian Byte Order and increases the {@code writerIndex}
- * by {@code 4} in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 4}
- */
-public abstract ByteBuf writeIntLE(int value);
-
-/**
- * Sets the specified 64-bit long integer at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 8}
- * in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 8}
- */
-public abstract ByteBuf writeLong(long value);
-
-/**
- * Sets the specified 64-bit long integer at the current
- * {@code writerIndex} in the Little Endian Byte Order and
- * increases the {@code writerIndex} by {@code 8}
- * in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 8}
- */
-public abstract ByteBuf writeLongLE(long value);
-
-/**
- * Sets the specified 2-byte UTF-16 character at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 2}
- * in this buffer.  The 16 high-order bits of the specified value are ignored.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 2}
- */
-public abstract ByteBuf writeChar(int value);
-
-/**
- * Sets the specified 32-bit floating point number at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 4}
- * in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 4}
- */
-public abstract ByteBuf writeFloat(float value);
-
-/**
- * Sets the specified 64-bit floating point number at the current
- * {@code writerIndex} and increases the {@code writerIndex} by {@code 8}
- * in this buffer.
- *
- * @throws IndexOutOfBoundsException
- *         if {@code this.writableBytes} is less than {@code 8}
- */
-public abstract ByteBuf writeDouble(double value);
 
 下面一些set*原始类型方法从索引index开始，设置原始类型，不会修改读写索引
  /**
@@ -2535,6 +2424,120 @@ public abstract float readFloat();
  *         if {@code this.readableBytes} is less than {@code 8}
  */
 public abstract double readDouble();
+
+下面是一些write*原始类型的方法，会增加写索引
+/**
+ * Sets the specified 16-bit short integer at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 2}
+ * in this buffer.  The 16 high-order bits of the specified value are ignored.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 2}
+ */
+public abstract ByteBuf writeShort(int value);
+
+/**
+ * Sets the specified 16-bit short integer in the Little Endian Byte
+ * Order at the current {@code writerIndex} and increases the
+ * {@code writerIndex} by {@code 2} in this buffer.
+ * The 16 high-order bits of the specified value are ignored.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 2}
+ */
+public abstract ByteBuf writeShortLE(int value);
+
+/**
+ * Sets the specified 24-bit medium integer at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 3}
+ * in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 3}
+ */
+public abstract ByteBuf writeMedium(int value);
+
+/**
+ * Sets the specified 24-bit medium integer at the current
+ * {@code writerIndex} in the Little Endian Byte Order and
+ * increases the {@code writerIndex} by {@code 3} in this
+ * buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 3}
+ */
+public abstract ByteBuf writeMediumLE(int value);
+
+/**
+ * Sets the specified 32-bit integer at the current {@code writerIndex}
+ * and increases the {@code writerIndex} by {@code 4} in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 4}
+ */
+public abstract ByteBuf writeInt(int value);
+
+/**
+ * Sets the specified 32-bit integer at the current {@code writerIndex}
+ * in the Little Endian Byte Order and increases the {@code writerIndex}
+ * by {@code 4} in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 4}
+ */
+public abstract ByteBuf writeIntLE(int value);
+
+/**
+ * Sets the specified 64-bit long integer at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 8}
+ * in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 8}
+ */
+public abstract ByteBuf writeLong(long value);
+
+/**
+ * Sets the specified 64-bit long integer at the current
+ * {@code writerIndex} in the Little Endian Byte Order and
+ * increases the {@code writerIndex} by {@code 8}
+ * in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 8}
+ */
+public abstract ByteBuf writeLongLE(long value);
+
+/**
+ * Sets the specified 2-byte UTF-16 character at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 2}
+ * in this buffer.  The 16 high-order bits of the specified value are ignored.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 2}
+ */
+public abstract ByteBuf writeChar(int value);
+
+/**
+ * Sets the specified 32-bit floating point number at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 4}
+ * in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 4}
+ */
+public abstract ByteBuf writeFloat(float value);
+
+/**
+ * Sets the specified 64-bit floating point number at the current
+ * {@code writerIndex} and increases the {@code writerIndex} by {@code 8}
+ * in this buffer.
+ *
+ * @throws IndexOutOfBoundsException
+ *         if {@code this.writableBytes} is less than {@code 8}
+ */
+public abstract ByteBuf writeDouble(double value);
+
 
 下面是一些字节搜索定位方法：
  /**
