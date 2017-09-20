@@ -6,19 +6,19 @@ public abstract class AbstractByteBuf extends ByteBuf {
             ResourceLeakDetectorFactory.instance().newResourceLeakDetector(ByteBuf.class);
     ...
 }
-
+来看内存探测器工厂
 //ResourceLeakDetectorFactory
 /**
  * This static factory should be used to load {@link ResourceLeakDetector}s as needed
  */
 public abstract class ResourceLeakDetectorFactory {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ResourceLeakDetectorFactory.class);
-
+    //默认资源泄漏探测器工厂
     private static volatile ResourceLeakDetectorFactory factoryInstance = new DefaultResourceLeakDetectorFactory();
 
     /**
      * Get the singleton instance of this factory class.
-     *
+     *获取资源泄漏探测器工厂
      * @return the current {@link ResourceLeakDetectorFactory}
      */
     public static ResourceLeakDetectorFactory instance() {
@@ -29,7 +29,8 @@ public abstract class ResourceLeakDetectorFactory {
      * Set the factory's singleton instance. This has to be called before the static initializer of the
      * {@link ResourceLeakDetector} is called by all the callers of this factory. That is, before initializing a
      * Netty Bootstrap.
-     *
+     *设置资源泄漏探测器工厂单例。此方法必须在素有的工作调用者，初始化ResourceLeakDetector前调用，
+     即在netty的引导启动配置前初始化
      * @param factory the instance that will become the current {@link ResourceLeakDetectorFactory}'s singleton
      */
     public static void setResourceLeakDetectorFactory(ResourceLeakDetectorFactory factory) {
@@ -38,7 +39,7 @@ public abstract class ResourceLeakDetectorFactory {
 
     /**
      * Returns a new instance of a {@link ResourceLeakDetector} with the given resource class.
-     *
+     *使用给定的资源类，创建要给资源泄漏探测器
      * @param resource the resource class used to initialize the {@link ResourceLeakDetector}
      * @param <T> the type of the resource class
      * @return a new instance of {@link ResourceLeakDetector}
@@ -46,25 +47,9 @@ public abstract class ResourceLeakDetectorFactory {
     public final <T> ResourceLeakDetector<T> newResourceLeakDetector(Class<T> resource) {
         return newResourceLeakDetector(resource, ResourceLeakDetector.DEFAULT_SAMPLING_INTERVAL);
     }
-
-    /**
-     * @deprecated Use {@link #newResourceLeakDetector(Class, int)} instead.
-     * <p>
+     /**
      * Returns a new instance of a {@link ResourceLeakDetector} with the given resource class.
-     *
-     * @param resource the resource class used to initialize the {@link ResourceLeakDetector}
-     * @param samplingInterval the interval on which sampling takes place
-     * @param maxActive This is deprecated and will be ignored.
-     * @param <T> the type of the resource class
-     * @return a new instance of {@link ResourceLeakDetector}
-     */
-    @Deprecated
-    public abstract <T> ResourceLeakDetector<T> newResourceLeakDetector(
-            Class<T> resource, int samplingInterval, long maxActive);
-
-    /**
-     * Returns a new instance of a {@link ResourceLeakDetector} with the given resource class.
-     *
+     *使用给定的资源类和采样间隔，创建要给资源泄漏探测器
      * @param resource the resource class used to initialize the {@link ResourceLeakDetector}
      * @param samplingInterval the interval on which sampling takes place
      * @param <T> the type of the resource class
@@ -74,9 +59,24 @@ public abstract class ResourceLeakDetectorFactory {
     public <T> ResourceLeakDetector<T> newResourceLeakDetector(Class<T> resource, int samplingInterval) {
         return newResourceLeakDetector(resource, ResourceLeakDetector.DEFAULT_SAMPLING_INTERVAL, Long.MAX_VALUE);
     }
+    /**
+     * @deprecated Use {@link #newResourceLeakDetector(Class, int)} instead.
+     * <p>
+     * Returns a new instance of a {@link ResourceLeakDetector} with the given resource class.
+     *待子类扩展
+     * @param resource the resource class used to initialize the {@link ResourceLeakDetector}
+     * @param samplingInterval the interval on which sampling takes place，采样间隔
+     * @param maxActive This is deprecated and will be ignored. 此参数已经丢弃，将会被忽略
+     * @param <T> the type of the resource class 资源类，类型
+     * @return a new instance of {@link ResourceLeakDetector}
+     */
+    @Deprecated
+    public abstract <T> ResourceLeakDetector<T> newResourceLeakDetector(
+            Class<T> resource, int samplingInterval, long maxActive);
 
     /**
      * Default implementation that loads custom leak detector via system property
+     默认资源泄漏探测器工厂
      */
     private static final class DefaultResourceLeakDetectorFactory extends ResourceLeakDetectorFactory {
         private final Constructor<?> obsoleteCustomClassConstructor;
@@ -85,6 +85,7 @@ public abstract class ResourceLeakDetectorFactory {
         DefaultResourceLeakDetectorFactory() {
             String customLeakDetector;
             try {
+	        //在当前线程相同访问控制权限下，获取系统io.netty.customResourceLeakDetector属性配置
                 customLeakDetector = AccessController.doPrivileged(new PrivilegedAction<String>() {
                     @Override
                     public String run() {
@@ -96,8 +97,10 @@ public abstract class ResourceLeakDetectorFactory {
                 customLeakDetector = null;
             }
             if (customLeakDetector == null) {
+	        //如果系统泄漏测器配置为空，则obsoleteCustom和custom构造为空
                 obsoleteCustomClassConstructor = customClassConstructor = null;
             } else {
+	        //否则初始泄漏探测器构造
                 obsoleteCustomClassConstructor = obsoleteCustomClassConstructor(customLeakDetector);
                 customClassConstructor = customClassConstructor(customLeakDetector);
             }
@@ -105,10 +108,12 @@ public abstract class ResourceLeakDetectorFactory {
 
         private static Constructor<?> obsoleteCustomClassConstructor(String customLeakDetector) {
             try {
+	        //加载泄漏探测器类
                 final Class<?> detectorClass = Class.forName(customLeakDetector, true,
                         PlatformDependent.getSystemClassLoader());
 
                 if (ResourceLeakDetector.class.isAssignableFrom(detectorClass)) {
+		    //构造资源泄漏探测器
                     return detectorClass.getConstructor(Class.class, int.class, long.class);
                 } else {
                     logger.error("Class {} does not inherit from ResourceLeakDetector.", customLeakDetector);
@@ -119,12 +124,13 @@ public abstract class ResourceLeakDetectorFactory {
             }
             return null;
         }
-
+        
         private static Constructor<?> customClassConstructor(String customLeakDetector) {
             try {
+	        //加载泄漏探测器类
                 final Class<?> detectorClass = Class.forName(customLeakDetector, true,
                         PlatformDependent.getSystemClassLoader());
-
+                //构造资源泄漏探测器
                 if (ResourceLeakDetector.class.isAssignableFrom(detectorClass)) {
                     return detectorClass.getConstructor(Class.class, int.class);
                 } else {
@@ -136,13 +142,36 @@ public abstract class ResourceLeakDetectorFactory {
             }
             return null;
         }
-
+	//根据资源类和采样间隔，创建资源泄漏探测器
+        @Override
+        public <T> ResourceLeakDetector<T> newResourceLeakDetector(Class<T> resource, int samplingInterval) {
+            if (customClassConstructor != null) {
+                try {
+                    @SuppressWarnings("unchecked")
+		    //使用customClassConstructor创建资源泄漏探测器
+                    ResourceLeakDetector<T> leakDetector =
+                            (ResourceLeakDetector<T>) customClassConstructor.newInstance(resource, samplingInterval);
+                    logger.debug("Loaded custom ResourceLeakDetector: {}",
+                            customClassConstructor.getDeclaringClass().getName());
+                    return leakDetector;
+                } catch (Throwable t) {
+                    logger.error(
+                            "Could not load custom resource leak detector provided: {} with the given resource: {}",
+                            customClassConstructor.getDeclaringClass().getName(), resource, t);
+                }
+            }
+            //直接创建资源泄漏探测器ResourceLeakDetector
+            ResourceLeakDetector<T> resourceLeakDetector = new ResourceLeakDetector<T>(resource, samplingInterval);
+            logger.debug("Loaded default ResourceLeakDetector: {}", resourceLeakDetector);
+            return resourceLeakDetector;
+        }
         @SuppressWarnings("deprecation")
         @Override
         public <T> ResourceLeakDetector<T> newResourceLeakDetector(Class<T> resource, int samplingInterval,
                                                                    long maxActive) {
             if (obsoleteCustomClassConstructor != null) {
                 try {
+		    //使用obsoleteCustomClassConstructor创建资源泄漏探测器
                     @SuppressWarnings("unchecked")
                     ResourceLeakDetector<T> leakDetector =
                             (ResourceLeakDetector<T>) obsoleteCustomClassConstructor.newInstance(
@@ -156,46 +185,417 @@ public abstract class ResourceLeakDetectorFactory {
                             obsoleteCustomClassConstructor.getDeclaringClass().getName(), resource, t);
                 }
             }
-
+            //直接创建资源泄漏探测器ResourceLeakDetector
             ResourceLeakDetector<T> resourceLeakDetector = new ResourceLeakDetector<T>(resource, samplingInterval,
-                                                                                       maxActive);
             logger.debug("Loaded default ResourceLeakDetector: {}", resourceLeakDetector);
             return resourceLeakDetector;
         }
 
-        @Override
-        public <T> ResourceLeakDetector<T> newResourceLeakDetector(Class<T> resource, int samplingInterval) {
-            if (customClassConstructor != null) {
-                try {
-                    @SuppressWarnings("unchecked")
-                    ResourceLeakDetector<T> leakDetector =
-                            (ResourceLeakDetector<T>) customClassConstructor.newInstance(resource, samplingInterval);
-                    logger.debug("Loaded custom ResourceLeakDetector: {}",
-                            customClassConstructor.getDeclaringClass().getName());
-                    return leakDetector;
-                } catch (Throwable t) {
-                    logger.error(
-                            "Could not load custom resource leak detector provided: {} with the given resource: {}",
-                            customClassConstructor.getDeclaringClass().getName(), resource, t);
-                }
-            }
-
-            ResourceLeakDetector<T> resourceLeakDetector = new ResourceLeakDetector<T>(resource, samplingInterval);
-            logger.debug("Loaded default ResourceLeakDetector: {}", resourceLeakDetector);
-            return resourceLeakDetector;
-        }
+        
     }
 }
-
+从上面可以看出，默认的资源泄漏探测器工厂创建的资源泄漏探测器类型ResourceLeakDetector。
 
 
 public class ResourceLeakDetector<T> {
 
     private static final String PROP_LEVEL_OLD = "io.netty.leakDetectionLevel";
     private static final String PROP_LEVEL = "io.netty.leakDetection.level";
-    private static final Level DEFAULT_LEVEL = Level.SIMPLE;
+    private static final Level DEFAULT_LEVEL = Level.SIMPLE;//默认探测登记
 
     private static final String PROP_MAX_RECORDS = "io.netty.leakDetection.maxRecords";
     private static final int DEFAULT_MAX_RECORDS = 4;
     private static final int MAX_RECORDS;
+
+    /**
+     * Represents the level of resource leak detection.
+     资源泄漏等级
+     */
+    public enum Level {
+        /**
+         * Disables resource leak detection.
+	 关闭资源泄漏探测
+         */
+        DISABLED,
+        /**
+         * Enables simplistic sampling resource leak detection which reports there is a leak or not,
+         * at the cost of small overhead (default).
+	 开启简单的采样资源泄漏探测，仅仅已少量的负载为代价报告是否为泄漏对象
+         */
+        SIMPLE,
+        /**
+         * Enables advanced sampling resource leak detection which reports where the leaked object was accessed
+         * recently at the cost of high overhead.
+	 开启高级采样泄漏探测，将会以高负载为代价，报告最近泄漏对象访问的地方
+         */
+        ADVANCED,
+        /**
+         * Enables paranoid resource leak detection which reports where the leaked object was accessed recently,
+         * at the cost of the highest possible overhead (for testing purposes only).
+	 开启终极采样泄漏探测，将会以高级负载为代价，报告最近泄漏对象访问的地方
+         */
+        PARANOID;
+
+        /**
+         * Returns level based on string value. Accepts also string that represents ordinal number of enum.
+         *返回泄漏探测等级字符串。同时接受表示enum原始序号的字符串。
+	 即根据等级字符串，返回对应的泄漏探测等级
+         * @param levelStr - level string : DISABLED, SIMPLE, ADVANCED, PARANOID. Ignores case.
+         * @return corresponding level or SIMPLE level in case of no match.
+         */
+        static Level parseLevel(String levelStr) {
+            String trimmedLevelStr = levelStr.trim();
+            for (Level l : values()) {
+                if (trimmedLevelStr.equalsIgnoreCase(l.name()) || trimmedLevelStr.equals(String.valueOf(l.ordinal()))) {
+                    return l;
+                }
+            }
+            return DEFAULT_LEVEL;
+        }
+    }
+
+    private static Level level; //当前static资源泄漏等级
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(ResourceLeakDetector.class);
+    //初始化资源泄漏探测状态及探测等级
+    static {
+        final boolean disabled;
+	//获取系统资源泄漏探测配置，判断是否开启资源探测
+        if (SystemPropertyUtil.get("io.netty.noResourceLeakDetection") != null) {
+            disabled = SystemPropertyUtil.getBoolean("io.netty.noResourceLeakDetection", false);
+            logger.debug("-Dio.netty.noResourceLeakDetection: {}", disabled);
+            logger.warn(
+                    "-Dio.netty.noResourceLeakDetection is deprecated. Use '-D{}={}' instead.",
+                    PROP_LEVEL, DEFAULT_LEVEL.name().toLowerCase());
+        } else {
+            disabled = false;
+        }
+        //关闭，则等级为DISABLED，否则为默认等级
+        Level defaultLevel = disabled? Level.DISABLED : DEFAULT_LEVEL;
+
+        // First read old property name
+        String levelStr = SystemPropertyUtil.get(PROP_LEVEL_OLD, defaultLevel.name());
+
+        // If new property name is present, use it
+        levelStr = SystemPropertyUtil.get(PROP_LEVEL, levelStr);
+        Level level = Level.parseLevel(levelStr);
+
+        MAX_RECORDS = SystemPropertyUtil.getInt(PROP_MAX_RECORDS, DEFAULT_MAX_RECORDS);
+
+        ResourceLeakDetector.level = level;
+        if (logger.isDebugEnabled()) {
+            logger.debug("-D{}: {}", PROP_LEVEL, level.name().toLowerCase());
+            logger.debug("-D{}: {}", PROP_MAX_RECORDS, MAX_RECORDS);
+        }
+    }
+
+    // Should be power of two. 默认采样间隔
+    static final int DEFAULT_SAMPLING_INTERVAL = 128;
+
+    
+
+    /** the collection of active resources  激活资源集合*/
+    private final ConcurrentMap<DefaultResourceLeak, LeakEntry> allLeaks = PlatformDependent.newConcurrentHashMap();
+    //引用队列
+    private final ReferenceQueue<Object> refQueue = new ReferenceQueue<Object>();
+    //泄漏报告映射
+    private final ConcurrentMap<String, Boolean> reportedLeaks = PlatformDependent.newConcurrentHashMap();
+    private final String resourceType;//资源类型
+    private final int samplingInterval;//采样间隔
+}
+从上面可以看出，资源泄漏探测器，探测等级有四种，关闭DISABLED，SIMPLE简单，高级ADVANCED，终极PARANOID，
+SIMPLE开启简单的采样资源泄漏探测，仅仅已少量的负载为代价报告是否为泄漏对象；
+ADVANCED开启高级采样泄漏探测，将会以高负载为代价，报告最近泄漏对象访问的地方；
+PARANOID开启终极采样泄漏探测，将会以高级负载为代价，报告最近泄漏对象访问的地方（仅仅测试）；
+开启资源探测的情况下，默认等级为SIMPLE。资源探测器内部有一个探测等级和采样间隔，资源类型，
+泄漏报告Map（ ConcurrentMap<String, Boolean>），
+激活资源集合ConcurrentMap<DefaultResourceLeak, LeakEntry>，
+
+再来看构造
+/**
+ * @deprecated use {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)}.
+ 根据资源类型创建资源泄漏探测器
+ */
+@Deprecated
+public ResourceLeakDetector(Class<?> resourceType) {
+    this(simpleClassName(resourceType));
+}
+
+/**
+ * @deprecated use {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)}.
+ 根据资源类型名创建资源泄漏探测器
+ */
+@Deprecated
+public ResourceLeakDetector(String resourceType) {
+    this(resourceType, DEFAULT_SAMPLING_INTERVAL, Long.MAX_VALUE);
+}
+
+/**
+ * @deprecated Use {@link ResourceLeakDetector#ResourceLeakDetector(Class, int)}.
+ 此方法已丢弃，请使用#ResourceLeakDetector(Class, int)方法
+ * <p>
+ * This should not be used directly by users of {@link ResourceLeakDetector}.
+ * Please use {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class)}
+ * or {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)}
+ *用于不可直接调用此方法，请使用ResourceLeakDetectorFactory#newResourceLeakDetector(Class)
+ 或ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)方法
+ * @param maxActive This is deprecated and will be ignored.
+ */
+@Deprecated
+public ResourceLeakDetector(Class<?> resourceType, int samplingInterval, long maxActive) {
+    this(resourceType, samplingInterval);
+}
+
+/**
+ * This should not be used directly by users of {@link ResourceLeakDetector}.
+ * Please use {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class)}
+ * or {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)}
+ */
+@SuppressWarnings("deprecation")
+public ResourceLeakDetector(Class<?> resourceType, int samplingInterval) {
+    this(simpleClassName(resourceType), samplingInterval, Long.MAX_VALUE);
+}
+/**
+ * @deprecated use {@link ResourceLeakDetectorFactory#newResourceLeakDetector(Class, int, long)}.
+ * <p>
+ * @param maxActive This is deprecated and will be ignored.
+ */
+@Deprecated
+public ResourceLeakDetector(String resourceType, int samplingInterval, long maxActive) {
+    if (resourceType == null) {
+        throw new NullPointerException("resourceType");
+    }
+
+    this.resourceType = resourceType;
+    this.samplingInterval = samplingInterval;
+}
+
+从上面来看资源泄漏探测器构造，主要初始化资源类型名及探测间隔。
+
+再来看开启资源泄漏探测功能和设置探测等级
+
+/**
+ * @deprecated Use {@link #setLevel(Level)} instead.
+ 开启资源泄漏探测
+ */
+@Deprecated
+public static void setEnabled(boolean enabled) {
+    setLevel(enabled? Level.SIMPLE : Level.DISABLED);
+}
+
+/**
+ * Returns {@code true} if resource leak detection is enabled.
+ 判断是否开启资源泄漏探测
+ */
+public static boolean isEnabled() {
+    //如果探测等级大于DISABLED，则开启
+    return getLevel().ordinal() > Level.DISABLED.ordinal();
+}
+我们来看一下枚举的ordinal方法
+//Enum
+public abstract class Enum<E extends Enum<E>>
+        implements Comparable<E>, Serializable {
+    /**
+     * The name of this enum constant, as declared in the enum declaration.
+     * Most programmers should use the {@link #toString} method rather than
+     * accessing this field.
+     枚举名，一般使用#toString方法获取，而不是直接方法此field
+     */
+    private final String name;
+    /**
+     * The ordinal of this enumeration constant (its position
+     * in the enum declaration, where the initial constant is assigned
+     * an ordinal of zero).
+     *枚举常量在定义中的位置
+     * Most programmers will have no use for this field.  It is designed
+     * for use by sophisticated enum-based data structures, such as
+     * {@link java.util.EnumSet} and {@link java.util.EnumMap}.
+     */
+    private final int ordinal;
+
+    /**
+     * Returns the name of this enum constant, exactly as declared in its
+     * enum declaration.
+     *
+     * <b>Most programmers should use the {@link #toString} method in
+     * preference to this one, as the toString method may return
+     * a more user-friendly name.</b>  This method is designed primarily for
+     * use in specialized situations where correctness depends on getting the
+     * exact name, which will not vary from release to release.
+     *
+     * @return the name of this enum constant
+     */
+    public final String name() {
+        return name;
+    } 
+    /**
+     * Returns the ordinal of this enumeration constant (its position
+     * in its enum declaration, where the initial constant is assigned
+     * an ordinal of zero).
+     *获取枚举常量在定义中的位置
+     * Most programmers will have no use for this method.  It is
+     * designed for use by sophisticated enum-based data structures, such
+     * as {@link java.util.EnumSet} and {@link java.util.EnumMap}.
+     *
+     * @return the ordinal of this enumeration constant
+     */
+    public final int ordinal() {
+        return ordinal;
+    }
+    ...
+}
+回到资源泄漏探测器
+/**
+ * Sets the resource leak detection level.
+ 设置资源泄漏探测等级
+ */
+public static void setLevel(Level level) {
+    if (level == null) {
+        throw new NullPointerException("level");
+    }
+    ResourceLeakDetector.level = level;
+}
+
+/**
+ * Returns the current resource leak detection level.
+ 获取资源泄漏探测等级
+ */
+public static Level getLevel() {
+    return level;
+}
+再来看其他方法：
+/**
+ * Creates a new {@link ResourceLeak} which is expected to be closed via {@link ResourceLeak#close()} when the
+ * related resource is deallocated.
+ *创建一个资源泄漏ResourceLeak，当相关资源释放时，希望通过ResourceLeak#close关闭，已丢弃
+ * @return the {@link ResourceLeak} or {@code null}
+ * @deprecated use {@link #track(Object)}
+ */
+@Deprecated
+public final ResourceLeak open(T obj) {
+    return track0(obj);
+}
+
+/**
+ * Creates a new {@link ResourceLeakTracker} which is expected to be closed via
+ * {@link ResourceLeakTracker#close(Object)} when the related resource is deallocated.
+ *创建一个资源泄漏ResourceLeakTracker，当相关资源释放时，希望通过ResourceLeakTracker#close(Object)关闭对象
+ * @return the {@link ResourceLeakTracker} or {@code null}
+ */
+public final ResourceLeakTracker<T> track(T obj) {
+    return track0(obj);
+}
+
+private DefaultResourceLeak track0(T obj) {
+...
+}
+
+为了便于理解我们先看ResourceLeak，ResourceLeakTracker，DefaultResourceLeak的定义
+
+//ResourceLeak
+package io.netty.util;
+
+/**
+ * @deprecated please use {@link ResourceLeakTracker} as it may lead to false-positives.
+ 已丢弃，请使用ResourceLeakTracker
+ */
+@Deprecated
+public interface ResourceLeak {
+    /**
+     * Records the caller's current stack trace so that the {@link ResourceLeakDetector} can tell where the leaked
+     * resource was accessed lastly. This method is a shortcut to {@link #record(Object) record(null)}.
+     记录当前调用者栈追踪，以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方。此方法为
+     #record(Object)的快捷方式record(null)
+     */
+    void record();
+
+    /**
+     * Records the caller's current stack trace and the specified additional arbitrary information
+     * so that the {@link ResourceLeakDetector} can tell where the leaked resource was accessed lastly.
+     记录当前调用者栈追踪和额外的主观信息，以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方。
+     */
+    void record(Object hint);
+
+    /**
+     * Close the leak so that {@link ResourceLeakDetector} does not warn about leaked resources.
+     *关闭泄漏资源，以便资源泄漏探测器不在警告泄漏资源。
+     * @return {@code true} if called first time, {@code false} if called already
+     第一次调用返回true，否则为false
+     */
+    boolean close();
+}
+//ResourceLeakTracker
+
+package io.netty.util;
+
+public interface ResourceLeakTracker<T>  {
+
+    /**
+     * Records the caller's current stack trace so that the {@link ResourceLeakDetector} can tell where the leaked
+     * resource was accessed lastly. This method is a shortcut to {@link #record(Object) record(null)}.
+     记录当前调用者栈追踪，以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方。此方法为
+     #record(Object)的快捷方式record(null)
+     */
+    void record();
+
+    /**
+     * Records the caller's current stack trace and the specified additional arbitrary information
+     * so that the {@link ResourceLeakDetector} can tell where the leaked resource was accessed lastly.
+     记录当前调用者栈追踪和额外的主观信息，以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方。
+     */
+    void record(Object hint);
+
+    /**
+     * Close the leak so that {@link ResourceLeakTracker} does not warn about leaked resources.
+     * After this method is called a leak associated with this ResourceLeakTracker should not be reported.
+     *关闭泄漏资源，以便资源泄漏探测器不在警告泄漏资源。在方法调用后，泄漏资源关联的ResourceLeakTracker不应该
+     上报。
+     * @return {@code true} if called first time, {@code false} if called already
+     第一次调用返回true，否则为false
+     */
+    boolean close(T trackedObject);
+}
+从上面可以看出，
+资源泄漏追踪ResourceLeakTracker，主要定义了记录当前调用者栈追踪和额外的主观信息方法，
+以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方；
+关闭泄漏资源方法，以便资源泄漏探测器不在警告泄漏资源。
+
+//DefaultResourceLeak，为资源泄漏探测器ResourceLeakDetector的内部类
+
+
+
+回到资源泄漏探测器，根据资源，创建资源泄漏追踪器：
+
+/**
+ * Creates a new {@link ResourceLeakTracker} which is expected to be closed via
+ * {@link ResourceLeakTracker#close(Object)} when the related resource is deallocated.
+ *创建一个资源泄漏ResourceLeakTracker，当相关资源释放时，希望通过ResourceLeakTracker#close(Object)关闭对象
+ * @return the {@link ResourceLeakTracker} or {@code null}
+ */
+public final ResourceLeakTracker<T> track(T obj) {
+    return track0(obj);
+}
+
+private DefaultResourceLeak track0(T obj) {
+...
+}
+
+
+总结：
+默认的资源泄漏探测器工厂创建的资源泄漏探测器为ResourceLeakDetector。
+
+资源泄漏探测器，探测等级有四种，关闭DISABLED，SIMPLE简单，高级ADVANCED，终极PARANOID，
+SIMPLE开启简单的采样资源泄漏探测，仅仅已少量的负载为代价报告是否为泄漏对象；
+ADVANCED开启高级采样泄漏探测，将会以高负载为代价，报告最近泄漏对象访问的地方；
+PARANOID开启终极采样泄漏探测，将会以高级负载为代价，报告最近泄漏对象访问的地方（仅仅测试）；
+开启资源探测的情况下，默认等级为SIMPLE。资源探测器内部有一个探测等级和采样间隔，资源类型，
+泄漏报告Map（ ConcurrentMap<String, Boolean>），
+激活资源集合ConcurrentMap<DefaultResourceLeak, LeakEntry>，
+
+资源泄漏探测器构造，主要初始化资源类型名及探测间隔。
+
+资源泄漏追踪ResourceLeakTracker，主要定义了记录当前调用者栈追踪和额外的主观信息方法，
+以便资源泄漏探测器可以告诉，泄漏资源最近访问的地方；
+关闭泄漏资源方法，以便资源泄漏探测器不在警告泄漏资源。
+
 

@@ -105,4 +105,15 @@ public abstract class AbstractByteBuf extends ByteBuf {
         this.maxCapacity = maxCapacity;
     }：
 }
+从上面来看，字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为
+maxCapacity；buf的构造，主要是初始化最大容量。
 
+
+
+
+
+
+总结：
+
+字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为
+maxCapacity；buf的构造，主要是初始化最大容量。

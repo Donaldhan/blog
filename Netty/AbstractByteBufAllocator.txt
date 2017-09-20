@@ -111,6 +111,8 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
 由于上面两个方法继承了AbstractByteBufAllocator，我们先来看一下抽象字节buf分配器，
 
 
+
+
 再来看字节buf分配器度量提供者ByteBufAllocatorMetricProvider
 
 
