@@ -205,64 +205,6 @@ public ByteBuf discardSomeReadBytes() {
     }
     return this;
 }
-//确保buf，足够容下minWritableBytes个字节数据
-@Override
-public ByteBuf ensureWritable(int minWritableBytes) {
-    if (minWritableBytes < 0) {
-        throw new IllegalArgumentException(String.format(
-                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
-    }
-    ensureWritable0(minWritableBytes);
-    return this;
-}
-
-private void ensureWritable0(int minWritableBytes) {
-    if (minWritableBytes <= writableBytes()) {
-        return;
-    }
-
-    if (minWritableBytes > maxCapacity - writerIndex) {
-        throw new IndexOutOfBoundsException(String.format(
-                "writerIndex(%d) + minWritableBytes(%d) exceeds maxCapacity(%d): %s",
-                writerIndex, minWritableBytes, maxCapacity, this));
-    }
-
-    // Normalize the current capacity to the power of 2. 计算新的buf容量
-    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
-
-    // Adjust to the new capacity.
-    //调整容量
-    capacity(newCapacity);
-}
-
-@Override
-public int ensureWritable(int minWritableBytes, boolean force) {
-    if (minWritableBytes < 0) {
-        throw new IllegalArgumentException(String.format(
-                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
-    }
-    if (minWritableBytes <= writableBytes()) {
-        //不够写
-        return 0;
-    }
-    final int maxCapacity = maxCapacity();
-    final int writerIndex = writerIndex();
-    if (minWritableBytes > maxCapacity - writerIndex) {
-        if (!force || capacity() == maxCapacity) {
-            return 1;
-        }
-	//扩展至最大容量
-        capacity(maxCapacity);
-        return 3;
-    }
-    //计算新的容量，并更新
-    // Normalize the current capacity to the power of 2.
-    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
-
-    // Adjust to the new capacity.
-    capacity(newCapacity);
-    return 2;
-}
 
 来看get*方法：
 来看获取一个字节：
@@ -868,8 +810,91 @@ public ByteBuf skipBytes(int length) {
 }
 
 
-再来write*相关原始方法：
+再来看write*相关方法：
 
+@Override
+public ByteBuf writeByte(int value) {
+    ensureAccessible();
+    //确保buf，足够容下1个字节数据
+    ensureWritable0(1);
+    //委托给_setByte，并更新写索引
+    _setByte(writerIndex++, value);
+    return this;
+}
+
+//确保buf，足够容下minWritableBytes个字节数据
+@Override
+public ByteBuf ensureWritable(int minWritableBytes) {
+    if (minWritableBytes < 0) {
+        throw new IllegalArgumentException(String.format(
+                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
+    }
+    ensureWritable0(minWritableBytes);
+    return this;
+}
+
+private void ensureWritable0(int minWritableBytes) {
+    if (minWritableBytes <= writableBytes()) {
+        return;
+    }
+
+    if (minWritableBytes > maxCapacity - writerIndex) {
+        throw new IndexOutOfBoundsException(String.format(
+                "writerIndex(%d) + minWritableBytes(%d) exceeds maxCapacity(%d): %s",
+                writerIndex, minWritableBytes, maxCapacity, this));
+    }
+
+    // Normalize the current capacity to the power of 2. 计算新的buf容量
+    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
+
+    // Adjust to the new capacity.
+    //调整容量
+    capacity(newCapacity);
+}
+
+@Override
+public int ensureWritable(int minWritableBytes, boolean force) {
+    if (minWritableBytes < 0) {
+        throw new IllegalArgumentException(String.format(
+                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
+    }
+    if (minWritableBytes <= writableBytes()) {
+        //不够写
+        return 0;
+    }
+    final int maxCapacity = maxCapacity();
+    final int writerIndex = writerIndex();
+    if (minWritableBytes > maxCapacity - writerIndex) {
+        if (!force || capacity() == maxCapacity) {
+            return 1;
+        }
+	//扩展至最大容量
+        capacity(maxCapacity);
+        return 3;
+    }
+    //计算新的容量，并更新
+    // Normalize the current capacity to the power of 2.
+    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
+
+    // Adjust to the new capacity.
+    capacity(newCapacity);
+    return 2;
+}
+
+再来看写int
+@Override
+public ByteBuf writeInt(int value) {
+    ensureAccessible();
+    //确保buf，足够容下4个字节数据
+    ensureWritable0(4);
+    _setInt(writerIndex, value);
+    writerIndex += 4;//更新写索引
+    return this;
+}
+
+其他write*原始类型方法，思路基本相同；
+
+再来看writeBytes相关方法
 
 
 总结：
