@@ -11,8 +11,10 @@ netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/239348
 netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
 netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/2393510[/url]
 netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
 引言
-上一篇文章我们看了字节buf接口的定义，先来回顾一下：
+本打算上一文章看一抽象字节buf，但中途遇到了资源泄漏探测器，就简单分析了资源泄漏探测器，今天我们回到抽象字节buf，先来回顾
+字节buf接口的定义：
 对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，以便分析内存泄漏的原因。
 
 字节缓存ByteBuf继承了对象引用计数器ReferenceCounted，拥有一个最大容量限制，如果用户尝试用 #capacity(int)和 #ensureWritable(int)方法，增加buf容量超过最大容量，将会抛出非法参数异常；字节buf有两个索引，一个为读索引readerIndex，一个为写索引writerIndex，读索引不能大于写索引，写索引不能小于读索引，buf可读字节数为writerIndex - readerIndex，buf可写字节数为capacity - writerIndex，buf可写的最大字节数为maxCapacity - writerIndex；

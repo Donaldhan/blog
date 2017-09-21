@@ -1,3 +1,89 @@
+netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
+netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
+netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
+netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098[/url]
+netty 抽象通道后续：[url]http://donald-draper.iteye.com/blog/2393166[/url]
+netty 抽象nio通道：[url]http://donald-draper.iteye.com/blog/2393269[/url]
+netty 抽象nio字节通道：[url]http://donald-draper.iteye.com/blog/2393323[/url]
+netty 抽象nio消息通道：[url]http://donald-draper.iteye.com/blog/2393364[/url]
+netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2393443[/url]
+netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
+netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
+netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/2393510[/url]
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+引言
+上一篇文章我们看了字节buf接口的定义，先来回顾一下：
+对象引用计数器ReferenceCounted，主要记录对象的引用数量，当引用数量为0时，表示可以回收对象，在调试模式下，如果发现对象出现内存泄漏，可以用touch方法记录操作的相关信息，通过ResourceLeakDetector获取操作的相关信息，以便分析内存泄漏的原因。
+
+字节缓存ByteBuf继承了对象引用计数器ReferenceCounted，拥有一个最大容量限制，如果用户尝试用 #capacity(int)和 #ensureWritable(int)方法，增加buf容量超过最大容量，将会抛出非法参数异常；字节buf有两个索引，一个为读索引readerIndex，一个为写索引writerIndex，读索引不能大于写索引，写索引不能小于读索引，buf可读字节数为writerIndex - readerIndex，buf可写字节数为capacity - writerIndex，buf可写的最大字节数为maxCapacity - writerIndex；
+
+可以使用markReader/WriterIndex标记当前buf读写索引位置，resetReader/WriterIndex方法可以重回先前标记的索引位置；
+
+当内存空间负载过度时，我们可以使用discardReadBytes丢弃一些数据，以节省空间；
+
+我们可以使用ensureWritable检测当buf是否有足够的空间写数据；
+
+提供了getBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道
+GatheringByteChannel和文件通道FileChannel中，这些方法不会修改当前buf读写索引，具体是否修改目的对象索引或位置，见java doc 描述。
+
+提供了setBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，InputputStream，分散字节通道ScatteringByteChannel和文件通道FileChannel中的数据转移到当前buf中，这些方法不会修改当前buf的读写索引，至于源对象索引或位置，见java doc 描述。
+
+提供了readBytes方法，可以将buf中的数据转移到目的ByteBuf,Byte数组，Nio字节buf ByteBuffer，OutputStream，聚集字节通道GatheringByteChannel和文件通道FileChannel中，这些方法具体会会修改当前buf读索引，至于会不会修改源对象索引或位置，见java doc 描述。
+
+提供了writeBytes方法，可以将源ByteBuf,Byte数组，Nio字节buf ByteBuffer，
+InputputStream，分散字节通道ScatteringByteChannel和文件通道FileChannel中的数据写到当前buf中，这些方法会修改当前buf的写索引，至于会不会修改源对象索引或位置，见java
+doc 描述。
+
+
+set*原始类型方法不会修改读写索引；
+get*原始类型方法不会修改读写索引；
+
+write*原始类型方法会修改写索引；
+read*原始类型方法，会修改读索引；
+
+字节buf中的set/get*方法不会修改当前buf的读写索引，而write*修改写索引，read*会修改读索引；
+
+提供了copy，slice和retainSlice，duplicate和retainedDuplicate方法，用于拷贝，切割，复制当前buf数据，retained*方法会增加buf的
+引用计数器；
+
+提供nioBuffer和nioBuffers方法，用于包装当前buf可读数据为java nio ByteBuffer和ByteBuffer数组。 
+
+今天我们来看一下抽象字节buf的定义
+
+/**
+ * A skeletal implementation of a buffer.
+ */
+public abstract class AbstractByteBuf extends ByteBuf {
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractByteBuf.class);
+    private static final String PROP_MODE = "io.netty.buffer.bytebuf.checkAccessible";
+    private static final boolean checkAccessible;
+
+    static {
+        checkAccessible = SystemPropertyUtil.getBoolean(PROP_MODE, true);
+        if (logger.isDebugEnabled()) {
+            logger.debug("-D{}: {}", PROP_MODE, checkAccessible);
+        }
+    }
+    //内存泄漏探测器
+    static final ResourceLeakDetector<ByteBuf> leakDetector =
+            ResourceLeakDetectorFactory.instance().newResourceLeakDetector(ByteBuf.class);
+
+    int readerIndex;//读索引
+    int writerIndex;//写索引
+    private int markedReaderIndex;//读索引标记
+    private int markedWriterIndex;//写索引标记
+    private int maxCapacity;//最大容量
+
+    protected AbstractByteBuf(int maxCapacity) {
+        if (maxCapacity < 0) {
+            throw new IllegalArgumentException("maxCapacity: " + maxCapacity + " (expected: >= 0)");
+        }
+        this.maxCapacity = maxCapacity;
+    }：
+}
+从上面来看，字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为
+maxCapacity；buf的构造，主要是初始化最大容量。
+
 在抽象字节buf的内部变量声明中有一个资源泄漏探测器，定义如下：
 public abstract class AbstractByteBuf extends ByteBuf {
 
@@ -296,7 +382,7 @@ public class ResourceLeakDetector<T> {
 
     /** the collection of active resources  激活资源集合*/
     private final ConcurrentMap<DefaultResourceLeak, LeakEntry> allLeaks = PlatformDependent.newConcurrentHashMap();
-    //引用队列
+    //资源写对象引用队列
     private final ReferenceQueue<Object> refQueue = new ReferenceQueue<Object>();
     //资源泄漏信息报告
     private final ConcurrentMap<String, Boolean> reportedLeaks = PlatformDependent.newConcurrentHashMap();
@@ -592,7 +678,7 @@ public interface ResourceLeakTracker<T>  {
             allLeaks.put(this, LeakEntry.INSTANCE);
         }
 }
-我来这一句：
+我来看这一句：
 //如果探测登记大于ADVANCED，则创建记录
 creationRecord = newRecord(null, 3); 
 
@@ -702,7 +788,7 @@ public final class StringUtil {
 从上面可以看出，默认资源泄漏DefaultResourceLeak，构造过程为，首先将资源添加到引用队列，
 如果探测等级大于ADVANCED，则创建记录，然后添加资源泄漏对象到资源泄漏探测器的激活对象Map中。
 
-在来看DefaultResourceLeak的记录和关闭资源操作：
+再来看DefaultResourceLeak的记录和关闭资源操作：
 
 
 @Override
@@ -831,7 +917,7 @@ private DefaultResourceLeak track0(T obj) {
     }
     if (level.ordinal() < Level.PARANOID.ordinal()) {
         if ((PlatformDependent.threadLocalRandom().nextInt(samplingInterval)) == 0) {
-	    //报告探测等级
+	    //根据探测等级，报告探测结果
             reportLeak(level);
 	    //创建资源泄漏对象
             return new DefaultResourceLeak(obj);
@@ -844,8 +930,8 @@ private DefaultResourceLeak track0(T obj) {
     }
 }
 
-来看报告探测等级
-//报告探测等级    
+来看根据探测等级，报告探测结果
+//根据探测等级，报告探测结果  
 reportLeak(level);
 
 
