@@ -327,11 +327,7 @@ protected abstract int _getInt(int index);
 
 来看getBytes(*)方法：
 
-@Override
-public ByteBuf getBytes(int index, byte[] dst) {
-    getBytes(index, dst, 0, dst.length);
-    return this;
-}
+
 
 @Override
 public ByteBuf getBytes(int index, ByteBuf dst) {
@@ -347,10 +343,19 @@ public ByteBuf getBytes(int index, ByteBuf dst, int length) {
     return this;
 }
 
+@Override
+public ByteBuf getBytes(int index, byte[] dst) {
+    getBytes(index, dst, 0, dst.length);
+    return this;
+}
+
 字节buf接口定义中：
 public abstract ByteBuf getBytes(int index, byte[] dst, int dstIndex, int length);
+public abstract ByteBuf getBytes(int index, ByteBuf dst, int dstIndex, int length);
 
-从上面可以看出，getBytes*方法不会修改当前buf读写索引，会修改目的buf的写索引。
+从上面可以看出，getBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改目的buf的写索引。
+getBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
 
 @Override
 public CharSequence readCharSequence(int length, Charset charset) {
@@ -377,55 +382,494 @@ public String toString(int index, int length, Charset charset) {
 }
 
 //ByteBufUtil
-
-static String decodeString(ByteBuf src, int readerIndex, int len, Charset charset) {
-    if (len == 0) {
-        return StringUtil.EMPTY_STRING;
-    }
-    final CharsetDecoder decoder = CharsetUtil.decoder(charset);
-    final int maxLength = (int) ((double) len * decoder.maxCharsPerByte());
-    CharBuffer dst = CHAR_BUFFERS.get();
-    if (dst.length() < maxLength) {
-        dst = CharBuffer.allocate(maxLength);
-        if (maxLength <= MAX_CHAR_BUFFER_SIZE) {
-            CHAR_BUFFERS.set(dst);
-        }
-    } else {
-        dst.clear();
-    }
-    if (src.nioBufferCount() == 1) {
-        // Use internalNioBuffer(...) to reduce object creation.
-        decodeString(decoder, src.internalNioBuffer(readerIndex, len), dst);
-    } else {
-        // We use a heap buffer as CharsetDecoder is most likely able to use a fast-path if src and dst buffers
-        // are both backed by a byte array.
-        ByteBuf buffer = src.alloc().heapBuffer(len);
-        try {
-            buffer.writeBytes(src, readerIndex, len);
-            // Use internalNioBuffer(...) to reduce object creation.
-            decodeString(decoder, buffer.internalNioBuffer(buffer.readerIndex(), len), dst);
-        } finally {
-            // Release the temporary buffer again.
-            buffer.release();
-        }
-    }
-    return dst.flip().toString();
+/**
+ * A collection of utility methods that is related with handling {@link ByteBuf},
+ * such as the generation of hex dump and swapping an integer's byte order.
+ */
+public final class ByteBufUtil {
+   //Java nio CharBuffer 线程本地字符buf
+   private static final FastThreadLocal<CharBuffer> CHAR_BUFFERS = new FastThreadLocal<CharBuffer>() {
+           @Override
+           protected CharBuffer initialValue() throws Exception {
+               return CharBuffer.allocate(1024);
+           }
+       };
+   //根据字符编码解析字节buf为字符串
+   static String decodeString(ByteBuf src, int readerIndex, int len, Charset charset) {
+       if (len == 0) {
+           return StringUtil.EMPTY_STRING;
+       }
+       //获取字符编码
+       final CharsetDecoder decoder = CharsetUtil.decoder(charset);
+       final int maxLength = (int) ((double) len * decoder.maxCharsPerByte());
+       //获取线程本地字符buf
+       CharBuffer dst = CHAR_BUFFERS.get();
+       if (dst.length() < maxLength) {
+          //重新分配maxLength长度的字符buf
+           dst = CharBuffer.allocate(maxLength);
+           if (maxLength <= MAX_CHAR_BUFFER_SIZE) {
+	      //添加buf到线程本地字符buf缓存
+               CHAR_BUFFERS.set(dst);
+           }
+       } else {
+           //清除线程本地字符buf
+           dst.clear();
+       }
+       if (src.nioBufferCount() == 1) {
+           // Use internalNioBuffer(...) to reduce object creation.
+	   //使用源字节buf的内部nio 字节buf，解码数据
+           decodeString(decoder, src.internalNioBuffer(readerIndex, len), dst);
+       } else {
+           // We use a heap buffer as CharsetDecoder is most likely able to use a fast-path if src and dst buffers
+           // are both backed by a byte array.
+	   //否则分配一个堆buf
+           ByteBuf buffer = src.alloc().heapBuffer(len);
+           try {
+	       //将源buf数据写到，写到新的堆buf中
+               buffer.writeBytes(src, readerIndex, len);
+               // Use internalNioBuffer(...) to reduce object creation.
+                //使用buf的内部nio 字节buf，解码数据
+               decodeString(decoder, buffer.internalNioBuffer(buffer.readerIndex(), len), dst);
+           } finally {
+               // Release the temporary buffer again. 释放buf
+               buffer.release();
+           }
+       }
+       //返回解码结果
+       return dst.flip().toString();
+   }
+   //根据字符解码器器，解码nio字节buf数据到字符buf
+   private static void decodeString(CharsetDecoder decoder, ByteBuffer src, CharBuffer dst) {
+       try {
+           //委托给字符解码器
+           CoderResult cr = decoder.decode(src, dst, true);
+           if (!cr.isUnderflow()) {
+               cr.throwException();
+           }
+	   //将解码后的数据写到目的字符buf中
+           cr = decoder.flush(dst);
+           if (!cr.isUnderflow()) {
+               cr.throwException();
+           }
+       } catch (CharacterCodingException x) {
+           throw new IllegalStateException(x);
+       }
+   }
 }
 
-private static void decodeString(CharsetDecoder decoder, ByteBuffer src, CharBuffer dst) {
-    try {
-        CoderResult cr = decoder.decode(src, dst, true);
-        if (!cr.isUnderflow()) {
-            cr.throwException();
+
+回到抽象字节buf，来看set方法：
+
+@Override
+public ByteBuf setByte(int index, int value) {
+    checkIndex(index);
+    _setByte(index, value);
+    return this;
+}
+//待子类扩展
+protected abstract void _setByte(int index, int value);
+
+@Override
+    public ByteBuf setInt(int index, int value) {
+        checkIndex(index, 4);
+        _setInt(index, value);
+        return this;
+    }
+//待子类扩展
+protected abstract void _setInt(int index, int value);
+
+其他set原始类型方法，思路基本相同。
+
+再来看setBytes(*)系列方法：
+
+@Override
+public ByteBuf setBytes(int index, ByteBuf src) {
+    setBytes(index, src, src.readableBytes());
+    return this;
+}
+
+@Override
+public ByteBuf setBytes(int index, ByteBuf src, int length) {
+    checkIndex(index, length);
+    if (src == null) {
+        throw new NullPointerException("src");
+    }
+    if (length > src.readableBytes()) {
+        throw new IndexOutOfBoundsException(String.format(
+                "length(%d) exceeds src.readableBytes(%d) where src is: %s", length, src.readableBytes(), src));
+    }
+    setBytes(index, src, src.readerIndex(), length);
+    //更新源字节buf的读索引
+    src.readerIndex(src.readerIndex() + length);
+    return this;
+}
+
+
+@Override
+public ByteBuf setBytes(int index, byte[] src) {
+    setBytes(index, src, 0, src.length);
+    return this;
+}
+
+//ByteBuf
+public abstract ByteBuf setBytes(int index, byte[] src, int srcIndex, int length);
+public abstract ByteBuf setBytes(int index, ByteBuf src, int srcIndex, int length);
+
+
+从上面可以看出,setBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改源buf的读索引。
+setBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
+
+来set写字符序列
+@Override
+public int setCharSequence(int index, CharSequence sequence, Charset charset) {
+    if (charset.equals(CharsetUtil.UTF_8)) {
+        //确保有足有容量可写
+        ensureWritable(ByteBufUtil.utf8MaxBytes(sequence));
+        return ByteBufUtil.writeUtf8(this, index, sequence, sequence.length());
+    }
+    if (charset.equals(CharsetUtil.US_ASCII)) {
+        //ASCII编码，长度为字符序列长度
+        int len = sequence.length();
+        ensureWritable(len);
+        return ByteBufUtil.writeAscii(this, index, sequence, len);
+    }
+    //获取字符序列，charset编码对应的字节数组
+    byte[] bytes = sequence.toString().getBytes(charset);
+    //确保buf容量足够
+    ensureWritable(bytes.length);
+    //委托给setBytes
+    setBytes(index, bytes);
+    return bytes.length;
+}
+
+//ByteBufUtil
+/**
+ * Returns max bytes length of UTF8 character sequence.
+ 返回字符系列UTF-8编码的长度
+ */
+public static int utf8MaxBytes(CharSequence seq) {
+    return seq.length() * MAX_BYTES_PER_CHAR_UTF8;
+}
+
+// Fast-Path implementation
+static int writeUtf8(AbstractByteBuf buffer, int writerIndex, CharSequence seq, int len) {
+    int oldWriterIndex = writerIndex;
+
+    // We can use the _set methods as these not need to do any index checks and reference checks.
+    // This is possible as we called ensureWritable(...) before.
+    for (int i = 0; i < len; i++) {
+       //遍历字符序列，将字符编码成UTF-8字节，写入字节buf中
+        char c = seq.charAt(i);
+        if (c < 0x80) {
+            buffer._setByte(writerIndex++, (byte) c);
+        } else if (c < 0x800) {
+            buffer._setByte(writerIndex++, (byte) (0xc0 | (c >> 6)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | (c & 0x3f)));
+        } else if (isSurrogate(c)) {
+            if (!Character.isHighSurrogate(c)) {
+                buffer._setByte(writerIndex++, WRITE_UTF_UNKNOWN);
+                continue;
+            }
+            final char c2;
+            try {
+                // Surrogate Pair consumes 2 characters. Optimistically try to get the next character to avoid
+                // duplicate bounds checking with charAt. If an IndexOutOfBoundsException is thrown we will
+                // re-throw a more informative exception describing the problem.
+                c2 = seq.charAt(++i);
+            } catch (IndexOutOfBoundsException e) {
+                buffer._setByte(writerIndex++, WRITE_UTF_UNKNOWN);
+                break;
+            }
+            if (!Character.isLowSurrogate(c2)) {
+                buffer._setByte(writerIndex++, WRITE_UTF_UNKNOWN);
+                buffer._setByte(writerIndex++, Character.isHighSurrogate(c2) ? WRITE_UTF_UNKNOWN : c2);
+                continue;
+            }
+            int codePoint = Character.toCodePoint(c, c2);
+            // See http://www.unicode.org/versions/Unicode7.0.0/ch03.pdf#G2630.
+            buffer._setByte(writerIndex++, (byte) (0xf0 | (codePoint >> 18)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | ((codePoint >> 12) & 0x3f)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | ((codePoint >> 6) & 0x3f)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | (codePoint & 0x3f)));
+        } else {
+            buffer._setByte(writerIndex++, (byte) (0xe0 | (c >> 12)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | ((c >> 6) & 0x3f)));
+            buffer._setByte(writerIndex++, (byte) (0x80 | (c & 0x3f)));
         }
-        cr = decoder.flush(dst);
-        if (!cr.isUnderflow()) {
-            cr.throwException();
-        }
-    } catch (CharacterCodingException x) {
-        throw new IllegalStateException(x);
+    }
+    return writerIndex - oldWriterIndex;
+}
+
+// Fast-Path implementation
+static int writeAscii(AbstractByteBuf buffer, int writerIndex, CharSequence seq, int len) {
+
+    // We can use the _set methods as these not need to do any index checks and reference checks.
+    // This is possible as we called ensureWritable(...) before.
+    for (int i = 0; i < len; i++) {
+        buffer._setByte(writerIndex++, (byte) seq.charAt(i));
+    }
+    return len;
+}
+
+
+回到抽象字节buf，来看read*相关方法：
+先来看读一个字节数据
+@Override
+public byte readByte() {
+   //检查是否有1个可读字节数据
+    checkReadableBytes0(1);
+    int i = readerIndex;
+    //获取读索引对应的字节
+    byte b = _getByte(i);
+    //更新读索引
+    readerIndex = i + 1;
+    return b;
+}
+
+//检查是否有minimumReadableBytes个可读字节数据
+private void checkReadableBytes0(int minimumReadableBytes) {
+    ensureAccessible();
+    if (readerIndex > writerIndex - minimumReadableBytes) {
+        throw new IndexOutOfBoundsException(String.format(
+                "readerIndex(%d) + length(%d) exceeds writerIndex(%d): %s",
+                readerIndex, minimumReadableBytes, writerIndex, this));
     }
 }
+
+@Override
+public int readInt() {
+    //读一个int值，所以检查是否有4个可读字节数据
+    checkReadableBytes0(4);
+    //委托给_getInt
+    int v = _getInt(readerIndex);
+    readerIndex += 4;
+    return v;
+}
+
+其他get*原始类型方法，思路基本相同
+
+来看readBytes（*）相关方法：
+//读取当前buf数据，写到字节数组中
+@Override
+public ByteBuf readBytes(byte[] dst) {
+    readBytes(dst, 0, dst.length);
+    return this;
+}
+@Override
+public ByteBuf readBytes(byte[] dst, int dstIndex, int length) {
+    checkReadableBytes(length);
+    //委托getBytes
+    getBytes(readerIndex, dst, dstIndex, length);
+    readerIndex += length;//更新读索引
+    return this;
+}
+
+从上面来看readBytes（byte[]，...）,会修改当前buf的读索引
+@Override
+public ByteBuf readBytes(ByteBuf dst) {
+    readBytes(dst, dst.writableBytes());
+    return this;
+}
+
+//读当前buf数据，写到目的字节buf中
+@Override
+public ByteBuf readBytes(ByteBuf dst, int length) {
+    if (length > dst.writableBytes()) {
+        throw new IndexOutOfBoundsException(String.format(
+                "length(%d) exceeds dst.writableBytes(%d) where dst is: %s", length, dst.writableBytes(), dst));
+    }
+    readBytes(dst, dst.writerIndex(), length);
+    dst.writerIndex(dst.writerIndex() + length);//更新目的buf的写索引
+    return this;
+}
+
+@Override
+public ByteBuf readBytes(ByteBuf dst, int dstIndex, int length) {
+    checkReadableBytes(length);
+    getBytes(readerIndex, dst, dstIndex, length);//更新目的buf的写索引
+    readerIndex += length;//更新读索引
+    return this;
+}
+
+//读当前buf数据到nio 字节buf
+@Override
+public ByteBuf readBytes(ByteBuffer dst) {
+    int length = dst.remaining();
+    checkReadableBytes(length);
+    getBytes(readerIndex, dst);
+    readerIndex += length;
+    return this;
+}
+//ByteBuf
+public abstract ByteBuf getBytes(int index, ByteBuffer dst);
+
+//读当前buf数据到GatheringByteChannel
+@Override
+public int readBytes(GatheringByteChannel out, int length)
+        throws IOException {
+    checkReadableBytes(length);
+    int readBytes = getBytes(readerIndex, out, length);
+    readerIndex += readBytes;
+    return readBytes;
+}
+
+//ByteBuf
+public abstract int getBytes(int index, GatheringByteChannel out, int length) throws IOException;
+
+//读当前buf数据到FileChannel
+@Override
+public int readBytes(FileChannel out, long position, int length)
+        throws IOException {
+    checkReadableBytes(length);
+    int readBytes = getBytes(readerIndex, out, position, length);
+    readerIndex += readBytes;
+    return readBytes;
+}
+
+//ByteBuf
+ public abstract int getBytes(int index, FileChannel out, long position, int length) throws IOException
+
+//读当前buf数据到OutputStream
+@Override
+public ByteBuf readBytes(OutputStream out, int length) throws IOException {
+    checkReadableBytes(length);
+    getBytes(readerIndex, out, length);
+    readerIndex += length;
+    return this;
+}
+//ByteBuf
+public abstract ByteBuf getBytes(int index, OutputStream out, int length) throws IOException;
+
+从上面可以看出，read*原始类型方法会修改当前buf读索引，readBytes(...,ByteBuf,...)方法会修改当前buf读索引，
+同时会修改目的buf的写索引，readBytes(...,byte[],...)方法会修改当前buf读索引。
+
+read*操作实际委托个get*的相关操作，同时更新buf读索引。
+
+@Override
+public ByteBuf readSlice(int length) {
+    ByteBuf slice = slice(readerIndex, length);
+    readerIndex += length;
+    return slice;
+}
+
+@Override
+public ByteBuf readRetainedSlice(int length) {
+    ByteBuf slice = retainedSlice(readerIndex, length);
+    readerIndex += length;
+    return slice;
+}
+
+@Override
+public ByteBuf slice(int index, int length) {
+    return new UnpooledSlicedByteBuf(this, index, length);
+}
+
+@Override
+public ByteBuf retainedSlice(int index, int length) {
+    return slice(index, length).retain();
+}
+
+//UnpooledSlicedByteBuf
+class UnpooledSlicedByteBuf extends AbstractUnpooledSlicedByteBuf {
+	UnpooledSlicedByteBuf(AbstractByteBuf buffer, int index, int length) {
+	    super(buffer, index, length);
+	 @Override
+    public AbstractByteBuf unwrap() {
+        return (AbstractByteBuf) super.unwrap();
+    }
+
+    @Override
+    protected byte _getByte(int index) {
+        return unwrap()._getByte(idx(index));
+    }
+    //其他get方法思路基本相同
+	...
+
+}
+
+//AbstractUnpooledSlicedByteBuf,可以理解为字节buf的静态代理
+abstract class AbstractUnpooledSlicedByteBuf extends AbstractDerivedByteBuf {
+    private final ByteBuf buffer;//内部字节buf
+    private final int adjustment;
+    //获取内部字节buf
+    @Override
+    public ByteBuf unwrap() {
+        return buffer;
+    }
+     @Override
+    public byte getByte(int index) {
+        checkIndex0(index, 1);
+        return unwrap().getByte(idx(index));
+    }
+    @Override
+    protected byte _getByte(int index) {
+        return unwrap().getByte(idx(index));
+    }
+    //其他字节buf的相关方法，都是委托给内部字节buf
+    ...
+ }
+
+//AbstractDerivedByteBuf，可以理解实现了引用计数器的抽象字节buf
+public abstract class AbstractDerivedByteBuf extends AbstractByteBuf {
+
+    protected AbstractDerivedByteBuf(int maxCapacity) {
+        super(maxCapacity);
+    }
+
+    @Override
+    public final int refCnt() {
+        return refCnt0();
+    }
+
+    int refCnt0() {
+        return unwrap().refCnt();
+    }
+
+    @Override
+    public final ByteBuf retain() {
+        return retain0();
+    }
+
+    ByteBuf retain0() {
+        unwrap().retain();
+        return this;
+    }
+    ...
+}
+
+//ByteBuf
+/**
+ * Return the underlying buffer instance if this buffer is a wrapper of another buffer.
+ *
+ * @return {@code null} if this buffer is not a wrapper
+ */
+public abstract ByteBuf unwrap();
+
+从上面可以看出retainedSlice和slice方法返回则的字节buf，实际为字节buf底层unwrap buf，
+可以理解为字节buf的快照或引用，数据更改相互影响，retainedSlice方法会增加字节buf的引用计数器。
+
+再来看读部分数据到字节序列
+@Override
+public CharSequence readCharSequence(int length, Charset charset) {
+    CharSequence sequence = getCharSequence(readerIndex, length, charset);
+    readerIndex += length;
+    return sequence;
+}
+
+
+再来看skipBytes方法
+//跳过length长度的字节，只更新读索引，不删除实际buf数据
+@Override
+public ByteBuf skipBytes(int length) {
+    checkReadableBytes(length);
+    readerIndex += length;
+    return this;
+}
+
+
+再来write*相关原始方法：
+
 
 
 总结：
@@ -436,7 +880,21 @@ maxCapacity；buf的构造，主要是初始化最大容量。
 弃已读数据方法discardReadBytes，丢弃buf数据时，只修改读写索引和相应的标记，
 并不删除数据；
 
-get*方法不会修改当前buf读写索引，getBytes(*)方法不会修改当前buf读写索引，会修改目的buf的写索引。
+get*原始类型方法不会修改当前buf读写索引，getBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改目的buf的写索引。
+getBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
+set*原始类型方法不会修改当前buf读写索引，setBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改源buf的读索引。
+setBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
+read*原始类型方法会修改当前buf读索引，readBytes(...,ByteBuf,...)方法会修改当前buf读索引，
+同时会修改目的buf的写索引，readBytes(...,byte[],...)方法会修改当前buf读索引。
+
+read*操作实际委托个get*的相关操作，同时更新buf读索引。
+
+跳过length长度的字节，只更新读索引，不删除实际buf数据。
+
+retainedSlice和slice方法返回则的字节buf，实际为字节buf底层unwrap buf，
+可以理解为字节buf的快照或引用，数据更改相互影响，retainedSlice方法会增加字节buf的引用计数器。
 
 
 
