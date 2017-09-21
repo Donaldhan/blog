@@ -204,8 +204,8 @@ public class ResourceLeakDetector<T> {
     private static final Level DEFAULT_LEVEL = Level.SIMPLE;//默认探测登记
 
     private static final String PROP_MAX_RECORDS = "io.netty.leakDetection.maxRecords";
-    private static final int DEFAULT_MAX_RECORDS = 4;
-    private static final int MAX_RECORDS;
+    private static final int DEFAULT_MAX_RECORDS = 4;//默认最大的资源泄漏记录线索数
+    private static final int MAX_RECORDS;//最大的资源泄漏记录线索数
 
     /**
      * Represents the level of resource leak detection.
@@ -298,7 +298,7 @@ public class ResourceLeakDetector<T> {
     private final ConcurrentMap<DefaultResourceLeak, LeakEntry> allLeaks = PlatformDependent.newConcurrentHashMap();
     //引用队列
     private final ReferenceQueue<Object> refQueue = new ReferenceQueue<Object>();
-    //泄漏报告映射
+    //资源泄漏信息报告
     private final ConcurrentMap<String, Boolean> reportedLeaks = PlatformDependent.newConcurrentHashMap();
     private final String resourceType;//资源类型
     private final int samplingInterval;//采样间隔
@@ -563,6 +563,253 @@ public interface ResourceLeakTracker<T>  {
 //DefaultResourceLeak，为资源泄漏探测器ResourceLeakDetector的内部类
 
 
+ @SuppressWarnings("deprecation")
+    private final class DefaultResourceLeak extends PhantomReference<Object> implements ResourceLeakTracker<T>,
+            ResourceLeak {
+        private final String creationRecord;//创建记录
+        private final Deque<String> lastRecords = new ArrayDeque<String>();//记录队列
+        private final int trackedHash;
+        private int removedRecords;移除记录计数器
+
+        DefaultResourceLeak(Object referent) {
+            super(referent, refQueue);
+
+            assert referent != null;
+
+            // Store the hash of the tracked object to later assert it in the close(...) method.
+            // It's important that we not store a reference to the referent as this would disallow it from
+            // be collected via the PhantomReference.
+	    //获取对象引用hash值
+            trackedHash = System.identityHashCode(referent);
+            Level level = getLevel();
+            if (level.ordinal() >= Level.ADVANCED.ordinal()) {
+	        //如果探测等级大于ADVANCED，则创建记录
+                creationRecord = newRecord(null, 3);
+            } else {
+                creationRecord = null;
+            }
+	    //将当前资源泄漏对象方法激活对象Map中
+            allLeaks.put(this, LeakEntry.INSTANCE);
+        }
+}
+我来这一句：
+//如果探测登记大于ADVANCED，则创建记录
+creationRecord = newRecord(null, 3); 
+
+
+ static String newRecord(Object hint, int recordsToSkip) {
+        StringBuilder buf = new StringBuilder(4096);
+
+        // Append the hint first if available.
+        if (hint != null) {
+            buf.append("\tHint: ");
+            // Prefer a hint string to a simple string form.
+	    //如果对象时资源追踪线索，添加线索信息
+            if (hint instanceof ResourceLeakHint) {
+                buf.append(((ResourceLeakHint) hint).toHintString());
+            } else {
+                buf.append(hint);
+            }
+            buf.append(NEWLINE);
+        }
+        
+        // Append the stack trace. 
+        StackTraceElement[] array = new Throwable().getStackTrace();
+        for (StackTraceElement e: array) {
+	    //跳过前3个栈追踪
+            if (recordsToSkip > 0) {
+                recordsToSkip --;
+            } else {
+                String estr = e.toString();
+
+                // Strip the noisy stack trace elements.
+                boolean excluded = false;
+		//剔除栈追踪噪音
+                for (String exclusion: STACK_TRACE_ELEMENT_EXCLUSIONS) {
+                    if (estr.startsWith(exclusion)) {
+                        excluded = true;
+                        break;
+                    }
+                }
+
+                if (!excluded) {
+                    buf.append('\t');
+                    buf.append(estr);
+                    buf.append(NEWLINE);
+                }
+            }
+        }
+
+        return buf.toString();
+    }
+
+//ResourceLeakHint
+package io.netty.util;
+
+/**
+ * A hint object that provides human-readable message for easier resource leak tracking.
+ 资源泄漏线索，提供可读的资源泄漏追踪信息
+ */
+public interface ResourceLeakHint {
+    /**
+     * Returns a human-readable message that potentially enables easier resource leak tracking.
+     */
+    String toHintString();
+}
+
+private static final String[] STACK_TRACE_ELEMENT_EXCLUSIONS = {
+        "io.netty.util.ReferenceCountUtil.touch(",
+        "io.netty.buffer.AdvancedLeakAwareByteBuf.touch(",
+        "io.netty.buffer.AbstractByteBufAllocator.toLeakAwareBuffer(",
+        "io.netty.buffer.AdvancedLeakAwareByteBuf.recordLeakNonRefCountingOperation("
+};
+
+//StringUtil
+package io.netty.util.internal;
+/**
+ * String utility class.
+ */
+public final class StringUtil {
+
+    public static final String EMPTY_STRING = "";
+    public static final String NEWLINE = SystemPropertyUtil.get("line.separator", "\n");
+
+    public static final char DOUBLE_QUOTE = '\"';
+    public static final char COMMA = ',';
+    public static final char LINE_FEED = '\n';
+    public static final char CARRIAGE_RETURN = '\r';
+    public static final char TAB = '\t';
+    ...
+}
+//泄漏资源LeakEntryEntry
+ private static final class LeakEntry {
+    static final LeakEntry INSTANCE = new LeakEntry();//内部实例
+    private static final int HASH = System.identityHashCode(INSTANCE);//实例hash值
+
+    private LeakEntry() {
+    }
+
+    @Override
+    public int hashCode() {
+        return HASH;
+    }
+    @Override
+    public boolean equals(Object obj) {
+        return obj == this;
+    }
+}
+
+从上面可以看出，默认资源泄漏DefaultResourceLeak，构造过程为，首先将资源添加到引用队列，
+如果探测等级大于ADVANCED，则创建记录，然后添加资源泄漏对象到资源泄漏探测器的激活对象Map中。
+
+在来看DefaultResourceLeak的记录和关闭资源操作：
+
+
+@Override
+public void record() {
+    record0(null, 3);
+}
+
+@Override
+public void record(Object hint) {
+    record0(hint, 3);
+}
+
+private void record0(Object hint, int recordsToSkip) {
+    if (creationRecord != null) {
+        //根据资源泄漏线索，创建泄漏线索信息
+        String value = newRecord(hint, recordsToSkip);
+
+        synchronized (lastRecords) {
+            int size = lastRecords.size();
+            if (size == 0 || !lastRecords.getLast().equals(value)) {
+	        //如果泄漏线索信息集为空，或者与上次记录不同，则添加泄漏信息到泄漏记录集
+                lastRecords.add(value);
+            }
+            if (size > MAX_RECORDS) {
+	        //如果记录超过最大记录数，则从对头移除记录信息
+                lastRecords.removeFirst();
+                ++removedRecords;//更新移除记录计数器
+            }
+        }
+    }
+}
+从上面可以看出，记录资源泄漏，首先根据资源泄漏线索，创建泄漏线索信息，
+如果泄漏线索信息集为空，或者与上次记录不同，则添加泄漏信息到泄漏记录集，
+如果记录超过最大记录数，则从对头移除记录信息。
+
+再来看关闭资源
+
+ @Override
+ public boolean close() {
+     // Use the ConcurrentMap remove method, which avoids allocating an iterator.
+     //从资源泄漏探测器移除资源泄漏对象
+     return allLeaks.remove(this, LeakEntry.INSTANCE);
+ }
+
+ @Override
+ public boolean close(T trackedObject) {
+     // Ensure that the object that was tracked is the same as the one that was passed to close(...).
+     assert trackedHash == System.identityHashCode(trackedObject);
+
+     // We need to actually do the null check of the trackedObject after we close the leak because otherwise
+     // we may get false-positives reported by the ResourceLeakDetector. This can happen as the JIT / GC may
+     // be able to figure out that we do not need the trackedObject anymore and so already enqueue it for
+     // collection before we actually get a chance to close the enclosing ResourceLeak.
+     return close() && trackedObject != null;
+ }
+从上面来看，关闭资源探测对象，就是从资源泄漏探测器移除资源泄漏对象。
+
+//资源泄漏对象信息
+ @Override
+ public String toString() {
+     if (creationRecord == null) {
+         return EMPTY_STRING;
+     }
+
+     final Object[] array;
+     final int removedRecords;
+     synchronized (lastRecords) {
+         array = lastRecords.toArray();
+         removedRecords = this.removedRecords;
+     }
+
+     StringBuilder buf = new StringBuilder(16384).append(NEWLINE);
+     if (removedRecords > 0) {
+        //报告，由于泄漏记录数限制，丢弃的记录数
+         buf.append("WARNING: ")
+         .append(removedRecords)
+         .append(" leak records were discarded because the leak record count is limited to ")
+         .append(MAX_RECORDS)
+         .append(". Use system property ")
+         .append(PROP_MAX_RECORDS)
+         .append(" to increase the limit.")
+         .append(NEWLINE);
+     }
+     buf.append("Recent access records: ")
+     .append(array.length)
+     .append(NEWLINE);
+    //报告，记录的资源泄漏信息
+     if (array.length > 0) {
+         for (int i = array.length - 1; i >= 0; i --) {
+             buf.append('#')
+                .append(i + 1)
+                .append(':')
+                .append(NEWLINE)
+                .append(array[i]);
+         }
+     }
+     //报告资源泄漏创建信息
+     buf.append("Created at:")
+        .append(NEWLINE)
+        .append(creationRecord);
+
+     buf.setLength(buf.length() - NEWLINE.length());
+     return buf.toString();
+ }
+ 
+从上面来看，报告资源泄漏信息，主要是报告由于泄漏记录数限制，丢弃的记录数，记录的资源泄漏信息，
+资源泄漏创建信息。
 
 回到资源泄漏探测器，根据资源，创建资源泄漏追踪器：
 
@@ -576,8 +823,143 @@ public final ResourceLeakTracker<T> track(T obj) {
     return track0(obj);
 }
 
+//追踪资源泄漏对象线索
 private DefaultResourceLeak track0(T obj) {
-...
+    Level level = ResourceLeakDetector.level;
+    if (level == Level.DISABLED) {
+        return null;
+    }
+    if (level.ordinal() < Level.PARANOID.ordinal()) {
+        if ((PlatformDependent.threadLocalRandom().nextInt(samplingInterval)) == 0) {
+	    //报告探测等级
+            reportLeak(level);
+	    //创建资源泄漏对象
+            return new DefaultResourceLeak(obj);
+        } else {
+            return null;
+        }
+    } else {
+        reportLeak(level);
+        return new DefaultResourceLeak(obj);
+    }
+}
+
+来看报告探测等级
+//报告探测等级    
+reportLeak(level);
+
+
+private void reportLeak(Level level) {
+    if (!logger.isErrorEnabled()) {
+        //如果日志Error级别没有开启，则将资源探测对象的引用队列中，poll探测对象，并关闭
+        for (;;) {
+            @SuppressWarnings("unchecked")
+            DefaultResourceLeak ref = (DefaultResourceLeak) refQueue.poll();
+            if (ref == null) {
+                break;
+            }
+            ref.close();
+        }
+        return;
+    }
+
+    // Detect and report previous leaks. 报告内存泄漏请求
+    for (;;) {
+        @SuppressWarnings("unchecked")
+	//
+        DefaultResourceLeak ref = (DefaultResourceLeak) refQueue.poll();
+        if (ref == null) {
+            break;
+        }
+        //清除引用
+        ref.clear();
+
+        if (!ref.close()) {
+	   //如果资源泄漏对象没关闭，则跳出当前循环
+            continue;
+        }
+        //获取资源泄漏探测信息
+        String records = ref.toString();
+	//记录资源泄漏信息
+        if (reportedLeaks.putIfAbsent(records, Boolean.TRUE) == null) {
+            if (records.isEmpty()) {
+	        //资源泄漏记录为空，则报告不可追踪
+                reportUntracedLeak(resourceType);
+            } else {
+	        //报告资源泄漏信息
+                reportTracedLeak(resourceType, records);
+            }
+        }
+    }
+}
+从上面可以看出，资源泄漏探测器，追踪资源泄漏探测信息，在采样点到达时，首先从资源泄漏引用队列，获取资源泄漏对象对象，
+关闭资源泄漏对象，并将探测结果添加到探测器的资源泄漏信息Map中，然后报告资源泄漏探测信息，最后创建资源探测对象。
+
+
+来看需要关注的几点：
+1.//清除引用
+//Reference
+public abstract class Reference<T> {
+    private T referent;         /* Treated specially by GC */
+
+    ReferenceQueue<? super T> queue;
+
+    Reference next;
+    transient private Reference<T> discovered;  /* used by VM */
+
+
+    /* Object used to synchronize with the garbage collector.  The collector
+     * must acquire this lock at the beginning of each collection cycle.  It is
+     * therefore critical that any code holding this lock complete as quickly
+     * as possible, allocate no new objects, and avoid calling user code.
+     */
+    static private class Lock { };
+    private static Lock lock = new Lock();
+
+
+    /* List of References waiting to be enqueued.  The collector adds
+     * References to this list, while the Reference-handler thread removes
+     * them.  This list is protected by the above lock object.
+     */
+    private static Reference pending = null;
+        
+    /**
+      * Clears this reference object.  Invoking this method will not cause this
+      * object to be enqueued.
+      * 清除对象引用
+      * <p> This method is invoked only by Java code; when the garbage collector
+      * clears references it does so directly, without invoking this method.
+      */
+     public void clear() {
+         this.referent = null;
+     }
+    ...
+}
+2.
+/**
+ * This method is called when a traced leak is detected. It can be overridden for tracking how many times leaks
+ * have been detected.
+ 报告资源泄漏信息
+ */
+protected void reportTracedLeak(String resourceType, String records) {
+    logger.error(
+            "LEAK: {}.release() was not called before it's garbage-collected. " +
+            "See http://netty.io/wiki/reference-counted-objects.html for more information.{}",
+            resourceType, records);
+}
+3.
+/**
+ * This method is called when an untraced leak is detected. It can be overridden for tracking how many times leaks
+ * have been detected.
+报告不可追踪
+ */
+protected void reportUntracedLeak(String resourceType) {
+    logger.error("LEAK: {}.release() was not called before it's garbage-collected. " +
+            "Enable advanced leak reporting to find out where the leak occurred. " +
+            "To enable advanced leak reporting, " +
+            "specify the JVM option '-D{}={}' or call {}.setLevel() " +
+            "See http://netty.io/wiki/reference-counted-objects.html for more information.",
+            resourceType, PROP_LEVEL, Level.ADVANCED.name().toLowerCase(), simpleClassName(this));
 }
 
 
@@ -599,3 +981,291 @@ PARANOID开启终极采样泄漏探测，将会以高级负载为代价，报告
 关闭泄漏资源方法，以便资源泄漏探测器不在警告泄漏资源。
 
 
+默认资源泄漏DefaultResourceLeak，构造过程为，首先将资源添加到引用队列，
+如果探测等级大于ADVANCED，则创建记录，然后添加资源泄漏对象到资源泄漏探测器的激活对象Map中。
+
+记录资源泄漏，首先根据资源泄漏线索，创建泄漏线索信息，
+如果泄漏线索信息集为空，或者与上次记录不同，则添加泄漏信息到泄漏记录集，
+如果记录超过最大记录数，则从对头移除记录信息。
+
+关闭资源探测对象，就是从资源泄漏探测器移除资源泄漏对象。
+
+报告资源泄漏信息，主要是报告由于泄漏记录数限制，丢弃的记录数，记录的资源泄漏信息，
+资源泄漏创建信息。
+
+
+资源泄漏探测器，追踪资源泄漏探测信息，在采样点到达时，首先从资源泄漏引用队列，获取资源泄漏对象对象，
+关闭资源泄漏对象，并将探测结果添加到探测器的资源泄漏信息Map中，然后报告资源泄漏探测信息，最后创建资源探测对象。
+
+附：
+
+//PhantomReference
+package java.lang.ref;
+
+
+/**
+ * Phantom reference objects, which are enqueued after the collector
+ * determines that their referents may otherwise be reclaimed.  Phantom
+ * references are most often used for scheduling pre-mortem cleanup actions in
+ * a more flexible way than is possible with the Java finalization mechanism.
+ *
+ * <p> If the garbage collector determines at a certain point in time that the
+ * referent of a phantom reference is <a
+ * href="package-summary.html#reachability">phantom reachable</a>, then at that
+ * time or at some later time it will enqueue the reference.
+ *
+ * <p> In order to ensure that a reclaimable object remains so, the referent of
+ * a phantom reference may not be retrieved: The <code>get</code> method of a
+ * phantom reference always returns <code>null</code>.
+ *
+ * <p> Unlike soft and weak references, phantom references are not
+ * automatically cleared by the garbage collector as they are enqueued.  An
+ * object that is reachable via phantom references will remain so until all
+ * such references are cleared or themselves become unreachable.
+ *
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+
+public class PhantomReference<T> extends Reference<T> {
+
+    /**
+     * Returns this reference object's referent.  Because the referent of a
+     * phantom reference is always inaccessible, this method always returns
+     * <code>null</code>.
+     *
+     * @return  <code>null</code>
+     */
+    public T get() {
+        return null;
+    }
+
+    /**
+     * Creates a new phantom reference that refers to the given object and
+     * is registered with the given queue.
+     *
+     * <p> It is possible to create a phantom reference with a <tt>null</tt>
+     * queue, but such a reference is completely useless: Its <tt>get</tt>
+     * method will always return null and, since it does not have a queue, it
+     * will never be enqueued.
+     *
+     * @param referent the object the new phantom reference will refer to
+     * @param q the queue with which the reference is to be registered,
+     *          or <tt>null</tt> if registration is not required
+     */
+    public PhantomReference(T referent, ReferenceQueue<? super T> q) {
+        super(referent, q);
+    }
+
+}
+
+
+//Reference
+/**
+ * Abstract base class for reference objects.  This class defines the
+ * operations common to all reference objects.  Because reference objects are
+ * implemented in close cooperation with the garbage collector, this class may
+ * not be subclassed directly.
+ *
+ * @author   Mark Reinhold
+ * @since    1.2
+ */
+
+public abstract class Reference<T> {
+
+    /* A Reference instance is in one of four possible internal states:
+     *
+     *     Active: Subject to special treatment by the garbage collector.  Some
+     *     time after the collector detects that the reachability of the
+     *     referent has changed to the appropriate state, it changes the
+     *     instance's state to either Pending or Inactive, depending upon
+     *     whether or not the instance was registered with a queue when it was
+     *     created.  In the former case it also adds the instance to the
+     *     pending-Reference list.  Newly-created instances are Active.
+     *
+     *     Pending: An element of the pending-Reference list, waiting to be
+     *     enqueued by the Reference-handler thread.  Unregistered instances
+     *     are never in this state.
+     *
+     *     Enqueued: An element of the queue with which the instance was
+     *     registered when it was created.  When an instance is removed from
+     *     its ReferenceQueue, it is made Inactive.  Unregistered instances are
+     *     never in this state.
+     *
+     *     Inactive: Nothing more to do.  Once an instance becomes Inactive its
+     *     state will never change again.
+     *
+     * The state is encoded in the queue and next fields as follows:
+     *
+     *     Active: queue = ReferenceQueue with which instance is registered, or
+     *     ReferenceQueue.NULL if it was not registered with a queue; next =
+     *     null.
+     *
+     *     Pending: queue = ReferenceQueue with which instance is registered;
+     *     next = Following instance in queue, or this if at end of list.
+     *
+     *     Enqueued: queue = ReferenceQueue.ENQUEUED; next = Following instance
+     *     in queue, or this if at end of list.
+     *
+     *     Inactive: queue = ReferenceQueue.NULL; next = this.
+     *
+     * With this scheme the collector need only examine the next field in order
+     * to determine whether a Reference instance requires special treatment: If
+     * the next field is null then the instance is active; if it is non-null,
+     * then the collector should treat the instance normally.
+     *
+     * To ensure that concurrent collector can discover active Reference
+     * objects without interfering with application threads that may apply
+     * the enqueue() method to those objects, collectors should link
+     * discovered objects through the discovered field.
+     */
+
+    private T referent;         /* Treated specially by GC */
+
+    ReferenceQueue<? super T> queue;
+
+    Reference next;
+    transient private Reference<T> discovered;  /* used by VM */
+
+
+    /* Object used to synchronize with the garbage collector.  The collector
+     * must acquire this lock at the beginning of each collection cycle.  It is
+     * therefore critical that any code holding this lock complete as quickly
+     * as possible, allocate no new objects, and avoid calling user code.
+     */
+    static private class Lock { };
+    private static Lock lock = new Lock();
+
+
+    /* List of References waiting to be enqueued.  The collector adds
+     * References to this list, while the Reference-handler thread removes
+     * them.  This list is protected by the above lock object.
+     */
+    private static Reference pending = null;
+
+    /* High-priority thread to enqueue pending References
+     */
+    private static class ReferenceHandler extends Thread {
+
+        ReferenceHandler(ThreadGroup g, String name) {
+            super(g, name);
+        }
+
+        public void run() {
+            for (;;) {
+
+                Reference r;
+                synchronized (lock) {
+                    if (pending != null) {
+                        r = pending;
+                        Reference rn = r.next;
+                        pending = (rn == r) ? null : rn;
+                        r.next = r;
+                    } else {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException x) { }
+                        continue;
+                    }
+                }
+
+                // Fast path for cleaners
+                if (r instanceof Cleaner) {
+                    ((Cleaner)r).clean();
+                    continue;
+                }
+
+                ReferenceQueue q = r.queue;
+                if (q != ReferenceQueue.NULL) q.enqueue(r);
+            }
+        }
+    }
+
+    static {
+        ThreadGroup tg = Thread.currentThread().getThreadGroup();
+        for (ThreadGroup tgn = tg;
+             tgn != null;
+             tg = tgn, tgn = tg.getParent());
+        Thread handler = new ReferenceHandler(tg, "Reference Handler");
+        /* If there were a special system-only priority greater than
+         * MAX_PRIORITY, it would be used here
+         */
+        handler.setPriority(Thread.MAX_PRIORITY);
+        handler.setDaemon(true);
+        handler.start();
+    }
+
+
+    /* -- Referent accessor and setters -- */
+
+    /**
+     * Returns this reference object's referent.  If this reference object has
+     * been cleared, either by the program or by the garbage collector, then
+     * this method returns <code>null</code>.
+     *
+     * @return   The object to which this reference refers, or
+     *           <code>null</code> if this reference object has been cleared
+     */
+    public T get() {
+        return this.referent;
+    }
+
+    /**
+     * Clears this reference object.  Invoking this method will not cause this
+     * object to be enqueued.
+     *
+     * <p> This method is invoked only by Java code; when the garbage collector
+     * clears references it does so directly, without invoking this method.
+     */
+    public void clear() {
+        this.referent = null;
+    }
+
+
+    /* -- Queue operations -- */
+
+    /**
+     * Tells whether or not this reference object has been enqueued, either by
+     * the program or by the garbage collector.  If this reference object was
+     * not registered with a queue when it was created, then this method will
+     * always return <code>false</code>.
+     *
+     * @return   <code>true</code> if and only if this reference object has
+     *           been enqueued
+     */
+    public boolean isEnqueued() {
+        /* In terms of the internal states, this predicate actually tests
+           whether the instance is either Pending or Enqueued */
+        synchronized (this) {
+            return (this.queue != ReferenceQueue.NULL) && (this.next != null);
+        }
+    }
+
+    /**
+     * Adds this reference object to the queue with which it is registered,
+     * if any.
+     *
+     * <p> This method is invoked only by Java code; when the garbage collector
+     * enqueues references it does so directly, without invoking this method.
+     *
+     * @return   <code>true</code> if this reference object was successfully
+     *           enqueued; <code>false</code> if it was already enqueued or if
+     *           it was not registered with a queue when it was created
+     */
+    public boolean enqueue() {
+        return this.queue.enqueue(this);
+    }
+
+
+    /* -- Constructors -- */
+
+    Reference(T referent) {
+        this(referent, null);
+    }
+
+    Reference(T referent, ReferenceQueue<? super T> queue) {
+        this.referent = referent;
+        this.queue = (queue == null) ? ReferenceQueue.NULL : queue;
+    }
+
+}
