@@ -82,7 +82,7 @@ import static io.netty.util.internal.MathUtil.isOutOfBounds;
 public abstract class AbstractByteBuf extends ByteBuf {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(AbstractByteBuf.class);
     private static final String PROP_MODE = "io.netty.buffer.bytebuf.checkAccessible";
-    private static final boolean checkAccessible;
+    private static final boolean checkAccessible;//访问buf时，是否可需要检查
 
     static {
         checkAccessible = SystemPropertyUtil.getBoolean(PROP_MODE, true);
@@ -110,12 +110,454 @@ public abstract class AbstractByteBuf extends ByteBuf {
 从上面来看，字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为
 maxCapacity；buf的构造，主要是初始化最大容量。
 
+来看设置读写索引方法
+@Override
+public ByteBuf setIndex(int readerIndex, int writerIndex) {
+    if (readerIndex < 0 || readerIndex > writerIndex || writerIndex > capacity()) {
+        throw new IndexOutOfBoundsException(String.format(
+                "readerIndex: %d, writerIndex: %d (expected: 0 <= readerIndex <= writerIndex <= capacity(%d))",
+                readerIndex, writerIndex, capacity()));
+    }
+    setIndex0(readerIndex, writerIndex);
+    return this;
+}
+
+final void setIndex0(int readerIndex, int writerIndex) {
+    this.readerIndex = readerIndex;
+    this.writerIndex = writerIndex;
+}
+
+再来看丢弃已经读过的字节数据：
+
+@Override
+public ByteBuf discardReadBytes() {
+    ensureAccessible();
+    if (readerIndex == 0) {
+        return this;
+    }
+    if (readerIndex != writerIndex) {
+        //更新索引
+        setBytes(0, this, readerIndex, writerIndex - readerIndex);
+        writerIndex -= readerIndex;
+	////更新读写索引标记
+        adjustMarkers(readerIndex);
+        readerIndex = 0;
+    } else {
+        adjustMarkers(readerIndex);
+        writerIndex = readerIndex = 0;
+    }
+    return this;
+}
 
 
+/**
+ * Should be called by every method that tries to access the buffers content to check
+ * if the buffer was released before.
+ 确保buf可以访问
+ */
+protected final void ensureAccessible() {
+    if (checkAccessible && refCnt() == 0) {
+        throw new IllegalReferenceCountException(0);
+    }
+}
 
+//更新读写索引标记
+protected final void adjustMarkers(int decrement) {
+    int markedReaderIndex = this.markedReaderIndex;
+    if (markedReaderIndex <= decrement) {
+        this.markedReaderIndex = 0;
+        int markedWriterIndex = this.markedWriterIndex;
+        if (markedWriterIndex <= decrement) {
+            this.markedWriterIndex = 0;
+        } else {
+            this.markedWriterIndex = markedWriterIndex - decrement;
+        }
+    } else {
+        this.markedReaderIndex = markedReaderIndex - decrement;
+        markedWriterIndex -= decrement;
+    }
+}
+
+从上面可以看出，丢弃已读数据方法discardReadBytes，丢弃buf数据时，只修改读写索引和相应的标记，
+并不删除数据。
+
+再来看，根据负载丢弃数据方法：
+@Override
+public ByteBuf discardSomeReadBytes() {
+    ensureAccessible();
+    if (readerIndex == 0) {
+        return this;
+    }
+
+    if (readerIndex == writerIndex) {
+        //读写索引相等，则更新读写索引为0
+        adjustMarkers(readerIndex);
+        writerIndex = readerIndex = 0;
+        return this;
+    }
+
+    if (readerIndex >= capacity() >>> 1) {
+        //丢弃已读的数据，与discardReadBytes方法作用相同
+        setBytes(0, this, readerIndex, writerIndex - readerIndex);
+        writerIndex -= readerIndex;
+        adjustMarkers(readerIndex);
+        readerIndex = 0;
+    }
+    return this;
+}
+//确保buf，足够容下minWritableBytes个字节数据
+@Override
+public ByteBuf ensureWritable(int minWritableBytes) {
+    if (minWritableBytes < 0) {
+        throw new IllegalArgumentException(String.format(
+                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
+    }
+    ensureWritable0(minWritableBytes);
+    return this;
+}
+
+private void ensureWritable0(int minWritableBytes) {
+    if (minWritableBytes <= writableBytes()) {
+        return;
+    }
+
+    if (minWritableBytes > maxCapacity - writerIndex) {
+        throw new IndexOutOfBoundsException(String.format(
+                "writerIndex(%d) + minWritableBytes(%d) exceeds maxCapacity(%d): %s",
+                writerIndex, minWritableBytes, maxCapacity, this));
+    }
+
+    // Normalize the current capacity to the power of 2. 计算新的buf容量
+    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
+
+    // Adjust to the new capacity.
+    //调整容量
+    capacity(newCapacity);
+}
+
+@Override
+public int ensureWritable(int minWritableBytes, boolean force) {
+    if (minWritableBytes < 0) {
+        throw new IllegalArgumentException(String.format(
+                "minWritableBytes: %d (expected: >= 0)", minWritableBytes));
+    }
+    if (minWritableBytes <= writableBytes()) {
+        //不够写
+        return 0;
+    }
+    final int maxCapacity = maxCapacity();
+    final int writerIndex = writerIndex();
+    if (minWritableBytes > maxCapacity - writerIndex) {
+        if (!force || capacity() == maxCapacity) {
+            return 1;
+        }
+	//扩展至最大容量
+        capacity(maxCapacity);
+        return 3;
+    }
+    //计算新的容量，并更新
+    // Normalize the current capacity to the power of 2.
+    int newCapacity = alloc().calculateNewCapacity(writerIndex + minWritableBytes, maxCapacity);
+
+    // Adjust to the new capacity.
+    capacity(newCapacity);
+    return 2;
+}
+
+来看get*方法：
+来看获取一个字节：
+
+@Override
+public byte getByte(int index) {
+    checkIndex(index);
+    return _getByte(index);
+}
+//待子类扩展
+protected abstract byte _getByte(int index);
+
+检查索引是否越界
+protected final void checkIndex(int index) {
+    checkIndex(index, 1);
+}
+
+protected final void checkIndex(int index, int fieldLength) {
+    ensureAccessible();
+    checkIndex0(index, fieldLength);
+}
+
+final void checkIndex0(int index, int fieldLength) {
+    if (isOutOfBounds(index, fieldLength, capacity())) {
+        throw new IndexOutOfBoundsException(String.format(
+                "index: %d, length: %d (expected: range(0, %d))", index, fieldLength, capacity()));
+    }
+}
+
+
+//MathUtil
+package io.netty.util.internal;
+/**
+ * Math utility methods.
+ */
+public final class MathUtil {
+    /**
+     * Determine if the requested {@code index} and {@code length} will fit within {@code capacity}.
+     * @param index The starting index.
+     * @param length The length which will be utilized (starting from {@code index}).
+     * @param capacity The capacity that {@code index + length} is allowed to be within.
+     * @return {@code true} if the requested {@code index} and {@code length} will fit within {@code capacity}.
+     * {@code false} if this would result in an index out of bounds exception.
+     */
+    public static boolean isOutOfBounds(int index, int length, int capacity) {
+        return (index | length | (index + length) | (capacity - (index + length))) < 0;
+    }
+    ...
+}
+
+再看获取一个int值：
+
+@Override
+public int getInt(int index) {
+    checkIndex(index, 4);
+    return _getInt(index);
+}
+
+protected abstract int _getInt(int index);
+
+其他get原始类型方法，思路基本相同；
+
+来看getBytes(*)方法：
+
+@Override
+public ByteBuf getBytes(int index, byte[] dst) {
+    getBytes(index, dst, 0, dst.length);
+    return this;
+}
+
+@Override
+public ByteBuf getBytes(int index, ByteBuf dst) {
+    getBytes(index, dst, dst.writableBytes());
+    return this;
+}
+
+@Override
+public ByteBuf getBytes(int index, ByteBuf dst, int length) {
+    getBytes(index, dst, dst.writerIndex(), length);
+    //更新目的buf索引
+    dst.writerIndex(dst.writerIndex() + length);
+    return this;
+}
+
+字节buf接口定义中：
+public abstract ByteBuf getBytes(int index, byte[] dst, int dstIndex, int length);
+
+从上面可以看出，getBytes*方法不会修改当前buf读写索引，会修改目的buf的写索引。
+
+@Override
+public CharSequence readCharSequence(int length, Charset charset) {
+    CharSequence sequence = getCharSequence(readerIndex, length, charset);
+    readerIndex += length;
+    return sequence;
+}
+
+
+@Override
+public CharSequence getCharSequence(int index, int length, Charset charset) {
+    // TODO: We could optimize this for UTF8 and US_ASCII
+    return toString(index, length, charset);
+}
+
+@Override
+public String toString(Charset charset) {
+    return toString(readerIndex, readableBytes(), charset);
+}
+
+@Override
+public String toString(int index, int length, Charset charset) {
+    return ByteBufUtil.decodeString(this, index, length, charset);
+}
+
+//ByteBufUtil
+
+static String decodeString(ByteBuf src, int readerIndex, int len, Charset charset) {
+    if (len == 0) {
+        return StringUtil.EMPTY_STRING;
+    }
+    final CharsetDecoder decoder = CharsetUtil.decoder(charset);
+    final int maxLength = (int) ((double) len * decoder.maxCharsPerByte());
+    CharBuffer dst = CHAR_BUFFERS.get();
+    if (dst.length() < maxLength) {
+        dst = CharBuffer.allocate(maxLength);
+        if (maxLength <= MAX_CHAR_BUFFER_SIZE) {
+            CHAR_BUFFERS.set(dst);
+        }
+    } else {
+        dst.clear();
+    }
+    if (src.nioBufferCount() == 1) {
+        // Use internalNioBuffer(...) to reduce object creation.
+        decodeString(decoder, src.internalNioBuffer(readerIndex, len), dst);
+    } else {
+        // We use a heap buffer as CharsetDecoder is most likely able to use a fast-path if src and dst buffers
+        // are both backed by a byte array.
+        ByteBuf buffer = src.alloc().heapBuffer(len);
+        try {
+            buffer.writeBytes(src, readerIndex, len);
+            // Use internalNioBuffer(...) to reduce object creation.
+            decodeString(decoder, buffer.internalNioBuffer(buffer.readerIndex(), len), dst);
+        } finally {
+            // Release the temporary buffer again.
+            buffer.release();
+        }
+    }
+    return dst.flip().toString();
+}
+
+private static void decodeString(CharsetDecoder decoder, ByteBuffer src, CharBuffer dst) {
+    try {
+        CoderResult cr = decoder.decode(src, dst, true);
+        if (!cr.isUnderflow()) {
+            cr.throwException();
+        }
+        cr = decoder.flush(dst);
+        if (!cr.isUnderflow()) {
+            cr.throwException();
+        }
+    } catch (CharacterCodingException x) {
+        throw new IllegalStateException(x);
+    }
+}
 
 
 总结：
 
 字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为
 maxCapacity；buf的构造，主要是初始化最大容量。
+
+弃已读数据方法discardReadBytes，丢弃buf数据时，只修改读写索引和相应的标记，
+并不删除数据；
+
+get*方法不会修改当前buf读写索引，getBytes(*)方法不会修改当前buf读写索引，会修改目的buf的写索引。
+
+
+
+附：
+字节buf，读写索引设值获取、标记重置相关方法：
+@Override
+public boolean isReadOnly() {
+    return false;
+}
+
+@SuppressWarnings("deprecation")
+@Override
+public ByteBuf asReadOnly() {
+    if (isReadOnly()) {
+        return this;
+    }
+    return Unpooled.unmodifiableBuffer(this);
+}
+
+@Override
+public int maxCapacity() {
+    return maxCapacity;
+}
+
+protected final void maxCapacity(int maxCapacity) {
+    this.maxCapacity = maxCapacity;
+}
+
+@Override
+public int readerIndex() {
+    return readerIndex;
+}
+
+@Override
+public ByteBuf readerIndex(int readerIndex) {
+    if (readerIndex < 0 || readerIndex > writerIndex) {
+        throw new IndexOutOfBoundsException(String.format(
+                "readerIndex: %d (expected: 0 <= readerIndex <= writerIndex(%d))", readerIndex, writerIndex));
+    }
+    this.readerIndex = readerIndex;
+    return this;
+}
+
+@Override
+public int writerIndex() {
+    return writerIndex;
+}
+
+@Override
+public ByteBuf writerIndex(int writerIndex) {
+    if (writerIndex < readerIndex || writerIndex > capacity()) {
+        throw new IndexOutOfBoundsException(String.format(
+                "writerIndex: %d (expected: readerIndex(%d) <= writerIndex <= capacity(%d))",
+                writerIndex, readerIndex, capacity()));
+    }
+    this.writerIndex = writerIndex;
+    return this;
+}
+
+
+@Override
+public ByteBuf clear() {
+    readerIndex = writerIndex = 0;
+    return this;
+}
+
+@Override
+public boolean isReadable() {
+    return writerIndex > readerIndex;
+}
+
+@Override
+public boolean isReadable(int numBytes) {
+    return writerIndex - readerIndex >= numBytes;
+}
+
+@Override
+public boolean isWritable() {
+    return capacity() > writerIndex;
+}
+
+@Override
+public boolean isWritable(int numBytes) {
+    return capacity() - writerIndex >= numBytes;
+}
+
+@Override
+public int readableBytes() {
+    return writerIndex - readerIndex;
+}
+
+@Override
+public int writableBytes() {
+    return capacity() - writerIndex;
+}
+
+@Override
+public int maxWritableBytes() {
+    return maxCapacity() - writerIndex;
+}
+
+@Override
+public ByteBuf markReaderIndex() {
+    markedReaderIndex = readerIndex;
+    return this;
+}
+
+@Override
+public ByteBuf resetReaderIndex() {
+    readerIndex(markedReaderIndex);
+    return this;
+}
+
+@Override
+public ByteBuf markWriterIndex() {
+    markedWriterIndex = writerIndex;
+    return this;
+}
+
+@Override
+public ByteBuf resetWriterIndex() {
+    writerIndex = markedWriterIndex;
+    return this;
+}
