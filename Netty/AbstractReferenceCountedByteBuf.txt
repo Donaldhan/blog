@@ -1,0 +1,124 @@
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
+netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
+引言
+上一篇文章我们看了抽象字节buf，先来回顾一下：
+字节buf内部有两个索引，一个读索引，一个写索引，两个索引标记，即读写索引对应的标记，buf的最大容量为maxCapacity；buf的构造，主要是初始化最大容量。
+
+弃已读数据方法discardReadBytes，丢弃buf数据时，只修改读写索引和相应的标记，并不删除数据。
+
+get*原始类型方法不会修改当前buf读写索引，getBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改目的buf的写索引。getBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
+set*原始类型方法不会修改当前buf读写索引，setBytes(...,ByteBuf,...)方法不会修改当前buf读写索引，会修改源buf的读索引。setBytes(...,byte[],...)方法不会修改当前buf读写索引。
+
+read*原始类型方法会修改当前buf读索引，readBytes(...,ByteBuf,...)方法会修改当前buf读索引，同时会修改目的buf的写索引，readBytes(...,byte[],...)方法会修改当前buf读索引。read*操作实际委托个get*的相关操作，同时更新buf读索引。
+
+跳过length长度的字节，只更新读索引，不删除实际buf数据。
+
+retainedSlice和slice方法返回则的字节buf，实际为字节buf底层unwrap buf，可以理解为字节buf的快照或引用，数据更改相互影响，retainedSlice方法会增加字节buf的引用计数器。
+
+write*原始类型方法会修改当前buf写索引，writeBytes(...,ByteBuf,...)方法会修改当前buf写索引，同时会修改目的buf的读索引，readBytes(...,byte[],...)方法会修改当前buf写索引。write*操作实际委托个set*的相关操作，同时更新buf写索引。
+
+retainedDuplicate和duplicate方法返回则的字节buf，实际为字节buf底层unwrap buf，可以理解为字节buf的快照或引用，数据更改相互影响，retainedDuplicate方法会增加字节buf的引用计数器。
+
+
+今天我们来看抽象引用字节buf AbstractReferenceCountedByteBuf：
+package io.netty.buffer;
+
+import io.netty.util.IllegalReferenceCountException;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import static io.netty.util.internal.ObjectUtil.checkPositive;
+
+/**
+ * Abstract base class for {@link ByteBuf} implementations that count references.
+ */
+public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
+
+    private static final AtomicIntegerFieldUpdater<AbstractReferenceCountedByteBuf> refCntUpdater =
+            AtomicIntegerFieldUpdater.newUpdater(AbstractReferenceCountedByteBuf.class, "refCnt");
+
+    private volatile int refCnt = 1;
+
+    protected AbstractReferenceCountedByteBuf(int maxCapacity) {
+        super(maxCapacity);
+    }
+
+    @Override
+    public int refCnt() {
+        return refCnt;
+    }
+
+    /**
+     * An unsafe operation intended for use by a subclass that sets the reference count of the buffer directly
+     */
+    protected final void setRefCnt(int refCnt) {
+        this.refCnt = refCnt;
+    }
+
+    @Override
+    public ByteBuf retain() {
+        return retain0(1);
+    }
+
+    @Override
+    public ByteBuf retain(int increment) {
+        return retain0(checkPositive(increment, "increment"));
+    }
+
+    private ByteBuf retain0(int increment) {
+        for (;;) {
+            int refCnt = this.refCnt;
+            final int nextCnt = refCnt + increment;
+
+            // Ensure we not resurrect (which means the refCnt was 0) and also that we encountered an overflow.
+            if (nextCnt <= increment) {
+                throw new IllegalReferenceCountException(refCnt, increment);
+            }
+            if (refCntUpdater.compareAndSet(this, refCnt, nextCnt)) {
+                break;
+            }
+        }
+        return this;
+    }
+
+    @Override
+    public ByteBuf touch() {
+        return this;
+    }
+
+    @Override
+    public ByteBuf touch(Object hint) {
+        return this;
+    }
+
+    @Override
+    public boolean release() {
+        return release0(1);
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        return release0(checkPositive(decrement, "decrement"));
+    }
+
+    private boolean release0(int decrement) {
+        for (;;) {
+            int refCnt = this.refCnt;
+            if (refCnt < decrement) {
+                throw new IllegalReferenceCountException(refCnt, -decrement);
+            }
+
+            if (refCntUpdater.compareAndSet(this, refCnt, refCnt - decrement)) {
+                if (refCnt == decrement) {
+                    deallocate();
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+    /**
+     * Called once {@link #refCnt()} is equals 0.
+     */
+    protected abstract void deallocate();
+}
