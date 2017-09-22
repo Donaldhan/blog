@@ -33,7 +33,7 @@ import static io.netty.util.internal.ObjectUtil.checkPositive;
  * Abstract base class for {@link ByteBuf} implementations that count references.
  */
 public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
-    //
+    //引用计数器原子Updater
     private static final AtomicIntegerFieldUpdater<AbstractReferenceCountedByteBuf> refCntUpdater =
             AtomicIntegerFieldUpdater.newUpdater(AbstractReferenceCountedByteBuf.class, "refCnt");
 
@@ -78,7 +78,7 @@ public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
         }
         return this;
     }
-
+   //记录当前对象操作，以便提供内存泄漏的相关信息
     @Override
     public ByteBuf touch() {
         return this;
@@ -88,7 +88,7 @@ public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
     public ByteBuf touch(Object hint) {
         return this;
     }
-
+    //释放对象引用
     @Override
     public boolean release() {
         return release0(1);
@@ -105,9 +105,10 @@ public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
             if (refCnt < decrement) {
                 throw new IllegalReferenceCountException(refCnt, -decrement);
             }
-
+            //原子更新引用计数器
             if (refCntUpdater.compareAndSet(this, refCnt, refCnt - decrement)) {
                 if (refCnt == decrement) {
+		    //释放资源
                     deallocate();
                     return true;
                 }
@@ -120,3 +121,12 @@ public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
      */
     protected abstract void deallocate();
 }
+从上面可以看出，抽象字节引用计数器AbstractReferenceCountedByteBuf，内部有一个引用计数器，
+以及原子更新引用计数器的refCntUpdater（AbstractReferenceCountedByteBuf)，更新引用计数器，
+实际通过refCntUpdater CAS操作，释放对象引用的时候，如果引用计数器为0，则释放对象相关资源。
+
+
+总结：
+抽象字节引用计数器AbstractReferenceCountedByteBuf，内部有一个引用计数器，
+以及原子更新引用计数器的refCntUpdater（AbstractReferenceCountedByteBuf)，更新引用计数器，
+实际通过refCntUpdater CAS操作，释放对象引用的时候，如果引用计数器为0，则释放对象相关资源。

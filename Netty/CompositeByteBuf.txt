@@ -1,0 +1,21 @@
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
+netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
+netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
+
+/**
+ * A virtual buffer which shows multiple buffers as a single merged buffer.  It is recommended to use
+ * {@link ByteBufAllocator#compositeBuffer()} or {@link Unpooled#wrappedBuffer(ByteBuf...)} instead of calling the
+ * constructor explicitly.
+ */
+public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements Iterable<ByteBuf> {
+
+    private static final ByteBuffer EMPTY_NIO_BUFFER = Unpooled.EMPTY_BUFFER.nioBuffer();
+    private static final Iterator<ByteBuf> EMPTY_ITERATOR = Collections.<ByteBuf>emptyList().iterator();
+
+    private final ByteBufAllocator alloc;
+    private final boolean direct;
+    private final List<Component> components;
+    private final int maxNumComponents;
+
+    private boolean freed;
