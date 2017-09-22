@@ -33,28 +33,25 @@ import static io.netty.util.internal.ObjectUtil.checkPositive;
  * Abstract base class for {@link ByteBuf} implementations that count references.
  */
 public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
-
+    //
     private static final AtomicIntegerFieldUpdater<AbstractReferenceCountedByteBuf> refCntUpdater =
             AtomicIntegerFieldUpdater.newUpdater(AbstractReferenceCountedByteBuf.class, "refCnt");
 
-    private volatile int refCnt = 1;
-
+    private volatile int refCnt = 1;//引用计数器
     protected AbstractReferenceCountedByteBuf(int maxCapacity) {
         super(maxCapacity);
     }
-
     @Override
     public int refCnt() {
         return refCnt;
     }
-
     /**
      * An unsafe operation intended for use by a subclass that sets the reference count of the buffer directly
      */
     protected final void setRefCnt(int refCnt) {
         this.refCnt = refCnt;
     }
-
+    //增加引用计数器
     @Override
     public ByteBuf retain() {
         return retain0(1);
@@ -74,6 +71,7 @@ public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
             if (nextCnt <= increment) {
                 throw new IllegalReferenceCountException(refCnt, increment);
             }
+	    //原子更新引用计数器
             if (refCntUpdater.compareAndSet(this, refCnt, nextCnt)) {
                 break;
             }

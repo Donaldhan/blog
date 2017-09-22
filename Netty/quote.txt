@@ -71,7 +71,7 @@ netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/239351
 netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
 netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
 netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
-
+netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
 
 
 
