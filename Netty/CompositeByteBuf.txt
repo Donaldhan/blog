@@ -3,19 +3,375 @@ netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/
 netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
 netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
 
+前一篇文章我们看了抽象字节buf引用计数器，我们先来看回顾一下：
+	抽象字节引用计数器AbstractReferenceCountedByteBuf，内部有一个引用计数器，以及原子更新引用计数器的refCntUpdater（AbstractReferenceCountedByteBuf)，更新引用计数器，实际通过refCntUpdater CAS操作，释放对象引用的时候，如果引用计数器为0，则释放对象相关资源。
+今天我们将要看的是，抽象字节buf引用计数器一个具体实现CompositeByteBuf
+package io.netty.buffer;
+
+import io.netty.util.internal.EmptyArrays;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
+import java.nio.channels.GatheringByteChannel;
+import java.nio.channels.ScatteringByteChannel;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.ConcurrentModificationException;
+import java.util.Iterator;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.NoSuchElementException;
+
+import static io.netty.util.internal.ObjectUtil.checkNotNull;
 /**
  * A virtual buffer which shows multiple buffers as a single merged buffer.  It is recommended to use
  * {@link ByteBufAllocator#compositeBuffer()} or {@link Unpooled#wrappedBuffer(ByteBuf...)} instead of calling the
  * constructor explicitly.
+ 复合直接为一个虚拟的buf，将多个buf展示为一个合并的buf。强烈建议使用ByteBufAllocator#compositeBuffer()和
+Unpooled#wrappedBuffer(ByteBuf...)构造复合buf。
  */
 public class CompositeByteBuf extends AbstractReferenceCountedByteBuf implements Iterable<ByteBuf> {
 
     private static final ByteBuffer EMPTY_NIO_BUFFER = Unpooled.EMPTY_BUFFER.nioBuffer();
     private static final Iterator<ByteBuf> EMPTY_ITERATOR = Collections.<ByteBuf>emptyList().iterator();
 
-    private final ByteBufAllocator alloc;
-    private final boolean direct;
-    private final List<Component> components;
-    private final int maxNumComponents;
-
+    private final ByteBufAllocator alloc;//字节buf分配器
+    private final boolean direct;//是否为direct buf
+    private final List<Component> components;//字节buf集合
+    private final int maxNumComponents;//buf即最大容量
     private boolean freed;
+}
+
+先来看一下组件Component的定义
+private static final class Component {
+    final ByteBuf buf;//内部字节buf
+    final int length;//buf字节长度
+    int offset;//在复合buf中的开始位置
+    int endOffset;//在复合buf中的结束位置
+
+    Component(ByteBuf buf) {
+        this.buf = buf;
+        length = buf.readableBytes();
+    }
+
+    void freeIfNecessary() {
+        buf.release(); // We should not get a NPE here. If so, it must be a bug.
+    }
+}
+从上来看，组件可以看做字节buf的包装。
+
+再来看构造：
+// Special constructor used by WrappedCompositeByteBuf
+CompositeByteBuf(ByteBufAllocator alloc) {
+    super(Integer.MAX_VALUE);
+    this.alloc = alloc;
+    direct = false;
+    maxNumComponents = 0;
+    components = Collections.emptyList();
+}
+
+public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents) {
+    super(AbstractByteBufAllocator.DEFAULT_MAX_CAPACITY);
+    if (alloc == null) {
+        throw new NullPointerException("alloc");
+    }
+    this.alloc = alloc;
+    this.direct = direct;
+    this.maxNumComponents = maxNumComponents;
+    //创建字节buf集
+    components = newList(maxNumComponents);
+}
+
+public CompositeByteBuf(ByteBufAllocator alloc, boolean direct, int maxNumComponents, ByteBuf... buffers) {
+    this(alloc, direct, maxNumComponents, buffers, 0, buffers.length);
+}
+
+public CompositeByteBuf(
+        ByteBufAllocator alloc, boolean direct, int maxNumComponents, Iterable<ByteBuf> buffers) {
+    super(AbstractByteBufAllocator.DEFAULT_MAX_CAPACITY);
+    if (alloc == null) {
+        throw new NullPointerException("alloc");
+    }
+    if (maxNumComponents < 2) {
+        throw new IllegalArgumentException(
+                "maxNumComponents: " + maxNumComponents + " (expected: >= 2)");
+    }
+
+    this.alloc = alloc;
+    this.direct = direct;
+    this.maxNumComponents = maxNumComponents;
+    components = newList(maxNumComponents);//创建字节buf集
+    addComponents0(false, 0, buffers);//添加字节buf数组，到buf集
+    consolidateIfNeeded();//调整底层字节buf
+    setIndex(0, capacity());//更新复合buf读写索引
+}
+
+CompositeByteBuf(
+        ByteBufAllocator alloc, boolean direct, int maxNumComponents, ByteBuf[] buffers, int offset, int len) {
+    super(AbstractByteBufAllocator.DEFAULT_MAX_CAPACITY);
+    if (alloc == null) {
+        throw new NullPointerException("alloc");
+    }
+    if (maxNumComponents < 2) {
+        throw new IllegalArgumentException(
+                "maxNumComponents: " + maxNumComponents + " (expected: >= 2)");
+    }
+
+    this.alloc = alloc;
+    this.direct = direct;
+    this.maxNumComponents = maxNumComponents;
+    components = newList(maxNumComponents);//创建字节buf集
+    addComponents0(false, 0, buffers, offset, len);//添加字节buf数组，到buf集
+    consolidateIfNeeded();//调整底层字节buf
+    setIndex(0, capacity());//更新复合buf读写索引
+}
+
+复合buf的构造主要有一下几点要看：
+
+1.
+components = newList(maxNumComponents);//创建字节buf集
+
+2.
+addComponents0(false, 0, buffers, offset, len);//添加字节buf数组，到buf集
+
+3.
+consolidateIfNeeded();//检查是否需要扩展buf集
+
+4.
+setIndex(0, capacity());//更新复合buf读写索引
+
+我们分别来看这几点：
+1.
+components = newList(maxNumComponents);//创建字节buf集
+
+private static List<Component> newList(int maxNumComponents) {
+    return new ArrayList<Component>(Math.min(AbstractByteBufAllocator.DEFAULT_MAX_COMPONENTS, maxNumComponents));
+}
+
+2.
+addComponents0(false, 0, buffers, offset, len);//添加字节buf数组，到buf集
+
+private int addComponents0(boolean increaseIndex, int cIndex, Iterable<ByteBuf> buffers) {
+    if (buffers instanceof ByteBuf) {
+        // If buffers also implements ByteBuf (e.g. CompositeByteBuf), it has to go to addComponent(ByteBuf).
+	//处理实现CompositeByteBuf的字节buf场景
+        return addComponent0(increaseIndex, cIndex, (ByteBuf) buffers);
+    }
+    checkNotNull(buffers, "buffers");
+    //如果buffers不是集合类，则将buffers转换为字节buf集合
+    if (!(buffers instanceof Collection)) {
+        List<ByteBuf> list = new ArrayList<ByteBuf>();
+        try {
+            for (ByteBuf b: buffers) {
+                list.add(b);
+            }
+            buffers = list;
+        } finally {
+            if (buffers != list) {
+                for (ByteBuf b: buffers) {
+                    if (b != null) {
+                        try {
+			    //释放源buf数组中的字节buf
+                            b.release();
+                        } catch (Throwable ignored) {
+                            // ignore
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Collection<ByteBuf> col = (Collection<ByteBuf>) buffers;
+    return addComponents0(increaseIndex, cIndex, col.toArray(new ByteBuf[col.size()]), 0 , col.size());
+}
+
+private int addComponents0(boolean increaseWriterIndex, int cIndex, ByteBuf[] buffers, int offset, int len) {
+    checkNotNull(buffers, "buffers");
+    int i = offset;
+    try {
+        checkComponentIndex(cIndex);
+
+        // No need for consolidation
+        while (i < len) {
+            // Increment i now to prepare for the next iteration and prevent a duplicate release (addComponent0
+            // will release if an exception occurs, and we also release in the finally block here).
+            ByteBuf b = buffers[i++];
+            if (b == null) {
+                break;
+            }
+	    //添加字节buf到复合buf的索引cIndex上
+            cIndex = addComponent0(increaseWriterIndex, cIndex, b) + 1;
+            int size = components.size();
+            if (cIndex > size) {
+                cIndex = size;
+            }
+        }
+        return cIndex;
+    } finally {
+        for (; i < len; ++i) {
+            ByteBuf b = buffers[i];
+            if (b != null) {
+                try {
+		    //释放源buf数组中的字节buf
+                    b.release();
+                } catch (Throwable ignored) {
+                    // ignore
+                }
+            }
+        }
+    }
+}
+
+//检查索引是否越界
+ private void checkComponentIndex(int cIndex) {
+     ensureAccessible();
+     if (cIndex < 0 || cIndex > components.size()) {
+         throw new IndexOutOfBoundsException(String.format(
+                 "cIndex: %d (expected: >= 0 && <= numComponents(%d))",
+                 cIndex, components.size()));
+     }
+ }
+
+**
+ * Precondition is that {@code buffer != null}.
+  添加字节buf到复合buf的索引cIndex上
+ */
+private int addComponent0(boolean increaseWriterIndex, int cIndex, ByteBuf buffer) {
+    assert buffer != null;
+    boolean wasAdded = false;
+    try {
+        checkComponentIndex(cIndex);
+        int readableBytes = buffer.readableBytes();
+        // No need to consolidate - just add a component to the list.
+        @SuppressWarnings("deprecation")
+	//包装buf为buf组件
+        Component c = new Component(buffer.order(ByteOrder.BIG_ENDIAN).slice());
+        if (cIndex == components.size()) {
+            wasAdded = components.add(c);
+            if (cIndex == 0) {
+	        //buf添加到复合buf集第一个位置
+                c.endOffset = readableBytes;
+            } else {
+	        //buf添加到复合buf集最后一个位置
+                Component prev = components.get(cIndex - 1);
+                c.offset = prev.endOffset;
+                c.endOffset = c.offset + readableBytes;
+            }
+        } else {
+	   //添加buf到复合buf集合
+            components.add(cIndex, c);
+            wasAdded = true;
+            if (readableBytes != 0) {
+	        //更新索引
+                updateComponentOffsets(cIndex);
+            }
+        }
+        if (increaseWriterIndex) {
+	    //更新写索引
+            writerIndex(writerIndex() + buffer.readableBytes());
+        }
+        return cIndex;
+    } finally {
+        if (!wasAdded) {
+            buffer.release();
+        }
+    }
+}
+
+来看一下更新索引和更新写索引：
+
+//更新复合buf集合中cIndex位置上的buf的开始位置和终止位置
+private void updateComponentOffsets(int cIndex) {
+    int size = components.size();
+    if (size <= cIndex) {
+        return;
+    }
+
+    Component c = components.get(cIndex);
+    if (cIndex == 0) {
+        c.offset = 0;
+        c.endOffset = c.length;
+        cIndex ++;
+    }
+
+    for (int i = cIndex; i < size; i ++) {
+        Component prev = components.get(i - 1);
+        Component cur = components.get(i);
+        cur.offset = prev.endOffset;
+        cur.endOffset = cur.offset + cur.length;
+    }
+}
+
+
+//更新写索引
+@Override
+public CompositeByteBuf writerIndex(int writerIndex) {
+    return (CompositeByteBuf) super.writerIndex(writerIndex);
+}
+
+
+3.
+consolidateIfNeeded();//检查是否需要扩展buf集
+
+/**
+ * This should only be called as last operation from a method as this may adjust the underlying
+ * array of components and so affect the index etc.
+ */
+private void consolidateIfNeeded() {
+    // Consolidate if the number of components will exceed the allowed maximum by the current
+    // operation.
+    final int numComponents = components.size();
+    if (numComponents > maxNumComponents) {
+        //如果当前buf的数量大于复合buf集最大容量，则获取最后一个buf的结束位置，即复合buf的数据长度
+        final int capacity = components.get(numComponents - 1).endOffset;
+        //分配capacity容量的字节buf
+        ByteBuf consolidated = allocBuffer(capacity);
+
+        // We're not using foreach to avoid creating an iterator.
+	//将复合buf集中的所有字节buf，整合到一个buf中
+        for (int i = 0; i < numComponents; i ++) {
+            Component c = components.get(i);
+            ByteBuf b = c.buf;
+            consolidated.writeBytes(b);
+            c.freeIfNecessary();
+        }
+        Component c = new Component(consolidated);
+        c.endOffset = c.length;
+        components.clear();//清空原始复合buf集
+        components.add(c);//添加整合后的buf到复合buf集
+    }
+}
+
+
+//分配capacity容量的字节buf
+private ByteBuf allocBuffer(int capacity) {
+    return direct ? alloc().directBuffer(capacity) : alloc().heapBuffer(capacity);
+}
+
+4.
+setIndex(0, capacity());//更新复合buf读写索引
+
+@Override
+public CompositeByteBuf setIndex(int readerIndex, int writerIndex) {
+    return (CompositeByteBuf) super.setIndex(readerIndex, writerIndex);
+}
+
+从上面可以看出：
+复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被
+包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，
+添加整合后的buf到buf集。复合buf的读写索引为字节buf集的起始索引和size；每个组件buf Component内部记录着字节buf在
+复合buf中的起始位置和结束位置，及buf可读数据长度。
+
+
+
+总结：
+复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被
+包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，
+添加整合后的buf到buf集。复合buf的读写索引为字节buf集的起始索引和size；每个组件buf Component内部记录着字节buf在
+复合buf中的起始位置和结束位置，及buf可读数据长度。
