@@ -506,6 +506,10 @@ public List<ByteBuf> decompose(int offset, int length) {
 
     return slice;
 }
+
+
+
+
 总结：
 复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被
 包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，
