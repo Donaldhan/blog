@@ -368,10 +368,275 @@ public CompositeByteBuf setIndex(int readerIndex, int writerIndex) {
 添加整合后的buf到buf集。复合buf的读写索引为字节buf集的起始索引和size；每个组件buf Component内部记录着字节buf在
 复合buf中的起始位置和结束位置，及buf可读数据长度。
 
+其他添加字节buf到复合buf的的方法见附。
 
 
+来看移除buf
+
+/**
+ * Remove the {@link ByteBuf} from the given index.
+ *
+ * @param cIndex the index on from which the {@link ByteBuf} will be remove
+ */
+public CompositeByteBuf removeComponent(int cIndex) {
+    checkComponentIndex(cIndex);
+    //直接从组件buf集合移除buf
+    Component comp = components.remove(cIndex);
+    comp.freeIfNecessary();
+    if (comp.length > 0) {
+        // Only need to call updateComponentOffsets if the length was > 0
+        updateComponentOffsets(cIndex);//更新索引对应的字节buf的起止位置
+    }
+    return this;
+}
+
+/**
+ * Remove the number of {@link ByteBuf}s starting from the given index.
+ *
+ * @param cIndex the index on which the {@link ByteBuf}s will be started to removed
+ * @param numComponents the number of components to remove
+ */
+public CompositeByteBuf removeComponents(int cIndex, int numComponents) {
+    checkComponentIndex(cIndex, numComponents);
+
+    if (numComponents == 0) {
+        return this;
+    }
+    List<Component> toRemove = components.subList(cIndex, cIndex + numComponents);
+    boolean needsUpdate = false;
+    for (Component c: toRemove) {
+        if (c.length > 0) {
+            needsUpdate = true;
+        }
+        c.freeIfNecessary();
+    }
+    //移除cIndex到cIndex + numComponents字节buf
+    toRemove.clear();
+
+    if (needsUpdate) {
+        // Only need to call updateComponentOffsets if the length was > 0
+        updateComponentOffsets(cIndex);//更新索引对应的字节buf的起止位置
+    }
+    return this;
+}
+
+再来看返回复合buf迭代器：
+ @Override
+public Iterator<ByteBuf> iterator() {
+    ensureAccessible();
+    if (components.isEmpty()) {
+        return EMPTY_ITERATOR;
+    }
+    return new CompositeByteBufIterator();
+}
+//CompositeByteBufIterator
+private final class CompositeByteBufIterator implements Iterator<ByteBuf> {
+    private final int size = components.size();
+    private int index;
+
+    @Override
+    public boolean hasNext() {
+        return size > index;
+    }
+
+    @Override
+    public ByteBuf next() {
+        if (size != components.size()) {
+            throw new ConcurrentModificationException();
+        }
+        if (!hasNext()) {
+            throw new NoSuchElementException();
+        }
+        try {
+            return components.get(index++).buf;
+        } catch (IndexOutOfBoundsException e) {
+            throw new ConcurrentModificationException();
+        }
+    }
+
+    @Override
+    public void remove() {
+        throw new UnsupportedOperationException("Read-Only");
+    }
+}
+
+
+
+/**
+ * Same with {@link #slice(int, int)} except that this method returns a list.
+ */
+public List<ByteBuf> decompose(int offset, int length) {
+    checkIndex(offset, length);
+    if (length == 0) {
+        return Collections.emptyList();
+    }
+
+    int componentId = toComponentIndex(offset);
+    List<ByteBuf> slice = new ArrayList<ByteBuf>(components.size());
+
+    // The first component
+    Component firstC = components.get(componentId);
+    ByteBuf first = firstC.buf.duplicate();
+    first.readerIndex(offset - firstC.offset);
+
+    ByteBuf buf = first;
+    int bytesToSlice = length;
+    do {
+        int readableBytes = buf.readableBytes();
+        if (bytesToSlice <= readableBytes) {
+            // Last component
+            buf.writerIndex(buf.readerIndex() + bytesToSlice);
+            slice.add(buf);
+            break;
+        } else {
+            // Not the last component
+            slice.add(buf);
+            bytesToSlice -= readableBytes;
+            componentId ++;
+
+            // Fetch the next component.
+            buf = components.get(componentId).buf.duplicate();
+        }
+    } while (bytesToSlice > 0);
+
+    // Slice all components because only readable bytes are interesting.
+    for (int i = 0; i < slice.size(); i ++) {
+        slice.set(i, slice.get(i).slice());
+    }
+
+    return slice;
+}
 总结：
 复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被
 包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，
 添加整合后的buf到buf集。复合buf的读写索引为字节buf集的起始索引和size；每个组件buf Component内部记录着字节buf在
 复合buf中的起始位置和结束位置，及buf可读数据长度。
+
+
+
+附：
+
+添加字节buf到复合buf
+/**
+ * Add the given {@link ByteBuf}.
+ * <p>
+ * Be aware that this method does not increase the {@code writerIndex} of the {@link CompositeByteBuf}.
+ * If you need to have it increased use {@link #addComponent(boolean, ByteBuf)}.
+ 添加字节buf到复合buf，不会更新写索引
+ * <p>
+ * {@link ByteBuf#release()} ownership of {@code buffer} is transfered to this {@link CompositeByteBuf}.
+ * @param buffer the {@link ByteBuf} to add. {@link ByteBuf#release()} ownership is transfered to this
+ * {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponent(ByteBuf buffer) {
+    return addComponent(false, buffer);
+}
+
+/**
+ * Add the given {@link ByteBuf}s.
+ * <p>
+ * Be aware that this method does not increase the {@code writerIndex} of the {@link CompositeByteBuf}.
+ * If you need to have it increased use {@link #addComponents(boolean, ByteBuf[])}.
+ 与上面不同的是，添加的是一个字节buf组
+ * <p>
+ * {@link ByteBuf#release()} ownership of all {@link ByteBuf} objects in {@code buffers} is transfered to this
+ * {@link CompositeByteBuf}.
+ * @param buffers the {@link ByteBuf}s to add. {@link ByteBuf#release()} ownership of all {@link ByteBuf#release()}
+ * ownership of all {@link ByteBuf} objects is transfered to this {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponents(ByteBuf... buffers) {
+    return addComponents(false, buffers);
+}
+
+/**
+ * Add the given {@link ByteBuf}s.
+ * <p>
+ * Be aware that this method does not increase the {@code writerIndex} of the {@link CompositeByteBuf}.
+ * If you need to have it increased use {@link #addComponents(boolean, Iterable)}.
+  添加具有迭代器属性的字节buf到复合buf，不会更新写索引
+ * <p>
+ * {@link ByteBuf#release()} ownership of all {@link ByteBuf} objects in {@code buffers} is transfered to this
+ * {@link CompositeByteBuf}.
+ * @param buffers the {@link ByteBuf}s to add. {@link ByteBuf#release()} ownership of all {@link ByteBuf#release()}
+ * ownership of all {@link ByteBuf} objects is transfered to this {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponents(Iterable<ByteBuf> buffers) {
+    return addComponents(false, buffers);
+}
+
+/**
+ * Add the given {@link ByteBuf} on the specific index.
+ * <p>
+ * Be aware that this method does not increase the {@code writerIndex} of the {@link CompositeByteBuf}.
+ * If you need to have it increased use {@link #addComponent(boolean, int, ByteBuf)}.
+ 添加到字节buf到复合buf的指定索引上
+ * <p>
+ * {@link ByteBuf#release()} ownership of {@code buffer} is transfered to this {@link CompositeByteBuf}.
+ * @param cIndex the index on which the {@link ByteBuf} will be added.
+ * @param buffer the {@link ByteBuf} to add. {@link ByteBuf#release()} ownership is transfered to this
+ * {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponent(int cIndex, ByteBuf buffer) {
+    return addComponent(false, cIndex, buffer);
+}
+
+/**
+ * Add the given {@link ByteBuf} and increase the {@code writerIndex} if {@code increaseWriterIndex} is
+ * {@code true}.
+ *添加buf到复合buf，并根据increaseWriterIndex参数，决定是否更新复合buf写索引
+ * {@link ByteBuf#release()} ownership of {@code buffer} is transfered to this {@link CompositeByteBuf}.
+ * @param buffer the {@link ByteBuf} to add. {@link ByteBuf#release()} ownership is transfered to this
+ * {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponent(boolean increaseWriterIndex, ByteBuf buffer) {
+    checkNotNull(buffer, "buffer");
+    addComponent0(increaseWriterIndex, components.size(), buffer);
+    consolidateIfNeeded();
+    return this;
+}
+
+/**
+ * Add the given {@link ByteBuf}s and increase the {@code writerIndex} if {@code increaseWriterIndex} is
+ * {@code true}.
+ *与上面方法不同的是，可以添加多个buf
+ * {@link ByteBuf#release()} ownership of all {@link ByteBuf} objects in {@code buffers} is transfered to this
+ * {@link CompositeByteBuf}.
+ * @param buffers the {@link ByteBuf}s to add. {@link ByteBuf#release()} ownership of all {@link ByteBuf#release()}
+ * ownership of all {@link ByteBuf} objects is transfered to this {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponents(boolean increaseWriterIndex, ByteBuf... buffers) {
+    addComponents0(increaseWriterIndex, components.size(), buffers, 0, buffers.length);
+    consolidateIfNeeded();
+    return this;
+}
+
+/**
+ * Add the given {@link ByteBuf}s and increase the {@code writerIndex} if {@code increaseWriterIndex} is
+ * {@code true}.
+ * 与上面方法不同的是，添加的buf为集合buf
+ * {@link ByteBuf#release()} ownership of all {@link ByteBuf} objects in {@code buffers} is transfered to this
+ * {@link CompositeByteBuf}.
+ * @param buffers the {@link ByteBuf}s to add. {@link ByteBuf#release()} ownership of all {@link ByteBuf#release()}
+ * ownership of all {@link ByteBuf} objects is transfered to this {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponents(boolean increaseWriterIndex, Iterable<ByteBuf> buffers) {
+    addComponents0(increaseWriterIndex, components.size(), buffers);
+    consolidateIfNeeded();
+    return this;
+}
+
+/**
+ * Add the given {@link ByteBuf} on the specific index and increase the {@code writerIndex}
+ * if {@code increaseWriterIndex} is {@code true}.
+ *添加buf到复合buf的指定索引上，并根据increaseWriterIndex参数，决定是否更新复合buf写索引
+ * {@link ByteBuf#release()} ownership of {@code buffer} is transfered to this {@link CompositeByteBuf}.
+ * @param cIndex the index on which the {@link ByteBuf} will be added.
+ * @param buffer the {@link ByteBuf} to add. {@link ByteBuf#release()} ownership is transfered to this
+ * {@link CompositeByteBuf}.
+ */
+public CompositeByteBuf addComponent(boolean increaseWriterIndex, int cIndex, ByteBuf buffer) {
+    checkNotNull(buffer, "buffer");
+    addComponent0(increaseWriterIndex, cIndex, buffer);
+    consolidateIfNeeded();
+    return this;
+}
