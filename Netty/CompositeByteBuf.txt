@@ -2,7 +2,7 @@ netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
 netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
 netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
 netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
-
+引言
 前一篇文章我们看了抽象字节buf引用计数器，我们先来看回顾一下：
 	抽象字节引用计数器AbstractReferenceCountedByteBuf，内部有一个引用计数器，以及原子更新引用计数器的refCntUpdater（AbstractReferenceCountedByteBuf)，更新引用计数器，实际通过refCntUpdater CAS操作，释放对象引用的时候，如果引用计数器为0，则释放对象相关资源。
 今天我们将要看的是，抽象字节buf引用计数器一个具体实现CompositeByteBuf
@@ -461,7 +461,7 @@ private final class CompositeByteBufIterator implements Iterator<ByteBuf> {
 }
 
 
-
+再来从复合buf读取数据到字节buf集合
 /**
  * Same with {@link #slice(int, int)} except that this method returns a list.
  */
@@ -470,25 +470,26 @@ public List<ByteBuf> decompose(int offset, int length) {
     if (length == 0) {
         return Collections.emptyList();
     }
-
+    //获取开始位置对应的buf的索引
     int componentId = toComponentIndex(offset);
     List<ByteBuf> slice = new ArrayList<ByteBuf>(components.size());
-
     // The first component
     Component firstC = components.get(componentId);
     ByteBuf first = firstC.buf.duplicate();
     first.readerIndex(offset - firstC.offset);
-
     ByteBuf buf = first;
     int bytesToSlice = length;
     do {
         int readableBytes = buf.readableBytes();
         if (bytesToSlice <= readableBytes) {
             // Last component
+	    //字节长度小于索引对应的buf的可读字节数
             buf.writerIndex(buf.readerIndex() + bytesToSlice);
+	    //直接添加buf
             slice.add(buf);
             break;
         } else {
+	    //否则向后继续读取buf，直至读到length长度的字节
             // Not the last component
             slice.add(buf);
             bytesToSlice -= readableBytes;
@@ -500,16 +501,71 @@ public List<ByteBuf> decompose(int offset, int length) {
     } while (bytesToSlice > 0);
 
     // Slice all components because only readable bytes are interesting.
+    //见字节buf对应slice 映射添加到指定的索引上
     for (int i = 0; i < slice.size(); i ++) {
         slice.set(i, slice.get(i).slice());
     }
-
     return slice;
 }
+再来看字节buf相关的方法：
+判断buf是否为direct类型
+@Override
+public boolean isDirect() {
+    int size = components.size();
+    if (size == 0) {
+        return false;
+    }
+    for (int i = 0; i < size; i++) {
+       if (!components.get(i).buf.isDirect()) {
+           return false;
+       }
+    }
+    return true;
+}
 
+判断底层buf是否为字节数组
+@Override
+public boolean hasArray() {
+    switch (components.size()) {
+    case 0:
+        return true;
+    case 1:
+        return components.get(0).buf.hasArray();
+    default:
+        return false;
+    }
+}
 
+转化复合buf为字节数组
+@Override
+public byte[] array() {
+    switch (components.size()) {
+    case 0:
+        return EmptyArrays.EMPTY_BYTES;
+    case 1:
+        return components.get(0).buf.array();
+    default:
+        throw new UnsupportedOperationException();
+    }
+}
 
+设置读写索引：
+@Override
+public CompositeByteBuf readerIndex(int readerIndex) {
+    return (CompositeByteBuf) super.readerIndex(readerIndex);
+}
 
+@Override
+public CompositeByteBuf writerIndex(int writerIndex) {
+    return (CompositeByteBuf) super.writerIndex(writerIndex);
+}
+
+@Override
+public CompositeByteBuf setIndex(int readerIndex, int writerIndex) {
+    return (CompositeByteBuf) super.setIndex(readerIndex, writerIndex);
+}
+复合buf的其他方法，在附篇，我们只需要知道复合buf实际为字节buf数据概念即可，如果想进一步了解
+复合buf，可以看附篇的方法。
 总结：
 复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被
 包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，
@@ -517,8 +573,8 @@ public List<ByteBuf> decompose(int offset, int length) {
 复合buf中的起始位置和结束位置，及buf可读数据长度。
 
 
-
 附：
+这部分，不做详细详解，just see see...
 
 添加字节buf到复合buf
 /**
@@ -643,4 +699,811 @@ public CompositeByteBuf addComponent(boolean increaseWriterIndex, int cIndex, By
     addComponent0(increaseWriterIndex, cIndex, buffer);
     consolidateIfNeeded();
     return this;
+}
+
+get*相关方法：
+//获取位置index对应的字节
+@Override
+public byte getByte(int index) {
+    return _getByte(index);
+}
+
+@Override
+protected byte _getByte(int index) {
+    Component c = findComponent(index);
+    //委托给组件内部buf对应的方法
+    return c.buf.getByte(index - c.offset);
+}
+
+
+//获取索引所在的组件buf
+private Component findComponent(int offset) {
+    checkIndex(offset);
+    for (int low = 0, high = components.size(); low <= high;) {
+        int mid = low + high >>> 1;
+        Component c = components.get(mid);
+        if (offset >= c.endOffset) {
+            low = mid + 1;
+        } else if (offset < c.offset) {
+            high = mid - 1;
+        } else {
+            assert c.length != 0;
+            return c;
+        }
+    }
+    throw new Error("should not reach here");
+}
+
+
+@Override
+protected int _getInt(int index) {
+    Component c = findComponent(index);
+    if (index + 4 <= c.endOffset) {
+       //委托给组件内部buf对应的方法
+        return c.buf.getInt(index - c.offset);
+    } else if (order() == ByteOrder.BIG_ENDIAN) {
+        return (_getShort(index) & 0xffff) << 16 | _getShort(index + 2) & 0xffff;
+    } else {
+        return _getShort(index) & 0xFFFF | (_getShort(index + 2) & 0xFFFF) << 16;
+    }
+}
+其他get*原始类型方法，思路基本一致，首先获取位置所在的组件buf，
+再委托给组件内部buf对应的get*方法。
+
+//读取复合buf数据到字节数组
+@Override
+public CompositeByteBuf getBytes(int index, byte[] dst, int dstIndex, int length) {
+    checkDstIndex(index, length, dstIndex, dst.length);
+    if (length == 0) {
+        return this;
+    }
+    //获取位置index开始的组件buf索引
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+	//读取buf数据到目的buf
+        s.getBytes(index - adjustment, dst, dstIndex, localLength);
+        index += localLength;
+        dstIndex += localLength;
+        length -= localLength;
+        i ++;
+    }
+    return this;
+}
+
+//读取buf到nio 字节buf
+@Override
+public CompositeByteBuf getBytes(int index, ByteBuffer dst) {
+    int limit = dst.limit();
+    int length = dst.remaining();
+
+    checkIndex(index, length);
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    try {
+        while (length > 0) {
+            Component c = components.get(i);
+            ByteBuf s = c.buf;
+            int adjustment = c.offset;
+            int localLength = Math.min(length, s.capacity() - (index - adjustment));
+	    //调整目的buf limit
+            dst.limit(dst.position() + localLength);
+	    //读取组件buf数据到目的buf
+            s.getBytes(index - adjustment, dst);
+            index += localLength;
+            length -= localLength;
+            i ++;
+        }
+    } finally {
+        dst.limit(limit);
+    }
+    return this;
+}
+再来看读取到字节buf，输出流，聚集字节buf
+@Override
+public CompositeByteBuf getBytes(int index, ByteBuf dst, int dstIndex, int length) {
+    checkDstIndex(index, length, dstIndex, dst.capacity());
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+	//读buf数据，写到目的buf中
+        s.getBytes(index - adjustment, dst, dstIndex, localLength);
+        index += localLength;
+        dstIndex += localLength;
+        length -= localLength;
+        i ++;
+    }
+    return this;
+}
+
+@Override
+public int getBytes(int index, GatheringByteChannel out, int length)
+        throws IOException {
+    int count = nioBufferCount();
+    if (count == 1) {
+        return out.write(internalNioBuffer(index, length));
+    } else {
+        long writtenBytes = out.write(nioBuffers(index, length));
+        if (writtenBytes > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        } else {
+            return (int) writtenBytes;
+        }
+    }
+}
+
+//获取底层buf数
+@Override
+public int nioBufferCount() {
+    switch (components.size()) {
+    case 0:
+        return 1;
+    case 1:
+        return components.get(0).buf.nioBufferCount();
+    default:
+        int count = 0;
+        int componentsCount = components.size();
+        for (int i = 0; i < componentsCount; i++) {
+            Component c = components.get(i);
+            count += c.buf.nioBufferCount();
+        }
+        return count;
+    }
+}
+//获取底层nio字节buf
+@Override
+public ByteBuffer internalNioBuffer(int index, int length) {
+    switch (components.size()) {
+    case 0:
+        return EMPTY_NIO_BUFFER;
+    case 1:
+        return components.get(0).buf.internalNioBuffer(index, length);
+    default:
+        throw new UnsupportedOperationException();
+    }
+}
+//获取
+@Override
+public ByteBuffer nioBuffer(int index, int length) {
+    checkIndex(index, length);
+
+    switch (components.size()) {
+    case 0:
+        return EMPTY_NIO_BUFFER;
+    case 1:
+        ByteBuf buf = components.get(0).buf;
+        if (buf.nioBufferCount() == 1) {
+            return components.get(0).buf.nioBuffer(index, length);
+        }
+    }
+
+    ByteBuffer merged = ByteBuffer.allocate(length).order(order());
+    ByteBuffer[] buffers = nioBuffers(index, length);
+
+    for (ByteBuffer buf: buffers) {
+        merged.put(buf);
+    }
+
+    merged.flip();
+    return merged;
+}
+//从位置index开始，读取length个字节数据，并将读取的数据添加到nio字节buf数据
+@Override
+public ByteBuffer[] nioBuffers(int index, int length) {
+    checkIndex(index, length);
+    if (length == 0) {
+        return new ByteBuffer[] { EMPTY_NIO_BUFFER };
+    }
+
+    List<ByteBuffer> buffers = new ArrayList<ByteBuffer>(components.size());
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        switch (s.nioBufferCount()) {
+            case 0:
+                throw new UnsupportedOperationException();
+            case 1:
+                buffers.add(s.nioBuffer(index - adjustment, localLength));
+                break;
+            default:
+                Collections.addAll(buffers, s.nioBuffers(index - adjustment, localLength));
+        }
+
+        index += localLength;
+        length -= localLength;
+        i ++;
+    }
+    //转换读取的nio 字节buf集合 为nio字节buf数组
+    return buffers.toArray(new ByteBuffer[buffers.size()]);
+}
+
+//读取数据到文件通道
+@Override
+public int getBytes(int index, FileChannel out, long position, int length)
+        throws IOException {
+    int count = nioBufferCount();
+    if (count == 1) {
+        return out.write(internalNioBuffer(index, length), position);
+    } else {
+        long writtenBytes = 0;
+        for (ByteBuffer buf : nioBuffers(index, length)) {
+            writtenBytes += out.write(buf, position + writtenBytes);
+        }
+        if (writtenBytes > Integer.MAX_VALUE) {
+            return Integer.MAX_VALUE;
+        }
+        return (int) writtenBytes;
+    }
+}
+//读取数据到输出流
+@Override
+public CompositeByteBuf getBytes(int index, OutputStream out, int length) throws IOException {
+    checkIndex(index, length);
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        s.getBytes(index - adjustment, out, localLength);
+        index += localLength;
+        length -= localLength;
+        i ++;
+    }
+    return this;
+}
+从上面可以看出，getBytes*方法，首先定位位置index所在的组件buf，然后通过字节buf
+相应的getBytes*方法，将数据写到目的字节buf，nio buf，文件通道，输出流等。
+
+
+
+再来看set方法：
+
+@Override
+public CompositeByteBuf setByte(int index, int value) {
+    Component c = findComponent(index);
+    c.buf.setByte(index - c.offset, value);
+    return this;
+}
+
+@Override
+protected void _setByte(int index, int value) {
+    setByte(index, value);
+}
+
+@Override
+public CompositeByteBuf setInt(int index, int value) {
+    return (CompositeByteBuf) super.setInt(index, value);
+}
+
+@Override
+protected void _setInt(int index, int value) {
+    Component c = findComponent(index);
+    if (index + 4 <= c.endOffset) {
+        c.buf.setInt(index - c.offset, value);
+    } else if (order() == ByteOrder.BIG_ENDIAN) {
+        _setShort(index, (short) (value >>> 16));
+        _setShort(index + 2, (short) value);
+    } else {
+        _setShort(index, (short) value);
+        _setShort(index + 2, (short) (value >>> 16));
+    }
+}
+set*原始类型方法，思路基本一致，首先获取位置所在的组件buf，
+再委托给组件内部buf对应的set*方法。
+
+再来看setBytes*方法：
+
+@Override
+public CompositeByteBuf setBytes(int index, byte[] src, int srcIndex, int length) {
+    checkSrcIndex(index, length, srcIndex, src.length);
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        s.setBytes(index - adjustment, src, srcIndex, localLength);
+        index += localLength;
+        srcIndex += localLength;
+        length -= localLength;
+        i ++;
+    }
+    return this;
+}
+
+@Override
+public CompositeByteBuf setBytes(int index, ByteBuffer src) {
+    int limit = src.limit();
+    int length = src.remaining();
+
+    checkIndex(index, length);
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    try {
+        while (length > 0) {
+            Component c = components.get(i);
+            ByteBuf s = c.buf;
+            int adjustment = c.offset;
+            int localLength = Math.min(length, s.capacity() - (index - adjustment));
+            src.limit(src.position() + localLength);
+            s.setBytes(index - adjustment, src);
+            index += localLength;
+            length -= localLength;
+            i ++;
+        }
+    } finally {
+        src.limit(limit);
+    }
+    return this;
+}
+
+@Override
+public CompositeByteBuf setBytes(int index, ByteBuf src, int srcIndex, int length) {
+    checkSrcIndex(index, length, srcIndex, src.capacity());
+    if (length == 0) {
+        return this;
+    }
+
+    int i = toComponentIndex(index);
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        s.setBytes(index - adjustment, src, srcIndex, localLength);
+        index += localLength;
+        srcIndex += localLength;
+        length -= localLength;
+        i ++;
+    }
+    return this;
+}
+
+@Override
+public int setBytes(int index, InputStream in, int length) throws IOException {
+    checkIndex(index, length);
+    if (length == 0) {
+        return in.read(EmptyArrays.EMPTY_BYTES);
+    }
+
+    int i = toComponentIndex(index);
+    int readBytes = 0;
+
+    do {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        if (localLength == 0) {
+            // Skip empty buffer
+            i++;
+            continue;
+        }
+        int localReadBytes = s.setBytes(index - adjustment, in, localLength);
+        if (localReadBytes < 0) {
+            if (readBytes == 0) {
+                return -1;
+            } else {
+                break;
+            }
+        }
+
+        if (localReadBytes == localLength) {
+            index += localLength;
+            length -= localLength;
+            readBytes += localLength;
+            i ++;
+        } else {
+            index += localReadBytes;
+            length -= localReadBytes;
+            readBytes += localReadBytes;
+        }
+    } while (length > 0);
+
+    return readBytes;
+}
+
+@Override
+public int setBytes(int index, ScatteringByteChannel in, int length) throws IOException {
+    checkIndex(index, length);
+    if (length == 0) {
+        return in.read(EMPTY_NIO_BUFFER);
+    }
+
+    int i = toComponentIndex(index);
+    int readBytes = 0;
+    do {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        if (localLength == 0) {
+            // Skip empty buffer
+            i++;
+            continue;
+        }
+        int localReadBytes = s.setBytes(index - adjustment, in, localLength);
+
+        if (localReadBytes == 0) {
+            break;
+        }
+
+        if (localReadBytes < 0) {
+            if (readBytes == 0) {
+                return -1;
+            } else {
+                break;
+            }
+        }
+
+        if (localReadBytes == localLength) {
+            index += localLength;
+            length -= localLength;
+            readBytes += localLength;
+            i ++;
+        } else {
+            index += localReadBytes;
+            length -= localReadBytes;
+            readBytes += localReadBytes;
+        }
+    } while (length > 0);
+
+    return readBytes;
+}
+
+@Override
+public int setBytes(int index, FileChannel in, long position, int length) throws IOException {
+    checkIndex(index, length);
+    if (length == 0) {
+        return in.read(EMPTY_NIO_BUFFER, position);
+    }
+
+    int i = toComponentIndex(index);
+    int readBytes = 0;
+    do {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        if (localLength == 0) {
+            // Skip empty buffer
+            i++;
+            continue;
+        }
+        int localReadBytes = s.setBytes(index - adjustment, in, position + readBytes, localLength);
+
+        if (localReadBytes == 0) {
+            break;
+        }
+
+        if (localReadBytes < 0) {
+            if (readBytes == 0) {
+                return -1;
+            } else {
+                break;
+            }
+        }
+
+        if (localReadBytes == localLength) {
+            index += localLength;
+            length -= localLength;
+            readBytes += localLength;
+            i ++;
+        } else {
+            index += localReadBytes;
+            length -= localReadBytes;
+            readBytes += localReadBytes;
+        }
+    } while (length > 0);
+
+    return readBytes;
+}
+
+
+setBytes*方法，首先定位位置index所在的组件buf，然后通过字节buf
+相应的setBytes*方法，将字节数组，字节buf，nio buf，文件通道，输出流等数据写到当前复合buf中。
+
+再来看readBytes方法：
+
+@Override
+public CompositeByteBuf readBytes(ByteBuf dst) {
+    return (CompositeByteBuf) super.readBytes(dst);
+}
+
+@Override
+public CompositeByteBuf readBytes(ByteBuf dst, int length) {
+    return (CompositeByteBuf) super.readBytes(dst, length);
+}
+
+@Override
+public CompositeByteBuf readBytes(ByteBuf dst, int dstIndex, int length) {
+    return (CompositeByteBuf) super.readBytes(dst, dstIndex, length);
+}
+
+@Override
+public CompositeByteBuf readBytes(byte[] dst) {
+    return (CompositeByteBuf) super.readBytes(dst);
+}
+
+@Override
+public CompositeByteBuf readBytes(byte[] dst, int dstIndex, int length) {
+    return (CompositeByteBuf) super.readBytes(dst, dstIndex, length);
+}
+
+@Override
+public CompositeByteBuf readBytes(ByteBuffer dst) {
+    return (CompositeByteBuf) super.readBytes(dst);
+}
+
+@Override
+public CompositeByteBuf readBytes(OutputStream out, int length) throws IOException {
+    return (CompositeByteBuf) super.readBytes(out, length);
+}
+从上来看readBytes*方法，委托给父类抽象buf的readBytes*方法，实际通过getBytes*方法。
+
+
+再来看write*方法：
+
+@Override
+public CompositeByteBuf writeByte(int value) {
+    return (CompositeByteBuf) super.writeByte(value);
+}
+@Override
+public CompositeByteBuf writeInt(int value) {
+    return (CompositeByteBuf) super.writeInt(value);
+}
+
+@Override
+public CompositeByteBuf writeBytes(ByteBuf src) {
+    return (CompositeByteBuf) super.writeBytes(src);
+}
+
+@Override
+public CompositeByteBuf writeBytes(ByteBuf src, int length) {
+    return (CompositeByteBuf) super.writeBytes(src, length);
+}
+
+@Override
+public CompositeByteBuf writeBytes(ByteBuf src, int srcIndex, int length) {
+    return (CompositeByteBuf) super.writeBytes(src, srcIndex, length);
+}
+
+@Override
+public CompositeByteBuf writeBytes(byte[] src) {
+    return (CompositeByteBuf) super.writeBytes(src);
+}
+
+@Override
+public CompositeByteBuf writeBytes(byte[] src, int srcIndex, int length) {
+    return (CompositeByteBuf) super.writeBytes(src, srcIndex, length);
+}
+
+@Override
+public CompositeByteBuf writeBytes(ByteBuffer src) {
+    return (CompositeByteBuf) super.writeBytes(src);
+}
+从上来看write*方法，委托给父类抽象buf的write*方法，实际通过write*方法。
+
+
+再来看其他方法，看看就行：
+
+@Override
+public CompositeByteBuf discardSomeReadBytes() {
+    return discardReadComponents();
+}
+
+ /**
+  * Discard all {@link ByteBuf}s which are read.
+  丢弃所有已经读取的字节buf组件
+  */
+ public CompositeByteBuf discardReadComponents() {
+     ensureAccessible();
+     final int readerIndex = readerIndex();
+     if (readerIndex == 0) {
+         return this;
+     }
+
+     // Discard everything if (readerIndex = writerIndex = capacity).
+     int writerIndex = writerIndex();
+     if (readerIndex == writerIndex && writerIndex == capacity()) {
+         for (Component c: components) {
+             c.freeIfNecessary();
+         }
+         components.clear();
+         setIndex(0, 0);
+         adjustMarkers(readerIndex);
+         return this;
+     }
+
+     // Remove read components.
+     int firstComponentId = toComponentIndex(readerIndex);
+     for (int i = 0; i < firstComponentId; i ++) {
+         components.get(i).freeIfNecessary();
+     }
+     components.subList(0, firstComponentId).clear();
+
+     // Update indexes and markers.
+     Component first = components.get(0);
+     int offset = first.offset;
+     updateComponentOffsets(0);
+     setIndex(readerIndex - offset, writerIndex - offset);
+     adjustMarkers(offset);
+     return this;
+ }
+
+//丢弃已读buf组件
+ @Override
+ public CompositeByteBuf discardReadBytes() {
+     ensureAccessible();
+     final int readerIndex = readerIndex();
+     if (readerIndex == 0) {
+         return this;
+     }
+
+     // Discard everything if (readerIndex = writerIndex = capacity).
+     int writerIndex = writerIndex();
+     //已读完，则清空组件buf集
+     if (readerIndex == writerIndex && writerIndex == capacity()) {
+         for (Component c: components) {
+             c.freeIfNecessary();
+         }
+         components.clear();
+         setIndex(0, 0);
+         adjustMarkers(readerIndex);
+         return this;
+     }
+     //丢弃已经读取的组件buf
+     // Remove read components.
+     int firstComponentId = toComponentIndex(readerIndex);
+     for (int i = 0; i < firstComponentId; i ++) {
+         components.get(i).freeIfNecessary();
+     }
+     components.subList(0, firstComponentId).clear();
+
+     // Remove or replace the first readable component with a new slice.
+     Component c = components.get(0);
+     int adjustment = readerIndex - c.offset;
+     if (adjustment == c.length) {
+         // new slice would be empty, so remove instead
+         components.remove(0);
+     } else {
+         Component newC = new Component(c.buf.slice(adjustment, c.length - adjustment));
+         components.set(0, newC);
+     }
+
+     // Update indexes and markers.
+     updateComponentOffsets(0);
+     setIndex(0, writerIndex - readerIndex);
+     adjustMarkers(readerIndex);
+     return this;
+ }
+//释放复合buf
+@Override
+protected void deallocate() {
+    if (freed) {
+        return;
+    }
+
+    freed = true;
+    int size = components.size();
+    // We're not using foreach to avoid creating an iterator.
+    // see https://github.com/netty/netty/issues/2642
+    for (int i = 0; i < size; i++) {
+        components.get(i).freeIfNecessary();
+    }
+}
+
+@Override
+public ByteBuf unwrap() {
+    return null;
+}
+
+@Override
+public boolean hasMemoryAddress() {
+    switch (components.size()) {
+    case 0:
+        return Unpooled.EMPTY_BUFFER.hasMemoryAddress();
+    case 1:
+        return components.get(0).buf.hasMemoryAddress();
+    default:
+        return false;
+    }
+}
+
+@Override
+public long memoryAddress() {
+    switch (components.size()) {
+    case 0:
+        return Unpooled.EMPTY_BUFFER.memoryAddress();
+    case 1:
+        return components.get(0).buf.memoryAddress();
+    default:
+        throw new UnsupportedOperationException();
+    }
+}
+
+@Override
+public int capacity() {
+    final int numComponents = components.size();
+    if (numComponents == 0) {
+        return 0;
+    }
+    return components.get(numComponents - 1).endOffset;
+}
+
+@Override
+public CompositeByteBuf retain(int increment) {
+    return (CompositeByteBuf) super.retain(increment);
+}
+
+@Override
+public CompositeByteBuf retain() {
+    return (CompositeByteBuf) super.retain();
+}
+
+@Override
+public CompositeByteBuf touch() {
+    return this;
+}
+
+@Override
+public CompositeByteBuf touch(Object hint) {
+    return this;
+}
+
+@Override
+public ByteBuf copy(int index, int length) {
+    checkIndex(index, length);
+    ByteBuf dst = Unpooled.buffer(length);
+    if (length != 0) {
+        copyTo(index, length, toComponentIndex(index), dst);
+    }
+    return dst;
+}
+
+private void copyTo(int index, int length, int componentId, ByteBuf dst) {
+    int dstIndex = 0;
+    int i = componentId;
+
+    while (length > 0) {
+        Component c = components.get(i);
+        ByteBuf s = c.buf;
+        int adjustment = c.offset;
+        int localLength = Math.min(length, s.capacity() - (index - adjustment));
+        s.getBytes(index - adjustment, dst, dstIndex, localLength);
+        index += localLength;
+        dstIndex += localLength;
+        length -= localLength;
+        i ++;
+    }
+
+    dst.writerIndex(dst.capacity());
 }
