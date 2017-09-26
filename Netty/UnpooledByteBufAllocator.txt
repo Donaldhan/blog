@@ -364,6 +364,7 @@ private static final class InstrumentedUnpooledUnsafeDirectByteBuf extends Unpoo
         ((UnpooledByteBufAllocator) alloc()).decrementDirect(capacity);
     }
 }
+//UnpooledUnsafeDirectByteBuf 
 /**
  * A NIO {@link ByteBuffer} based buffer.  It is recommended to use {@link Unpooled#directBuffer(int)}
  * and {@link Unpooled#wrappedBuffer(ByteBuffer)} instead of calling the
@@ -593,6 +594,328 @@ public CompositeByteBuf compositeDirectBuffer(int maxNumComponents) {
 }
 
 
+
+
 总结：
 非池类堆字节buf，实际为一个字节数组，直接在Java虚拟机堆内存中，分配字节缓存；
 非池类Direct buf，实际为一个nio 字节buf，从操作系统实际物理内存中，分配字节缓存。
+Unpooled创建字节buf，实际委托给内部字节分配器UnpooledByteBufAllocator。
+
+附：
+我们再来看一下Unpooled：
+/**
+ * Creates a new {@link ByteBuf} by allocating new space or by wrapping
+ * or copying existing byte arrays, byte buffers and a string.
+ *Unpooled用于创建一个新的字节buf，包装和拷贝一个已经存在的字节数组，字节buf或String
+ * <h3>Use static import</h3>
+ * This classes is intended to be used with Java 5 static import statement:
+ *
+ * <pre>
+ * import static io.netty.buffer.{@link Unpooled}.*;
+ *
+ * {@link ByteBuf} heapBuffer    = buffer(128);
+ * {@link ByteBuf} directBuffer  = directBuffer(256);
+ * {@link ByteBuf} wrappedBuffer = wrappedBuffer(new byte[128], new byte[256]);
+ * {@link ByteBuf} copiedBuffer  = copiedBuffer({@link ByteBuffer}.allocate(128));
+ * </pre>
+ *
+ * <h3>Allocating a new buffer</h3>
+ *
+ * Three buffer types are provided out of the box.
+ *
+ * <ul>
+ * <li>{@link #buffer(int)} allocates a new fixed-capacity heap buffer.</li>
+ * <li>{@link #directBuffer(int)} allocates a new fixed-capacity direct buffer.</li>
+ * </ul>
+ *
+ * <h3>Creating a wrapped buffer</h3>
+ *包装buf，为底层buf的视图，所有底层buf的改变，包装buf都可以看到
+ * Wrapped buffer is a buffer which is a view of one or more existing
+ * byte arrays and byte buffers.  Any changes in the content of the original
+ * array or buffer will be visible in the wrapped buffer.  Various wrapper
+ * methods are provided and their name is all {@code wrappedBuffer()}.
+ * You might want to take a look at the methods that accept varargs closely if
+ * you want to create a buffer which is composed of more than one array to
+ * reduce the number of memory copy.
+ *
+ * <h3>Creating a copied buffer</h3>
+ *拷贝buf，并不会共享数据，底层buf数据的改变，拷贝buf看不到
+ * Copied buffer is a deep copy of one or more existing byte arrays, byte
+ * buffers or a string.  Unlike a wrapped buffer, there's no shared data
+ * between the original data and the copied buffer.  Various copy methods are
+ * provided and their name is all {@code copiedBuffer()}.  It is also convenient
+ * to use this operation to merge multiple buffers into one buffer.
+ */
+public final class Unpooled {
+    //字节buf分配器，默认为UnpooledByteBufAllocator.DEFAULT
+    private static final ByteBufAllocator ALLOC = UnpooledByteBufAllocator.DEFAULT;
+
+    /**
+     * Big endian byte order.
+     */
+    public static final ByteOrder BIG_ENDIAN = ByteOrder.BIG_ENDIAN;
+
+    /**
+     * Little endian byte order.
+     */
+    public static final ByteOrder LITTLE_ENDIAN = ByteOrder.LITTLE_ENDIAN;
+
+    /**
+     * A buffer whose capacity is {@code 0}.
+     */
+    public static final ByteBuf EMPTY_BUFFER = ALLOC.buffer(0, 0);
+
+    static {
+        assert EMPTY_BUFFER instanceof EmptyByteBuf: "EMPTY_BUFFER must be an EmptyByteBuf.";
+    }
+}
+再来看分配buf：
+
+ /**
+ * Creates a new big-endian Java heap buffer with reasonably small initial capacity, which
+ * expands its capacity boundlessly on demand.
+ */
+public static ByteBuf buffer() {
+    return ALLOC.heapBuffer();
+}
+
+/**
+ * Creates a new big-endian direct buffer with reasonably small initial capacity, which
+ * expands its capacity boundlessly on demand.
+ */
+public static ByteBuf directBuffer() {
+    return ALLOC.directBuffer();
+}
+
+/**
+ * Creates a new big-endian Java heap buffer with the specified {@code capacity}, which
+ * expands its capacity boundlessly on demand.  The new buffer's {@code readerIndex} and
+ * {@code writerIndex} are {@code 0}.
+ */
+public static ByteBuf buffer(int initialCapacity) {
+    return ALLOC.heapBuffer(initialCapacity);
+}
+
+/**
+ * Creates a new big-endian direct buffer with the specified {@code capacity}, which
+ * expands its capacity boundlessly on demand.  The new buffer's {@code readerIndex} and
+ * {@code writerIndex} are {@code 0}.
+ */
+public static ByteBuf directBuffer(int initialCapacity) {
+    return ALLOC.directBuffer(initialCapacity);
+}
+
+/**
+ * Returns a new big-endian composite buffer with no components.
+ */
+public static CompositeByteBuf compositeBuffer() {
+    return compositeBuffer(AbstractByteBufAllocator.DEFAULT_MAX_COMPONENTS);
+}
+
+/**
+ * Returns a new big-endian composite buffer with no components.
+ */
+public static CompositeByteBuf compositeBuffer(int maxNumComponents) {
+    return new CompositeByteBuf(ALLOC, false, maxNumComponents);
+}
+
+从上面来看Unpooled创建字节buf，实际委托给内部字节分配器UnpooledByteBufAllocator。
+
+包装buf相关的方法：
+/**
+ * Creates a new big-endian buffer which wraps the specified {@code array}.
+ * A modification on the specified array's content will be visible to the
+ * returned buffer.
+ */
+public static ByteBuf wrappedBuffer(byte[] array) {
+    if (array.length == 0) {
+        return EMPTY_BUFFER;
+    }
+    return new UnpooledHeapByteBuf(ALLOC, array, array.length);
+}
+
+
+/**
+ * Creates a new buffer which wraps the specified buffer's readable bytes.
+ * A modification on the specified buffer's content will be visible to the
+ * returned buffer.
+ * @param buffer The buffer to wrap. Reference count ownership of this variable is transfered to this method.
+ * @return The readable portion of the {@code buffer}, or an empty buffer if there is no readable portion.
+ * The caller is responsible for releasing this buffer.
+ */
+public static ByteBuf wrappedBuffer(ByteBuf buffer) {
+    if (buffer.isReadable()) {
+        return buffer.slice();
+    } else {
+        buffer.release();
+        return EMPTY_BUFFER;
+    }
+}
+
+/**
+ * Creates a new big-endian composite buffer which wraps the readable bytes of the
+ * specified buffers without copying them.  A modification on the content
+ * of the specified buffers will be visible to the returned buffer.
+ * @param maxNumComponents Advisement as to how many independent buffers are allowed to exist before
+ * consolidation occurs.
+ * @param buffers The buffers to wrap. Reference count ownership of all variables is transfered to this method.
+ * @return The readable portion of the {@code buffers}. The caller is responsible for releasing this buffer.
+ */
+public static ByteBuf wrappedBuffer(int maxNumComponents, ByteBuf... buffers) {
+    switch (buffers.length) {
+    case 0:
+        break;
+    case 1:
+        ByteBuf buffer = buffers[0];
+        if (buffer.isReadable()) {
+            return wrappedBuffer(buffer.order(BIG_ENDIAN));
+        } else {
+            buffer.release();
+        }
+        break;
+    default:
+        for (int i = 0; i < buffers.length; i++) {
+            ByteBuf buf = buffers[i];
+            if (buf.isReadable()) {
+                return new CompositeByteBuf(ALLOC, false, maxNumComponents, buffers, i, buffers.length);
+            }
+            buf.release();
+        }
+        break;
+    }
+    return EMPTY_BUFFER;
+}
+
+...
+
+拷贝buf相关的方法：
+
+**
+ * Creates a new big-endian buffer whose content is a copy of the
+ * specified {@code array}.  The new buffer's {@code readerIndex} and
+ * {@code writerIndex} are {@code 0} and {@code array.length} respectively.
+ */
+public static ByteBuf copiedBuffer(byte[] array) {
+    if (array.length == 0) {
+        return EMPTY_BUFFER;
+    }
+    return wrappedBuffer(array.clone());
+}
+
+/**
+ * Creates a new buffer whose content is a copy of the specified
+ * {@code buffer}'s readable bytes.  The new buffer's {@code readerIndex}
+ * and {@code writerIndex} are {@code 0} and {@code buffer.readableBytes}
+ * respectively.
+ */
+public static ByteBuf copiedBuffer(ByteBuf buffer) {
+    int readable = buffer.readableBytes();
+    if (readable > 0) {
+        ByteBuf copy = buffer(readable);
+        copy.writeBytes(buffer, buffer.readerIndex(), readable);
+        return copy;
+    } else {
+        return EMPTY_BUFFER;
+    }
+}
+
+/**
+ * Return a unreleasable view on the given {@link ByteBuf} which will just ignore release and retain calls.
+ 返回一个不可释放的buf
+ */
+public static ByteBuf unreleasableBuffer(ByteBuf buf) {
+    return new UnreleasableByteBuf(buf);
+}
+//UnreleasableByteBuf 
+final class UnreleasableByteBuf extends WrappedByteBuf {
+
+    private SwappedByteBuf swappedBuf;
+    ...
+     @Override
+    public ByteBuf retain(int increment) {
+        return this;
+    }
+
+    @Override
+    public ByteBuf retain() {
+        return this;
+    }
+
+    @Override
+    public ByteBuf touch() {
+        return this;
+    }
+
+    @Override
+    public ByteBuf touch(Object hint) {
+        return this;
+    }
+
+    @Override
+    public boolean release() {
+        return false;
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        return false;
+    }
+}
+
+//WrappedByteBuf,理解为字节静态代理
+class WrappedByteBuf extends ByteBuf {
+
+    protected final ByteBuf buf; 
+    @Override
+    public final int readerIndex() {
+        return buf.readerIndex();
+    }
+
+    @Override
+    public final ByteBuf readerIndex(int readerIndex) {
+        buf.readerIndex(readerIndex);
+        return this;
+    }
+
+    @Override
+    public final int writerIndex() {
+        return buf.writerIndex();
+    }
+
+    @Override
+    public final ByteBuf writerIndex(int writerIndex) {
+        buf.writerIndex(writerIndex);
+        return this;
+    }
+    ...
+}
+
+
+/**
+ * Wrap the given {@link ByteBuf}s in an unmodifiable {@link ByteBuf}. Be aware the returned {@link ByteBuf} will
+ * not try to slice the given {@link ByteBuf}s to reduce GC-Pressure.
+ 包装buf为不可修改字节buf
+ */
+public static ByteBuf unmodifiableBuffer(ByteBuf... buffers) {
+    return new FixedCompositeByteBuf(ALLOC, buffers);
+}
+
+//FixedCompositeByteBuf
+/**
+ * {@link ByteBuf} implementation which allows to wrap an array of {@link ByteBuf} in a read-only mode.
+ * This is useful to write an array of {@link ByteBuf}s.
+ */
+final class FixedCompositeByteBuf extends AbstractReferenceCountedByteBuf {
+    private static final ByteBuf[] EMPTY = { Unpooled.EMPTY_BUFFER };
+    private final int nioBufferCount;
+    private final int capacity;
+    private final ByteBufAllocator allocator;
+    private final ByteOrder order;
+    private final Object[] buffers;
+    private final boolean direct;
+    ...
+}
+
+
+//Unpooled
+
