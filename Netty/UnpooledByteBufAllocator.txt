@@ -13,12 +13,13 @@ netty 抽象字节buf分配器：[url]http://donald-draper.iteye.com/blog/239441
  * Simplistic {@link ByteBufAllocator} implementation that does not pool anything.
  */
 public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
-
+    //字节buf分配器Metric
     private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();
-    private final boolean disableLeakDetector;
+    private final boolean disableLeakDetector;//是否关闭资源泄漏探测
 
     /**
      * Default instance which uses leak-detection for direct buffers.
+     默认非池类字节buf分配器
      */
     public static final UnpooledByteBufAllocator DEFAULT =
             new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
@@ -47,3 +48,551 @@ public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator imp
         this.disableLeakDetector = disableLeakDetector;
     }
 }
+
+来看一下度量器
+private static final class UnpooledByteBufAllocatorMetric implements ByteBufAllocatorMetric {
+    final LongCounter directCounter = PlatformDependent.newLongCounter();//direct内存使用计数器
+    final LongCounter heapCounter = PlatformDependent.newLongCounter();//Heap内存使用计数器
+    @Override
+    public long usedHeapMemory() {
+        return heapCounter.value();
+    }
+    @Override
+    public long usedDirectMemory() {
+        return directCounter.value();
+    }
+    @Override
+    public String toString() {
+        return StringUtil.simpleClassName(this) +
+                "(usedHeapMemory: " + usedHeapMemory() + "; usedDirectMemory: " + usedDirectMemory() + ')';
+    }
+}
+//LongCounter Long计数器
+/**
+ * Counter for long.
+ */
+public interface LongCounter {
+    void add(long delta);
+    void increment();
+    void decrement();
+    long value();
+}
+
+来看创建堆buf
+@Override
+protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+    return PlatformDependent.hasUnsafe() ?
+            new InstrumentedUnpooledUnsafeHeapByteBuf(this, initialCapacity, maxCapacity) :
+            new InstrumentedUnpooledHeapByteBuf(this, initialCapacity, maxCapacity);
+}
+堆buf有两种，我们分别来看
+先看InstrumentedUnpooledUnsafeHeapByteBuf
+1.
+//InstrumentedUnpooledUnsafeHeapByteBuf
+private static final class InstrumentedUnpooledUnsafeHeapByteBuf extends UnpooledUnsafeHeapByteBuf {
+    InstrumentedUnpooledUnsafeHeapByteBuf(UnpooledByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+
+    @Override
+    byte[] allocateArray(int initialCapacity) {
+        byte[] bytes = super.allocateArray(initialCapacity);
+	//更新buf分配器Heap内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementHeap(bytes.length);
+        return bytes;
+    }
+
+    @Override
+    void freeArray(byte[] array) {
+        int length = array.length;
+        super.freeArray(array);
+	//释放buf分配器Heap内存使用量
+        ((UnpooledByteBufAllocator) alloc()).decrementHeap(length);
+    }
+}
+
+//UnpooledUnsafeHeapByteBuf
+class UnpooledUnsafeHeapByteBuf extends UnpooledHeapByteBuf {
+
+    /**
+     * Creates a new heap buffer with a newly allocated byte array.
+     *
+     * @param initialCapacity the initial capacity of the underlying byte array
+     * @param maxCapacity the max capacity of the underlying byte array
+     */
+    UnpooledUnsafeHeapByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+    ...
+}
+2.
+再来看另一种堆buf InstrumentedUnpooledHeapByteBuf
+//InstrumentedUnpooledHeapByteBuf
+private static final class InstrumentedUnpooledHeapByteBuf extends UnpooledHeapByteBuf {
+    InstrumentedUnpooledHeapByteBuf(UnpooledByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+
+    @Override
+    byte[] allocateArray(int initialCapacity) {
+        byte[] bytes = super.allocateArray(initialCapacity);
+	//更新buf分配器Heap内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementHeap(bytes.length);
+        return bytes;
+    }
+
+    @Override
+    void freeArray(byte[] array) {
+        int length = array.length;
+        super.freeArray(array);
+	//释放buf分配器Heap内存使用量
+        ((UnpooledByteBufAllocator) alloc()).decrementHeap(length);
+    }
+}
+
+我们来看一下Unpooled堆字节buf：
+/**
+ * Big endian Java heap buffer implementation.
+ */
+public class UnpooledHeapByteBuf extends AbstractReferenceCountedByteBuf {
+
+    private final ByteBufAllocator alloc;
+    byte[] array;//存储数据的字节数组
+    private ByteBuffer tmpNioBuf;//临时nio 字节部分
+
+    /**
+     * Creates a new heap buffer with a newly allocated byte array.
+     *
+     * @param initialCapacity the initial capacity of the underlying byte array
+     * @param maxCapacity the max capacity of the underlying byte array
+     */
+    protected UnpooledHeapByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(maxCapacity);
+
+        checkNotNull(alloc, "alloc");
+
+        if (initialCapacity > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialCapacity, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        setArray(allocateArray(initialCapacity));
+        setIndex(0, 0);
+    }
+
+    /**
+     * Creates a new heap buffer with an existing byte array.
+     *
+     * @param initialArray the initial underlying byte array
+     * @param maxCapacity the max capacity of the underlying byte array
+     */
+    protected UnpooledHeapByteBuf(ByteBufAllocator alloc, byte[] initialArray, int maxCapacity) {
+        super(maxCapacity);
+
+        checkNotNull(alloc, "alloc");
+        checkNotNull(initialArray, "initialArray");
+
+        if (initialArray.length > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialArray.length, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        setArray(initialArray);
+        setIndex(0, initialArray.length);
+    }
+    //分配initialCapacity容量的字节数组
+    byte[] allocateArray(int initialCapacity) {
+        return new byte[initialCapacity];
+    }
+    ...
+    @Override
+    public ByteBuf getBytes(int index, byte[] dst, int dstIndex, int length) {
+        checkDstIndex(index, length, dstIndex, dst.length);
+        System.arraycopy(array, index, dst, dstIndex, length);
+        return this;
+    }
+    ....
+    @Override
+    public ByteBuf setBytes(int index, ByteBuf src, int srcIndex, int length) {
+        checkSrcIndex(index, length, srcIndex, src.capacity());
+        if (src.hasMemoryAddress()) {
+            PlatformDependent.copyMemory(src.memoryAddress() + srcIndex, array, index, length);
+        } else  if (src.hasArray()) {
+            setBytes(index, src.array(), src.arrayOffset() + srcIndex, length);
+        } else {
+            src.getBytes(srcIndex, array, index, length);
+        }
+        return this;
+    }
+
+    @Override
+    public ByteBuf setBytes(int index, byte[] src, int srcIndex, int length) {
+        checkSrcIndex(index, length, srcIndex, src.length);
+        System.arraycopy(src, srcIndex, array, index, length);
+        return this;
+    }
+    ...
+
+    @Override
+    public ByteBuffer nioBuffer(int index, int length) {
+        ensureAccessible();
+        return ByteBuffer.wrap(array, index, length).slice();
+    }
+
+    @Override
+    public ByteBuffer[] nioBuffers(int index, int length) {
+        return new ByteBuffer[] { nioBuffer(index, length) };
+    }
+
+    @Override
+    public ByteBuffer internalNioBuffer(int index, int length) {
+        checkIndex(index, length);
+        return (ByteBuffer) internalNioBuffer().clear().position(index).limit(index + length);
+    }
+    ...
+    private ByteBuffer internalNioBuffer() {
+        ByteBuffer tmpNioBuf = this.tmpNioBuf;
+        if (tmpNioBuf == null) {
+            this.tmpNioBuf = tmpNioBuf = ByteBuffer.wrap(array);
+        }
+        return tmpNioBuf;
+    }
+    ...
+     @Override
+    protected void deallocate() {
+        freeArray(array);
+        array = null;
+    }
+    //待子类扩展
+    void freeArray(byte[] array) {
+        // NOOP
+    }
+}
+从上面可以看出，非池类堆字节buf，实际为一个字节数组。
+
+//堆内存使用更新与释放，委托给内部度量器
+ void incrementHeap(int amount) {
+    metric.heapCounter.add(amount);
+}
+void decrementHeap(int amount) {
+    metric.heapCounter.add(-amount);
+}
+
+再来看分配direct buf：
+@Override
+protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+    final ByteBuf buf;
+    if (PlatformDependent.hasUnsafe()) {
+        buf = PlatformDependent.useDirectBufferNoCleaner() ?
+                new InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf(this, initialCapacity, maxCapacity) :
+                new InstrumentedUnpooledUnsafeDirectByteBuf(this, initialCapacity, maxCapacity);
+    } else {
+        buf = new InstrumentedUnpooledDirectByteBuf(this, initialCapacity, maxCapacity);
+    }
+    return disableLeakDetector ? buf : toLeakAwareBuffer(buf);
+}
+
+从上面来看direct buf有三种，分别为InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf，
+InstrumentedUnpooledUnsafeDirectByteBuf，InstrumentedUnpooledDirectByteBuf
+
+我们分别来看这三种：
+1.
+private static final class InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf
+        extends UnpooledUnsafeNoCleanerDirectByteBuf {
+    InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf(
+            UnpooledByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+
+    @Override
+    protected ByteBuffer allocateDirect(int initialCapacity) {
+        ByteBuffer buffer = super.allocateDirect(initialCapacity);
+	//更新buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementDirect(buffer.capacity());
+        return buffer;
+    }
+
+    @Override
+    ByteBuffer reallocateDirect(ByteBuffer oldBuffer, int initialCapacity) {
+        int capacity = oldBuffer.capacity();
+        ByteBuffer buffer = super.reallocateDirect(oldBuffer, initialCapacity);
+	//更新buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementDirect(buffer.capacity() - capacity);
+        return buffer;
+    }
+
+    @Override
+    protected void freeDirect(ByteBuffer buffer) {
+        int capacity = buffer.capacity();
+        super.freeDirect(buffer);
+	//释放buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).decrementDirect(capacity);
+    }
+}
+
+//UnpooledUnsafeNoCleanerDirectByteBuf
+class UnpooledUnsafeNoCleanerDirectByteBuf extends UnpooledUnsafeDirectByteBuf {
+
+    UnpooledUnsafeNoCleanerDirectByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+    ...
+}
+再来看第二种：
+2.
+private static final class InstrumentedUnpooledUnsafeDirectByteBuf extends UnpooledUnsafeDirectByteBuf {
+    InstrumentedUnpooledUnsafeDirectByteBuf(
+            UnpooledByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+
+    @Override
+    protected ByteBuffer allocateDirect(int initialCapacity) {
+        ByteBuffer buffer = super.allocateDirect(initialCapacity);
+	//更新buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementDirect(buffer.capacity());
+        return buffer;
+    }
+
+    @Override
+    protected void freeDirect(ByteBuffer buffer) {
+        int capacity = buffer.capacity();
+        super.freeDirect(buffer);
+	//释放buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).decrementDirect(capacity);
+    }
+}
+/**
+ * A NIO {@link ByteBuffer} based buffer.  It is recommended to use {@link Unpooled#directBuffer(int)}
+ * and {@link Unpooled#wrappedBuffer(ByteBuffer)} instead of calling the
+ * constructor explicitly.
+ */
+public class UnpooledUnsafeDirectByteBuf extends AbstractReferenceCountedByteBuf {
+
+    private final ByteBufAllocator alloc;
+    private ByteBuffer tmpNioBuf;
+    private int capacity;//容量
+    private boolean doNotFree;//是否需要释放内存
+    ByteBuffer buffer;//内部nio 字节buf
+    long memoryAddress;
+    /**
+     * Creates a new direct buffer.
+     *
+     * @param initialCapacity the initial capacity of the underlying direct buffer
+     * @param maxCapacity     the maximum capacity of the underlying direct buffer
+     */
+    protected UnpooledUnsafeDirectByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(maxCapacity);
+        if (alloc == null) {
+            throw new NullPointerException("alloc");
+        }
+        if (initialCapacity < 0) {
+            throw new IllegalArgumentException("initialCapacity: " + initialCapacity);
+        }
+        if (maxCapacity < 0) {
+            throw new IllegalArgumentException("maxCapacity: " + maxCapacity);
+        }
+        if (initialCapacity > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialCapacity, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        setByteBuffer(allocateDirect(initialCapacity), false);
+    }
+
+    /**
+     * Creates a new direct buffer by wrapping the specified initial buffer.
+     *
+     * @param maxCapacity the maximum capacity of the underlying direct buffer
+     */
+    protected UnpooledUnsafeDirectByteBuf(ByteBufAllocator alloc, ByteBuffer initialBuffer, int maxCapacity) {
+        // We never try to free the buffer if it was provided by the end-user as we not know if this is an duplicate or
+        // an slice. This is done to prevent an IllegalArgumentException when using Java9 as Unsafe.invokeCleaner(...)
+        // will check if the given buffer is either an duplicate or slice and in this case throw an
+        // IllegalArgumentException.
+        //
+        // See http://hg.openjdk.java.net/jdk9/hs-demo/jdk/file/0d2ab72ba600/src/jdk.unsupported/share/classes/
+        // sun/misc/Unsafe.java#l1250
+        //
+        // We also call slice() explicitly here to preserve behaviour with previous netty releases.
+        this(alloc, initialBuffer.slice(), maxCapacity, false);
+    }
+
+    UnpooledUnsafeDirectByteBuf(ByteBufAllocator alloc, ByteBuffer initialBuffer, int maxCapacity, boolean doFree) {
+        super(maxCapacity);
+        if (alloc == null) {
+            throw new NullPointerException("alloc");
+        }
+        if (initialBuffer == null) {
+            throw new NullPointerException("initialBuffer");
+        }
+        if (!initialBuffer.isDirect()) {
+            throw new IllegalArgumentException("initialBuffer is not a direct buffer.");
+        }
+        if (initialBuffer.isReadOnly()) {
+            throw new IllegalArgumentException("initialBuffer is a read-only buffer.");
+        }
+
+        int initialCapacity = initialBuffer.remaining();
+        if (initialCapacity > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialCapacity, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        doNotFree = !doFree;
+        setByteBuffer(initialBuffer.order(ByteOrder.BIG_ENDIAN), false);
+        writerIndex(initialCapacity);
+    }
+
+    /**
+     * Allocate a new direct {@link ByteBuffer} with the given initialCapacity.
+     分配initialCapacity容量的direct buf，实际委托给内部的nio 字节buf
+     */
+    protected ByteBuffer allocateDirect(int initialCapacity) {
+        return ByteBuffer.allocateDirect(initialCapacity);
+    }
+   ...
+}
+
+从上面我们可以看出，非池类Direct buf，实际为一个nio 字节buf。
+再来看第三种：
+3.
+private static final class InstrumentedUnpooledDirectByteBuf extends UnpooledDirectByteBuf {
+    InstrumentedUnpooledDirectByteBuf(
+            UnpooledByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(alloc, initialCapacity, maxCapacity);
+    }
+
+    @Override
+    protected ByteBuffer allocateDirect(int initialCapacity) {
+        ByteBuffer buffer = super.allocateDirect(initialCapacity);
+	//更新buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).incrementDirect(buffer.capacity());
+        return buffer;
+    }
+
+    @Override
+    protected void freeDirect(ByteBuffer buffer) {
+        int capacity = buffer.capacity();
+        super.freeDirect(buffer);
+	//释放buf分配器direct内存使用量
+        ((UnpooledByteBufAllocator) alloc()).decrementDirect(capacity);
+    }
+}
+
+
+//UnpooledDirectByteBuf
+/**
+ * A NIO {@link ByteBuffer} based buffer.  It is recommended to use {@link Unpooled#directBuffer(int)}
+ * and {@link Unpooled#wrappedBuffer(ByteBuffer)} instead of calling the
+ * constructor explicitly.
+ */
+public class UnpooledDirectByteBuf extends AbstractReferenceCountedByteBuf {
+
+    private final ByteBufAllocator alloc;
+
+    private ByteBuffer buffer;//内部字节buf
+    private ByteBuffer tmpNioBuf;
+    private int capacity;//容量
+    private boolean doNotFree;//是否需要释放内存
+
+    /**
+     * Creates a new direct buffer.
+     *
+     * @param initialCapacity the initial capacity of the underlying direct buffer
+     * @param maxCapacity     the maximum capacity of the underlying direct buffer
+     */
+    protected UnpooledDirectByteBuf(ByteBufAllocator alloc, int initialCapacity, int maxCapacity) {
+        super(maxCapacity);
+        if (alloc == null) {
+            throw new NullPointerException("alloc");
+        }
+        if (initialCapacity < 0) {
+            throw new IllegalArgumentException("initialCapacity: " + initialCapacity);
+        }
+        if (maxCapacity < 0) {
+            throw new IllegalArgumentException("maxCapacity: " + maxCapacity);
+        }
+        if (initialCapacity > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialCapacity, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        setByteBuffer(ByteBuffer.allocateDirect(initialCapacity));
+    }
+
+    /**
+     * Creates a new direct buffer by wrapping the specified initial buffer.
+     *
+     * @param maxCapacity the maximum capacity of the underlying direct buffer
+     */
+    protected UnpooledDirectByteBuf(ByteBufAllocator alloc, ByteBuffer initialBuffer, int maxCapacity) {
+        super(maxCapacity);
+        if (alloc == null) {
+            throw new NullPointerException("alloc");
+        }
+        if (initialBuffer == null) {
+            throw new NullPointerException("initialBuffer");
+        }
+        if (!initialBuffer.isDirect()) {
+            throw new IllegalArgumentException("initialBuffer is not a direct buffer.");
+        }
+        if (initialBuffer.isReadOnly()) {
+            throw new IllegalArgumentException("initialBuffer is a read-only buffer.");
+        }
+
+        int initialCapacity = initialBuffer.remaining();
+        if (initialCapacity > maxCapacity) {
+            throw new IllegalArgumentException(String.format(
+                    "initialCapacity(%d) > maxCapacity(%d)", initialCapacity, maxCapacity));
+        }
+
+        this.alloc = alloc;
+        doNotFree = true;
+        setByteBuffer(initialBuffer.slice().order(ByteOrder.BIG_ENDIAN));
+        writerIndex(initialCapacity);
+    }
+
+    /**
+     * Allocate a new direct {@link ByteBuffer} with the given initialCapacity.
+     分配initialCapacity容量的direct buf，实际委托给内部的nio 字节buf
+     */
+    protected ByteBuffer allocateDirect(int initialCapacity) {
+        return ByteBuffer.allocateDirect(initialCapacity);
+    }
+    ...
+}
+
+
+再来看更新direct 内存使用量，更新操作，直接委托给内部度量器：
+void incrementDirect(int amount) {
+    metric.directCounter.add(amount);
+}
+
+void decrementDirect(int amount) {
+    metric.directCounter.add(-amount);
+}
+
+再来看复合buf
+
+@Override
+public CompositeByteBuf compositeHeapBuffer(int maxNumComponents) {
+    CompositeByteBuf buf = new CompositeByteBuf(this, false, maxNumComponents);
+    return disableLeakDetector ? buf : toLeakAwareBuffer(buf);
+}
+
+@Override
+public CompositeByteBuf compositeDirectBuffer(int maxNumComponents) {
+    CompositeByteBuf buf = new CompositeByteBuf(this, true, maxNumComponents);
+    return disableLeakDetector ? buf : toLeakAwareBuffer(buf);
+}
+
+
+总结：
+非池类堆字节buf，实际为一个字节数组，直接在Java虚拟机堆内存中，分配字节缓存；
+非池类Direct buf，实际为一个nio 字节buf，从操作系统实际物理内存中，分配字节缓存。
