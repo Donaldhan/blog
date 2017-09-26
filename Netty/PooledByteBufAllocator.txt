@@ -1,0 +1,464 @@
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
+netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
+netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
+netty 复合buf概念：[url]http://donald-draper.iteye.com/blog/2394408[/url]
+netty 抽象字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394419[/url]
+netty Unpooled字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394619[/url
+引言：
+上一篇文章我们看了，Unpooled字节buf分配器，先来回顾一下：
+非池类堆字节buf，实际为一个字节数组，直接在Java虚拟机堆内存中，分配字节缓存；非池类Direct buf，实际为一个nio 字节buf，从操作系统实际物理内存中，分配字节缓存。Unpooled创建字节buf，实际委托给内部字节分配器UnpooledByteBufAllocator。
+今天来看一下Pooled字节buf非配器，不做深入研究，仅仅窥探一下：
+public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
+    private static final int DEFAULT_NUM_HEAP_ARENA;
+    private static final int DEFAULT_NUM_DIRECT_ARENA;
+
+    private static final int DEFAULT_PAGE_SIZE;
+    private static final int DEFAULT_MAX_ORDER; // 8192 << 11 = 16 MiB per chunk
+    private static final int DEFAULT_TINY_CACHE_SIZE;
+    private static final int DEFAULT_SMALL_CACHE_SIZE;
+    private static final int DEFAULT_NORMAL_CACHE_SIZE;
+    private static final int DEFAULT_MAX_CACHED_BUFFER_CAPACITY;
+    private static final int DEFAULT_CACHE_TRIM_INTERVAL;
+    private static final boolean DEFAULT_USE_CACHE_FOR_ALL_THREADS;
+    private static final int DEFAULT_DIRECT_MEMORY_CACHE_ALIGNMENT;
+
+    private static final int MIN_PAGE_SIZE = 4096;
+    private static final int MAX_CHUNK_SIZE = (int) (((long) Integer.MAX_VALUE + 1) / 2);
+
+    static {
+        int defaultPageSize = SystemPropertyUtil.getInt("io.netty.allocator.pageSize", 8192);
+        Throwable pageSizeFallbackCause = null;
+        try {
+            validateAndCalculatePageShifts(defaultPageSize);
+        } catch (Throwable t) {
+            pageSizeFallbackCause = t;
+            defaultPageSize = 8192;
+        }
+        DEFAULT_PAGE_SIZE = defaultPageSize;
+
+        int defaultMaxOrder = SystemPropertyUtil.getInt("io.netty.allocator.maxOrder", 11);
+        Throwable maxOrderFallbackCause = null;
+        try {
+            validateAndCalculateChunkSize(DEFAULT_PAGE_SIZE, defaultMaxOrder);
+        } catch (Throwable t) {
+            maxOrderFallbackCause = t;
+            defaultMaxOrder = 11;
+        }
+        DEFAULT_MAX_ORDER = defaultMaxOrder;
+
+        // Determine reasonable default for nHeapArena and nDirectArena.
+        // Assuming each arena has 3 chunks, the pool should not consume more than 50% of max memory.
+        final Runtime runtime = Runtime.getRuntime();
+
+        /*
+         * We use 2 * available processors by default to reduce contention as we use 2 * available processors for the
+         * number of EventLoops in NIO and EPOLL as well. If we choose a smaller number we will run into hot spots as
+         * allocation and de-allocation needs to be synchronized on the PoolArena.
+         *
+         * See https://github.com/netty/netty/issues/3888.
+         */
+        final int defaultMinNumArena = NettyRuntime.availableProcessors() * 2;
+        final int defaultChunkSize = DEFAULT_PAGE_SIZE << DEFAULT_MAX_ORDER;
+        DEFAULT_NUM_HEAP_ARENA = Math.max(0,
+                SystemPropertyUtil.getInt(
+                        "io.netty.allocator.numHeapArenas",
+                        (int) Math.min(
+                                defaultMinNumArena,
+                                runtime.maxMemory() / defaultChunkSize / 2 / 3)));
+        DEFAULT_NUM_DIRECT_ARENA = Math.max(0,
+                SystemPropertyUtil.getInt(
+                        "io.netty.allocator.numDirectArenas",
+                        (int) Math.min(
+                                defaultMinNumArena,
+                                PlatformDependent.maxDirectMemory() / defaultChunkSize / 2 / 3)));
+
+        // cache sizes
+        DEFAULT_TINY_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.tinyCacheSize", 512);
+        DEFAULT_SMALL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.smallCacheSize", 256);
+        DEFAULT_NORMAL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.normalCacheSize", 64);
+
+        // 32 kb is the default maximum capacity of the cached buffer. Similar to what is explained in
+        // 'Scalable memory allocation using jemalloc'
+        DEFAULT_MAX_CACHED_BUFFER_CAPACITY = SystemPropertyUtil.getInt(
+                "io.netty.allocator.maxCachedBufferCapacity", 32 * 1024);
+
+        // the number of threshold of allocations when cached entries will be freed up if not frequently used
+        DEFAULT_CACHE_TRIM_INTERVAL = SystemPropertyUtil.getInt(
+                "io.netty.allocator.cacheTrimInterval", 8192);
+
+        DEFAULT_USE_CACHE_FOR_ALL_THREADS = SystemPropertyUtil.getBoolean(
+                "io.netty.allocator.useCacheForAllThreads", true);
+
+        DEFAULT_DIRECT_MEMORY_CACHE_ALIGNMENT = SystemPropertyUtil.getInt(
+                "io.netty.allocator.directMemoryCacheAlignment", 0);
+
+        if (logger.isDebugEnabled()) {
+            logger.debug("-Dio.netty.allocator.numHeapArenas: {}", DEFAULT_NUM_HEAP_ARENA);
+            logger.debug("-Dio.netty.allocator.numDirectArenas: {}", DEFAULT_NUM_DIRECT_ARENA);
+            if (pageSizeFallbackCause == null) {
+                logger.debug("-Dio.netty.allocator.pageSize: {}", DEFAULT_PAGE_SIZE);
+            } else {
+                logger.debug("-Dio.netty.allocator.pageSize: {}", DEFAULT_PAGE_SIZE, pageSizeFallbackCause);
+            }
+            if (maxOrderFallbackCause == null) {
+                logger.debug("-Dio.netty.allocator.maxOrder: {}", DEFAULT_MAX_ORDER);
+            } else {
+                logger.debug("-Dio.netty.allocator.maxOrder: {}", DEFAULT_MAX_ORDER, maxOrderFallbackCause);
+            }
+            logger.debug("-Dio.netty.allocator.chunkSize: {}", DEFAULT_PAGE_SIZE << DEFAULT_MAX_ORDER);
+            logger.debug("-Dio.netty.allocator.tinyCacheSize: {}", DEFAULT_TINY_CACHE_SIZE);
+            logger.debug("-Dio.netty.allocator.smallCacheSize: {}", DEFAULT_SMALL_CACHE_SIZE);
+            logger.debug("-Dio.netty.allocator.normalCacheSize: {}", DEFAULT_NORMAL_CACHE_SIZE);
+            logger.debug("-Dio.netty.allocator.maxCachedBufferCapacity: {}", DEFAULT_MAX_CACHED_BUFFER_CAPACITY);
+            logger.debug("-Dio.netty.allocator.cacheTrimInterval: {}", DEFAULT_CACHE_TRIM_INTERVAL);
+            logger.debug("-Dio.netty.allocator.useCacheForAllThreads: {}", DEFAULT_USE_CACHE_FOR_ALL_THREADS);
+        }
+    }
+    public static final PooledByteBufAllocator DEFAULT =
+            new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
+
+    private final PoolArena<byte[]>[] heapArenas;//堆buf
+    private final PoolArena<ByteBuffer>[] directArenas;//nio 字节buf
+    private final int tinyCacheSize;
+    private final int smallCacheSize;
+    private final int normalCacheSize;
+    private final List<PoolArenaMetric> heapArenaMetrics;
+    private final List<PoolArenaMetric> directArenaMetrics;
+    private final PoolThreadLocalCache threadCache;//字节buf缓存
+    private final int chunkSize;
+    private final PooledByteBufAllocatorMetric metric;
+    public PooledByteBufAllocator() {
+        this(false);
+    }
+
+    @SuppressWarnings("deprecation")
+    public PooledByteBufAllocator(boolean preferDirect) {
+        this(preferDirect, DEFAULT_NUM_HEAP_ARENA, DEFAULT_NUM_DIRECT_ARENA, DEFAULT_PAGE_SIZE, DEFAULT_MAX_ORDER);
+    }
+    ...
+    public PooledByteBufAllocator(boolean preferDirect, int nHeapArena, int nDirectArena, int pageSize, int maxOrder,
+                                  int tinyCacheSize, int smallCacheSize, int normalCacheSize,
+                                  boolean useCacheForAllThreads, int directMemoryCacheAlignment) {
+        super(preferDirect);
+        threadCache = new PoolThreadLocalCache(useCacheForAllThreads);
+        this.tinyCacheSize = tinyCacheSize;
+        this.smallCacheSize = smallCacheSize;
+        this.normalCacheSize = normalCacheSize;
+        chunkSize = validateAndCalculateChunkSize(pageSize, maxOrder);
+
+        if (nHeapArena < 0) {
+            throw new IllegalArgumentException("nHeapArena: " + nHeapArena + " (expected: >= 0)");
+        }
+        if (nDirectArena < 0) {
+            throw new IllegalArgumentException("nDirectArea: " + nDirectArena + " (expected: >= 0)");
+        }
+
+        if (directMemoryCacheAlignment < 0) {
+            throw new IllegalArgumentException("directMemoryCacheAlignment: "
+                    + directMemoryCacheAlignment + " (expected: >= 0)");
+        }
+        if (directMemoryCacheAlignment > 0 && !isDirectMemoryCacheAlignmentSupported()) {
+            throw new IllegalArgumentException("directMemoryCacheAlignment is not supported");
+        }
+
+        if ((directMemoryCacheAlignment & -directMemoryCacheAlignment) != directMemoryCacheAlignment) {
+            throw new IllegalArgumentException("directMemoryCacheAlignment: "
+                    + directMemoryCacheAlignment + " (expected: power of two)");
+        }
+
+        int pageShifts = validateAndCalculatePageShifts(pageSize);
+
+        if (nHeapArena > 0) {
+            heapArenas = newArenaArray(nHeapArena);
+            List<PoolArenaMetric> metrics = new ArrayList<PoolArenaMetric>(heapArenas.length);
+            for (int i = 0; i < heapArenas.length; i ++) {
+                PoolArena.HeapArena arena = new PoolArena.HeapArena(this,
+                        pageSize, maxOrder, pageShifts, chunkSize,
+                        directMemoryCacheAlignment);
+                heapArenas[i] = arena;
+                metrics.add(arena);
+            }
+            heapArenaMetrics = Collections.unmodifiableList(metrics);
+        } else {
+            heapArenas = null;
+            heapArenaMetrics = Collections.emptyList();
+        }
+
+        if (nDirectArena > 0) {
+            directArenas = newArenaArray(nDirectArena);
+            List<PoolArenaMetric> metrics = new ArrayList<PoolArenaMetric>(directArenas.length);
+            for (int i = 0; i < directArenas.length; i ++) {
+                PoolArena.DirectArena arena = new PoolArena.DirectArena(
+                        this, pageSize, maxOrder, pageShifts, chunkSize, directMemoryCacheAlignment);
+                directArenas[i] = arena;
+                metrics.add(arena);
+            }
+            directArenaMetrics = Collections.unmodifiableList(metrics);
+        } else {
+            directArenas = null;
+            directArenaMetrics = Collections.emptyList();
+        }
+        metric = new PooledByteBufAllocatorMetric(this);
+    }
+}
+
+ @SuppressWarnings("unchecked")
+ private static <T> PoolArena<T>[] newArenaArray(int size) {
+     return new PoolArena[size];
+ }
+
+来看创建堆buf：
+
+@Override
+protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
+    PoolThreadCache cache = threadCache.get();
+    PoolArena<byte[]> heapArena = cache.heapArena;
+
+    final ByteBuf buf;
+    if (heapArena != null) {
+        buf = heapArena.allocate(cache, initialCapacity, maxCapacity);
+    } else {
+        buf = PlatformDependent.hasUnsafe() ?
+                new UnpooledUnsafeHeapByteBuf(this, initialCapacity, maxCapacity) :
+                new UnpooledHeapByteBuf(this, initialCapacity, maxCapacity);
+    }
+    //追踪字节buf资源泄漏情况
+    return toLeakAwareBuffer(buf);
+}
+
+
+abstract class PoolArena<T> implements PoolArenaMetric {
+    static final boolean HAS_UNSAFE = PlatformDependent.hasUnsafe();
+    ...
+     PooledByteBuf<T> allocate(PoolThreadCache cache, int reqCapacity, int maxCapacity) {
+        PooledByteBuf<T> buf = newByteBuf(maxCapacity);
+        allocate(cache, buf, reqCapacity);
+        return buf;
+    }
+    protected abstract PooledByteBuf<T> newByteBuf(int maxCapacity);
+    final int normCapacity = normalizeCapacity(reqCapacity);
+        if (isTinyOrSmall(normCapacity)) { // capacity < pageSize
+            int tableIdx;
+            PoolSubpage<T>[] table;
+            boolean tiny = isTiny(normCapacity);
+            if (tiny) { // < 512
+                if (cache.allocateTiny(this, buf, reqCapacity, normCapacity)) {
+                    // was able to allocate out of the cache so move on
+                    return;
+                }
+                tableIdx = tinyIdx(normCapacity);
+                table = tinySubpagePools;
+            } else {
+                if (cache.allocateSmall(this, buf, reqCapacity, normCapacity)) {
+                    // was able to allocate out of the cache so move on
+                    return;
+                }
+                tableIdx = smallIdx(normCapacity);
+                table = smallSubpagePools;
+            }
+            ...
+        }
+        if (normCapacity <= chunkSize) {
+            if (cache.allocateNormal(this, buf, reqCapacity, normCapacity)) {
+                // was able to allocate out of the cache so move on
+                return;
+            }
+            synchronized (this) {
+                allocateNormal(buf, reqCapacity, normCapacity);
+                ++allocationsNormal;
+            }
+        } 
+	...
+    }
+}
+从上面来看，PoolArena根据容量来决定创建tiny，small还是Normal buf：
+我们以Normal为例:
+//PoolThreadCache
+final class PoolThreadCache {
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(PoolThreadCache.class);
+
+    final PoolArena<byte[]> heapArena;
+    final PoolArena<ByteBuffer> directArena;
+    ...
+  /**
+     * Try to allocate a small buffer out of the cache. Returns {@code true} if successful {@code false} otherwise
+     */
+    boolean allocateNormal(PoolArena<?> area, PooledByteBuf<?> buf, int reqCapacity, int normCapacity) {
+        return allocate(cacheForNormal(area, normCapacity), buf, reqCapacity);
+    }
+    private MemoryRegionCache<?> cacheForNormal(PoolArena<?> area, int normCapacity) {
+        if (area.isDirect()) {
+            int idx = log2(normCapacity >> numShiftsNormalDirect);
+            return cache(normalDirectCaches, idx);
+        }
+        int idx = log2(normCapacity >> numShiftsNormalHeap);
+        return cache(normalHeapCaches, idx);
+    }
+
+    private static <T> MemoryRegionCache<T> cache(MemoryRegionCache<T>[] cache, int idx) {
+        if (cache == null || idx > cache.length - 1) {
+            return null;
+        }
+        return cache[idx];
+    }
+     @SuppressWarnings({ "unchecked", "rawtypes" })
+    private boolean allocate(MemoryRegionCache<?> cache, PooledByteBuf buf, int reqCapacity) {
+        if (cache == null) {
+            // no cache found so just return false here
+            return false;
+        }
+        boolean allocated = cache.allocate(buf, reqCapacity);
+        if (++ allocations >= freeSweepAllocationThreshold) {
+            allocations = 0;
+            trim();
+        }
+        return allocated;
+    }
+    
+   
+     private abstract static class MemoryRegionCache<T> {
+        private final int size;
+        private final Queue<Entry<T>> queue;
+        private final SizeClass sizeClass;
+        private int allocations;
+	/**
+         * Allocate something out of the cache if possible and remove the entry from the cache.
+         */
+       public final boolean allocate(PooledByteBuf<T> buf, int reqCapacity) {
+            //从缓冲buf队列poll一个buf
+             Entry<T> entry = queue.poll();
+             if (entry == null) {
+                 return false;
+             }
+             initBuf(entry.chunk, entry.handle, buf, reqCapacity);
+             entry.recycle();
+         
+             // allocations is not thread-safe which is fine as this is only called from the same thread all time.
+             ++ allocations;
+             return true;
+         }
+          **
+          * Init the {@link PooledByteBuf} using the provided chunk and handle with the capacity restrictions.
+          */
+         protected abstract void initBuf(PoolChunk<T> chunk, long handle,
+                                             PooledByteBuf<T> buf, int reqCapacity);
+      	...
+          }
+	}
+	/**
+         * Cache used for buffers which are backed by NORMAL size.
+         */
+        private static final class NormalMemoryRegionCache<T> extends MemoryRegionCache<T> {
+            NormalMemoryRegionCache(int size) {
+                super(size, SizeClass.Normal);
+            }
+        
+            @Override
+            protected void initBuf(
+                    PoolChunk<T> chunk, long handle, PooledByteBuf<T> buf, int reqCapacity) {
+                chunk.initBuf(buf, handle, reqCapacity);
+            }
+        }
+...
+}
+final class PoolChunk<T> implements PoolChunkMetric {
+
+    private static final int INTEGER_SIZE_MINUS_ONE = Integer.SIZE - 1;
+
+    final PoolArena<T> arena;
+    final T memory;
+    final boolean unpooled;
+    final int offset;
+
+    private final byte[] memoryMap;
+    private final byte[] depthMap;
+    private final PoolSubpage<T>[] subpages;
+    /** Used to determine if the requested capacity is equal to or greater than pageSize. */
+    private final int subpageOverflowMask;
+    private final int pageSize;
+    private final int pageShifts;
+    private final int maxOrder;
+    private final int chunkSize;
+    private final int log2ChunkSize;
+    private final int maxSubpageAllocs;
+    /** Used to mark memory as unusable */
+    private final byte unusable;
+
+    private int freeBytes;
+
+    PoolChunkList<T> parent;
+    PoolChunk<T> prev;
+    PoolChunk<T> next;
+    void initBuf(PooledByteBuf<T> buf, long handle, int reqCapacity) {
+    int memoryMapIdx = memoryMapIdx(handle);
+    int bitmapIdx = bitmapIdx(handle);
+    if (bitmapIdx == 0) {
+        byte val = value(memoryMapIdx);
+        assert val == unusable : String.valueOf(val);
+        buf.init(this, handle, runOffset(memoryMapIdx) + offset, reqCapacity, runLength(memoryMapIdx),
+                 arena.parent.threadCache());
+    } else {
+        initBufWithSubpage(buf, handle, bitmapIdx, reqCapacity);
+    }
+    ...
+}
+
+//PooledByteBuf
+abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
+
+    private final Recycler.Handle<PooledByteBuf<T>> recyclerHandle;
+
+    protected PoolChunk<T> chunk;
+    protected long handle;
+    protected T memory;
+    protected int offset;
+    protected int length;
+    int maxLength;
+    PoolThreadCache cache;
+    private ByteBuffer tmpNioBuf;
+    private ByteBufAllocator allocator;
+    ...
+    void init(PoolChunk<T> chunk, long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
+        init0(chunk, handle, offset, length, maxLength, cache);
+    }
+
+    void initUnpooled(PoolChunk<T> chunk, int length) {
+        init0(chunk, 0, chunk.offset, length, length, null);
+    }
+
+    private void init0(PoolChunk<T> chunk, long handle, int offset, int length, int maxLength, PoolThreadCache cache) {
+        assert handle >= 0;
+        assert chunk != null;
+
+        this.chunk = chunk;
+        memory = chunk.memory;
+        allocator = chunk.arena.parent;
+        this.cache = cache;
+        this.handle = handle;
+        this.offset = offset;
+        this.length = length;
+        this.maxLength = maxLength;
+        tmpNioBuf = null;
+    }
+
+}
+再来看创建direct类型buf：
+ @Override
+protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
+    PoolThreadCache cache = threadCache.get();
+    PoolArena<ByteBuffer> directArena = cache.directArena;
+
+    final ByteBuf buf;
+    if (directArena != null) {
+        buf = directArena.allocate(cache, initialCapacity, maxCapacity);
+    } else {
+        buf = PlatformDependent.hasUnsafe() ?
+                UnsafeByteBufUtil.newUnsafeDirectByteBuf(this, initialCapacity, maxCapacity) :
+                new UnpooledDirectByteBuf(this, initialCapacity, maxCapacity);
+    }
+    //追踪字节buf资源泄漏情况
+    return toLeakAwareBuffer(buf);
+}
+
