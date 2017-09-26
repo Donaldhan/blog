@@ -1,0 +1,49 @@
+netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
+netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
+netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
+netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
+netty 复合buf概念：[url]http://donald-draper.iteye.com/blog/2394408[/url]
+netty 抽象字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394419[/url]
+引言
+上一篇我们看了抽象字节buf分配器，先来回顾一下：
+创建字节buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型；创建direct和heap buf实际通过newDirectBuffer和newHeapBuffer方法，待子类扩展。看出ioBuffer方法创建的字节buf，优先为direct类型，当系统平台不支持Unsafe时，才为heap类型；创建复合buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型；创建复合buf时，如果资源泄漏探测功能开启，则追踪复合buf内存泄漏情况。
+
+今天我们来看抽象字节buf分配器一个具体实现非池类字节buf分配器UnpooledByteBufAllocator
+/**
+ * Simplistic {@link ByteBufAllocator} implementation that does not pool anything.
+ */
+public final class UnpooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
+
+    private final UnpooledByteBufAllocatorMetric metric = new UnpooledByteBufAllocatorMetric();
+    private final boolean disableLeakDetector;
+
+    /**
+     * Default instance which uses leak-detection for direct buffers.
+     */
+    public static final UnpooledByteBufAllocator DEFAULT =
+            new UnpooledByteBufAllocator(PlatformDependent.directBufferPreferred());
+
+    /**
+     * Create a new instance which uses leak-detection for direct buffers.
+     *
+     * @param preferDirect {@code true} if {@link #buffer(int)} should try to allocate a direct buffer rather than
+     *                     a heap buffer
+     */
+    public UnpooledByteBufAllocator(boolean preferDirect) {
+        this(preferDirect, false);
+    }
+
+    /**
+     * Create a new instance
+     *
+     * @param preferDirect {@code true} if {@link #buffer(int)} should try to allocate a direct buffer rather than
+     *                     a heap buffer
+     * @param disableLeakDetector {@code true} if the leak-detection should be disabled completely for this
+     *                            allocator. This can be useful if the user just want to depend on the GC to handle
+     *                            direct buffers when not explicit released.
+     */
+    public UnpooledByteBufAllocator(boolean preferDirect, boolean disableLeakDetector) {
+        super(preferDirect);
+        this.disableLeakDetector = disableLeakDetector;
+    }
+}
