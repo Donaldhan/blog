@@ -4,8 +4,9 @@ netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/
 netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
 netty 复合buf概念：[url]http://donald-draper.iteye.com/blog/2394408[/url]
 引言
-上一篇文章，我们看了复合buf概念，先来回顾一下字节buf接口的定义：
+上一篇文章，我们看了复合buf概念，先来回顾一下：
 
+复合字节缓冲CompositeByteBuf，内部有一个字节buf数组，用于存放字节buf，每个字节buf添加到复合buf集时，将被包装成一个buf组件，如果添加buf是，复合buf集已满，则将buf集中的所有buf，整合到一个组件buf中，并将原始buf集清空，添加整合后的buf到buf集。复合buf的读写索引为字节buf集的起始索引和size；每个组件buf Component内部记录着字节buf在复合buf中的起始位置和结束位置，及buf可读数据长度。
 
 在netty 默认通道配置初始化（[url]http://donald-draper.iteye.com/blog/2393504[/url]）
 这篇文章，我们看到字节buf是由字节分配器来分配的，默认字节分配器，在ByteBufUtil中定义，我们先回到
@@ -69,6 +70,240 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
 
 由于上面两个方法继承了AbstractByteBufAllocator，我们先来看一下抽象字节buf分配器，
 
+/**
+ * Skeletal {@link ByteBufAllocator} implementation to extend.
+ */
+public abstract class AbstractByteBufAllocator implements ByteBufAllocator {
+    static final int DEFAULT_INITIAL_CAPACITY = 256;//初始化容量
+    static final int DEFAULT_MAX_CAPACITY = Integer.MAX_VALUE;//最大容量
+    static final int DEFAULT_MAX_COMPONENTS = 16;//复合buf最大组件buf数量
+    static final int CALCULATE_THRESHOLD = 1048576 * 4; // 4 MiB page
+    private final boolean directByDefault;//分配buf是否为direct类型
+    private final ByteBuf emptyBuf;
+
+    /**
+     * Instance use heap buffers by default
+     */
+    protected AbstractByteBufAllocator() {
+        this(false);
+    }
+
+    /**
+     * Create new instance
+     *
+     * @param preferDirect {@code true} if {@link #buffer(int)} should try to allocate a direct buffer rather than
+     *                     a heap buffer
+     */
+    protected AbstractByteBufAllocator(boolean preferDirect) {
+        directByDefault = preferDirect && PlatformDependent.hasUnsafe();
+        emptyBuf = new EmptyByteBuf(this);
+    }
+}
+
+来看创建字节buf：
+@Override
+public ByteBuf buffer() {
+    if (directByDefault) {
+        return directBuffer();
+    }
+    return heapBuffer();
+}
+
+@Override
+public ByteBuf buffer(int initialCapacity) {
+    if (directByDefault) {
+        return directBuffer(initialCapacity);
+    }
+    return heapBuffer(initialCapacity);
+}
+
+@Override
+public ByteBuf buffer(int initialCapacity, int maxCapacity) {
+    if (directByDefault) {
+        return directBuffer(initialCapacity, maxCapacity);
+    }
+    return heapBuffer(initialCapacity, maxCapacity);
+}
+创建字节buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型
+
+先来看分配direct类型buf
+@Override
+public ByteBuf directBuffer() {
+    return directBuffer(DEFAULT_INITIAL_CAPACITY, DEFAULT_MAX_CAPACITY);
+}
+
+@Override
+public ByteBuf directBuffer(int initialCapacity) {
+    return directBuffer(initialCapacity, DEFAULT_MAX_CAPACITY);
+}
+
+@Override
+public ByteBuf directBuffer(int initialCapacity, int maxCapacity) {
+    if (initialCapacity == 0 && maxCapacity == 0) {
+        return emptyBuf;
+    }
+    validate(initialCapacity, maxCapacity);
+    return newDirectBuffer(initialCapacity, maxCapacity);
+}
+/**
+ * Create a direct {@link ByteBuf} with the given initialCapacity and maxCapacity.
+ 待子类扩展
+ */
+protected abstract ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity);
+
+再来看分配heap类型buf：
+@Override
+public ByteBuf heapBuffer() {
+    return heapBuffer(DEFAULT_INITIAL_CAPACITY, DEFAULT_MAX_CAPACITY);
+}
+
+@Override
+public ByteBuf heapBuffer(int initialCapacity) {
+    return heapBuffer(initialCapacity, DEFAULT_MAX_CAPACITY);
+}
+
+@Override
+public ByteBuf heapBuffer(int initialCapacity, int maxCapacity) {
+    if (initialCapacity == 0 && maxCapacity == 0) {
+        return emptyBuf;
+    }
+    validate(initialCapacity, maxCapacity);
+    return newHeapBuffer(initialCapacity, maxCapacity);
+}
+/**
+ * Create a heap {@link ByteBuf} with the given initialCapacity and maxCapacity.
+ 待子类扩展
+ */
+protected abstract ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity);
+
+从上面可以看出创建direct和heap buf实际通过newDirectBuffer和newHeapBuffer方法，待子类扩展。
+
+来看创建ioBufer
+@Override
+public ByteBuf ioBuffer() {
+    if (PlatformDependent.hasUnsafe()) {
+        return directBuffer(DEFAULT_INITIAL_CAPACITY);
+    }
+    return heapBuffer(DEFAULT_INITIAL_CAPACITY);
+}
+
+@Override
+public ByteBuf ioBuffer(int initialCapacity) {
+    if (PlatformDependent.hasUnsafe()) {
+        return directBuffer(initialCapacity);
+    }
+    return heapBuffer(initialCapacity);
+}
+
+@Override
+public ByteBuf ioBuffer(int initialCapacity, int maxCapacity) {
+    if (PlatformDependent.hasUnsafe()) {
+        return directBuffer(initialCapacity, maxCapacity);
+    }
+    return heapBuffer(initialCapacity, maxCapacity);
+}
+
+从上面可以看出ioBuffer方法创建的字节buf，优先为direct类型，当系统平台不支持Unsafe时，才为heap类型
+
+
+
+再来看创建复合buf：
+
+@Override
+public CompositeByteBuf compositeBuffer() {
+    if (directByDefault) {
+        return compositeDirectBuffer();
+    }
+    return compositeHeapBuffer();
+}
+
+@Override
+public CompositeByteBuf compositeBuffer(int maxNumComponents) {
+    if (directByDefault) {
+        return compositeDirectBuffer(maxNumComponents);
+    }
+    return compositeHeapBuffer(maxNumComponents);
+}
+从上面可以看出创建复合buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型；
+
+来看创建heap类型复合buf
+@Override
+public CompositeByteBuf compositeHeapBuffer() {
+    return compositeHeapBuffer(DEFAULT_MAX_COMPONENTS);
+}
+
+@Override
+public CompositeByteBuf compositeHeapBuffer(int maxNumComponents) {
+    return toLeakAwareBuffer(new CompositeByteBuf(this, false, maxNumComponents));
+}
+//追踪复合buf内存泄漏
+protected static CompositeByteBuf toLeakAwareBuffer(CompositeByteBuf buf) {
+    ResourceLeakTracker<ByteBuf> leak;
+    switch (ResourceLeakDetector.getLevel()) {
+        case SIMPLE:
+            leak = AbstractByteBuf.leakDetector.track(buf);
+            if (leak != null) {
+                buf = new SimpleLeakAwareCompositeByteBuf(buf, leak);
+            }
+            break;
+        case ADVANCED:
+        case PARANOID:
+            leak = AbstractByteBuf.leakDetector.track(buf);
+            if (leak != null) {
+                buf = new AdvancedLeakAwareCompositeByteBuf(buf, leak);
+            }
+            break;
+        default:
+            break;
+    }
+    return buf;
+}
+
+//SimpleLeakAwareCompositeByteBuf
+class SimpleLeakAwareCompositeByteBuf extends WrappedCompositeByteBuf {
+
+    final ResourceLeakTracker<ByteBuf> leak;//内部资源泄漏探测器
+
+    SimpleLeakAwareCompositeByteBuf(CompositeByteBuf wrapped, ResourceLeakTracker<ByteBuf> leak) {
+        super(wrapped);
+        this.leak = ObjectUtil.checkNotNull(leak, "leak");
+    }
+    ...
+ }
+
+//追踪字节buf内存泄漏
+protected static ByteBuf toLeakAwareBuffer(ByteBuf buf) {
+    ResourceLeakTracker<ByteBuf> leak;
+    switch (ResourceLeakDetector.getLevel()) {
+        case SIMPLE:
+            leak = AbstractByteBuf.leakDetector.track(buf);
+            if (leak != null) {
+                buf = new SimpleLeakAwareByteBuf(buf, leak);
+            }
+            break;
+        case ADVANCED:
+        case PARANOID:
+            leak = AbstractByteBuf.leakDetector.track(buf);
+            if (leak != null) {
+                buf = new AdvancedLeakAwareByteBuf(buf, leak);
+            }
+            break;
+        default:
+            break;
+    }
+    return buf;
+}
+再来看创建direct类型复合buf
+@Override
+public CompositeByteBuf compositeDirectBuffer() {
+    return compositeDirectBuffer(DEFAULT_MAX_COMPONENTS);
+}
+
+@Override
+public CompositeByteBuf compositeDirectBuffer(int maxNumComponents) {
+    return toLeakAwareBuffer(new CompositeByteBuf(this, true, maxNumComponents));
+}
+
 
 
 
@@ -76,3 +311,8 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
 
 
 
+总结：
+创建字节buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型；
+创建direct和heap buf实际通过newDirectBuffer和newHeapBuffer方法，待子类扩展。
+看出ioBuffer方法创建的字节buf，优先为direct类型，当系统平台不支持Unsafe时，才为heap类型；
+创建复合buf主要根据字节buf分配器的directByDefault属性，来决定分配buf是否为direct类型还是heap类型；

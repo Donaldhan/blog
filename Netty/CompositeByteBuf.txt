@@ -750,6 +750,8 @@ protected int _getInt(int index) {
 其他get*原始类型方法，思路基本一致，首先获取位置所在的组件buf，
 再委托给组件内部buf对应的get*方法。
 
+再来看getBytes*相关方法
+
 //读取复合buf数据到字节数组
 @Override
 public CompositeByteBuf getBytes(int index, byte[] dst, int dstIndex, int length) {
@@ -875,7 +877,7 @@ public ByteBuffer internalNioBuffer(int index, int length) {
         throw new UnsupportedOperationException();
     }
 }
-//获取
+//获取从位置index开始，长度为length字节数据的nio 字节buf
 @Override
 public ByteBuffer nioBuffer(int index, int length) {
     checkIndex(index, length);

@@ -73,6 +73,6 @@ netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/
 netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
 netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
 netty 复合buf概念：[url]http://donald-draper.iteye.com/blog/2394408[/url]
-
+netty 抽象字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394419[/url]
 
 
