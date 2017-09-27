@@ -8,7 +8,36 @@ netty Unpooled字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394
 引言：
 上一篇文章我们看了，Unpooled字节buf分配器，先来回顾一下：
 非池类堆字节buf，实际为一个字节数组，直接在Java虚拟机堆内存中，分配字节缓存；非池类Direct buf，实际为一个nio 字节buf，从操作系统实际物理内存中，分配字节缓存。Unpooled创建字节buf，实际委托给内部字节分配器UnpooledByteBufAllocator。
-今天来看一下Pooled字节buf非配器，不做深入研究，仅仅窥探一下：
+今天来看一下Pooled字节buf非配器，不做深入研究，仅仅窥探一下，由于本人当前能力有限，只能简单看一下，由于Pooled字节
+分配器可能涉及到很多内存相关的概念，可以参考一下连接：
+
+深入浅出Netty内存管理PoolChunk：http://blog.jobbole.com/106001/
+Netty4 中的内存管理：http://www.cnblogs.com/ungshow/p/3541737.html
+Netty5源码学习之buffer篇（一）PooledHeapByteBuf :https://yq.aliyun.com/articles/55623
+Netty系列之Netty百万级推送服务设计要点:http://www.infoq.com/cn/articles/netty-million-level-push-service-design-points/
+
+关于内存分配策略可以参考这篇文章，
+http://www.360doc.com/content/13/0915/09/8363527_314549128.shtml
+现在对内存这段研究的不交少，有兴趣的可以先在国内搜索一些内存的相关策略，
+在去国外搜索具体内存分配策略相关的论文或专业解析，由于本人还没有深入到操作系统分配这一块，
+有时间研究一下，希望这不是接口。
+下面两篇文章是具体的应用和内存分配策略比较，虽然有点粗糙，重要的是我们要吸收精华部分，
+扯远了，扯了蛋了，疼...
+浅谈redis采用不同内存分配器tcmalloc和jemalloc：http://www.jb51.net/article/100575.htm
+jemalloc优化MySQL、Nginx内存管理：https://blog.linuxeye.cn/356.html
+
+PooledByteBufAllocator:分配heap、direct buffer
+PoolArena：一块逻辑上的内存池，用来管理和组织buffer的，内部数据结构较复杂。
+PoolChunk: 管理实际的底层内存，内部已内存Page组成
+默认情况下，Page的大小为4KB，有三类，small、large和huge。small类的内存请求都属于一个内存页之内 。
+另外，在small类里面，又分了三个子类，分别是Tiny、Quantum-Spaced和Sub-page。
+
+看了上面的文章，简单理一下，我们使用内存，实际为机器内存的Memory Mapping Region区域，
+PoolArena可以理解为mmap中内存分配区，分配区由内存块PoolChunk组成，内存块以内存Page管理
+内存，Page的大小为4KB，有三类，small、large和huge。small类的内存请求都属于一个内存页之内 。
+另外，在small类里面，又分了三个子类，分别是Tiny、Quantum-Spaced和Sub-page。
+
+来看Pooled 字节buf分配器
 public class PooledByteBufAllocator extends AbstractByteBufAllocator implements ByteBufAllocatorMetricProvider {
     private static final int DEFAULT_NUM_HEAP_ARENA;
     private static final int DEFAULT_NUM_DIRECT_ARENA;
@@ -20,7 +49,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
     private static final int DEFAULT_NORMAL_CACHE_SIZE;//默认正常buf 缓存size
     private static final int DEFAULT_MAX_CACHED_BUFFER_CAPACITY;
     private static final int DEFAULT_CACHE_TRIM_INTERVAL;
-    private static final boolean DEFAULT_USE_CACHE_FOR_ALL_THREADS;
+    private static final boolean DEFAULT_USE_CACHE_FOR_ALL_THREADS;//是否为所有线程使用buf缓存
     private static final int DEFAULT_DIRECT_MEMORY_CACHE_ALIGNMENT;
 
     private static final int MIN_PAGE_SIZE = 4096;
@@ -86,7 +115,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
         // the number of threshold of allocations when cached entries will be freed up if not frequently used
         DEFAULT_CACHE_TRIM_INTERVAL = SystemPropertyUtil.getInt(
                 "io.netty.allocator.cacheTrimInterval", 8192);
-
+        //默认开启线程buf缓存
         DEFAULT_USE_CACHE_FOR_ALL_THREADS = SystemPropertyUtil.getBoolean(
                 "io.netty.allocator.useCacheForAllThreads", true);
 
@@ -235,7 +264,8 @@ protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
     return toLeakAwareBuffer(buf);
 }
 
-来看从堆缓存获取堆buf
+来看从堆缓存获取堆buf，PoolArena实际为Pool buf缓存度量器，获取buf，
+实际是从PoolThreadCache中获取
 abstract class PoolArena<T> implements PoolArenaMetric {
     static final boolean HAS_UNSAFE = PlatformDependent.hasUnsafe();
     ...
@@ -322,6 +352,28 @@ abstract class PoolArena<T> implements PoolArenaMetric {
       ...
       }
 }
+//PoolArenaMetric
+public interface PoolArenaMetric {
+
+    /**
+     * Returns the number of thread caches backed by this arena.
+     返回缓存此arena的线程数
+     */
+    int numThreadCaches();
+    /**
+     * Returns the number of tiny sub-pages for the arena.
+     */
+    int numTinySubpages();
+    /**
+     * Returns the number of small sub-pages for the arena.
+     */
+    int numSmallSubpages();
+    /**
+     * Returns the number of chunk lists for the arena.
+     */
+    int numChunkLists();
+    ...
+ }
 从上面来看，PoolArena根据容量来决定创建tiny，small还是Normal buf：
 我们以Normal为例:
 从线程本地缓存获取buf
@@ -654,7 +706,308 @@ final void reuse(int maxCapacity) {
 //线程buf 缓存为PoolThreadLocalCache
 threadCache = new PoolThreadLocalCache(useCacheForAllThreads);
 
+//线程本地buf缓存
+final class PoolThreadLocalCache extends FastThreadLocal<PoolThreadCache> {
+    private final boolean useCacheForAllThreads;
 
+    PoolThreadLocalCache(boolean useCacheForAllThreads) {
+        this.useCacheForAllThreads = useCacheForAllThreads;
+    }
+    //初始化线程本地buf缓存
+    @Override
+    protected synchronized PoolThreadCache initialValue() {
+        final PoolArena<byte[]> heapArena = leastUsedArena(heapArenas);
+        final PoolArena<ByteBuffer> directArena = leastUsedArena(directArenas);
+        
+        if (useCacheForAllThreads || Thread.currentThread() instanceof FastThreadLocalThread) {
+            return new PoolThreadCache(
+                    heapArena, directArena, tinyCacheSize, smallCacheSize, normalCacheSize,
+                    DEFAULT_MAX_CACHED_BUFFER_CAPACITY, DEFAULT_CACHE_TRIM_INTERVAL);
+        }
+        // No caching for non FastThreadLocalThreads.
+        return new PoolThreadCache(heapArena, directArena, 0, 0, 0, 0, 0);
+    }
+    //获取最少被线程使用的buf 缓存
+     private <T> PoolArena<T> leastUsedArena(PoolArena<T>[] arenas) {
+        if (arenas == null || arenas.length == 0) {
+            return null;
+        }
+        PoolArena<T> minArena = arenas[0];
+        for (int i = 1; i < arenas.length; i++) {
+            PoolArena<T> arena = arenas[i];
+            if (arena.numThreadCaches.get() < minArena.numThreadCaches.get()) {
+                minArena = arena;
+            }
+        }
+
+        return minArena;
+    }
+    @Override
+    protected void onRemoval(PoolThreadCache threadCache) {
+        threadCache.free();
+    }
+
+   
+}
 
 再来简单看一下buf缓存池度量器：
 metric = new PooledByteBufAllocatorMetric(this);
+
+/**
+ * Exposed metric for {@link PooledByteBufAllocator}.
+ */
+@SuppressWarnings("deprecation")
+public final class PooledByteBufAllocatorMetric implements ByteBufAllocatorMetric {
+    private final PooledByteBufAllocator allocator;
+
+    PooledByteBufAllocatorMetric(PooledByteBufAllocator allocator) {
+        this.allocator = allocator;
+    }
+    /**
+     * Return the number of heap arenas.
+     返回堆缓存计数器
+     */
+    public int numHeapArenas() {
+        return allocator.numHeapArenas();
+    }
+    /**
+     * Return the number of direct arenas.
+     返回direct缓存计数器
+     */
+    public int numDirectArenas() {
+        return allocator.numDirectArenas();
+    }
+    /**
+     * Return a {@link List} of all heap {@link PoolArenaMetric}s that are provided by this pool.
+     堆buf缓存度量器
+     */
+    public List<PoolArenaMetric> heapArenas() {
+        return allocator.heapArenas();
+    }
+    /**
+     * Return a {@link List} of all direct {@link PoolArenaMetric}s that are provided by this pool.
+     direct buf缓存度量器
+     */
+    public List<PoolArenaMetric> directArenas() {
+        return allocator.directArenas();
+    }
+    /**
+     * Return the number of thread local caches used by this {@link PooledByteBufAllocator}.
+     使用此Pooled字节分配器的线程本地缓存数
+     */
+    public int numThreadLocalCaches() {
+        return allocator.numThreadLocalCaches();
+    }
+    /**
+     * Return the size of the tiny cache.
+     tiny缓存大小
+     */
+    public int tinyCacheSize() {
+        return allocator.tinyCacheSize();
+    }
+    /**
+     * Return the size of the small cache.
+     small缓存大小
+     */
+    public int smallCacheSize() {
+        return allocator.smallCacheSize();
+    }
+    /**
+     * Return the size of the normal cache.
+     normal缓存大小
+     */
+    public int normalCacheSize() {
+        return allocator.normalCacheSize();
+    }
+    /**
+     * Return the chunk size for an arena.
+     */
+    public int chunkSize() {
+        return allocator.chunkSize();
+    }
+    //堆内存使用量
+    @Override
+    public long usedHeapMemory() {
+        return allocator.usedHeapMemory();
+    }
+    //direct内存使用量
+    @Override
+    public long usedDirectMemory() {
+        return allocator.usedDirectMemory();
+    }
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder(256);
+        sb.append(StringUtil.simpleClassName(this))
+                .append("(usedHeapMemory: ").append(usedHeapMemory())
+                .append("; usedDirectMemory: ").append(usedDirectMemory())
+                .append("; numHeapArenas: ").append(numHeapArenas())
+                .append("; numDirectArenas: ").append(numDirectArenas())
+                .append("; tinyCacheSize: ").append(tinyCacheSize())
+                .append("; smallCacheSize: ").append(smallCacheSize())
+                .append("; normalCacheSize: ").append(normalCacheSize())
+                .append("; numThreadLocalCaches: ").append(numThreadLocalCaches())
+                .append("; chunkSize: ").append(chunkSize()).append(')');
+        return sb.toString();
+    }
+}
+
+//PooledByteBufAllocator
+
+/**
+ * Return the number of heap arenas.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#numHeapArenas()}.
+ */
+@Deprecated
+public int numHeapArenas() {
+    return heapArenaMetrics.size();
+}
+
+/**
+ * Return the number of direct arenas.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#numDirectArenas()}.
+ */
+@Deprecated
+public int numDirectArenas() {
+    return directArenaMetrics.size();
+}
+
+/**
+ * Return a {@link List} of all heap {@link PoolArenaMetric}s that are provided by this pool.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#heapArenas()}.
+ */
+@Deprecated
+public List<PoolArenaMetric> heapArenas() {
+    return heapArenaMetrics;
+}
+
+/**
+ * Return a {@link List} of all direct {@link PoolArenaMetric}s that are provided by this pool.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#directArenas()}.
+ */
+@Deprecated
+public List<PoolArenaMetric> directArenas() {
+    return directArenaMetrics;
+}
+
+/**
+ * Return the number of thread local caches used by this {@link PooledByteBufAllocator}.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#numThreadLocalCaches()}.
+ */
+@Deprecated
+public int numThreadLocalCaches() {
+    PoolArena<?>[] arenas = heapArenas != null ? heapArenas : directArenas;
+    if (arenas == null) {
+        return 0;
+    }
+
+    int total = 0;
+    for (PoolArena<?> arena : arenas) {
+        total += arena.numThreadCaches.get();
+    }
+
+    return total;
+}
+
+/**
+ * Return the size of the tiny cache.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#tinyCacheSize()}.
+ */
+@Deprecated
+public int tinyCacheSize() {
+    return tinyCacheSize;
+}
+
+/**
+ * Return the size of the small cache.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#smallCacheSize()}.
+ */
+@Deprecated
+public int smallCacheSize() {
+    return smallCacheSize;
+}
+
+/**
+ * Return the size of the normal cache.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#normalCacheSize()}.
+ */
+@Deprecated
+public int normalCacheSize() {
+    return normalCacheSize;
+}
+
+/**
+ * Return the chunk size for an arena.
+ *
+ * @deprecated use {@link PooledByteBufAllocatorMetric#chunkSize()}.
+ */
+@Deprecated
+public final int chunkSize() {
+    return chunkSize;
+}
+
+final long usedHeapMemory() {
+    return usedMemory(heapArenas);
+}
+
+final long usedDirectMemory() {
+    return usedMemory(directArenas);
+}
+
+private static long usedMemory(PoolArena<?>... arenas) {
+    if (arenas == null) {
+        return -1;
+    }
+    long used = 0;
+    for (PoolArena<?> arena : arenas) {
+        used += arena.numActiveBytes();
+        if (used < 0) {
+            return Long.MAX_VALUE;
+        }
+    }
+    return used;
+}
+
+final PoolThreadCache threadCache() {
+    return threadCache.get();
+}
+
+/**
+ * Returns the status of the allocator (which contains all metrics) as string. Be aware this may be expensive
+ * and so should not called too frequently.
+ */
+public String dumpStats() {
+    int heapArenasLen = heapArenas == null ? 0 : heapArenas.length;
+    StringBuilder buf = new StringBuilder(512)
+            .append(heapArenasLen)
+            .append(" heap arena(s):")
+            .append(StringUtil.NEWLINE);
+    if (heapArenasLen > 0) {
+        for (PoolArena<byte[]> a: heapArenas) {
+            buf.append(a);
+        }
+    }
+
+    int directArenasLen = directArenas == null ? 0 : directArenas.length;
+
+    buf.append(directArenasLen)
+       .append(" direct arena(s):")
+       .append(StringUtil.NEWLINE);
+    if (directArenasLen > 0) {
+        for (PoolArena<ByteBuffer> a: directArenas) {
+            buf.append(a);
+        }
+    }
+
+    return buf.toString();
+}
+
+
