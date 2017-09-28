@@ -4,7 +4,7 @@ netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/
 netty 抽象字节buf引用计数器：[url]http://donald-draper.iteye.com/blog/2394109[/url]
 netty 复合buf概念：[url]http://donald-draper.iteye.com/blog/2394408[/url]
 netty 抽象字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394419[/url]
-netty Unpooled字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394619[/url
+netty Unpooled字节buf分配器：[url]http://donald-draper.iteye.com/blog/2394619[/url]
 引言：
 上一篇文章我们看了，Unpooled字节buf分配器，先来回顾一下：
 非池类堆字节buf，实际为一个字节数组，直接在Java虚拟机堆内存中，分配字节缓存；非池类Direct buf，实际为一个nio 字节buf，从操作系统实际物理内存中，分配字节缓存。Unpooled创建字节buf，实际委托给内部字节分配器UnpooledByteBufAllocator。
