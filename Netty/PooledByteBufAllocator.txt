@@ -56,6 +56,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
     private static final int MAX_CHUNK_SIZE = (int) (((long) Integer.MAX_VALUE + 1) / 2);
 
     static {
+        //获取默认内存页size
         int defaultPageSize = SystemPropertyUtil.getInt("io.netty.allocator.pageSize", 8192);
         Throwable pageSizeFallbackCause = null;
         try {
@@ -87,7 +88,8 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
          *
          * See https://github.com/netty/netty/issues/3888.
          */
-        final int defaultMinNumArena = NettyRuntime.availableProcessors() * 2;//默认最小缓冲buf数量为处理器的2倍
+	 //最小内存分配区的数量，默认最小缓冲buf数量为处理器的2倍
+        final int defaultMinNumArena = NettyRuntime.availableProcessors() * 2;
         final int defaultChunkSize = DEFAULT_PAGE_SIZE << DEFAULT_MAX_ORDER;
         DEFAULT_NUM_HEAP_ARENA = Math.max(0,
                 SystemPropertyUtil.getInt(
@@ -102,17 +104,18 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                                 defaultMinNumArena,
                                 PlatformDependent.maxDirectMemory() / defaultChunkSize / 2 / 3)));
 
-        // cache sizes
+        // cache sizes 默认tiny为512，small为256，normal为64
         DEFAULT_TINY_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.tinyCacheSize", 512);
         DEFAULT_SMALL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.smallCacheSize", 256);
         DEFAULT_NORMAL_CACHE_SIZE = SystemPropertyUtil.getInt("io.netty.allocator.normalCacheSize", 64);
 
         // 32 kb is the default maximum capacity of the cached buffer. Similar to what is explained in
-        // 'Scalable memory allocation using jemalloc'
+        // 'Scalable memory allocation using jemalloc'，默认最大缓存容量为32kb
         DEFAULT_MAX_CACHED_BUFFER_CAPACITY = SystemPropertyUtil.getInt(
                 "io.netty.allocator.maxCachedBufferCapacity", 32 * 1024);
 
         // the number of threshold of allocations when cached entries will be freed up if not frequently used
+	//分配次数阈值，可以可以理解当缓存多久不用时，释放
         DEFAULT_CACHE_TRIM_INTERVAL = SystemPropertyUtil.getInt(
                 "io.netty.allocator.cacheTrimInterval", 8192);
         //默认开启线程buf缓存
@@ -147,16 +150,16 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
     public static final PooledByteBufAllocator DEFAULT =
             new PooledByteBufAllocator(PlatformDependent.directBufferPreferred());
 
-    private final PoolArena<byte[]>[] heapArenas;//堆buf缓存
-    private final PoolArena<ByteBuffer>[] directArenas;//nio 字节buf缓存
+    private final PoolArena<byte[]>[] heapArenas;//堆buf分配区
+    private final PoolArena<ByteBuffer>[] directArenas;//direct buf缓存分配区
     private final int tinyCacheSize;//tiny buf 缓存size
     private final int smallCacheSize;//small buf 缓存size   
     private final int normalCacheSize;//正常buf 缓存size    
-    private final List<PoolArenaMetric> heapArenaMetrics;//堆buf缓存度量器
-    private final List<PoolArenaMetric> directArenaMetrics;//direct buf缓存度量器
-    private final PoolThreadLocalCache threadCache;//字节buf缓存
-    private final int chunkSize;
-    private final PooledByteBufAllocatorMetric metric;
+    private final List<PoolArenaMetric> heapArenaMetrics;//堆buf分配区度量器
+    private final List<PoolArenaMetric> directArenaMetrics;//direct buf分配区度量器
+    private final PoolThreadLocalCache threadCache;//线程本地字节buf缓存
+    private final int chunkSize;//分配区内存块size
+    private final PooledByteBufAllocatorMetric metric;//buf 分配器，度量器
     public PooledByteBufAllocator() {
         this(false);
     }
@@ -200,7 +203,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
         int pageShifts = validateAndCalculatePageShifts(pageSize);
          
         if (nHeapArena > 0) {
-	   //创建堆buf 缓存
+	   //创建堆buf 分配区
             heapArenas = newArenaArray(nHeapArena);
             List<PoolArenaMetric> metrics = new ArrayList<PoolArenaMetric>(heapArenas.length);
             for (int i = 0; i < heapArenas.length; i ++) {
@@ -209,7 +212,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                         pageSize, maxOrder, pageShifts, chunkSize,
                         directMemoryCacheAlignment);
                 heapArenas[i] = arena;
-		//添加pool 堆buf 缓存到堆缓存度量集
+		//添加pool 堆buf 分配区到堆分配区度量集
                 metrics.add(arena);
             }
             heapArenaMetrics = Collections.unmodifiableList(metrics);
@@ -219,7 +222,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
         }
 
         if (nDirectArena > 0) {
-	    //创建direct buf 缓存
+	    //创建direct buf 分配区
             directArenas = newArenaArray(nDirectArena);
             List<PoolArenaMetric> metrics = new ArrayList<PoolArenaMetric>(directArenas.length);
             for (int i = 0; i < directArenas.length; i ++) {
@@ -227,7 +230,7 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
                 PoolArena.DirectArena arena = new PoolArena.DirectArena(
                         this, pageSize, maxOrder, pageShifts, chunkSize, directMemoryCacheAlignment);
                 directArenas[i] = arena;
-		//添加pool direct buf 缓存到堆缓存度量集
+		//添加pool direct buf 分配区到堆分配区度量集
                 metrics.add(arena);
             }
             directArenaMetrics = Collections.unmodifiableList(metrics);
@@ -238,12 +241,14 @@ public class PooledByteBufAllocator extends AbstractByteBufAllocator implements 
         metric = new PooledByteBufAllocatorMetric(this);
     }
 }
-
+//创建内存分配区
  @SuppressWarnings("unchecked")
  private static <T> PoolArena<T>[] newArenaArray(int size) {
      return new PoolArena[size];
- }
+}
 
+从上面可以看出Pooled字节buf分配器，内部有一个堆buf和direct buf分配Region区，每个Region的内存块
+size为chunkSize，每个内存块内存页大小，默认为8k。
 来看创建堆buf：
 
 @Override
@@ -253,7 +258,7 @@ protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
 
     final ByteBuf buf;
     if (heapArena != null) {
-       //从堆buf缓存，获取buf，没有合适的则创建，添加到缓存
+       //从堆bu分配区，创建一个堆buf 
         buf = heapArena.allocate(cache, initialCapacity, maxCapacity);
     } else {
         buf = PlatformDependent.hasUnsafe() ?
@@ -264,7 +269,7 @@ protected ByteBuf newHeapBuffer(int initialCapacity, int maxCapacity) {
     return toLeakAwareBuffer(buf);
 }
 
-来看从堆缓存获取堆buf，PoolArena实际为Pool buf缓存度量器，获取buf，
+来看从堆分配区获取堆buf，PoolArena同时为Pool buf分配区量器，获取buf，
 实际是从PoolThreadCache中获取
 abstract class PoolArena<T> implements PoolArenaMetric {
     static final boolean HAS_UNSAFE = PlatformDependent.hasUnsafe();
@@ -282,7 +287,7 @@ abstract class PoolArena<T> implements PoolArenaMetric {
         //容量小于页size，即tiny 或small buf
         if (isTinyOrSmall(normCapacity)) { // capacity < pageSize
             int tableIdx;
-            PoolSubpage<T>[] table;
+            PoolSubpage<T>[] table;//sub page pool
 
             boolean tiny = isTiny(normCapacity);
             if (tiny) { // < 512
@@ -315,7 +320,7 @@ abstract class PoolArena<T> implements PoolArenaMetric {
         } 
 	...
     }
-    //堆buf 缓存
+    //堆buf分配区
      static final class HeapArena extends PoolArena<byte[]> {
 
         HeapArena(PooledByteBufAllocator parent, int pageSize, int maxOrder,
@@ -362,14 +367,17 @@ public interface PoolArenaMetric {
     int numThreadCaches();
     /**
      * Returns the number of tiny sub-pages for the arena.
+     tiny sub page数量
      */
     int numTinySubpages();
     /**
      * Returns the number of small sub-pages for the arena.
+     small sub page数量
      */
     int numSmallSubpages();
     /**
      * Returns the number of chunk lists for the arena.
+     分配区，内存块数量
      */
     int numChunkLists();
     ...
@@ -382,8 +390,25 @@ final class PoolThreadCache {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(PoolThreadCache.class);
 
-    final PoolArena<byte[]> heapArena;
-    final PoolArena<ByteBuffer> directArena;
+    final PoolArena<byte[]> heapArena;//堆分配区
+    final PoolArena<ByteBuffer> directArena;//direct buf分配区
+    // Hold the caches for the different size classes, which are tiny, small and normal.
+    private final MemoryRegionCache<byte[]>[] tinySubPageHeapCaches;//tiny subpage 堆缓存
+    private final MemoryRegionCache<byte[]>[] smallSubPageHeapCaches;//tiny subpage direct缓存
+    private final MemoryRegionCache<ByteBuffer>[] tinySubPageDirectCaches;//small subpage 堆缓存
+    private final MemoryRegionCache<ByteBuffer>[] smallSubPageDirectCaches;//small subpage direct缓存
+    private final MemoryRegionCache<byte[]>[] normalHeapCaches;//normal subpage 堆缓存
+    private final MemoryRegionCache<ByteBuffer>[] normalDirectCaches;//normal subpage direct缓存
+
+    // Used for bitshifting when calculate the index of normal caches later
+    private final int numShiftsNormalDirect;
+    private final int numShiftsNormalHeap;
+    private final int freeSweepAllocationThreshold;
+
+    private final Thread deathWatchThread;
+    private final Runnable freeTask;
+
+    private int allocations;
     ...
     /**
      * Try to allocate a small buffer out of the cache. Returns {@code true} if successful {@code false} otherwise
@@ -445,7 +470,7 @@ final class PoolThreadCache {
              ++ allocations;
              return true;
          }
-          **
+         /**
           * Init the {@link PooledByteBuf} using the provided chunk and handle with the capacity restrictions.
 	  在
           */
@@ -471,7 +496,9 @@ final class PoolThreadCache {
         }
 ...
 }
-//PoolChunk
+
+
+//PoolChunk，内存块
 final class PoolChunk<T> implements PoolChunkMetric {
 
     private static final int INTEGER_SIZE_MINUS_ONE = Integer.SIZE - 1;
@@ -483,7 +510,7 @@ final class PoolChunk<T> implements PoolChunkMetric {
 
     private final byte[] memoryMap;
     private final byte[] depthMap;
-    private final PoolSubpage<T>[] subpages;
+    private final PoolSubpage<T>[] subpages;//内存页
     /** Used to determine if the requested capacity is equal to or greater than pageSize. */
     private final int subpageOverflowMask;
     private final int pageSize;//内存页size
@@ -520,7 +547,7 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
 
     private final Recycler.Handle<PooledByteBuf<T>> recyclerHandle;
 
-    protected PoolChunk<T> chunk;
+    protected PoolChunk<T> chunk;//内存块
     protected long handle;
     protected T memory;
     protected int offset;
@@ -552,8 +579,60 @@ abstract class PooledByteBuf<T> extends AbstractReferenceCountedByteBuf {
         this.maxLength = maxLength;
         tmpNioBuf = null;
     }
-
 }
+再来看分配其他两种分配tiny和small：
+/**
+ * Try to allocate a tiny buffer out of the cache. Returns {@code true} if successful {@code false} otherwise
+ */
+boolean allocateTiny(PoolArena<?> area, PooledByteBuf<?> buf, int reqCapacity, int normCapacity) {
+    return allocate(cacheForTiny(area, normCapacity), buf, reqCapacity);
+}
+
+/**
+ * Try to allocate a small buffer out of the cache. Returns {@code true} if successful {@code false} otherwise
+ */
+boolean allocateSmall(PoolArena<?> area, PooledByteBuf<?> buf, int reqCapacity, int normCapacity) {
+    return allocate(cacheForSmall(area, normCapacity), buf, reqCapacity);
+}
+//获取tiny内存域缓存
+private MemoryRegionCache<?> cacheForTiny(PoolArena<?> area, int normCapacity) {
+    int idx = PoolArena.tinyIdx(normCapacity);
+    if (area.isDirect()) {
+        return cache(tinySubPageDirectCaches, idx);
+    }
+    return cache(tinySubPageHeapCaches, idx);
+}
+//获取Small内存域缓存
+private MemoryRegionCache<?> cacheForSmall(PoolArena<?> area, int normCapacity) {
+    int idx = PoolArena.smallIdx(normCapacity);
+    if (area.isDirect()) {
+        return cache(smallSubPageDirectCaches, idx);
+    }
+    return cache(smallSubPageHeapCaches, idx);
+}
+private static <T> MemoryRegionCache<T> cache(MemoryRegionCache<T>[] cache, int idx) {
+    if (cache == null || idx > cache.length - 1) {
+        return null;
+    }
+    return cache[idx];
+}
+
+/**
+ * Cache used for buffers which are backed by TINY or SMALL size.
+ */
+private static final class SubPageMemoryRegionCache<T> extends MemoryRegionCache<T> {
+    SubPageMemoryRegionCache(int size, SizeClass sizeClass) {
+        super(size, sizeClass);
+    }
+
+    @Override
+    protected void initBuf(
+            PoolChunk<T> chunk, long handle, PooledByteBuf<T> buf, int reqCapacity) {
+        chunk.initBufWithSubpage(buf, handle, reqCapacity);
+    }
+}
+
+
 再来看创建direct类型buf：
  @Override
 protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
@@ -562,7 +641,7 @@ protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
 
     final ByteBuf buf;
     if (directArena != null) {
-        //从direct缓存，获取buf，没有则创建一个，并添加到缓存
+        //从direct分配区，分配一个direct buf
         buf = directArena.allocate(cache, initialCapacity, maxCapacity);
     } else {
         buf = PlatformDependent.hasUnsafe() ?
@@ -576,8 +655,8 @@ protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
 
 我们来简单看一Pooled 堆和direct buf
 
-先来看堆缓存和direct缓存
- //堆buf 缓存
+先来看堆分配区和direct分配区，分配buf
+//堆buf分配区
  static final class HeapArena extends PoolArena<byte[]> {
 
     HeapArena(PooledByteBufAllocator parent, int pageSize, int maxOrder,
@@ -593,7 +672,7 @@ protected ByteBuf newDirectBuffer(int initialCapacity, int maxCapacity) {
     }
 	...
 }
-//direct buf 缓存
+//direct buf 分配区
  static final class DirectArena extends PoolArena<ByteBuffer> {
 
     DirectArena(PooledByteBufAllocator parent, int pageSize, int maxOrder,
@@ -621,14 +700,14 @@ direct buf为PooledUnsafeDirectByteBuf、PooledDirectByteBuf。
 final class PooledUnsafeHeapByteBuf extends PooledHeapByteBuf {
 
     private static final Recycler<PooledUnsafeHeapByteBuf> RECYCLER = new Recycler<PooledUnsafeHeapByteBuf>() {
-        @Override
+        @Override//创建buf
         protected PooledUnsafeHeapByteBuf newObject(Handle<PooledUnsafeHeapByteBuf> handle) {
             return new PooledUnsafeHeapByteBuf(handle, 0);
         }
     };
 
     static PooledUnsafeHeapByteBuf newUnsafeInstance(int maxCapacity) {
-        PooledUnsafeHeapByteBuf buf = RECYCLER.get();
+        PooledUnsafeHeapByteBuf buf = RECYCLER.get();//从线程本地对象栈，获取buf对象
         buf.reuse(maxCapacity);//重置Pooled字节buf
         return buf;
     }
@@ -639,14 +718,14 @@ final class PooledUnsafeHeapByteBuf extends PooledHeapByteBuf {
 class PooledHeapByteBuf extends PooledByteBuf<byte[]> {
 
     private static final Recycler<PooledHeapByteBuf> RECYCLER = new Recycler<PooledHeapByteBuf>() {
-        @Override
+        @Override//创建buf
         protected PooledHeapByteBuf newObject(Handle<PooledHeapByteBuf> handle) {
             return new PooledHeapByteBuf(handle, 0);
         }
     };
 
     static PooledHeapByteBuf newInstance(int maxCapacity) {
-        PooledHeapByteBuf buf = RECYCLER.get();
+        PooledHeapByteBuf buf = RECYCLER.get();//从线程本地对象栈，获取buf对象
         buf.reuse(maxCapacity);//重置Pooled字节buf
         return buf;
     }
@@ -656,14 +735,14 @@ class PooledHeapByteBuf extends PooledByteBuf<byte[]> {
 //PooledUnsafeDirectByteBuf
 final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
     private static final Recycler<PooledUnsafeDirectByteBuf> RECYCLER = new Recycler<PooledUnsafeDirectByteBuf>() {
-        @Override
+        @Override//创建buf
         protected PooledUnsafeDirectByteBuf newObject(Handle<PooledUnsafeDirectByteBuf> handle) {
             return new PooledUnsafeDirectByteBuf(handle, 0);
         }
     };
 
     static PooledUnsafeDirectByteBuf newInstance(int maxCapacity) {
-        PooledUnsafeDirectByteBuf buf = RECYCLER.get();
+        PooledUnsafeDirectByteBuf buf = RECYCLER.get();//从线程本地对象栈，获取buf对象
         buf.reuse(maxCapacity);//重置Pooled字节buf
         return buf;
     }
@@ -674,14 +753,14 @@ final class PooledUnsafeDirectByteBuf extends PooledByteBuf<ByteBuffer> {
 final class PooledDirectByteBuf extends PooledByteBuf<ByteBuffer> {
 
     private static final Recycler<PooledDirectByteBuf> RECYCLER = new Recycler<PooledDirectByteBuf>() {
-        @Override
+        @Override//创建buf
         protected PooledDirectByteBuf newObject(Handle<PooledDirectByteBuf> handle) {
             return new PooledDirectByteBuf(handle, 0);
         }
     };
 
     static PooledDirectByteBuf newInstance(int maxCapacity) {
-        PooledDirectByteBuf buf = RECYCLER.get();
+        PooledDirectByteBuf buf = RECYCLER.get();//从线程本地对象栈，获取buf对象
         buf.reuse(maxCapacity);//重置Pooled字节buf
         return buf;
     }
@@ -700,6 +779,64 @@ final void reuse(int maxCapacity) {
     setIndex0(0, 0);//重置读写索引
     discardMarks();//丢弃读写索引标记
 }
+
+在简单看一下字节buf内存的回收器Recycler
+
+/**
+ * Light-weight object pool based on a thread-local stack.
+ *
+ * @param <T> the type of the pooled object
+ */
+public abstract class Recycler<T> {
+   ...
+   //线程本地对象栈
+   private final FastThreadLocal<Stack<T>> threadLocal = new FastThreadLocal<Stack<T>>() {
+        @Override
+        protected Stack<T> initialValue() {
+            return new Stack<T>(Recycler.this, Thread.currentThread(), maxCapacityPerThread, maxSharedCapacityFactor,
+                    ratioMask, maxDelayedQueuesPerThread);
+        }
+    };
+    @SuppressWarnings("unchecked")
+    public final T get() {
+        if (maxCapacityPerThread == 0) {
+            return newObject((Handle<T>) NOOP_HANDLE);
+        }
+	//获取线程本地对象栈
+        Stack<T> stack = threadLocal.get();
+        DefaultHandle<T> handle = stack.pop();//从对象栈中获取对象handle
+        if (handle == null) {
+            handle = stack.newHandle();
+            handle.value = newObject(handle);
+        }
+        return (T) handle.value;
+    }
+    static final class Stack<T> {
+        final Recycler<T> parent;
+        final Thread thread;
+        final AtomicInteger availableSharedCapacity;
+        final int maxDelayedQueues;
+
+        private final int maxCapacity;
+        private final int ratioMask;
+        private DefaultHandle<?>[] elements;
+        private int size;
+        private int handleRecycleCount = -1; // Start with -1 so the first one will be recycled.
+        private WeakOrderQueue cursor, prev;
+        private volatile WeakOrderQueue head;
+	//创建对象Hanlde
+	 DefaultHandle<T> newHandle() {
+            return new DefaultHandle<T>(this);
+        }
+    }
+    //创建对象
+     protected abstract T newObject(Handle<T> handle);
+    ...
+}
+
+从上面可以看出，Pool字节buf内部有一个回收器Recycler，管理字节buf，而回收器内部是将
+对象放在一个线程本地栈中管理。
+
 
 
 再来简单看一下线程本地buf缓存池：
@@ -852,6 +989,7 @@ public final class PooledByteBufAllocatorMetric implements ByteBufAllocatorMetri
     }
 }
 
+再来看Pooledd字节分配器的其他方法：
 //PooledByteBufAllocator
 
 /**
@@ -1006,8 +1144,15 @@ public String dumpStats() {
             buf.append(a);
         }
     }
-
     return buf.toString();
 }
+
+总结：
+Pooled字节buf分配器，内部有一个堆buf和direct buf分配Region区（PoolArena），每个Region的内存块（PoolChunk）
+size为chunkSize，每个内存块内存页（PoolSubpage）大小，默认为8k。Pooled 堆buf是基于字节数组，而direct buf是
+基于nio 字节buf。Pooled字节分配器分配heap和direct buf时，首先获取线程本地buf缓存PoolThreadCache，从buf获取对应
+的heap或direct分配区，分配区创建buf（PooledByteBuf），然后将buf放到内存块中管理，根据buf的容量，将放到相应tiny，small，
+normal Memory Region Cache（MemoryRegionCache）中。每个Pooled buf通过内存的Recycler，重用buf。
+Pool字节buf内部有一个回收器Recycler，管理字节buf，而回收器内部是将对象放在一个线程本地栈中管理。
 
 
