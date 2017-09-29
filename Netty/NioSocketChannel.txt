@@ -1,3 +1,6 @@
+netty 抽象BootStrap定义：[url]http://donald-draper.iteye.com/blog/2392492[/url]
+netty ServerBootStrap解析：[url]http://donald-draper.iteye.com/blog/2392572[/url]
+netty Bootstrap解析：[url]http://donald-draper.iteye.com/blog/2392593[/url]
 netty 通道接口定义:[url]http://donald-draper.iteye.com/blog/2392740[/url]
 netty 抽象通道初始化：[url]http://donald-draper.iteye.com/blog/2392801[/url]
 netty 抽象Unsafe定义：[url]http://donald-draper.iteye.com/blog/2393053[/url]
@@ -89,45 +92,8 @@ private final class NioSocketChannelConfig  extends DefaultSocketChannelConfig {
     }
 }
 从上面可以看出，socket通道初始化，主要是创建socket通道，初始化socket通道配置NioSocketChannelConfig。
-来看内部Unsafe
-//创建Unsafe
- @Override
- protected AbstractNioUnsafe newUnsafe() {
-     return new NioSocketChannelUnsafe();
- }
-//NioSocketChannelUnsafe
-private final class NioSocketChannelUnsafe extends NioByteUnsafe {
-    @Override
-    protected Executor prepareToClose() {
-        try {
-            if (javaChannel().isOpen() && config().getSoLinger() > 0) {
-                // We need to cancel this key of the channel so we may not end up in a eventloop spin
-                // because we try to read or write until the actual close happens which may be later due
-                // SO_LINGER handling.
-                // See https://github.com/netty/netty/issues/4449
-		//从事件循环反注册
-                doDeregister();
-                return GlobalEventExecutor.INSTANCE;
-            }
-        } catch (Throwable ignore) {
-            // Ignore the error as the underlying channel may be closed in the meantime and so
-            // getSoLinger() may produce an exception. In this case we just return null.
-            // See https://github.com/netty/netty/issues/4449
-        }
-        return null;
-    }
-}
 
-
-//AbstractNioChannel
- @Override
-protected void doDeregister() throws Exception {
-    //事件循环，取消选择key
-    eventLoop().cancel(selectionKey());
-}
-
-
-再来看绑定地址：
+来看绑定地址：
 @Override
 protected void doBind(SocketAddress localAddress) throws Exception {
     doBind0(localAddress);
@@ -426,16 +392,24 @@ netty 通道Outbound缓冲区：[url]http://donald-draper.iteye.com/blog/2393098
 
 再来看关闭socket通道输入流：
 @Override
+public ChannelFuture shutdownInput() {
+    return shutdownInput(newPromise());
+}
+
+@Override
 public ChannelFuture shutdownInput(final ChannelPromise promise) {
+    //从事件循环反注册
     Executor closeExecutor = ((NioSocketChannelUnsafe) unsafe()).prepareToClose();
-    if (closeExecutor != null) {
+    if (closeExecutor != null) {//如果关闭执行器不为空
         closeExecutor.execute(new Runnable() {
             @Override
             public void run() {
+	        //执行实际关闭输入流工作
                 shutdownInput0(promise);
             }
         });
     } else {
+        //在当前事件循环中在，则直接执行，否则创建一个线程，完成实际关闭输入流工作
         EventLoop loop = eventLoop();
         if (loop.inEventLoop()) {
             shutdownInput0(promise);
@@ -451,6 +425,239 @@ public ChannelFuture shutdownInput(final ChannelPromise promise) {
     return promise;
 }
 
+来看从事件循环反注册
+
+//创建Unsafe
+ @Override
+ protected AbstractNioUnsafe newUnsafe() {
+     return new NioSocketChannelUnsafe();
+ }
+//NioSocketChannelUnsafe
+private final class NioSocketChannelUnsafe extends NioByteUnsafe {
+    @Override
+    protected Executor prepareToClose() {
+        try {
+            if (javaChannel().isOpen() && config().getSoLinger() > 0) {
+                // We need to cancel this key of the channel so we may not end up in a eventloop spin
+                // because we try to read or write until the actual close happens which may be later due
+                // SO_LINGER handling.
+                // See https://github.com/netty/netty/issues/4449
+		//从事件循环反注册
+                doDeregister();
+                return GlobalEventExecutor.INSTANCE;
+            }
+        } catch (Throwable ignore) {
+            // Ignore the error as the underlying channel may be closed in the meantime and so
+            // getSoLinger() may produce an exception. In this case we just return null.
+            // See https://github.com/netty/netty/issues/4449
+        }
+        return null;
+    }
+}
+
+//AbstractNioChannel
+ @Override
+protected void doDeregister() throws Exception {
+    //事件循环，取消选择key
+    eventLoop().cancel(selectionKey());
+}
+
+再来看实际关闭输入流：
+ private void shutdownInput0(final ChannelPromise promise) {
+    try {
+        shutdownInput0();
+        promise.setSuccess();
+    } catch (Throwable t) {
+        promise.setFailure(t);
+    }
+}
+private void shutdownInput0() throws Exception {
+    if (PlatformDependent.javaVersion() >= 7) {
+        //委托给socket通道
+        javaChannel().shutdownInput();
+    } else {//否则，委托给通道关联的socket
+        javaChannel().socket().shutdownInput();
+    }
+}
+
+从上面可以看出，关闭数据流，就是从事件循环反注册，即事件循环取消选择key，
+然后如果jdk大于1.7 则委托socket通道关闭输入流，否则委托通道内关联的socket。
+
+
+再来看关闭输出流，与关闭输入流思路一致，就不多说了：
+
+@Override
+public ChannelFuture shutdownOutput() {
+    return shutdownOutput(newPromise());
+}
+
+@Override
+public ChannelFuture shutdownOutput(final ChannelPromise promise) {
+    Executor closeExecutor = ((NioSocketChannelUnsafe) unsafe()).prepareToClose();
+    if (closeExecutor != null) {
+        closeExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                shutdownOutput0(promise);
+            }
+        });
+    } else {
+        EventLoop loop = eventLoop();
+        if (loop.inEventLoop()) {
+            shutdownOutput0(promise);
+        } else {
+            loop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    shutdownOutput0(promise);
+                }
+            });
+        }
+    }
+    return promise;
+}
+
+private void shutdownOutput0(final ChannelPromise promise) {
+    try {
+        shutdownOutput0();
+        promise.setSuccess();
+    } catch (Throwable t) {
+        promise.setFailure(t);
+    }
+}
+
+private void shutdownOutput0() throws Exception {
+    if (PlatformDependent.javaVersion() >= 7) {
+        javaChannel().shutdownOutput();
+    } else {
+        javaChannel().socket().shutdownOutput();
+    }
+}
+
+再来看关闭通道，
+
+@Override
+public ChannelFuture shutdown() {
+    return shutdown(newPromise());
+}
+
+@Override
+public ChannelFuture shutdown(final ChannelPromise promise) {
+    Executor closeExecutor = ((NioSocketChannelUnsafe) unsafe()).prepareToClose();
+    if (closeExecutor != null) {
+        closeExecutor.execute(new Runnable() {
+            @Override
+            public void run() {
+                shutdown0(promise);
+            }
+        });
+    } else {
+        EventLoop loop = eventLoop();
+        if (loop.inEventLoop()) {
+            shutdown0(promise);
+        } else {
+            loop.execute(new Runnable() {
+                @Override
+                public void run() {
+                    shutdown0(promise);
+                }
+            });
+        }
+    }
+    return promise;
+}
+private void shutdown0(final ChannelPromise promise) {
+        Throwable cause = null;
+        try {
+            shutdownOutput0();
+        } catch (Throwable t) {
+            cause = t;
+        }
+        try {
+            shutdownInput0();
+        } catch (Throwable t) {
+            if (cause == null) {
+                promise.setFailure(t);
+            } else {
+                logger.debug("Exception suppressed because a previous exception occurred.", t);
+                promise.setFailure(cause);
+            }
+            return;
+        }
+        if (cause == null) {
+            promise.setSuccess();
+        } else {
+            promise.setFailure(cause);
+        }
+}
+从上面可以看出关闭通道实际为关闭通道输入流和输出流。
+
+
+再来开断开连接:
+
+@Override
+protected void doDisconnect() throws Exception {
+    doClose();
+}
+
+@Override
+protected void doClose() throws Exception {
+    super.doClose();
+    javaChannel().close();
+}
+
+从上面可以看出，断开连接实际为close通道。
+
+再来看其他方法，下面这些方法，瞄一眼就行，没有太多要说的：
+@Override
+public ServerSocketChannel parent() {
+    return (ServerSocketChannel) super.parent();
+}
+
+@Override
+public SocketChannelConfig config() {
+    return config;
+}
+
+@Override
+protected SocketChannel javaChannel() {
+    return (SocketChannel) super.javaChannel();
+}
+
+@Override
+public boolean isActive() {
+    SocketChannel ch = javaChannel();
+    return ch.isOpen() && ch.isConnected();
+}
+
+@Override
+public boolean isOutputShutdown() {
+    return javaChannel().socket().isOutputShutdown() || !isActive();
+}
+
+@Override
+public boolean isInputShutdown() {
+    return javaChannel().socket().isInputShutdown() || !isActive();
+}
+
+@Override
+public boolean isShutdown() {
+    Socket socket = javaChannel().socket();
+    return socket.isInputShutdown() && socket.isOutputShutdown() || !isActive();
+}
+
+@Override
+public InetSocketAddress localAddress() {
+    return (InetSocketAddress) super.localAddress();
+}
+
+@Override
+public InetSocketAddress remoteAddress() {
+    return (InetSocketAddress) super.remoteAddress();
+}
+
+
+
 
 
 总结：
@@ -463,318 +670,372 @@ socket通道写文件region，委托给文件Region的转移数据操作transfer
 从文件Region读取数据，写到通道中。
 写通道Outbound缓存区，首先从Outbound缓存区获取刷新链上的写请求对应的
 字节buf，然后委托给socket通道的写操作，发送数据，发送成功后，从刷新链上移除已经发送的写请求。
+关闭数据流，就是从事件循环反注册，即事件循环取消选择key，
+然后如果jdk大于1.7 则委托socket通道关闭输入流，否则委托通道内关联的socket。
+关闭输出流与关闭输入流思路一致。
+关闭通道实际为关闭通道输入流和输出流。
+断开连接实际为close通道。
 
 
 
 附：
 //ChannelOutboundBuffer
+public final class ChannelOutboundBuffer {
+    // Assuming a 64-bit JVM:
+    //  - 16 bytes object header
+    //  - 8 reference fields
+    //  - 2 long fields
+    //  - 2 int fields
+    //  - 1 boolean field
+    //  - padding
+    //Entry buf 头部数据size
+    static final int CHANNEL_OUTBOUND_BUFFER_ENTRY_OVERHEAD =
+            SystemPropertyUtil.getInt("io.netty.transport.outboundBufferEntrySizeOverhead", 96);
+
+    private static final InternalLogger logger = InternalLoggerFactory.getInstance(ChannelOutboundBuffer.class);
+    //通道Outbound buf 线程本地Buf，存放刷新链表中的写请求消息
+    private static final FastThreadLocal<ByteBuffer[]> NIO_BUFFERS = new FastThreadLocal<ByteBuffer[]>() {
+        @Override
+        protected ByteBuffer[] initialValue() throws Exception {
+            return new ByteBuffer[1024];
+        }
+    };
+   //buf 关联通道
+    private final Channel channel;
+
+    // Entry(flushedEntry) --> ... Entry(unflushedEntry) --> ... Entry(tailEntry)
+    //
+    // The Entry that is the first in the linked-list structure that was flushed
+    private Entry flushedEntry;刷新写请求链的链头
+    // The Entry which is the first unflushed in the linked-list structure
+    private Entry unflushedEntry;//未刷新的写请求链的链头
+    // The Entry which represents the tail of the buffer
+    private Entry tailEntry;
+    // The number of flushed entries that are not written yet
+    private int flushed;//刷新Entry链上待发送的写请求数
+
+    private int nioBufferCount;//当前待发送的消息buf数量
+    private long nioBufferSize;//当前待发送的所有消息buf的字节数
+
+    private boolean inFail;//是否刷新失败
+    //通道待发送的字节数
+    private static final AtomicLongFieldUpdater<ChannelOutboundBuffer> TOTAL_PENDING_SIZE_UPDATER =
+            AtomicLongFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "totalPendingSize");
+    @SuppressWarnings("UnusedDeclaration")
+    private volatile long totalPendingSize;
+    private static final AtomicIntegerFieldUpdater<ChannelOutboundBuffer> UNWRITABLE_UPDATER =
+            AtomicIntegerFieldUpdater.newUpdater(ChannelOutboundBuffer.class, "unwritable");
+    @SuppressWarnings("UnusedDeclaration")
+    private volatile int unwritable;//通道写状态
+   //触发通道ChannelWritabilityChanged事件任务线程
+    private volatile Runnable fireChannelWritabilityChangedTask;
+
+    ChannelOutboundBuffer(AbstractChannel channel) {
+        this.channel = channel;
+    }
+}
 再来看将刷新链上的写请求消息，添加到nio buffer数组中:
-    /** 
-     * Returns an array of direct NIO buffers if the currently pending messages are made of {@link ByteBuf} only. 
-     * {@link #nioBufferCount()} and {@link #nioBufferSize()} will return the number of NIO buffers in the returned 
-     * array and the total number of readable bytes of the NIO buffers respectively. 
-     将刷新链中的写请求对象消息放到nio buf数组中。#nioBufferCount和#nioBufferSize，将返回当前nio buf数组的长度 
-     和可读字节数 
-     *  
-     * Note that the returned array is reused and thus should not escape 
-     * {@link AbstractChannel#doWrite(ChannelOutboundBuffer)}. 
-     * Refer to {@link NioSocketChannel#doWrite(ChannelOutboundBuffer)} for an example. 
-     返回的nio buf将会被 NioSocketChannel#doWrite方法重用 
-     *  
-     
-     */  
-    public ByteBuffer[] nioBuffers() {  
-        long nioBufferSize = 0;//nio buf数组中的字节数  
-        int nioBufferCount = 0;//nio buf数组长度  
-        final InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();  
-        //获取通道Outbound缓存区线程本地的niobuf数组  
-        ByteBuffer[] nioBuffers = NIO_BUFFERS.get(threadLocalMap);  
-        Entry entry = flushedEntry;  
-        //遍历刷新链，链上的写请求Entry的消息必须为ByteBuf  
-        while (isFlushedEntry(entry) && entry.msg instanceof ByteBuf) {  
-            if (!entry.cancelled) {  
-            //在写请求没有取消的情况下，获取写请求消息buf，及buf的读索引，和可读字节数  
-                ByteBuf buf = (ByteBuf) entry.msg;  
-                final int readerIndex = buf.readerIndex();  
-                final int readableBytes = buf.writerIndex() - readerIndex;  
-      
-                if (readableBytes > 0) {  
-                    if (Integer.MAX_VALUE - readableBytes < nioBufferSize) {  
-                //如果消息buf可读字节数+nioBufferSize大于整数的最大值，则跳出循环  
-                        // If the nioBufferSize + readableBytes will overflow an Integer we stop populate the  
-                        // ByteBuffer array. This is done as bsd/osx don't allow to write more bytes then  
-                        // Integer.MAX_VALUE with one writev(...) call and so will return 'EINVAL', which will  
-                        // raise an IOException. On Linux it may work depending on the  
-                        // architecture and kernel but to be safe we also enforce the limit here.  
-                        // This said writing more the Integer.MAX_VALUE is not a good idea anyway.  
-                        //  
-                        // See also:  
-                        // - https://www.freebsd.org/cgi/man.cgi?query=write&sektion=2  
-                        // - http://linux.die.net/man/2/writev  
-                        break;  
+/** 
+ * Returns an array of direct NIO buffers if the currently pending messages are made of {@link ByteBuf} only. 
+ * {@link #nioBufferCount()} and {@link #nioBufferSize()} will return the number of NIO buffers in the returned 
+ * array and the total number of readable bytes of the NIO buffers respectively. 
+ 将刷新链中的写请求对象消息放到nio buf数组中。#nioBufferCount和#nioBufferSize，将返回当前nio buf数组的长度 
+ 和可读字节数 
+ *  
+ * Note that the returned array is reused and thus should not escape 
+ * {@link AbstractChannel#doWrite(ChannelOutboundBuffer)}. 
+ * Refer to {@link NioSocketChannel#doWrite(ChannelOutboundBuffer)} for an example. 
+ 返回的nio buf将会被 NioSocketChannel#doWrite方法重用 
+ *  
+ 
+ */  
+public ByteBuffer[] nioBuffers() {  
+    long nioBufferSize = 0;//nio buf数组中的字节数  
+    int nioBufferCount = 0;//nio buf数组长度  
+    final InternalThreadLocalMap threadLocalMap = InternalThreadLocalMap.get();  
+    //获取通道Outbound缓存区线程本地的niobuf数组  
+    ByteBuffer[] nioBuffers = NIO_BUFFERS.get(threadLocalMap);  
+    Entry entry = flushedEntry;  
+    //遍历刷新链，链上的写请求Entry的消息必须为ByteBuf  
+    while (isFlushedEntry(entry) && entry.msg instanceof ByteBuf) {  
+        if (!entry.cancelled) {  
+        //在写请求没有取消的情况下，获取写请求消息buf，及buf的读索引，和可读字节数  
+            ByteBuf buf = (ByteBuf) entry.msg;  
+            final int readerIndex = buf.readerIndex();  
+            final int readableBytes = buf.writerIndex() - readerIndex;  
+  
+            if (readableBytes > 0) {  
+                if (Integer.MAX_VALUE - readableBytes < nioBufferSize) {  
+		    //如果消息buf可读字节数+nioBufferSize大于整数的最大值，则跳出循环  
+                    // If the nioBufferSize + readableBytes will overflow an Integer we stop populate the  
+                    // ByteBuffer array. This is done as bsd/osx don't allow to write more bytes then  
+                    // Integer.MAX_VALUE with one writev(...) call and so will return 'EINVAL', which will  
+                    // raise an IOException. On Linux it may work depending on the  
+                    // architecture and kernel but to be safe we also enforce the limit here.  
+                    // This said writing more the Integer.MAX_VALUE is not a good idea anyway.  
+                    //  
+                    // See also:  
+                    // - https://www.freebsd.org/cgi/man.cgi?query=write&sektion=2  
+                    // - http://linux.die.net/man/2/writev  
+                    break;  
+                }  
+               //更新buf的size  
+                nioBufferSize += readableBytes;  
+                int count = entry.count;  
+                if (count == -1) {  
+                    //noinspection ConstantValueVariableUse  
+                    entry.count = count =  buf.nioBufferCount();  
+                }  
+                //需要buf的数量  
+                int neededSpace = nioBufferCount + count;  
+                //如果buf需求数量大于当前nio buf数组  
+                if (neededSpace > nioBuffers.length) {  
+                     //则扩容nio数组为原来的两倍，  
+                    nioBuffers = expandNioBufferArray(nioBuffers, neededSpace, nioBufferCount);  
+                    //更新nio buf数组  
+                    NIO_BUFFERS.set(threadLocalMap, nioBuffers);  
+                }  
+                if (count == 1) {  
+                   //如果需要的buf数量为1，则获取写请求的buf  
+                    ByteBuffer nioBuf = entry.buf;  
+                    if (nioBuf == null) {  
+                        // cache ByteBuffer as it may need to create a new ByteBuffer instance if its a  
+                        // derived buffer  
+			//如果buf为空，则创建一个buf实例  
+                        entry.buf = nioBuf = buf.internalNioBuffer(readerIndex, readableBytes);  
                     }  
-            //更新buf的size  
-                    nioBufferSize += readableBytes;  
-                    int count = entry.count;  
-                    if (count == -1) {  
-                        //noinspection ConstantValueVariableUse  
-                        entry.count = count =  buf.nioBufferCount();  
+		    //将消息buf，添加到nio buf数组中  
+                    nioBuffers[nioBufferCount ++] = nioBuf;  
+                } else {  
+		    //否则获取写请求的buf数组  
+                    ByteBuffer[] nioBufs = entry.bufs;  
+                    if (nioBufs == null) {  
+                        // cached ByteBuffers as they may be expensive to create in terms  
+                        // of Object allocation  
+			//分配buf数组  
+                        entry.bufs = nioBufs = buf.nioBuffers();  
                     }  
-            //需要buf的数量  
-                    int neededSpace = nioBufferCount + count;  
-            //如果buf需求数量大于当前nio buf数组  
-                    if (neededSpace > nioBuffers.length) {  
-                //则扩容nio数组为原来的两倍，  
-                        nioBuffers = expandNioBufferArray(nioBuffers, neededSpace, nioBufferCount);  
-                //更新nio buf数组  
-                        NIO_BUFFERS.set(threadLocalMap, nioBuffers);  
-                    }  
-                    if (count == 1) {  
-                //如果需要的buf数量为1，则获取写请求的buf  
-                        ByteBuffer nioBuf = entry.buf;  
-                        if (nioBuf == null) {  
-                            // cache ByteBuffer as it may need to create a new ByteBuffer instance if its a  
-                            // derived buffer  
-                //如果buf为空，则创建一个buf实例  
-                            entry.buf = nioBuf = buf.internalNioBuffer(readerIndex, readableBytes);  
-                        }  
-                //将消息buf，添加到nio buf数组中  
-                        nioBuffers[nioBufferCount ++] = nioBuf;  
-                    } else {  
-                //否则获取写请求的buf数组  
-                        ByteBuffer[] nioBufs = entry.bufs;  
-                        if (nioBufs == null) {  
-                            // cached ByteBuffers as they may be expensive to create in terms  
-                            // of Object allocation  
-                //分配buf数组  
-                            entry.bufs = nioBufs = buf.nioBuffers();  
-                        }  
-                //添加写请求buf数组到通道Outbound缓存区的nio buf数组中  
-                        nioBufferCount = fillBufferArray(nioBufs, nioBuffers, nioBufferCount);  
-                    }  
+                    //添加写请求buf数组到通道Outbound缓存区的nio buf数组中  
+                    nioBufferCount = fillBufferArray(nioBufs, nioBuffers, nioBufferCount);  
                 }  
             }  
-            entry = entry.next;  
         }  
-        //更新当前nio buffer 计数器和字节数  
-        this.nioBufferCount = nioBufferCount;  
-        this.nioBufferSize = nioBufferSize;  
-      
-        return nioBuffers;  
+        entry = entry.next;  
     }  
-
-
+    //更新当前nio buffer 计数器和字节数  
+    this.nioBufferCount = nioBufferCount;  
+    this.nioBufferSize = nioBufferSize;  
+  
+    return nioBuffers;  
+}  
 1.
 
 
-    //则扩容nio数组  
-    private static ByteBuffer[] expandNioBufferArray(ByteBuffer[] array, int neededSpace, int size) {  
-        int newCapacity = array.length;  
-        do {  
-            // double capacity until it is big enough  
-            // See https://github.com/netty/netty/issues/1890  
-        //则扩容nio数组为原来的两倍  
-            newCapacity <<= 1;  
-      
-            if (newCapacity < 0) {  
-                throw new IllegalStateException();  
-            }  
-      
-        } while (neededSpace > newCapacity);  
-        ByteBuffer[] newArray = new ByteBuffer[newCapacity];  
-        //拷贝原始中size buf到新的的buf数组中  
-        System.arraycopy(array, 0, newArray, 0, size);  
-      
-        return newArray;  
-    }  
+//则扩容nio数组  
+private static ByteBuffer[] expandNioBufferArray(ByteBuffer[] array, int neededSpace, int size) {  
+    int newCapacity = array.length;  
+    do {  
+        // double capacity until it is big enough  
+        // See https://github.com/netty/netty/issues/1890  
+    //则扩容nio数组为原来的两倍  
+        newCapacity <<= 1;  
+  
+        if (newCapacity < 0) {  
+            throw new IllegalStateException();  
+        }  
+  
+    } while (neededSpace > newCapacity);  
+    ByteBuffer[] newArray = new ByteBuffer[newCapacity];  
+    //拷贝原始中size buf到新的的buf数组中  
+    System.arraycopy(array, 0, newArray, 0, size);  
+  
+    return newArray;  
+}  
 
 
 
 2.
 
 
-    //添加写请求buf数组到通道Outbound缓存区的nio buf数组中  
-    private static int fillBufferArray(ByteBuffer[] nioBufs, ByteBuffer[] nioBuffers, int nioBufferCount) {  
-        //遍历添加的buf数组，添加到缓存区的nio buf数组中  
-        for (ByteBuffer nioBuf: nioBufs) {  
-            if (nioBuf == null) {  
-                break;  
-            }  
-            nioBuffers[nioBufferCount ++] = nioBuf;  
+//添加写请求buf数组到通道Outbound缓存区的nio buf数组中  
+private static int fillBufferArray(ByteBuffer[] nioBufs, ByteBuffer[] nioBuffers, int nioBufferCount) {  
+    //遍历添加的buf数组，添加到缓存区的nio buf数组中  
+    for (ByteBuffer nioBuf: nioBufs) {  
+        if (nioBuf == null) {  
+            break;  
         }  
-        return nioBufferCount;  
+        nioBuffers[nioBufferCount ++] = nioBuf;  
     }  
-
-
+    return nioBufferCount;  
+}  
 
 从上面可以看出：将刷新链上的写请求消息，添加到nio buffer数组中方法nioBuffers，
 主要是将刷新链上的写请求消息包装成direct buf添加到通道Outbound缓存区的nio buf数组中，
 这个方法主要在NioSocketChannel#doWrite方法重用。方法调用后，#nioBufferCount和#nioBufferSize，
 将返回当前nio buf数组的长度和可读字节数。
 
-    /** 
-     * Removes the fully written entries and update the reader index of the partially written entry. 
-     * This operation assumes all messages in this buffer is {@link ByteBuf}. 
-     
-     从刷新写请求链表，移除writtenBytes个字节数 
-     */  
-    public void removeBytes(long writtenBytes) {  
-        for (;;) {  
-            Object msg = current();//获取当前写请求消息  
-            if (!(msg instanceof ByteBuf)) {  
-            //写请求非ByteBuf实例，且writtenBytes为0  
-                assert writtenBytes == 0;  
-                break;  
-            }  
-      
-            final ByteBuf buf = (ByteBuf) msg;  
-        //获取消息buf的读指针  
-            final int readerIndex = buf.readerIndex();  
-        //获取buf中可读的字节数  
-            final int readableBytes = buf.writerIndex() - readerIndex;  
-            //如果可读字节数小于，需要移除的字节数  
-            if (readableBytes <= writtenBytes) {  
-                if (writtenBytes != 0) {  
-                //则更新写请求任务进度  
-                    progress(readableBytes);  
-            //更新移除字节数  
-                    writtenBytes -= readableBytes;  
-                }  
-            //移除链头写请求消息  
-                remove();  
-            } else { // readableBytes > writtenBytes  
-                if (writtenBytes != 0) {  
-               //如果可读字节数大于需要移除的字节数，则移动消息buf的读索引到readerIndex + (int) writtenBytes位置  
-                    buf.readerIndex(readerIndex + (int) writtenBytes);  
-            //则更新写请求任务进度  
-                    progress(writtenBytes);  
-                }  
-                break;  
-            }  
-        }  
-        //最后清除nio buffer  
-        clearNioBuffers();  
-    }  
+再来看移除移动字节数据
+
+ /** 
+  * Removes the fully written entries and update the reader index of the partially written entry. 
+  * This operation assumes all messages in this buffer is {@link ByteBuf}. 
+  
+  从刷新写请求链表，移除writtenBytes个字节数 
+  */  
+ public void removeBytes(long writtenBytes) {  
+     for (;;) {  
+         Object msg = current();//获取当前写请求消息  
+         if (!(msg instanceof ByteBuf)) {  
+         //写请求非ByteBuf实例，且writtenBytes为0  
+             assert writtenBytes == 0;  
+             break;  
+         }  
+   
+         final ByteBuf buf = (ByteBuf) msg;  
+     //获取消息buf的读指针  
+         final int readerIndex = buf.readerIndex();  
+     //获取buf中可读的字节数  
+         final int readableBytes = buf.writerIndex() - readerIndex;  
+         //如果可读字节数小于，需要移除的字节数  
+         if (readableBytes <= writtenBytes) {  
+             if (writtenBytes != 0) {  
+             //则更新写请求任务进度  
+                 progress(readableBytes);  
+         //更新移除字节数  
+                 writtenBytes -= readableBytes;  
+             }  
+         //移除链头写请求消息  
+             remove();  
+         } else { // readableBytes > writtenBytes  
+             if (writtenBytes != 0) {  
+            //如果可读字节数大于需要移除的字节数，则移动消息buf的读索引到readerIndex + (int) writtenBytes位置  
+                 buf.readerIndex(readerIndex + (int) writtenBytes);  
+         //则更新写请求任务进度  
+                 progress(writtenBytes);  
+             }  
+             break;  
+         }  
+     }  
+     //最后清除nio buffer  
+     clearNioBuffers();  
+ }  
 
 
 
 
-    /** 
-     * Return the current message to write or {@code null} if nothing was flushed before and so is ready to be written. 
-     返回当前需要发送的消息 
-     */  
-    public Object current() {  
-        Entry entry = flushedEntry;  
-        if (entry == null) {  
-            return null;  
-        }  
-      
-        return entry.msg;  
-    }  
+ /** 
+  * Return the current message to write or {@code null} if nothing was flushed before and so is ready to be written. 
+  返回当前需要发送的消息 
+  */  
+ public Object current() {  
+     Entry entry = flushedEntry;  
+     if (entry == null) {  
+         return null;  
+     }  
+   
+     return entry.msg;  
+ }  
 
 
 
 
-    /** 
-     * Notify the {@link ChannelPromise} of the current message about writing progress. 
-     获取通道刷新任务的进度 
-     */  
-    public void progress(long amount) {  
-        Entry e = flushedEntry;  
-        assert e != null;  
-        ChannelPromise p = e.promise;  
-        if (p instanceof ChannelProgressivePromise) {  
-            long progress = e.progress + amount;  
-            e.progress = progress;  
-            ((ChannelProgressivePromise) p).tryProgress(progress, e.total);  
-        }  
-    }  
-    
-    /** 
-     * Will remove the current message, mark its {@link ChannelPromise} as success and return {@code true}. If no 
-     * flushed message exists at the time this method is called it will return {@code false} to signal that no more 
-     * messages are ready to be handled. 
-     移除当前消息，并标记通道异步任务为成功，并返回true。如果没有刷新消息存在，则返回false，表示没有消息需要处理 
-     */  
-    public boolean remove() {  
-        Entry e = flushedEntry;  
-        if (e == null) {  
-             //刷新消息链为空，则清除NioBuffer  
-            clearNioBuffers();  
-            return false;  
-        }  
-        Object msg = e.msg;  
-      
-        ChannelPromise promise = e.promise;  
-        int size = e.pendingSize;  
-        //移除写请求Entry  
-        removeEntry(e);  
-      
-        if (!e.cancelled) {  
-            // only release message, notify and decrement if it was not canceled before.  
-        //写请求没有取消，则释放消息，更新任务结果，更新当前通道待发送字节数和可写状态，并触发相应的事件  
-            ReferenceCountUtil.safeRelease(msg);  
-            safeSuccess(promise);  
-            decrementPendingOutboundBytes(size, false, true);  
-        }  
-        //取消，则回收  
-        // recycle the entry  
-        e.recycle();  
-      
-        return true;  
-    }  
+ /** 
+  * Notify the {@link ChannelPromise} of the current message about writing progress. 
+  获取通道刷新任务的进度 
+  */  
+ public void progress(long amount) {  
+     Entry e = flushedEntry;  
+     assert e != null;  
+     ChannelPromise p = e.promise;  
+     if (p instanceof ChannelProgressivePromise) {  
+         long progress = e.progress + amount;  
+         e.progress = progress;  
+         ((ChannelProgressivePromise) p).tryProgress(progress, e.total);  
+     }  
+ }  
+ 
+ /** 
+  * Will remove the current message, mark its {@link ChannelPromise} as success and return {@code true}. If no 
+  * flushed message exists at the time this method is called it will return {@code false} to signal that no more 
+  * messages are ready to be handled. 
+  移除当前消息，并标记通道异步任务为成功，并返回true。如果没有刷新消息存在，则返回false，表示没有消息需要处理 
+  */  
+ public boolean remove() {  
+     Entry e = flushedEntry;  
+     if (e == null) {  
+          //刷新消息链为空，则清除NioBuffer  
+         clearNioBuffers();  
+         return false;  
+     }  
+     Object msg = e.msg;  
+   
+     ChannelPromise promise = e.promise;  
+     int size = e.pendingSize;  
+     //移除写请求Entry  
+     removeEntry(e);  
+   
+     if (!e.cancelled) {  
+         // only release message, notify and decrement if it was not canceled before.  
+     //写请求没有取消，则释放消息，更新任务结果，更新当前通道待发送字节数和可写状态，并触发相应的事件  
+         ReferenceCountUtil.safeRelease(msg);  
+         safeSuccess(promise);  
+         decrementPendingOutboundBytes(size, false, true);  
+     }  
+     //取消，则回收  
+     // recycle the entry  
+     e.recycle();  
+   
+     return true;  
+ }  
 
 
 移除操作有几点要看：
 1.
 
-    if (e == null) {  
-         //刷新消息链为空，则清除NioBuffer  
-        clearNioBuffers();  
-        return false;  
+if (e == null) {  
+     //刷新消息链为空，则清除NioBuffer  
+    clearNioBuffers();  
+    return false;  
+}  
+
+
+
+// Clear all ByteBuffer from the array so these can be GC'ed.  
+// See https://github.com/netty/netty/issues/3837  
+private void clearNioBuffers() {  
+    int count = nioBufferCount;  
+    if (count > 0) {  
+        //重置nio buf计数器，填充线程本地nio buf数组为空。  
+        nioBufferCount = 0;  
+        Arrays.fill(NIO_BUFFERS.get(), 0, count, null);  
     }  
-
-
-
-    // Clear all ByteBuffer from the array so these can be GC'ed.  
-    // See https://github.com/netty/netty/issues/3837  
-    private void clearNioBuffers() {  
-        int count = nioBufferCount;  
-        if (count > 0) {  
-            //重置nio buf计数器，填充线程本地nio buf数组为空。  
-            nioBufferCount = 0;  
-            Arrays.fill(NIO_BUFFERS.get(), 0, count, null);  
-        }  
-    }  
+}  
 
 
 2.
 
 
-    //移除写请求Entry  
-    removeEntry(e);  
+//移除写请求Entry  
+removeEntry(e);  
 
 
 
-    private void removeEntry(Entry e) {  
-        if (-- flushed == 0) {//刷新链为空  
-            // processed everything  
-            flushedEntry = null;  
-            if (e == tailEntry) {//链尾  
-                tailEntry = null;  
-                unflushedEntry = null;  
-            }  
-        } else {  
-           //否则，刷新链头往后移一位  
-            flushedEntry = e.next;  
+private void removeEntry(Entry e) {  
+    if (-- flushed == 0) {//刷新链为空  
+        // processed everything  
+        flushedEntry = null;  
+        if (e == tailEntry) {//链尾  
+            tailEntry = null;  
+            unflushedEntry = null;  
         }  
+    } else {  
+       //否则，刷新链头往后移一位  
+        flushedEntry = e.next;  
     }  
-
-
+}  
 
 从上面可以看出移除操作，主要是从刷新写请求链移除链头写请求，并则释放写请求消息，
-更新写请求任务结果，当前通道待发送字节数和可写状态，并触发相应的事件
-
+更新写请求任务结果，当前通道待发送字节数和可写状态，并触发相应的事件。
 
 从刷新写请求链表，移除writtenBytes个字节数方法removeBytes，自旋，直至从刷新链中移除writtenBytes个字节数，
 如果链头消息的可读字节数小于writtenBytes，则移除写请求Entry，否则更新writtenBytes，
