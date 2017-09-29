@@ -259,6 +259,7 @@ protected long doWriteFileRegion(FileRegion region) throws Exception {
     final long position = region.transferred();
     return region.transferTo(javaChannel(), position);
 }
+//DefaultFileRegion
 public class DefaultFileRegion extends AbstractReferenceCounted implements FileRegion {
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(DefaultFileRegion.class);
     private final File f;//关联文件

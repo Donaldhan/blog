@@ -68,6 +68,10 @@ netty NioServerSocketChannel解析：[url]http://donald-draper.iteye.com/blog/23
 netty 通道配置接口定义：[url]http://donald-draper.iteye.com/blog/2393484[/url]
 netty 默认通道配置初始化：[url]http://donald-draper.iteye.com/blog/2393504[/url]
 netty 默认通道配置后续：[url]http://donald-draper.iteye.com/blog/2393510[/url]
+netty NioSocketChannel解析：[url]http://donald-draper.iteye.com/blog/2394968[/url]
+##########################################################
+ByteBuf
+##########################################################
 netty 字节buf定义：[url]http://donald-draper.iteye.com/blog/2393813[/url]
 netty 资源泄漏探测器：[url]http://donald-draper.iteye.com/blog/2393940[/url]
 netty 抽象字节buf解析：[url]http://donald-draper.iteye.com/blog/2394078[/url]
