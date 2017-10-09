@@ -1,4 +1,168 @@
+先到官网http://libevent.org/下载最新版本压缩包并解压
+[memcached@zabbix Documents]$ ls
+libevent-2.1.8-stable.tar.gz  memcached-1.5.2  memcached-1.5.2.tar.gz
+[memcached@zabbix Documents]$ tar -zxvf libevent-2.1.8-stable.tar.gz 
+进入解压目录，执行：
+配置目录：
+[memcached@zabbix libevent-2.1.8-stable]$./configure --prefix=/usr
+编译：
+[memcached@zabbix libevent-2.1.8-stable]$ make
+  GEN      test/rpcgen-attempted
+  GEN      include/event2/event-config.h
+make  all-am
+make[1]: Entering directory `/home/memcached/Documents/libevent-2.1.8-stable'
+...
+安装
+[memcached@zabbix libevent-2.1.8-stable]$ sudo make install
+检查是否安装成功：
+[memcached@zabbix libevent-2.1.8-stable]$ ls -al /usr/lib | grep libevent
+lrwxrwxrwx   1 root root      21 Oct  9 12:58 libevent-2.1.so.6 -> libevent-2.1.so.6.0.2
+-rwxr-xr-x   1 root root 1325594 Oct  9 12:58 libevent-2.1.so.6.0.2
+-rw-r--r--   1 root root 2461544 Oct  9 12:58 libevent.a
+lrwxrwxrwx   1 root root      26 Oct  9 12:58 libevent_core-2.1.so.6 -> libevent_core-2.1.so.6.0.2
+...
+[memcached@zabbix libevent-2.1.8-stable]$ 
+
+安装memcached:
+获取memcached源码：
 wget http://memcached.org/latest
+解压
 tar -zxvf memcached-1.x.x.tar.gz
-cd memcached-1.x.x
-./configure && make && make test && sudo make install
+[memcached@zabbix Documents]$ cd memcached-1.5.2/
+配置安装目录：
+[memcached@zabbix memcached-1.5.2]$ sudo ./configure --prefix=/usr/local  --with-libevent=/usr
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking for a BSD-compatible install... /usr/bin/install -c
+...
+编译：
+[memcached@zabbix memcached-1.5.2]$ sudo make
+make  all-recursive
+make[1]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
+Making all in doc
+make[2]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make  all-am
+make[3]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
+...
+测试：
+[memcached@zabbix memcached-1.5.2]$ sudo make test 
+安装：
+[memcached@zabbix memcached-1.5.2]$ 
+[memcached@zabbix memcached-1.5.2]$ sudo make install
+make  install-recursive
+make[1]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
+Making install in doc
+make[2]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make  install-am
+make[3]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make[4]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make[4]: Nothing to be done for `install-exec-am'.
+ /bin/mkdir -p '/usr/local/share/man/man1'
+ /bin/install -c -m 644 memcached.1 '/usr/local/share/man/man1'
+make[4]: Leaving directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make[3]: Leaving directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make[2]: Leaving directory `/home/memcached/Documents/memcached-1.5.2/doc'
+make[2]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
+make[3]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
+ /bin/mkdir -p '/usr/local/bin'
+  /bin/install -c memcached '/usr/local/bin'
+ /bin/mkdir -p '/usr/local/include/memcached'
+ /bin/install -c -m 644 protocol_binary.h '/usr/local/include/memcached'
+make[3]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
+make[2]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
+make[1]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
+[memcached@zabbix memcached-1.5.2]$ 
+
+查看启动参数
+[memcached@zabbix Documents]$ memcached -h
+memcached 1.5.2
+-p, --port=<num>          TCP port to listen on (default: 11211) TCP 监听端口
+-U, --udp-port=<num>      UDP port to listen on (default: 11211, 0 is off) UDP 监听端口
+-s, --unix-socket=<file>  UNIX socket to listen on (disables network support)
+-A, --enable-shutdown     enable ascii "shutdown" command
+-a, --unix-mask=<mask>    access mask for UNIX socket, in octal (default: 0700)
+-l, --listen=<addr>       interface to listen on (default: INADDR_ANY) 监听地址
+-d, --daemon              run as a daemon 以守候模式运行
+-r, --enable-coredumps    maximize core file limit 最大核心文件限制
+-u, --user=<user>         assume identity of <username> (only when run as root) 运行用户
+-m, --memory-limit=<num>  item memory in megabytes (default: 64 MB) 内存大小
+-M, --disable-evictions   return error on memory exhausted instead of evicting 内存耗尽时返回错误，而不是删除，即不用LRU算法 
+-c, --conn-limit=<num>    max simultaneous connections (default: 1024) 最大连接数
+-k, --lock-memory         lock down all paged memory
+-v, --verbose             verbose (print errors/warnings while in event loop)
+-vv                       very verbose (also print client commands/responses)
+-vvv                      extremely verbose (internal state transitions)
+-h, --help                print this help and exit
+-i, --license             print memcached and libevent license
+-V, --version             print version and exit
+-P, --pidfile=<file>      save PID in <file>, only used with -d option 进程的pid存放地点，此处“p”为大写“P” 
+-f, --slab-growth-factor=<num> chunk size growth factor (default: 1.25)  块大小增长因子，默认是1.25 
+-n, --slab-min-size=<bytes> min space used for key+value+flags (default: 48) 块最小size
+-L, --enable-largepages  try to use large memory pages (if available)
+-D <char>     Use <char> as the delimiter between key prefixes and IDs.
+              This is used for per-prefix stats reporting. The default is
+              ":" (colon). If this option is specified, stats collection
+              is turned on automatically; if not, then it may be turned on
+              by sending the "stats detail on" command to the server.
+-t, --threads=<num>       number of threads to use (default: 4) 线程数
+-R, --max-reqs-per-event  maximum number of requests per event, limits the
+                          requests processed per connection to prevent 
+                          starvation (default: 20)
+-C, --disable-cas         disable use of CAS
+-b, --listen-backlog=<num> set the backlog queue limit (default: 1024)
+-B, --protocol=<name>     protocol - one of ascii, binary, or auto (default)
+-I, --max-item-size=<num> adjusts max item size
+                          (default: 1mb, min: 1k, max: 128m)
+-F, --disable-flush-all   disable flush_all command
+-X, --disable-dumping     disable stats cachedump and lru_crawler metadump
+-o, --extended            comma separated list of extended options
+                          most options have a 'no_' prefix to disable
+   - maxconns_fast:       immediately close new connections after limit
+   - hashpower:           an integer multiplier for how large the hash
+                          table should be. normally grows at runtime.
+                          set based on "STAT hash_power_level"
+   - tail_repair_time:    time in seconds for how long to wait before
+                          forcefully killing LRU tail item.
+                          disabled by default; very dangerous option.
+   - hash_algorithm:      the hash table algorithm
+                          default is murmur3 hash. options: jenkins, murmur3
+   - lru_crawler:         enable LRU Crawler background thread
+   - lru_crawler_sleep:   microseconds to sleep between items
+                          default is 100.
+   - lru_crawler_tocrawl: max items to crawl per slab per run
+                          default is 0 (unlimited)
+   - lru_maintainer:      enable new LRU system + background thread
+   - hot_lru_pct:         pct of slab memory to reserve for hot lru.
+                          (requires lru_maintainer)
+   - warm_lru_pct:        pct of slab memory to reserve for warm lru.
+                          (requires lru_maintainer)
+   - hot_max_factor:      items idle > cold lru age * drop from hot lru.
+   - warm_max_factor:     items idle > cold lru age * this drop from warm.
+   - temporary_ttl:       TTL's below get separate LRU, can't be evicted.
+                          (requires lru_maintainer)
+   - idle_timeout:        timeout for idle connections
+   - slab_chunk_max:      (EXPERIMENTAL) maximum slab size. use extreme care.
+   - watcher_logbuf_size: size in kilobytes of per-watcher write buffer.
+   - worker_logbuf_size:  size in kilobytes of per-worker-thread buffer
+                          read by background thread, then written to watchers.
+   - track_sizes:         enable dynamic reports for 'stats sizes' command.
+   - no_inline_ascii_resp: save up to 24 bytes per item.
+                           small perf hit in ASCII, no perf difference in
+                           binary protocol. speeds up all sets.
+   - modern:              enables options which will be default in future.
+             currently: nothing
+   - no_modern:           uses defaults of previous major version (1.4.x)
+[memcached@zabbix Documents]$ 
+
+ [memcached@zabbix Documents]$ memcached -p 11211 -d -u memcached -c 1024 
+[memcached@zabbix Documents]$ ps -ef | grep memcached
+root       4294   1246  0 08:27 ?        00:00:00 sshd: memcached [priv]
+memcach+   4296   4294  0 08:27 ?        00:00:02 sshd: memcached@pts/1
+memcach+  27750      1  0 15:29 ?        00:00:00 memcached -p 11211 -d -u memcached -c 1024
+memcach+  27862   4299  0 15:30 pts/1    00:00:00 grep --color=auto memcached
+[memcached@zabbix Documents]$ 
+[memcached@zabbix Documents]$ 
+[memcached@zabbix Documents]$ telnet 127.0.0.1 11211
+Trying 127.0.0.1...
+Connected to 127.0.0.1.
+Escape character is '^]'.
