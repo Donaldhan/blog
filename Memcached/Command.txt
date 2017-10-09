@@ -1,0 +1,603 @@
+[memcached@zabbix Desktop]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024
+[memcached@zabbix Desktop]$ ps -ef | grep memcached
+memcach+   4030      1  0 21:43 ?        00:00:00 memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4044   3991  0 21:43 pts/0    00:00:00 grep --color=auto memcached
+[memcached@zabbix Desktop]$ 
+连接Memcached
+[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+
+set 命令
+Memcached set 命令用于将 value(数据值) 存储在指定的 key(键) 中。
+如果set的key已经存在，该命令可以更新该key所对应的原来的数据，也就是实现更新的作用。
+
+set 命令的基本语法格式如下：
+
+set key flags exptime bytes [noreply] 
+value 
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+set name 0 0 6          
+donald
+STORED
+
+get 命令
+get 命令获取存储在 key(键) 中的 value(数据值) ，如果 key 不存在，则返回空。
+语法：
+
+get 命令的基本语法格式如下：
+get key
+
+多个 key 使用空格隔开，如下:
+get key1 key2 key3
+
+参数说明如下：
+key：键值 key-value 结构中的 key，用于查找缓存值。
+
+get name
+VALUE name 0 6
+donald
+END
+
+测试set 命令 过期时间
+set age 0 10 2
+27
+STORED
+
+获取age的值
+get age
+VALUE age 0 2
+27
+END
+
+经过10秒钟以后 
+get age
+END
+
+replace 命令
+
+Memcached replace 命令用于替换已存在的 key(键) 的 value(数据值)。
+如果 key 不存在，则替换失败，并且您将获得响应 NOT_STORED。
+语法：
+
+replace 命令的基本语法格式如下：
+
+replace key flags exptime bytes [noreply]
+value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+get name
+VALUE name 0 6
+donald
+END
+
+replace name 0 0 5
+jamel
+STORED
+
+get name
+VALUE name 0 5
+jamel
+END
+
+append 命令
+
+Memcached append 命令用于向已存在 key(键) 的 value(数据值) 后面追加数据 。
+语法：
+
+append 命令的基本语法格式如下：
+
+append key flags exptime bytes [noreply]
+value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+append name 0 0 4
+_han
+STORED
+
+get name
+VALUE name 0 9
+jamel_han
+END
+
+
+prepend 命令
+
+Memcached prepend 命令用于向已存在 key(键) 的 value(数据值) 前面追加数据 。
+语法：
+
+prepend 命令的基本语法格式如下：
+
+prepend key flags exptime bytes [noreply]
+value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+prepend name 0 0 1  
+0
+STORED
+
+get name
+VALUE name 0 0
+0jamel_han
+END
+
+delete 命令
+
+Memcached delete 命令用于删除已存在的 key(键)。
+语法：
+
+delete 命令的基本语法格式如下：
+
+delete key [noreply]
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    noreply（可选）： 该参数告知服务器不需要返回数据
+
+get name
+VALUE name 0 10
+0jamel_han
+END
+
+delete name
+DELETED
+
+get name
+END
+
+delete name
+NOT_FOUND
+
+gets 命令
+
+Memcached gets 命令获取带有 CAS 令牌存 的 value(数据值) ，如果 key 不存在，则返回空。
+语法：
+
+gets 命令的基本语法格式如下：
+
+gets key
+
+多个 key 使用空格隔开，如下:
+
+gets key1 key2 key3
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+
+
+
+set name 0 0 6 
+donald
+STORED
+
+get name
+VALUE name 0 6
+donald
+END
+
+gets name
+VALUE name 0 6 7
+donald
+END
+在使用 gets 命令的输出结果中，在最后一列的数字 7 代表了 key 为 name 的 CAS 令牌。
+
+CAS 命令
+
+Memcached CAS（Check-And-Set 或 Compare-And-Swap） 命令用于执行一个"检查并设置"的操作
+它仅在当前客户端最后一次取值后，该key 对应的值没有被其他客户端修改的情况下， 才能够将值写入。
+检查是通过cas_token参数进行的， 这个参数是Memcach指定给已经存在的元素的一个唯一的64位值。
+语法：
+
+CAS 命令的基本语法格式如下：
+
+cas key flags exptime bytes unique_cas_token [noreply]
+value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    unique_cas_token通过 gets 命令获取的一个唯一的64位值。
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+<− 缺少 token
+cas name 0 0 5 
+ERROR
+
+<− token不一致
+cas name 0 0 5 1
+jamel
+
+CLIENT_ERROR bad data chunk
+ERROR
+
+cas name 0 0 5 7 
+jamel
+STORED
+
+get name
+VALUE name 0 5
+jamel
+END
+
+<− 键 age 不存在
+cas age 0 0 2 1   
+27
+NOT_FOUND
+
+incr 与 decr 命令
+
+Memcached incr 与 decr 命令用于对已存在的 key(键) 的数字值进行自增或自减操作。
+incr 与 decr 命令操作的数据必须是十进制的32位无符号整数。
+如果 key 不存在返回 NOT_FOUND，如果键的值不为数字，则返回 CLIENT_ERROR，其他错误返回 ERROR。
+incr 命令
+语法：
+
+incr 命令的基本语法格式如下：
+
+incr key increment_value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    increment_value： 增加的数值。
+
+
+decr 命令的基本语法格式如下：
+
+decr key decrement_value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    decrement_value： 减少的数值。
+
+
+set age 0 0 2 
+27
+STORED
+
+get age
+VALUE age 0 2
+27
+END
+
+
+incr age 1
+28
+
+get age
+VALUE age 0 2
+28
+END
+
+incr age 2
+30
+
+get age
+VALUE age 0 2
+30
+END
+
+decr age 1
+29
+
+get age
+VALUE age 0 2
+29
+END
+
+
+decr age 2
+27
+
+get age
+VALUE age 0 2
+27
+END
+
+重新设置age值，过期时间为10秒
+set age 0 10 2
+19
+STORED
+
+get age
+VALUE age 0 2
+19
+END
+
+过10秒钟：
+get age
+END
+
+add 命令
+
+Memcached add 命令用于将 value(数据值) 存储在指定的 key(键) 中。
+如果 add 的 key 已经存在，则不会更新数据(过期的 key 会更新)，之前的值将仍然保持相同，并且您将获得响应 NOT_STORED。
+语法：
+
+add 命令的基本语法格式如下：
+
+add key flags exptime bytes [noreply]
+value
+
+参数说明如下：
+
+    key：键值 key-value 结构中的 key，用于查找缓存值。
+    flags：可以包括键值对的整型参数，客户机使用它存储关于键值对的额外信息 。
+    exptime：在缓存中保存键值对的时间长度（以秒为单位，0 表示永远）
+    bytes：在缓存中存储的字节数
+    noreply（可选）： 该参数告知服务器不需要返回数据
+    value：存储的值（始终位于第二行）（可直接理解为key-value结构中的value）
+
+get name
+VALUE name 0 6
+donald
+END
+
+key 已经存在
+add name 0 10 5      
+jamel
+NOT_STORED
+
+get name
+VALUE name 0 6
+donald
+END
+
+重新设置过期时间
+
+set name 0 10 5     
+jamel
+STORED
+过10秒钟
+get name
+END
+
+add name 0 10 6 
+donald
+STORED
+
+get name
+END
+
+add name 0 20 5
+jamel
+STORED
+
+get name
+VALUE name 0 5
+jamel
+END
+
+过20秒以后
+
+get name
+END
+
+针对key不存在
+get age
+END
+delete age
+NOT_FOUND
+
+add age 0 0 2
+27
+STORED
+
+get age
+VALUE age 0 2
+27
+END
+
+
+stats 命令
+
+Memcached stats 命令用于返回统计信息例如 PID(进程号)、版本号、连接数等。
+语法：
+
+stats 命令的基本语法格式如下：
+
+stats
+
+stats
+STAT pid 4030
+STAT uptime 4497
+STAT time 1507561106
+STAT version 1.5.2
+STAT libevent 2.1.8-stable
+STAT pointer_size 64
+STAT rusage_user 0.956704
+STAT rusage_system 0.956704
+STAT max_connections 1024
+STAT curr_connections 5
+STAT total_connections 8
+STAT rejected_connections 0
+STAT connection_structures 6
+STAT reserved_fds 20
+STAT cmd_get 53
+STAT cmd_set 24
+STAT cmd_flush 0
+STAT cmd_touch 0
+STAT get_hits 37
+STAT get_misses 16
+STAT get_expired 3
+STAT get_flushed 0
+STAT delete_misses 2
+STAT delete_hits 3
+STAT incr_misses 0
+STAT incr_hits 2
+STAT decr_misses 0
+STAT decr_hits 2
+STAT cas_misses 1
+STAT cas_hits 1
+STAT cas_badval 0
+STAT touch_hits 0
+STAT touch_misses 0
+STAT auth_cmds 0
+STAT auth_errors 0
+STAT bytes_read 1369
+STAT bytes_written 1779
+STAT limit_maxbytes 67108864
+STAT accepting_conns 1
+STAT listen_disabled_num 0
+STAT time_in_listen_disabled_us 0
+STAT threads 4
+STAT conn_yields 0
+STAT hash_power_level 16
+STAT hash_bytes 524288
+STAT hash_is_expanding 0
+STAT slab_reassign_rescues 0
+STAT slab_reassign_chunk_rescues 0
+STAT slab_reassign_evictions_nomem 0
+STAT slab_reassign_inline_reclaim 0
+STAT slab_reassign_busy_items 0
+STAT slab_reassign_busy_deletes 0
+STAT slab_reassign_running 0
+STAT slabs_moved 0
+STAT lru_crawler_running 0
+STAT lru_crawler_starts 3060
+STAT lru_maintainer_juggles 8631
+STAT malloc_fails 0
+STAT log_worker_dropped 0
+STAT log_worker_written 0
+STAT log_watcher_skipped 0
+STAT log_watcher_sent 0
+STAT bytes 64
+STAT curr_items 1
+STAT total_items 18
+STAT slab_global_page_pool 0
+STAT expired_unfetched 2
+STAT evicted_unfetched 0
+STAT evicted_active 0
+STAT evictions 0
+STAT reclaimed 3
+STAT crawler_reclaimed 0
+STAT crawler_items_checked 1
+STAT lrutail_reflocked 40
+STAT moves_to_cold 40
+STAT moves_to_warm 22
+STAT moves_within_lru 0
+STAT direct_reclaims 0
+STAT lru_bumps_dropped 0
+END
+下边详细解释每个状态项：
+
+    pid： memcache服务器进程ID
+    uptime：服务器已运行秒数
+    time：服务器当前Unix时间戳
+    version：memcache版本
+    pointer_size：操作系统指针大小
+    rusage_user：进程累计用户时间
+    rusage_system：进程累计系统时间
+    curr_connections：当前连接数量
+    total_connections：Memcached运行以来连接总数
+    connection_structures：Memcached分配的连接结构数量
+    cmd_get：get命令请求次数
+    cmd_set：set命令请求次数
+    cmd_flush：flush命令请求次数
+    get_hits：get命令命中次数
+    get_misses：get命令未命中次数
+    delete_misses：delete命令未命中次数
+    delete_hits：delete命令命中次数
+    incr_misses：incr命令未命中次数
+    incr_hits：incr命令命中次数
+    decr_misses：decr命令未命中次数
+    decr_hits：decr命令命中次数
+    cas_misses：cas命令未命中次数
+    cas_hits：cas命令命中次数
+    cas_badval：使用擦拭次数
+    auth_cmds：认证命令处理的次数
+    auth_errors：认证失败数目
+    bytes_read：读取总字节数
+    bytes_written：发送总字节数
+    limit_maxbytes：分配的内存总大小（字节）
+    accepting_conns：服务器是否达到过最大连接（0/1）
+    listen_disabled_num：失效的监听数
+    threads：当前线程数
+    conn_yields：连接操作主动放弃数目
+    bytes：当前存储占用的字节数
+    curr_items：当前存储的数据总数
+    total_items：启动以来存储的数据总数
+    evictions：LRU释放的对象数目
+    reclaimed：已过期的数据条目来存储新数据的数目
+
+
+stats items 命令
+
+Memcached stats items 命令用于显示各个 slab 中 item 的数目和存储时长(最后一次访问距离现在的秒数)。
+语法：
+
+stats items 命令的基本语法格式如下：
+
+stats items
+
+stats items
+STAT items:1:number 2
+STAT items:1:number_hot 0
+STAT items:1:number_warm 0
+STAT items:1:number_cold 2
+STAT items:1:age_hot 0
+STAT items:1:age_warm 0
+STAT items:1:age 27
+STAT items:1:evicted 0
+STAT items:1:evicted_nonzero 0
+STAT items:1:evicted_time 0
+STAT items:1:outofmemory 0
+STAT items:1:tailrepairs 0
+STAT items:1:reclaimed 3
+STAT items:1:expired_unfetched 2
+STAT items:1:evicted_unfetched 0
+STAT items:1:evicted_active 0
+STAT items:1:crawler_reclaimed 0
+STAT items:1:crawler_items_checked 1
+STAT items:1:lrutail_reflocked 40
+STAT items:1:moves_to_cold 42
+STAT items:1:moves_to_warm 23
+STAT items:1:moves_within_lru 0
+STAT items:1:direct_reclaims 0
+STAT items:1:hits_to_hot 0
+STAT items:1:hits_to_warm 0
+STAT items:1:hits_to_cold 39
+STAT items:1:hits_to_temp 0
+END
+
