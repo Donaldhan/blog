@@ -1,42 +1,47 @@
+Memcache知识点梳理 ：http://369369.blog.51cto.com/319630/833234/
+Memcached 教程 ：http://www.runoob.com/memcached/memcached-tutorial.html
+MemCache超详细解读：http://www.csdn.net/article/2016-03-16/2826609
+安装libevent
+
 先到官网http://libevent.org/下载最新版本压缩包并解压
-[memcached@zabbix Documents]$ ls
+[memcached@donald Documents]$ ls
 libevent-2.1.8-stable.tar.gz  memcached-1.5.2  memcached-1.5.2.tar.gz
-[memcached@zabbix Documents]$ tar -zxvf libevent-2.1.8-stable.tar.gz 
-进入解压目录，执行：
+[memcached@donald Documents]$ tar -zxvf libevent-2.1.8-stable.tar.gz 
 配置目录：
-[memcached@zabbix libevent-2.1.8-stable]$./configure --prefix=/usr
+[memcached@donald libevent-2.1.8-stable]$./configure --prefix=/usr
 编译：
-[memcached@zabbix libevent-2.1.8-stable]$ make
+[memcached@donald libevent-2.1.8-stable]$ make
   GEN      test/rpcgen-attempted
   GEN      include/event2/event-config.h
 make  all-am
 make[1]: Entering directory `/home/memcached/Documents/libevent-2.1.8-stable'
 ...
 安装
-[memcached@zabbix libevent-2.1.8-stable]$ sudo make install
+[memcached@donald libevent-2.1.8-stable]$ sudo make install
 检查是否安装成功：
-[memcached@zabbix libevent-2.1.8-stable]$ ls -al /usr/lib | grep libevent
+[memcached@donald libevent-2.1.8-stable]$ ls -al /usr/lib | grep libevent
 lrwxrwxrwx   1 root root      21 Oct  9 12:58 libevent-2.1.so.6 -> libevent-2.1.so.6.0.2
 -rwxr-xr-x   1 root root 1325594 Oct  9 12:58 libevent-2.1.so.6.0.2
 -rw-r--r--   1 root root 2461544 Oct  9 12:58 libevent.a
 lrwxrwxrwx   1 root root      26 Oct  9 12:58 libevent_core-2.1.so.6 -> libevent_core-2.1.so.6.0.2
 ...
-[memcached@zabbix libevent-2.1.8-stable]$ 
+[memcached@donald libevent-2.1.8-stable]$ 
 
-安装memcached:
+安装memcached
+
 获取memcached源码：
-wget http://memcached.org/latest
+memcached@donald memcached-1.5.2]$ wget http://memcached.org/latest
 解压
-tar -zxvf memcached-1.x.x.tar.gz
-[memcached@zabbix Documents]$ cd memcached-1.5.2/
+memcached@donald memcached-1.5.2]$ tar -zxvf memcached-1.x.x.tar.gz
+[memcached@donald Documents]$ cd memcached-1.5.2/
 配置安装目录：
-[memcached@zabbix memcached-1.5.2]$ sudo ./configure --prefix=/usr/local  --with-libevent=/usr
+[memcached@donald memcached-1.5.2]$ sudo ./configure --prefix=/usr/local  --with-libevent=/usr
 checking build system type... x86_64-pc-linux-gnu
 checking host system type... x86_64-pc-linux-gnu
 checking for a BSD-compatible install... /usr/bin/install -c
 ...
 编译：
-[memcached@zabbix memcached-1.5.2]$ sudo make
+[memcached@donald memcached-1.5.2]$ sudo make
 make  all-recursive
 make[1]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
 Making all in doc
@@ -45,10 +50,10 @@ make  all-am
 make[3]: Entering directory `/home/memcached/Documents/memcached-1.5.2/doc'
 ...
 测试：
-[memcached@zabbix memcached-1.5.2]$ sudo make test 
+[memcached@donald memcached-1.5.2]$ sudo make test 
 安装：
-[memcached@zabbix memcached-1.5.2]$ 
-[memcached@zabbix memcached-1.5.2]$ sudo make install
+[memcached@donald memcached-1.5.2]$ 
+[memcached@donald memcached-1.5.2]$ sudo make install
 make  install-recursive
 make[1]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
 Making install in doc
@@ -71,10 +76,10 @@ make[3]: Entering directory `/home/memcached/Documents/memcached-1.5.2'
 make[3]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
 make[2]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
 make[1]: Leaving directory `/home/memcached/Documents/memcached-1.5.2'
-[memcached@zabbix memcached-1.5.2]$ 
+[memcached@donald memcached-1.5.2]$ 
 
-查看启动参数
-[memcached@zabbix Documents]$ memcached -h
+查看启动参数配置
+[memcached@donald Documents]$ memcached -h
 memcached 1.5.2
 -p, --port=<num>          TCP port to listen on (default: 11211) TCP 监听端口
 -U, --udp-port=<num>      UDP port to listen on (default: 11211, 0 is off) UDP 监听端口
@@ -152,17 +157,150 @@ memcached 1.5.2
    - modern:              enables options which will be default in future.
              currently: nothing
    - no_modern:           uses defaults of previous major version (1.4.x)
-[memcached@zabbix Documents]$ 
+[memcached@donald Documents]$ 
 
- [memcached@zabbix Documents]$ memcached -p 11211 -d -u memcached -c 1024 
-[memcached@zabbix Documents]$ ps -ef | grep memcached
-root       4294   1246  0 08:27 ?        00:00:00 sshd: memcached [priv]
-memcach+   4296   4294  0 08:27 ?        00:00:02 sshd: memcached@pts/1
-memcach+  27750      1  0 15:29 ?        00:00:00 memcached -p 11211 -d -u memcached -c 1024
-memcach+  27862   4299  0 15:30 pts/1    00:00:00 grep --color=auto memcached
-[memcached@zabbix Documents]$ 
-[memcached@zabbix Documents]$ 
-[memcached@zabbix Documents]$ telnet 127.0.0.1 11211
-Trying 127.0.0.1...
-Connected to 127.0.0.1.
+启动memcached
+
+[memcached@donald Documents]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@donald Documents]$ netstat -ntlp
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 192.168.126.128:11211   0.0.0.0:*               LISTEN      29555/memcached     
+tcp        0      0 192.168.122.1:53        0.0.0.0:*               LISTEN      -                   
+tcp        0      0 0.0.0.0:22              0.0.0.0:*               LISTEN      -                   
+tcp        0      0 127.0.0.1:631           0.0.0.0:*               LISTEN      -                   
+tcp        0      0 0.0.0.0:25              0.0.0.0:*               LISTEN      -                   
+tcp6       0      0 :::3306                 :::*                    LISTEN      -                   
+tcp6       0      0 :::22                   :::*                    LISTEN      -                   
+tcp6       0      0 ::1:631                 :::*                    LISTEN      -                   
+[memcached@donald Documents]$  
+
+连接memcached
+
+[memcached@donald Documents]$ telnet 192.168.126.128 11211
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
 Escape character is '^]'.
+stats 查看状态
+STAT pid 29555
+STAT uptime 382
+STAT time 1507538855
+STAT version 1.5.2
+STAT libevent 2.1.8-stable
+STAT pointer_size 64
+STAT rusage_user 0.146294
+STAT rusage_system 0.089402
+STAT max_connections 1024
+STAT curr_connections 5
+STAT total_connections 6
+STAT rejected_connections 0
+STAT connection_structures 6
+STAT reserved_fds 20
+STAT cmd_get 0
+STAT cmd_set 0
+STAT cmd_flush 0
+STAT cmd_touch 0
+STAT get_hits 0
+STAT get_misses 0
+STAT get_expired 0
+STAT get_flushed 0
+STAT delete_misses 0
+STAT delete_hits 0
+STAT incr_misses 0
+STAT incr_hits 0
+STAT decr_misses 0
+STAT decr_hits 0
+STAT cas_misses 0
+STAT cas_hits 0
+STAT cas_badval 0
+STAT touch_hits 0
+STAT touch_misses 0
+STAT auth_cmds 0
+STAT auth_errors 0
+STAT bytes_read 7
+STAT bytes_written 0
+STAT limit_maxbytes 67108864
+STAT accepting_conns 1
+STAT listen_disabled_num 0
+STAT time_in_listen_disabled_us 0
+STAT threads 4
+STAT conn_yields 0
+STAT hash_power_level 16
+STAT hash_bytes 524288
+STAT hash_is_expanding 0
+STAT slab_reassign_rescues 0
+STAT slab_reassign_chunk_rescues 0
+STAT slab_reassign_evictions_nomem 0
+STAT slab_reassign_inline_reclaim 0
+STAT slab_reassign_busy_items 0
+STAT slab_reassign_busy_deletes 0
+STAT slab_reassign_running 0
+STAT slabs_moved 0
+STAT lru_crawler_running 0
+STAT lru_crawler_starts 765
+STAT lru_maintainer_juggles 430
+STAT malloc_fails 0
+STAT log_worker_dropped 0
+STAT log_worker_written 0
+STAT log_watcher_skipped 0
+STAT log_watcher_sent 0
+STAT bytes 0
+STAT curr_items 0
+STAT total_items 0
+STAT slab_global_page_pool 0
+STAT expired_unfetched 0
+STAT evicted_unfetched 0
+STAT evicted_active 0
+STAT evictions 0
+STAT reclaimed 0
+STAT crawler_reclaimed 0
+STAT crawler_items_checked 0
+STAT lrutail_reflocked 0
+STAT moves_to_cold 0
+STAT moves_to_warm 0
+STAT moves_within_lru 0
+STAT direct_reclaims 0
+具体Stats状态输出的解读可以查看这篇文章：
+MemCache超详细解读：http://www.csdn.net/article/2016-03-16/2826609
+
+这里显示了很多状态信息，下边详细解释每个状态项：
+pid： memcache服务器进程ID
+uptime：服务器已运行秒数
+time：服务器当前Unix时间戳
+version：memcache版本
+pointer_size：操作系统指针大小
+rusage_user：进程累计用户时间
+rusage_system：进程累计系统时间
+curr_connections：当前连接数量
+total_connections：Memcached运行以来连接总数
+connection_structures：Memcached分配的连接结构数量
+cmd_get：get命令请求次数
+cmd_set：set命令请求次数
+cmd_flush：flush命令请求次数
+get_hits：get命令命中次数
+get_misses：get命令未命中次数
+delete_misses：delete命令未命中次数
+delete_hits：delete命令命中次数
+incr_misses：incr命令未命中次数
+incr_hits：incr命令命中次数
+decr_misses：decr命令未命中次数
+decr_hits：decr命令命中次数
+cas_misses：cas命令未命中次数
+cas_hits：cas命令命中次数
+cas_badval：使用擦拭次数
+auth_cmds：认证命令处理的次数
+auth_errors：认证失败数目
+bytes_read：读取总字节数
+bytes_written：发送总字节数
+limit_maxbytes：分配的内存总大小（字节）
+accepting_conns：服务器是否达到过最大连接（0/1）
+listen_disabled_num：失效的监听数
+threads：当前线程数
+conn_yields：连接操作主动放弃数目
+bytes：当前存储占用的字节数
+curr_items：当前存储的数据总数
+total_items：启动以来存储的数据总数
+evictions：LRU释放的对象数目
+reclaimed：已过期的数据条目来存储新数据的数目
