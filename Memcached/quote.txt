@@ -1,1 +1,2 @@
-memcache 安装配置：[url]http://donald-draper.iteye.com/blog/2395580[/url]
+memcached 安装配置：[url]http://donald-draper.iteye.com/blog/2395580[/url]
+memcached 命令：[url]http://donald-draper.iteye.com/blog/2395628[/url]
