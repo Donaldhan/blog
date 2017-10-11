@@ -20,17 +20,17 @@ XMemcached还提供了额外的一种哈希算法——选举散列,在某些场
   builder.setSessionLocator(new ElectionMemcachedSessionLocator());
   MemcachedClient mc = builder.build();
 启动3个memcached实例：
-[memcached@zabbix ~]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
-[memcached@zabbix ~]$ memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024 
-[memcached@zabbix ~]$ memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024 
-[memcached@zabbix ~]$ ps -ef | grep memcached
+[memcached@donald ~]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@donald ~]$ memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@donald ~]$ memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@donald ~]$ ps -ef | grep memcached
 root       4514   1248  0 22:01 ?        00:00:00 sshd: memcached [priv]
 memcach+   4517   4514  0 22:01 ?        00:00:00 sshd: memcached@pts/1
 memcach+   5172      1  0 22:04 ?        00:00:00 memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024
 memcach+   5208      1  0 22:07 ?        00:00:00 memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024
 memcach+   5219      1  0 22:07 ?        00:00:00 memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024
 memcach+   5238   4522  0 22:07 pts/1    00:00:00 grep --color=auto memcached
-[memcached@zabbix ~]$ 
+[memcached@donald ~]$ 
 
 创建memcache属性文件memcached.properties：
 
@@ -706,7 +706,7 @@ public class MemcachedDistributeClientTest {
 192.168.126.128:11213
 关闭客户端时，同时关闭了三个会话：
 分别连接3个Memcached实例,分别获取name，age，counter属性：
-[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+[memcached@donald ~]$ telnet 192.168.126.128 11211
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -721,7 +721,7 @@ END
 
 
 Last login: Wed Oct 11 22:22:25 2017 from 192.168.126.1
-[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+[memcached@donald ~]$ telnet 192.168.126.128 11212
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -734,7 +734,7 @@ END
 
 
 
-[memcached@zabbix ~]$ telnet 192.168.126.128 11213
+[memcached@donald ~]$ telnet 192.168.126.128 11213
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -819,7 +819,7 @@ public class MemcachedDistributeClientTest2 {
 分别连接3个Memcached实例,分别获取name，age，counter属性：
 
 
-[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+[memcached@donald ~]$ telnet 192.168.126.128 11211
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -833,7 +833,7 @@ VALUE counter 0 1
 END
 
 
-[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+[memcached@donald ~]$ telnet 192.168.126.128 11212
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -845,7 +845,7 @@ get counter
 END
 quit
 
-[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+[memcached@donald ~]$ telnet 192.168.126.128 11212
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
@@ -856,7 +856,7 @@ END
 get counter
 END
 
-[memcached@zabbix ~]$ telnet 192.168.126.128 11213
+[memcached@donald ~]$ telnet 192.168.126.128 11213
 Trying 192.168.126.128...
 Connected to 192.168.126.128.
 Escape character is '^]'.
