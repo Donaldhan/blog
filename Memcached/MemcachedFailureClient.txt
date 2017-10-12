@@ -783,6 +783,11 @@ public class MemcachedFailureClient2Test {
 		memcachedClient.incr("age", 1);
 		log.info("incr age={}", memcachedClient.get("age"));//debug breakpoint
 		memcachedClient.set("sex", "man");
+		try {
+			Thread.sleep(180000);
+		} catch (InterruptedException e1) {
+			e1.printStackTrace();
+		}
 		Counter counter = memcachedClient.getCounter("counter", 0);
 		try {
 			log.info("incrementAndGet counter,{}", counter.incrementAndGet());
