@@ -1,0 +1,50 @@
+从1.3版本开始，xmemcached支持failure模式。所谓failure模式是指，当一个memcached节点down掉的时候，
+发往这个节点的请求将直接失败，而不是发送给下一个有效的memcached节点。具体可以看memcached的文档。
+默认不启用failure模式，启用failure模式可以通过下列代码：
+   MemcachedClientBuilder builder=……
+   builder.setFailureMode(true);
+
+不仅如此，xmemcached还支持主辅模式，你可以设置一个memcached的节点的备份节点，当主节点down掉的情况下，
+会将本来应该发往主节点的请求转发给standby备份节点。使用备份节点的前提是启用failure模式。备份节点设置如下：
+
+   MemcachedClient builder=new XmemcachedClientBuilder(AddrUtil.getAddressMap("localhost:11211,localhost:11212 host2:11211,host2:11212"));
+
+上面的例子，将localhost:11211的备份节点设置为localhost:11212,而将host2:11211的备份节点设置为host2:11212
+
+
+启动4个memcached实例：
+[memcached@zabbix ~]$  memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@zabbix ~]$  memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@zabbix ~]$  memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@zabbix ~]$  memcached -p 11214 -d -u memcached -l 192.168.126.128 -c 1024 
+[memcached@zabbix ~]$ ps -ef | grep memcached
+root       4159   1243  0 08:53 ?        00:00:00 sshd: memcached [priv]
+memcach+   4161   4159  0 08:53 ?        00:00:00 sshd: memcached@pts/1
+memcach+   4288      1  0 08:54 ?        00:00:00 memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4299      1  0 08:54 ?        00:00:00 memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4310      1  0 08:54 ?        00:00:00 memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4329      1  0 08:55 ?        00:00:00 memcached -p 11214 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4340   4163  0 08:55 pts/1    00:00:00 grep --color=auto memcached
+[memcached@zabbix ~]$ 
+
+
+11211主节点的备节点为11213，主节点11212的备节点为11214。
+
+
+
+
+
+创建memcache属性文件memcached.properties：
+
+
+创建属性文件工具类：
+
+创建memcache failure模式客户端：
+
+
+
+创建测试类：
+
+
+
+运行测试类，控制台输出如下：
