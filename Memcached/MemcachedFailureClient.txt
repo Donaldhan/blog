@@ -27,24 +27,954 @@ memcach+   4329      1  0 08:55 ?        00:00:00 memcached -p 11214 -d -u memca
 memcach+   4340   4163  0 08:55 pts/1    00:00:00 grep --color=auto memcached
 [memcached@zabbix ~]$ 
 
-
+规划主备节点如下：
 11211主节点的备节点为11213，主节点11212的备节点为11214。
 
-
-
-
-
 创建memcache属性文件memcached.properties：
+
+############################
+##memcached server ip address list
+############standby############## 
+standbyServerList=192.168.126.128:11211
+############Distribute############## 
+distributeServerList=192.168.126.128:11211 192.168.126.128:11212 192.168.126.128:11213
+############Failure############## 
+failureServerList=192.168.126.128:11211,192.168.126.128:11213 192.168.126.128:11212,192.168.126.128:11214
+poolName=sidsock
+poolSize=16
 
 
 创建属性文件工具类：
 
+package util;
+
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+/**
+ * 
+ * @author donald
+ * 2017年9月29日
+ * 下午10:21:34
+ */
+public class PropertiesUtil {
+	private static final Logger log  = LoggerFactory.getLogger(PropertiesUtil.class);
+	private static final String MEMCACHED_CONFIG_FILE = "memcached.properties";
+    private static volatile PropertiesUtil instance = null;
+    private static Properties properties = null;
+    static{
+    	 if (properties == null) {
+    		 properties = new Properties();
+         }
+         try {
+        	 InputStream inputStream = Thread.currentThread().getContextClassLoader()
+        	            .getResourceAsStream(MEMCACHED_CONFIG_FILE);
+        	 properties.load(inputStream);
+         } catch (IOException e1) {
+             e1.printStackTrace();
+         }
+    }
+    
+    /**
+     * 
+     * @return
+     */
+    public static synchronized PropertiesUtil getInstance() {
+        if (instance == null) {
+        	instance = new PropertiesUtil();
+        }
+        return instance;
+    }
+    /**
+     * 
+     * @param key
+     * @return
+     */
+    public String getProperty(String key) {
+        return properties.getProperty(key);
+    }
+    
+    /**
+     * 获取属性int值
+     * @param key
+     * @return
+     */
+    public Integer getInteger(String key) {
+    	String value = properties.getProperty(key);
+        return Integer.valueOf(value);
+    }
+    
+    
+    public static void main(String[] args) {
+		log.info("serverList:"+PropertiesUtil.getInstance().getProperty("failureServerList"));
+	}
+}
+
+
 创建memcache failure模式客户端：
 
+package bootstrap.client;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeoutException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import net.rubyeye.xmemcached.Counter;
+import net.rubyeye.xmemcached.GetsResponse;
+import net.rubyeye.xmemcached.MemcachedClient;
+import net.rubyeye.xmemcached.MemcachedClientBuilder;
+import net.rubyeye.xmemcached.XMemcachedClientBuilder;
+import net.rubyeye.xmemcached.exception.MemcachedException;
+import net.rubyeye.xmemcached.utils.AddrUtil;
+import util.PropertiesUtil;
+
+/**
+ * Memcached Failure 模式客户端
+ * @author donald
+ * 2017年10月10日
+ * 下午12:49:45
+ */
+public class MemcachedFailureClient {
+	private static final Logger log = LoggerFactory.getLogger(MemcachedFailureClient.class);
+	private static final String MEMCACHED_SERVER_LIST = "failureServerList";
+	private static PropertiesUtil  propertiesUtil = PropertiesUtil.getInstance();
+	private static volatile MemcachedFailureClient instance;
+	private static MemcachedClientBuilder builder;
+	private static MemcachedClient memcachedClient;
+	static{
+		String failureServerList = propertiesUtil.getProperty(MEMCACHED_SERVER_LIST);
+		Map<InetSocketAddress, InetSocketAddress> serverAddressesMap = AddrUtil.getAddressMap(failureServerList);
+		builder = new XMemcachedClientBuilder(serverAddressesMap);
+		builder.setFailureMode(true);
+		try {
+			memcachedClient = builder.build();
+		} catch (IOException e) {
+			log.error("连接异常");
+			e.printStackTrace();
+		}
+	}
+	public static synchronized MemcachedFailureClient getInstance() {
+		if (instance == null) {
+			instance = new MemcachedFailureClient();
+		}
+		return instance;
+	}
+
+	/**
+	 * 
+	 * @param key
+	 * @param value
+	 * @return
+	 */
+	public boolean set(String key,Object value){
+		return set(key, 0, value);
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param expire 过期时间秒
+	 * @param value
+	 * @return
+	 */
+	public boolean set(String key,int expire,Object value){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.set(key, expire, value);
+		} catch (TimeoutException e) {
+			log.error("set超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("set中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("set错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param value
+	 * @return
+	 */
+	public boolean add(String key,Object value){
+		return add(key, 0, value);
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param expire 过期时间秒
+	 * @param value
+	 * @return
+	 */
+	public boolean add(String key,int expire,Object value){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.add(key, expire, value);
+		} catch (TimeoutException e) {
+			log.error("add超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("add中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("add错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @return
+	 */
+	public Object get(String key){
+		Object value = null;
+		try {
+			value = memcachedClient.get(key);
+		} catch (TimeoutException e) {
+			log.error("get超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("get中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("get操作错误");
+			e.printStackTrace();
+		}
+		return value;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param appendValue
+	 * @return
+	 */
+	public boolean append(String key,Object appendValue){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.append(key, appendValue);
+		} catch (TimeoutException e) {
+			log.error("append超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("append中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("append操作错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param prependValue
+	 * @return
+	 */
+	public boolean prepend(String key,Object prependValue){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.prepend(key, prependValue);
+		} catch (TimeoutException e) {
+			log.error("prepend超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("prepend中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("prepend操作错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param value
+	 * @return
+	 */
+	public boolean replace(String key,Object value){
+		return replace(key, 0, value);
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param expire 过期时间秒
+	 * @param value
+	 * @return
+	 */
+	public boolean replace(String key,int expire,Object value){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.replace(key, expire, value);
+		} catch (TimeoutException e) {
+			log.error("replace超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("replace中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("replace错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param expire
+	 * @return
+	 */
+	public boolean touch(String key,int expire){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.touch(key, expire);
+		} catch (TimeoutException e) {
+			log.error("touch超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("touch中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("touch操作错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * @param key
+	 * @param step
+	 * @param defalut
+	 * @return
+	 */
+	public long incr(String key,long step,long defalut){
+		long value = 0;
+		try {
+			value = memcachedClient.incr(key, step, defalut);
+		} catch (TimeoutException e) {
+			log.error("incr超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("incr中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("incr操作错误");
+			e.printStackTrace();
+		}
+		return value;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param step
+	 * @return
+	 */
+	public long incr(String key,long step){
+		long value = 0;
+		try {
+			value = memcachedClient.incr(key, step);
+		} catch (TimeoutException e) {
+			log.error("incr超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("incr中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("incr操作错误");
+			e.printStackTrace();
+		}
+		return value;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param step
+	 * @return
+	 */
+	public long decr(String key,long step){
+		long value = 0;
+		try {
+			value = memcachedClient.decr(key, step);
+		} catch (TimeoutException e) {
+			log.error("decr超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("decr中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("decr操作错误");
+			e.printStackTrace();
+		}
+		return value;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @return
+	 */
+	public long gets(String key){
+		long sid = 0;
+		try {
+			GetsResponse<Integer> result = memcachedClient.gets(key);
+			sid = result.getCas(); 
+		} catch (TimeoutException e) {
+			log.error("gets超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("gets中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("gets操作错误");
+			e.printStackTrace();
+		}
+		return sid;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param obj
+	 * @return
+	 */
+	public boolean cas(String key,Object obj){
+		boolean finish = false;
+		long sid = gets(key);
+		finish = cas(key, 0, obj, sid);
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @param expire
+	 * @param obj
+	 * @param sid key当前版本id
+	 * @return
+	 */
+	public boolean cas(String key, int expire, Object obj, long sid){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.cas(key, expire, obj, sid);
+		} catch (TimeoutException e) {
+			log.error("cas超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("cas中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("cas操作错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * @param key
+	 * @return
+	 */
+	public boolean delete(String key){
+		boolean finish = false;
+		try {
+			finish = memcachedClient.delete(key);
+		} catch (TimeoutException e) {
+			log.error("delete超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("delete中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("delete操作错误");
+			e.printStackTrace();
+		}
+		return finish;
+	}
+	/**
+	 * 
+	 * @param key
+	 * @return
+	 */
+	public void deleteWithNoReply(String key){
+		try {
+			memcachedClient.deleteWithNoReply(key);
+		} catch (InterruptedException e) {
+			log.error("deleteWithNoReply中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("deleteWithNoReply操作错误");
+			e.printStackTrace();
+		}
+	}
+	/**
+	 * @param key
+	 * @return
+	 */
+	public Counter getCounter(String key) {
+		return getCounter(key,0);
+	}
+	/**
+	 * @param key
+	 * @param init
+	 * @return
+	 */
+	public Counter getCounter(String key,int init) {
+		Counter counter = memcachedClient.getCounter(key,init);
+		return counter;
+	}
+	/**
+	 * 
+	 */
+	public void flushAll(){
+		try {
+			memcachedClient.flushAll();
+		} catch (TimeoutException e) {
+			log.error("flushAll超时");
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			log.error("flushAll中断异常");
+			e.printStackTrace();
+		} catch (MemcachedException e) {
+			log.error("flushAll操作错误");
+			e.printStackTrace();
+		}
+	}
+	public void shutdown(){
+		try {
+			memcachedClient.shutdown();
+		} catch (IOException e) {
+			log.error("客户端关闭异常");
+			e.printStackTrace();
+		}
+	}
+	/* (non-Javadoc)
+	 * @see java.lang.Object#finalize()
+	 */
+	@Override
+	protected void finalize() {
+		try {
+			
+			memcachedClient.shutdown();
+		} catch (IOException e) {
+			log.error("memcached 关闭客户端连接失败！");
+			e.printStackTrace();
+		}
+	}
+
+	
+}
 
 
 创建测试类：
 
+package bootstrap;
+
+import java.util.concurrent.TimeoutException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import bootstrap.client.MemcachedFailureClient;
+import net.rubyeye.xmemcached.Counter;
+import net.rubyeye.xmemcached.exception.MemcachedException;
+
+/**
+ * Memcached  Failure 模式客户端测试类
+ * @author 
+ * donald 
+ * 2017年10月10日 
+ * 下午12:49:45
+ */
+public class MemcachedFailureClientTest {
+	private static final Logger log = LoggerFactory.getLogger(MemcachedFailureClientTest.class);
+	public static void main(String[] args) {
+		MemcachedFailureClient memcachedClient = MemcachedFailureClient.getInstance();
+		memcachedClient.set("name", 0, "donald");
+		String value = (String) memcachedClient.get("name");
+		log.info("set name={}", value);
+		memcachedClient.delete("name");
+		value = (String) memcachedClient.get("name");
+		log.info("delete name={}", value);
+		if (!memcachedClient.set("name", 0, "jamel")) {
+			log.error("set error");
+		}
+		value = (String) memcachedClient.get("name");
+		log.info("set name={}", value);
+		if (memcachedClient.add("name", 0, "donald")) {
+			log.error("Add error,key is existed");
+		}
+		value = (String) memcachedClient.get("name");
+		log.info("name={}", value);
+		if (!memcachedClient.replace("name", 0, "rain")) {
+			log.error("replace error");
+		}
+		value = (String) memcachedClient.get("name");
+		log.info("repalce name={}", value);
+		memcachedClient.append("name", "-han");
+		value = (String) memcachedClient.get("name");
+		log.info("append name={}", value);
+		memcachedClient.prepend("name", "0-");
+		value = (String) memcachedClient.get("name");
+		log.info("prepend name={}", value);
+		memcachedClient.touch("name", 3);
+		try {
+			Thread.sleep(3000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		value = (String) memcachedClient.get("name");
+		log.info("after touch name={}", value);
+		memcachedClient.deleteWithNoReply("name");
+		memcachedClient.set("age", 0, "27");
+		log.info("age={}", memcachedClient.get("age"));
+		memcachedClient.incr("age", 2, 1);// age 增加2，age不存在，则为1
+		memcachedClient.incr("age", 1);
+		log.info("incr age={}", memcachedClient.get("age"));
+		memcachedClient.decr("age", 2);
+		log.info("decr age={}", memcachedClient.get("age"));
+		if (!memcachedClient.cas("age", 27)) {
+			log.error("cas error");
+		}
+		log.info("cas age={}", memcachedClient.get("age"));
+		Counter counter = memcachedClient.getCounter("counter", 0);
+		try {
+			log.info("incrementAndGet counter,{}", counter.incrementAndGet());
+			log.info("decrementAndGet counter,{}", counter.decrementAndGet());
+			log.info("addAndGet counter,{}", counter.addAndGet(3));
+		} catch (MemcachedException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		} catch (TimeoutException e) {
+			e.printStackTrace();
+		}
+		memcachedClient.shutdown();
+	}
+}
 
 
 运行测试类，控制台输出如下：
+12:45:18.135 [main] INFO  net.rubyeye.xmemcached.XMemcachedClient 729- XMemcachedClient is using Text protocol
+12:45:18.454 [main] INFO  net.rubyeye.xmemcached.XMemcachedClient 744- XMemcachedClient in failure mode.
+12:45:18.456 [main] INFO  com.google.code.yanf4j.nio.impl.SelectorManager 37- Creating 4 reactors...
+12:45:18.698 [main] INFO  com.google.code.yanf4j.core.impl.AbstractController 377- The Controller started at localhost/127.0.0.1:0 ...
+12:45:27.827 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 253- Add a session: 192.168.126.128:11211
+12:45:36.882 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 290- Add a standby session: 192.168.126.128:11213 for 192.168.126.128:11211
+12:45:45.904 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 253- Add a session: 192.168.126.128:11212
+12:45:54.927 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 290- Add a standby session: 192.168.126.128:11214 for 192.168.126.128:11212
+12:45:54.993 [main] INFO  bootstrap.MemcachedFailureClientTest 25- set name=donald
+12:45:55.014 [main] INFO  bootstrap.MemcachedFailureClientTest 28- delete name=null
+12:45:55.015 [main] INFO  bootstrap.MemcachedFailureClientTest 33- set name=jamel
+12:45:55.016 [main] INFO  bootstrap.MemcachedFailureClientTest 38- name=jamel
+12:45:55.017 [main] INFO  bootstrap.MemcachedFailureClientTest 43- repalce name=rain
+12:45:55.018 [main] INFO  bootstrap.MemcachedFailureClientTest 46- append name=rain-han
+12:45:55.020 [main] INFO  bootstrap.MemcachedFailureClientTest 49- prepend name=0-rain-han
+12:45:58.022 [main] INFO  bootstrap.MemcachedFailureClientTest 57- after touch name=null
+12:45:58.023 [main] INFO  bootstrap.MemcachedFailureClientTest 60- age=27
+12:45:58.045 [main] INFO  bootstrap.MemcachedFailureClientTest 63- incr age=30
+12:45:58.047 [main] INFO  bootstrap.MemcachedFailureClientTest 65- decr age=28
+12:45:58.050 [main] INFO  bootstrap.MemcachedFailureClientTest 69- cas age=27
+12:45:58.054 [main] INFO  bootstrap.MemcachedFailureClientTest 72- incrementAndGet counter,1
+12:45:58.055 [main] INFO  bootstrap.MemcachedFailureClientTest 73- decrementAndGet counter,0
+12:45:58.056 [main] INFO  bootstrap.MemcachedFailureClientTest 74- addAndGet counter,3
+12:45:58.089 [Xmemcached-Reactor-2] INFO  com.google.code.yanf4j.core.impl.AbstractController 368- Remove a session: 192.168.126.128:11211
+12:45:58.090 [Xmemcached-Reactor-1] INFO  com.google.code.yanf4j.core.impl.AbstractController 368- Remove a session: 192.168.126.128:11212
+12:45:58.091 [main] INFO  com.google.code.yanf4j.core.impl.AbstractController 486- Controller has been stopped.
+
+从控制台输出来看192.168.126.128:11211的备节点为192.168.126.128:11213，
+192.168.126.128:11212的备节点为192.168.126.128:11214。
+
+分别登陆11211,11212,11213,11214实例：
+[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+END
+get age
+END
+get counter
+VALUE counter 0 1
+3
+END
+
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+
+get name
+END
+get age
+VALUE age 512 1
+
+END
+get counter
+END
+
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11213
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+END
+get age
+END
+get counter
+END
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11214
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get nage
+END
+get name
+END
+get age
+END
+get counter
+END
+
+
+从上面可以看出age和counter属性存储在主节点11211和11212上，对应的备节点11213和11214上面不存储数据。
+
+
+
+新建测试类2：
+package bootstrap;
+
+import java.util.concurrent.TimeoutException;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import bootstrap.client.MemcachedFailureClient;
+import net.rubyeye.xmemcached.Counter;
+import net.rubyeye.xmemcached.exception.MemcachedException;
+
+/**
+ * Memcached Failure 模式客户端测试类
+ * @author 
+ * donald 
+ * 2017年10月10日 
+ * 下午12:49:45
+ */
+public class MemcachedFailureClient2Test {
+	private static final Logger log = LoggerFactory.getLogger(MemcachedFailureClient2Test.class);
+	public static void main(String[] args) {
+		MemcachedFailureClient memcachedClient = MemcachedFailureClient.getInstance();
+		memcachedClient.flushAll();
+		memcachedClient.set("name", 0, "donald");
+		String value = (String) memcachedClient.get("name");
+		log.info("set name={}", value);
+		memcachedClient.set("age", 0, "27");
+		log.info("age={}", memcachedClient.get("age"));
+		memcachedClient.incr("age", 1);
+		log.info("incr age={}", memcachedClient.get("age"));//debug breakpoint
+		memcachedClient.set("sex", "man");
+		Counter counter = memcachedClient.getCounter("counter", 0);
+		try {
+			log.info("incrementAndGet counter,{}", counter.incrementAndGet());
+			log.info("decrementAndGet counter,{}", counter.decrementAndGet());
+			log.info("addAndGet counter,{}", counter.addAndGet(3));
+		} catch (MemcachedException e) {
+			e.printStackTrace();
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		} catch (TimeoutException e) {
+			e.printStackTrace();
+		}
+		memcachedClient.shutdown();
+	}
+}
+
+
+在debug breakpoint添加断点，并以debug模式运行，在到达断点时kill 11211 实例，
+控制台输出：
+
+13:08:33.393 [main] INFO  net.rubyeye.xmemcached.XMemcachedClient 729- XMemcachedClient is using Text protocol
+13:08:33.434 [main] INFO  net.rubyeye.xmemcached.XMemcachedClient 744- XMemcachedClient in failure mode.
+13:08:33.435 [main] INFO  com.google.code.yanf4j.nio.impl.SelectorManager 37- Creating 4 reactors...
+13:08:33.452 [main] INFO  com.google.code.yanf4j.core.impl.AbstractController 377- The Controller started at localhost/127.0.0.1:0 ...
+13:08:42.486 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 253- Add a session: 192.168.126.128:11211
+13:08:51.505 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 290- Add a standby session: 192.168.126.128:11213 for 192.168.126.128:11211
+13:09:00.526 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 253- Add a session: 192.168.126.128:11212
+13:09:09.549 [Xmemcached-Reactor-0] INFO  com.google.code.yanf4j.core.impl.AbstractController 290- Add a standby session: 192.168.126.128:11214 for 192.168.126.128:11212
+13:09:09.563 [main] INFO  bootstrap.MemcachedFailureClient2Test 26- set name=donald
+13:09:09.566 [main] INFO  bootstrap.MemcachedFailureClient2Test 28- age=27
+13:09:09.568 [main] INFO  bootstrap.MemcachedFailureClient2Test 30- incr age=28
+
+分别登陆11211,11212,11213,11214实例：
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name    
+END
+get age
+END
+[memcached@zabbix ~]$ 
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+VALUE name 0 6
+donald
+END
+get age
+VALUE age 0 2
+28
+END
+
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11213
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name    
+END
+get age
+END
+
+
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11214
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+END
+get age
+END
+
+
+关闭11211实例：
+[memcached@zabbix ~]$ ps -ef | grep memcached
+root       4159   1243  0 08:53 ?        00:00:00 sshd: memcached [priv]
+memcach+   4161   4159  0 08:53 ?        00:00:00 sshd: memcached@pts/1
+memcach+   4288      1  0 08:54 ?        00:00:00 memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4299      1  0 08:54 ?        00:00:00 memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4310      1  0 08:54 ?        00:00:00 memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4329      1  0 08:55 ?        00:00:00 memcached -p 11214 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4340   4163  0 08:55 pts/1    00:00:00 grep --color=auto memcached
+[memcached@zabbix ~]$ kill -9 4288
+[memcached@zabbix ~]$ kill -9 4288
+-bash: kill: (4288) - No such process
+[memcached@zabbix ~]$ ps -ef | grep memcached
+root       4159   1243  0 08:53 ?        00:00:00 sshd: memcached [priv]
+memcach+   4161   4159  0 08:53 ?        00:00:00 sshd: memcached@pts/1,pts/2,pts/3,pts/4,pts/5
+memcach+   4299      1  0 08:54 ?        00:00:04 memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4310      1  0 08:54 ?        00:00:04 memcached -p 11213 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+   4329      1  0 08:55 ?        00:00:04 memcached -p 11214 -d -u memcached -l 192.168.126.128 -c 1024
+memcach+  10588   4163  0 13:12 pts/1    00:00:00 grep --color=auto memcached
+[memcached@zabbix ~]$ 
+
+继续执行程序：
+分别在11212,11213,11214，获取sex和counter属性：
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11211
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name    
+END
+get age
+END
+Connection closed by foreign host.
+[memcached@zabbix ~]$ 
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11212
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+VALUE name 0 6
+donald
+END
+get age
+VALUE age 0 2
+28
+END
+get sex   
+END
+get counter 
+END
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11213
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name    
+END
+get age
+END
+get sex
+VALUE sex 0 3
+man
+END
+get counter
+VALUE counter 0 1
+3
+END
+
+[memcached@zabbix ~]$ telnet 192.168.126.128 11214
+Trying 192.168.126.128...
+Connected to 192.168.126.128.
+Escape character is '^]'.
+get name
+END
+get age
+END
+get sex
+END
+get counter
+END
+
+控制台输出：
+13:12:02.932 [Xmemcached-Reactor-2] WARN  com.google.code.yanf4j.core.impl.AbstractController 363- Client in failure mode,we don't remove session 192.168.126.128:11211
+13:12:04.935 [Heal-Session-Thread] INFO  com.google.code.yanf4j.core.impl.AbstractController 129- Trying to connect to 192.168.126.128:11211 for 1 times
+13:12:05.962 [Heal-Session-Thread] ERROR com.google.code.yanf4j.core.impl.AbstractController 173- Reconnected to /192.168.126.128:11211 fail
+13:12:05.993 [Xmemcached-Reactor-0] ERROR com.google.code.yanf4j.core.impl.AbstractController 562- Exception occured in controller
+java.io.IOException: Connect to 192.168.126.128:11211 fail,Connection refused: no further information
+	at net.rubyeye.xmemcached.impl.MemcachedConnector.onConnect(MemcachedConnector.java:426)
+	at com.google.code.yanf4j.nio.impl.Reactor.dispatchEvent(Reactor.java:331)
+	at com.google.code.yanf4j.nio.impl.Reactor.run(Reactor.java:180)
+13:12:05.993 [Xmemcached-Reactor-0] ERROR remoting 353- Reactor dispatch events error
+java.io.IOException: Connect to 192.168.126.128:11211 fail,Connection refused: no further information
+	at net.rubyeye.xmemcached.impl.MemcachedConnector.onConnect(MemcachedConnector.java:426)
+	at com.google.code.yanf4j.nio.impl.Reactor.dispatchEvent(Reactor.java:331)
+	at com.google.code.yanf4j.nio.impl.Reactor.run(Reactor.java:180)
+13:12:07.970 [Heal-Session-Thread] INFO  com.google.code.yanf4j.core.impl.AbstractController 129- Trying to connect to 192.168.126.128:11211 for 2 times
+13:12:08.975 [Heal-Session-Thread] ERROR com.google.code.yanf4j.core.impl.AbstractController 173- Reconnected to /192.168.126.128:11211 fail
+13:12:08.975 [Xmemcached-Reactor-0] ERROR com.google.code.yanf4j.core.impl.AbstractController 562- Exception occured in controller
+java.io.IOException: Connect to 192.168.126.128:11211 fail,Connection refused: no further information
+	at net.rubyeye.xmemcached.impl.MemcachedConnector.onConnect(MemcachedConnector.java:426)
+	at com.google.code.yanf4j.nio.impl.Reactor.dispatchEvent(Reactor.java:331)
+	at com.google.code.yanf4j.nio.impl.Reactor.run(Reactor.java:180)
+13:12:08.976 [Xmemcached-Reactor-0] ERROR remoting 353- Reactor dispatch events error
+java.io.IOException: Connect to 192.168.126.128:11211 fail,Connection refused: no further information
+	at net.rubyeye.xmemcached.impl.MemcachedConnector.onConnect(MemcachedConnector.java:426)
+	at com.google.code.yanf4j.nio.impl.Reactor.dispatchEvent(Reactor.java:331)
+	at com.google.code.yanf4j.nio.impl.Reactor.run(Reactor.java:180)
+13:12:09.573 [main] INFO  bootstrap.MemcachedFailureClient2Test 39- incrementAndGet counter,1
+13:12:09.574 [main] INFO  bootstrap.MemcachedFailureClient2Test 40- decrementAndGet counter,0
+13:12:09.575 [main] INFO  bootstrap.MemcachedFailureClient2Test 41- addAndGet counter,3
+13:12:09.577 [Xmemcached-Reactor-1] INFO  com.google.code.yanf4j.core.impl.AbstractController 368- Remove a session: 192.168.126.128:11212
+13:12:09.578 [main] INFO  com.google.code.yanf4j.core.impl.AbstractController 486- Controller has been stopped.
+
+
+从上面可以看出，当主节点11211宕机时，其备节点升级为主节点。
