@@ -18,7 +18,9 @@ XMemcached同样是基于Java NIO的客户端，Java NIO相比于传统阻塞IO�
 相对来说减少了线程创建和切换的开销，这一点在高并发下特别明显。
 因此 XMemcached与Spymemcached在性能都非常优秀，在某些方面（存储的数据比较小的情况下）Xmemcached比
 Spymemcached的表现更为优秀。
-今天来看一下XMemcached客户端：
+
+我们选择XMemcached来实现Memcache的客户端：
+
 启动memcached：
 [memcached@donald ~]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
 [memcached@donald ~]$ ps -ef | grep memcached
