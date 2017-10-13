@@ -6,11 +6,13 @@ Memcache的三种Java客户端的对比和选择:http://blog.csdn.net/heiyueya/a
 1.官方提供的基于传统阻塞io由Greg Whalin维护的客户端memcached client for java
 网址：http://www.whalin.com/memcached
 特点： 较早推出的memcached JAVA客户端API，应用广泛，运行比较稳定，使用阻塞IO，不支持CAS操作。
+github:https://github.com/gwhalin/Memcached-Java-Client
 2.Dustin Sallings实现的基于java nio的Spymemcached
 网址：http://code.google.com/p/spymemcached/
 最新版本：memcached-2.1.jar
 特点： A simple, asynchronous, single-threaded memcached client written in java. 
 用到了java1.5版本的concurrent和nio，存取速度会高于前者，但是稳定性不好，测试中常报timeOut等相关异常，支持CAS操作。
+github:https://github.com/dustin/java-memcached-client
 3.XMemcached
 XMemcached同样是基于Java NIO的客户端，Java NIO相比于传统阻塞IO模型来说，
 有效率高（特别在高并发下）和资源耗费相对较少的优点。传统阻塞IO为了提高效率，
@@ -18,9 +20,10 @@ XMemcached同样是基于Java NIO的客户端，Java NIO相比于传统阻塞IO�
 相对来说减少了线程创建和切换的开销，这一点在高并发下特别明显。
 因此 XMemcached与Spymemcached在性能都非常优秀，在某些方面（存储的数据比较小的情况下）Xmemcached比
 Spymemcached的表现更为优秀。
-
+github:https://github.com/killme2008/xmemcached
 我们选择XMemcached来实现Memcache的客户端：
-
+本文的源代码可以从以下地址load:
+https://github.com/Donaldhan/memcached-demo
 启动memcached：
 [memcached@donald ~]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
 [memcached@donald ~]$ ps -ef | grep memcached
