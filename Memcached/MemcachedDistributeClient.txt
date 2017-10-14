@@ -1,6 +1,6 @@
 memcached 安装配置：http://donald-draper.iteye.com/blog/2395580
 memcached 命令：http://donald-draper.iteye.com/blog/2395628
-Memcached Standby客户端：
+Memcached Standby客户端：[url]http://donald-draper.iteye.com/blog/2396260[/url]
 上一篇MemcachedStandbyClient文章，我们测试了XMemcached的Standby模式客户端，
 今天来看一下XMemcached分布式客户端：
 Memcached的分布是通过客户端实现的，客户端根据key的哈希值得到将要存储的memcached节点，
@@ -19,6 +19,8 @@ XMemcached还提供了额外的一种哈希算法——选举散列,在某些场
                                         AddrUtil.getAddresses("server1:11211 server2:11211 server3:11211"));
   builder.setSessionLocator(new ElectionMemcachedSessionLocator());
   MemcachedClient mc = builder.build();
+我们选用用一致性hash算法：
+
 启动3个memcached实例：
 [memcached@donald ~]$ memcached -p 11211 -d -u memcached -l 192.168.126.128 -c 1024 
 [memcached@donald ~]$ memcached -p 11212 -d -u memcached -l 192.168.126.128 -c 1024 
