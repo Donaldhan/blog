@@ -1,0 +1,97 @@
+Kafka背景及架构介绍:http://www.infoq.com/cn/articles/kafka-analysis-part-1/
+kafka中文教程:http://orchome.com/kafka/index
+Introduction:http://kafka.apache.org/intro
+Quickstart:http://kafka.apache.org/quickstart
+上面两个中文链接是Kafka的产生的背景和中文教程，后面两个英文连接对应的是官方kafka的框架介绍和
+入门教程，这些我们不在说，直接下在kafka，我们以最新版本0.11.0.1为准，来看认识一下kafka的目录结构：
+
+下载kafka：
+[donald@Donald_Draper ~]$ ls
+Desktop  Documents  Downloads  kafka_2.11-0.11.0.1.tgz  Music  Pictures  Public  Templates  Videos
+[donald@Donald_Draper ~]$
+解压：
+[donald@Donald_Draper ~]$ tar -zxvf kafka_2.11-0.11.0.1.tgz 
+kafka_2.11-0.11.0.1/
+kafka_2.11-0.11.0.1/LICENSE
+kafka_2.11-0.11.0.1/NOTICE
+kafka_2.11-0.11.0.1/bin/
+...
+kafka_2.11-0.11.0.1/libs/connect-json-0.11.0.1.jar
+kafka_2.11-0.11.0.1/libs/connect-file-0.11.0.1.jar
+kafka_2.11-0.11.0.1/libs/kafka-streams-0.11.0.1.jar
+kafka_2.11-0.11.0.1/libs/rocksdbjni-5.0.1.jar
+kafka_2.11-0.11.0.1/libs/kafka-streams-examples-0.11.0.1.jar
+[donald@Donald_Draper ~]$ ls
+Desktop  Documents  Downloads  kafka_2.11-0.11.0.1  kafka_2.11-0.11.0.1.tgz  Music  Pictures  Public  Templates  Videos
+[donald@Donald_Draper ~]$ 
+[donald@Donald_Draper ~]$ cd kafka_2.11-0.11.0.1/
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ ls
+bin  config  libs  LICENSE  NOTICE  site-docs
+
+从上面来看解压后的文件夹 kafka_2.11-0.11.0.1内有bin，config，libs主要文件夹，
+下面分别来看这几个文件夹下的文件：
+先来看bin目录下：
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ cd bin/
+[donald@Donald_Draper bin]$ ls
+connect-distributed.sh            kafka-delete-records.sh              kafka-simple-consumer-shell.sh
+connect-standalone.sh             kafka-mirror-maker.sh                kafka-streams-application-reset.sh
+kafka-acls.sh                     kafka-preferred-replica-election.sh  kafka-topics.sh
+kafka-broker-api-versions.sh      kafka-producer-perf-test.sh          kafka-verifiable-consumer.sh
+kafka-configs.sh                  kafka-reassign-partitions.sh         kafka-verifiable-producer.sh
+kafka-console-consumer.sh         kafka-replay-log-producer.sh         windows
+kafka-console-producer.sh         kafka-replica-verification.sh        zookeeper-security-migration.sh
+kafka-consumer-groups.sh          kafka-run-class.sh                   zookeeper-server-start.sh
+kafka-consumer-offset-checker.sh  kafka-server-start.sh                zookeeper-server-stop.sh
+kafka-consumer-perf-test.sh       kafka-server-stop.sh                 zookeeper-shell.sh
+从上面来看bin主要是sh脚本，
+再来看config文件夹：
+[donald@Donald_Draper bin]$ cd ..
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ ls
+bin  config  libs  LICENSE  NOTICE  site-docs
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ cd config/
+[donald@Donald_Draper config]$ ls
+connect-console-sink.properties    connect-file-source.properties  log4j.properties        zookeeper.properties
+connect-console-source.properties  connect-log4j.properties        producer.properties
+connect-distributed.properties     connect-standalone.properties   server.properties
+connect-file-sink.properties       consumer.properties             tools-log4j.properties
+主要生产者消息者配置文件，日志配置文件，broker配置文件，connect和内置zookeeper配置文件；
+再来看site-docs文件夹：
+[donald@Donald_Draper config]$ cd ..
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ ls
+bin  config  libs  LICENSE  NOTICE  site-docs
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ cd site-docs/
+[donald@Donald_Draper site-docs]$ ls
+kafka_2.11-0.11.0.1-site-docs.tgz
+这个应该是帮助文档；再来看lib文件夹
+[donald@Donald_Draper site-docs]$ 
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ ls
+bin  config  libs  LICENSE  NOTICE  site-docs
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ cd libs/
+[donald@Donald_Draper libs]$ ls
+aopalliance-repackaged-2.5.0-b05.jar       jersey-common-2.24.jar                   kafka_2.11-0.11.0.1-test-sources.jar
+argparse4j-0.7.0.jar                       jersey-container-servlet-2.24.jar        kafka_2.11-0.11.0.1-test-sources.jar.asc
+commons-lang3-3.5.jar                      jersey-container-servlet-core-2.24.jar   kafka-clients-0.11.0.1.jar
+connect-api-0.11.0.1.jar                   jersey-guava-2.24.jar                    kafka-log4j-appender-0.11.0.1.jar
+connect-file-0.11.0.1.jar                  jersey-media-jaxb-2.24.jar               kafka-streams-0.11.0.1.jar
+connect-json-0.11.0.1.jar                  jersey-server-2.24.jar                   kafka-streams-examples-0.11.0.1.jar
+connect-runtime-0.11.0.1.jar               jetty-continuation-9.2.15.v20160210.jar  kafka-tools-0.11.0.1.jar
+connect-transforms-0.11.0.1.jar            jetty-http-9.2.15.v20160210.jar          log4j-1.2.17.jar
+guava-20.0.jar                             jetty-io-9.2.15.v20160210.jar            lz4-1.3.0.jar
+hk2-api-2.5.0-b05.jar                      jetty-security-9.2.15.v20160210.jar      maven-artifact-3.5.0.jar
+hk2-locator-2.5.0-b05.jar                  jetty-server-9.2.15.v20160210.jar        metrics-core-2.2.0.jar
+hk2-utils-2.5.0-b05.jar                    jetty-servlet-9.2.15.v20160210.jar       osgi-resource-locator-1.0.1.jar
+jackson-annotations-2.8.5.jar              jetty-servlets-9.2.15.v20160210.jar      plexus-utils-3.0.24.jar
+jackson-core-2.8.5.jar                     jetty-util-9.2.15.v20160210.jar          reflections-0.9.11.jar
+jackson-databind-2.8.5.jar                 jopt-simple-5.0.3.jar                    rocksdbjni-5.0.1.jar
+jackson-jaxrs-base-2.8.5.jar               kafka_2.11-0.11.0.1.jar                  scala-library-2.11.11.jar
+jackson-jaxrs-json-provider-2.8.5.jar      kafka_2.11-0.11.0.1.jar.asc              scala-parser-combinators_2.11-1.0.4.jar
+jackson-module-jaxb-annotations-2.8.5.jar  kafka_2.11-0.11.0.1-javadoc.jar          slf4j-api-1.7.25.jar
+javassist-3.21.0-GA.jar                    kafka_2.11-0.11.0.1-javadoc.jar.asc      slf4j-log4j12-1.7.25.jar
+javax.annotation-api-1.2.jar               kafka_2.11-0.11.0.1-scaladoc.jar         snappy-java-1.1.2.6.jar
+javax.inject-1.jar                         kafka_2.11-0.11.0.1-scaladoc.jar.asc     validation-api-1.1.0.Final.jar
+javax.inject-2.5.0-b05.jar                 kafka_2.11-0.11.0.1-sources.jar          zkclient-0.10.jar
+javax.servlet-api-3.1.0.jar                kafka_2.11-0.11.0.1-sources.jar.asc      zookeeper-3.4.10.jar
+javax.ws.rs-api-2.0.1.jar                  kafka_2.11-0.11.0.1-test.jar
+jersey-client-2.24.jar                     kafka_2.11-0.11.0.1-test.jar.asc
+[donald@Donald_Draper libs]$ 
+从libs中的jar包来看，用到了aop，jackson，ws，snappy（压缩），zookeeper，slf4j-log4j，有kafka使用scala开发的，可以到scala相关的包。
