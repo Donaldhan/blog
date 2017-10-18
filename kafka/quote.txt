@@ -1,0 +1,1 @@
+Kafka目录结构：http://donald-draper.iteye.com/blog/2396760

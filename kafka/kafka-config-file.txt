@@ -1,0 +1,658 @@
+Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
+上面我们kafka的目录结构，今天来看一下kafka的相关配置文件，由于鄙人当前kafka的知识的局限性，
+配置文件中可能有一定的错误，有我们日后再改。
+[donald@Donald_Draper ~]$ ls
+Desktop  Documents  Downloads  kafka_2.11-0.11.0.1  kafka_2.11-0.11.0.1.tgz  Music  Pictures  Public  Templates  Videos
+[donald@Donald_Draper ~]$ 
+[donald@Donald_Draper ~]$ cd kafka_2.11-0.11.0.1/
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ ls
+bin  config  libs  LICENSE  NOTICE  site-docs
+[donald@Donald_Draper kafka_2.11-0.11.0.1]$ cd config/
+[donald@Donald_Draper config]$ ls
+connect-console-sink.properties    connect-file-source.properties  log4j.properties        zookeeper.properties
+connect-console-source.properties  connect-log4j.properties        producer.properties
+connect-distributed.properties     connect-standalone.properties   server.properties
+connect-file-sink.properties       consumer.properties             tools-log4j.properties
+主要生产者消息者配置文件，日志配置文件，broker配置文件，connect和内置zookeeper配置文件；
+
+我们来看一下broker配置文件：
+[donald@Donald_Draper config]$ cat server.properties 
+....
+# see kafka.server.KafkaConfig for additional details and defaults
+基本配置
+############################# Server Basics #############################
+broker id, id必须是唯一的整数
+# The id of the broker. This must be set to a unique integer for each broker.
+broker.id=0
+
+# Switch to enable topic deletion or not, default value is false
+#delete.topic.enable=true
+
+socket配置
+############################# Socket Server Settings #############################
+broker监听地址。如果没有配置，默认为java.net.InetAddress.getCanonicalHostName()方法返回的地址
+# The address the socket server listens on. It will get the value returned from 
+# java.net.InetAddress.getCanonicalHostName() if not configured.
+#   FORMAT:
+#     listeners = listener_name://host_name:port
+#   EXAMPLE:
+#     listeners = PLAINTEXT://your.host.name:9092
+#listeners=PLAINTEXT://:9092
+broker的主机名和端口号将会广播给消费者与生产者。如果没有设置，默认为监听配置，否者使用
+java.net.InetAddress.getCanonicalHostName()方法返回的地址
+# Hostname and port the broker will advertise to producers and consumers. If not set, 
+# it uses the value for "listeners" if configured.  Otherwise, it will use the value
+# returned from java.net.InetAddress.getCanonicalHostName().
+#advertised.listeners=PLAINTEXT://your.host.name:9092
+
+监听协议，默认为PLAINTEXT
+# Maps listener names to security protocols, the default is for them to be the same. See the config documentation for more details
+#listener.security.protocol.map=PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
+
+服务器接受请求和相应请求的线程数
+# The number of threads that the server uses for receiving requests from the network and sending responses to the network
+num.network.threads=3
+处理请求的线程数，包括磁盘的IO操作
+# The number of threads that the server uses for processing requests, which may include disk I/O
+num.io.threads=8
+服务器socket发送缓存
+# The send buffer (SO_SNDBUF) used by the socket server
+socket.send.buffer.bytes=102400
+服务器socket接受缓存
+# The receive buffer (SO_RCVBUF) used by the socket server
+socket.receive.buffer.bytes=102400
+服务器接收请求的最大值
+# The maximum size of a request that the socket server will accept (protection against OOM)
+socket.request.max.bytes=104857600
+
+log基本配置
+############################# Log Basics #############################
+
+# A comma seperated list of directories under which to store log files
+log.dirs=/tmp/kafka-logs
+
+# The default number of log partitions per topic. More partitions allow greater
+# parallelism for consumption, but this will also result in more files across
+# the brokers.
+num.partitions=1
+
+# The number of threads per data directory to be used for log recovery at startup and flushing at shutdown.
+# This value is recommended to be increased for installations with data dirs located in RAID array.
+num.recovery.threads.per.data.dir=1
+
+############################# Internal Topic Settings  #############################
+# The replication factor for the group metadata internal topics "__consumer_offsets" and "__transaction_state"
+# For anything other than development testing, a value greater than 1 is recommended for to ensure availability such as 3.
+offsets.topic.replication.factor=1
+transaction.state.log.replication.factor=1
+transaction.state.log.min.isr=1
+
+############################# Log Flush Policy #############################
+
+# Messages are immediately written to the filesystem but by default we only fsync() to sync
+# the OS cache lazily. The following configurations control the flush of data to disk.
+# There are a few important trade-offs here:
+#    1. Durability: Unflushed data may be lost if you are not using replication.
+#    2. Latency: Very large flush intervals may lead to latency spikes when the flush does occur as there will be a lot of data to flush.
+#    3. Throughput: The flush is generally the most expensive operation, and a small flush interval may lead to exceessive seeks.
+# The settings below allow one to configure the flush policy to flush data after a period of time or
+# every N messages (or both). This can be done globally and overridden on a per-topic basis.
+
+# The number of messages to accept before forcing a flush of data to disk
+#log.flush.interval.messages=10000
+
+# The maximum amount of time a message can sit in a log before we force a flush
+#log.flush.interval.ms=1000
+
+############################# Log Retention Policy #############################
+
+# The following configurations control the disposal of log segments. The policy can
+# be set to delete segments after a period of time, or after a given size has accumulated.
+# A segment will be deleted whenever *either* of these criteria are met. Deletion always happens
+# from the end of the log.
+
+# The minimum age of a log file to be eligible for deletion due to age
+log.retention.hours=168
+
+# A size-based retention policy for logs. Segments are pruned from the log as long as the remaining
+# segments don't drop below log.retention.bytes. Functions independently of log.retention.hours.
+#log.retention.bytes=1073741824
+
+# The maximum size of a log segment file. When this size is reached a new log segment will be created.
+log.segment.bytes=1073741824
+
+# The interval at which log segments are checked to see if they can be deleted according
+# to the retention policies
+log.retention.check.interval.ms=300000
+
+############################# Zookeeper #############################
+
+# Zookeeper connection string (see zookeeper docs for details).
+# This is a comma separated host:port pairs, each corresponding to a zk
+# server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002".
+# You can also append an optional chroot string to the urls to specify the
+# root directory for all kafka znodes.
+zookeeper.connect=localhost:2181
+
+# Timeout in ms for connecting to zookeeper
+zookeeper.connection.timeout.ms=6000
+
+
+############################# Group Coordinator Settings #############################
+
+# The following configuration specifies the time, in milliseconds, that the GroupCoordinator will delay the initial consumer rebalance.
+# The rebalance will be further delayed by the value of group.initial.rebalance.delay.ms as new members join the group, up to a maximum of max.poll.interval.ms.
+# The default value for this is 3 seconds.
+# We override this to 0 here as it makes for a better out-of-the-box experience for development and testing.
+# However, in production environments the default value of 3 seconds is more suitable as this will help to avoid unnecessary, and potentially expensive, rebalances during application startup.
+group.initial.rebalance.delay.ms=0[donald@Donald_Draper config]$ 
+
+zookeeper配置文件
+
+[donald@Donald_Draper config]$ cat zookeeper.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# the directory where the snapshot is stored.
+dataDir=/tmp/zookeeper
+# the port at which the clients will connect
+clientPort=2181
+# disable the per-ip limit on the number of connections since this is a non-production config
+maxClientCnxns=0
+[donald@Donald_Draper config]$
+
+生产者配置文件
+[donald@Donald_Draper config]$ cat producer.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# see kafka.producer.ProducerConfig for more details
+
+############################# Producer Basics #############################
+
+# list of brokers used for bootstrapping knowledge about the rest of the cluster
+# format: host1:port1,host2:port2 ...
+bootstrap.servers=localhost:9092
+
+# specify the compression codec for all data generated: none, gzip, snappy, lz4
+compression.type=none
+
+# name of the partitioner class for partitioning events; default partition spreads data randomly
+#partitioner.class=
+
+# the maximum amount of time the client will wait for the response of a request
+#request.timeout.ms=
+
+# how long `KafkaProducer.send` and `KafkaProducer.partitionsFor` will block for
+#max.block.ms=
+
+# the producer will wait for up to the given delay to allow other records to be sent so that the sends can be batched together
+#linger.ms=
+
+# the maximum size of a request in bytes
+#max.request.size=
+
+# the default batch size in bytes when batching multiple records sent to a partition
+#batch.size=
+
+# the total bytes of memory the producer can use to buffer records waiting to be sent to the server
+#buffer.memory=
+[donald@Donald_Draper config]$ 
+
+消息者配置文件
+
+[donald@Donald_Draper config]$ cat consumer.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+# 
+#    http://www.apache.org/licenses/LICENSE-2.0
+# 
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# see kafka.consumer.ConsumerConfig for more details
+
+# Zookeeper connection string
+# comma separated host:port pairs, each corresponding to a zk
+# server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002"
+zookeeper.connect=127.0.0.1:2181
+
+# timeout in ms for connecting to zookeeper
+zookeeper.connection.timeout.ms=6000
+
+#consumer group id
+group.id=test-consumer-group
+
+#consumer timeout
+#consumer.timeout.ms=5000
+[donald@Donald_Draper config]$ 
+
+connect standalone配置文件
+
+[donald@Donald_Draper config]$ cat connect-standalone.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# These are defaults. This file just demonstrates how to override some settings.
+bootstrap.servers=localhost:9092
+
+# The converters specify the format of data in Kafka and how to translate it into Connect data. Every Connect user will
+# need to configure these based on the format they want their data in when loaded from or stored into Kafka
+key.converter=org.apache.kafka.connect.json.JsonConverter
+value.converter=org.apache.kafka.connect.json.JsonConverter
+# Converter-specific settings can be passed in by prefixing the Converter's setting with the converter we want to apply
+# it to
+key.converter.schemas.enable=true
+value.converter.schemas.enable=true
+
+# The internal converter used for offsets and config data is configurable and must be specified, but most users will
+# always want to use the built-in default. Offset and config data is never visible outside of Kafka Connect in this format.
+internal.key.converter=org.apache.kafka.connect.json.JsonConverter
+internal.value.converter=org.apache.kafka.connect.json.JsonConverter
+internal.key.converter.schemas.enable=false
+internal.value.converter.schemas.enable=false
+
+offset.storage.file.filename=/tmp/connect.offsets
+# Flush much faster than normal, which is useful for testing/debugging
+offset.flush.interval.ms=10000
+
+# Set to a list of filesystem paths separated by commas (,) to enable class loading isolation for plugins
+# (connectors, converters, transformations). The list should consist of top level directories that include 
+# any combination of: 
+# a) directories immediately containing jars with plugins and their dependencies
+# b) uber-jars with plugins and their dependencies
+# c) directories immediately containing the package directory structure of classes of plugins and their dependencies
+# Note: symlinks will be followed to discover dependencies or plugins.
+# Examples: 
+# plugin.path=/usr/local/share/java,/usr/local/share/kafka/plugins,/opt/connectors,
+#plugin.path=
+[donald@Donald_Draper config]$ 
+
+connect 分布式配置文件
+
+[donald@Donald_Draper config]$ cat connect-distributed.properties 
+##
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##
+
+# This file contains some of the configurations for the Kafka Connect distributed worker. This file is intended
+# to be used with the examples, and some settings may differ from those used in a production system, especially
+# the `bootstrap.servers` and those specifying replication factors.
+
+# A list of host/port pairs to use for establishing the initial connection to the Kafka cluster.
+bootstrap.servers=localhost:9092
+
+# unique name for the cluster, used in forming the Connect cluster group. Note that this must not conflict with consumer group IDs
+group.id=connect-cluster
+
+# The converters specify the format of data in Kafka and how to translate it into Connect data. Every Connect user will
+# need to configure these based on the format they want their data in when loaded from or stored into Kafka
+key.converter=org.apache.kafka.connect.json.JsonConverter
+value.converter=org.apache.kafka.connect.json.JsonConverter
+# Converter-specific settings can be passed in by prefixing the Converter's setting with the converter we want to apply
+# it to
+key.converter.schemas.enable=true
+value.converter.schemas.enable=true
+
+# The internal converter used for offsets, config, and status data is configurable and must be specified, but most users will
+# always want to use the built-in default. Offset, config, and status data is never visible outside of Kafka Connect in this format.
+internal.key.converter=org.apache.kafka.connect.json.JsonConverter
+internal.value.converter=org.apache.kafka.connect.json.JsonConverter
+internal.key.converter.schemas.enable=false
+internal.value.converter.schemas.enable=false
+
+# Topic to use for storing offsets. This topic should have many partitions and be replicated and compacted.
+# Kafka Connect will attempt to create the topic automatically when needed, but you can always manually create
+# the topic before starting Kafka Connect if a specific topic configuration is needed.
+# Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
+# Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
+# to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+offset.storage.topic=connect-offsets
+offset.storage.replication.factor=1
+#offset.storage.partitions=25
+
+# Topic to use for storing connector and task configurations; note that this should be a single partition, highly replicated,
+# and compacted topic. Kafka Connect will attempt to create the topic automatically when needed, but you can always manually create
+# the topic before starting Kafka Connect if a specific topic configuration is needed.
+# Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
+# Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
+# to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+config.storage.topic=connect-configs
+config.storage.replication.factor=1
+
+# Topic to use for storing statuses. This topic can have multiple partitions and should be replicated and compacted.
+# Kafka Connect will attempt to create the topic automatically when needed, but you can always manually create
+# the topic before starting Kafka Connect if a specific topic configuration is needed.
+# Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
+# Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
+# to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+status.storage.topic=connect-status
+status.storage.replication.factor=1
+#status.storage.partitions=5
+
+# Flush much faster than normal, which is useful for testing/debugging
+offset.flush.interval.ms=10000
+
+# These are provided to inform the user about the presence of the REST host and port configs 
+# Hostname & Port for the REST API to listen on. If this is set, it will bind to the interface used to listen to requests.
+#rest.host.name=
+#rest.port=8083
+
+# The Hostname & Port that will be given out to other workers to connect to i.e. URLs that are routable from other servers.
+#rest.advertised.host.name=
+#rest.advertised.port=
+
+# Set to a list of filesystem paths separated by commas (,) to enable class loading isolation for plugins
+# (connectors, converters, transformations). The list should consist of top level directories that include 
+# any combination of: 
+# a) directories immediately containing jars with plugins and their dependencies
+# b) uber-jars with plugins and their dependencies
+# c) directories immediately containing the package directory structure of classes of plugins and their dependencies
+# Examples: 
+# plugin.path=/usr/local/share/java,/usr/local/share/kafka/plugins,/opt/connectors,
+#plugin.path=
+[donald@Donald_Draper config]$ 
+
+connect控制台source配置文件
+
+[donald@Donald_Draper config]$ cat connect-console-source.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name=local-console-source
+connector.class=org.apache.kafka.connect.file.FileStreamSourceConnector
+tasks.max=1
+topic=connect-test[donald@Donald_Draper config]$ 
+
+connect控制台sink配置文件
+[donald@Donald_Draper config]$ cat connect-console-sink.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name=local-console-sink
+connector.class=org.apache.kafka.connect.file.FileStreamSinkConnector
+tasks.max=1
+topics=connect-test[donald@Donald_Draper config]$ 
+
+connect文件source配置文件
+
+[donald@Donald_Draper config]$ more connect-file-source.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name=local-file-source
+connector.class=FileStreamSource
+tasks.max=1
+file=test.txt
+topic=connect-test
+[donald@Donald_Draper config]$
+
+connect文件sink配置文件
+
+[donald@Donald_Draper config]$ more connect-file-sink.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name=local-file-sink
+connector.class=FileStreamSink
+tasks.max=1
+file=test.sink.txt
+topics=connect-test
+
+日志文件
+
+[donald@Donald_Draper config]$ cat log4j.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Unspecified loggers and loggers with additivity=true output to server.log and stdout
+# Note that INFO only applies to unspecified loggers, the log level of the child logger is used otherwise
+log4j.rootLogger=INFO, stdout, kafkaAppender
+
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.kafkaAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.kafkaAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.kafkaAppender.File=${kafka.logs.dir}/server.log
+log4j.appender.kafkaAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.kafkaAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.stateChangeAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.stateChangeAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.stateChangeAppender.File=${kafka.logs.dir}/state-change.log
+log4j.appender.stateChangeAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.stateChangeAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.requestAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.requestAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.requestAppender.File=${kafka.logs.dir}/kafka-request.log
+log4j.appender.requestAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.requestAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.cleanerAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.cleanerAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.cleanerAppender.File=${kafka.logs.dir}/log-cleaner.log
+log4j.appender.cleanerAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.cleanerAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.controllerAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.controllerAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.controllerAppender.File=${kafka.logs.dir}/controller.log
+log4j.appender.controllerAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.controllerAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+log4j.appender.authorizerAppender=org.apache.log4j.DailyRollingFileAppender
+log4j.appender.authorizerAppender.DatePattern='.'yyyy-MM-dd-HH
+log4j.appender.authorizerAppender.File=${kafka.logs.dir}/kafka-authorizer.log
+log4j.appender.authorizerAppender.layout=org.apache.log4j.PatternLayout
+log4j.appender.authorizerAppender.layout.ConversionPattern=[%d] %p %m (%c)%n
+
+# Change the two lines below to adjust ZK client logging
+log4j.logger.org.I0Itec.zkclient.ZkClient=INFO
+log4j.logger.org.apache.zookeeper=INFO
+
+# Change the two lines below to adjust the general broker logging level (output to server.log and stdout)
+log4j.logger.kafka=INFO
+log4j.logger.org.apache.kafka=INFO
+
+# Change to DEBUG or TRACE to enable request logging
+log4j.logger.kafka.request.logger=WARN, requestAppender
+log4j.additivity.kafka.request.logger=false
+
+# Uncomment the lines below and change log4j.logger.kafka.network.RequestChannel$ to TRACE for additional output
+# related to the handling of requests
+#log4j.logger.kafka.network.Processor=TRACE, requestAppender
+#log4j.logger.kafka.server.KafkaApis=TRACE, requestAppender
+#log4j.additivity.kafka.server.KafkaApis=false
+log4j.logger.kafka.network.RequestChannel$=WARN, requestAppender
+log4j.additivity.kafka.network.RequestChannel$=false
+
+log4j.logger.kafka.controller=TRACE, controllerAppender
+log4j.additivity.kafka.controller=false
+
+log4j.logger.kafka.log.LogCleaner=INFO, cleanerAppender
+log4j.additivity.kafka.log.LogCleaner=false
+
+log4j.logger.state.change.logger=TRACE, stateChangeAppender
+log4j.additivity.state.change.logger=false
+
+# Change to DEBUG to enable audit log for the authorizer
+log4j.logger.kafka.authorizer.logger=WARN, authorizerAppender
+log4j.additivity.kafka.authorizer.logger=false
+
+[donald@Donald_Draper config]$ 
+
+connect日志文件
+
+[donald@Donald_Draper config]$ more connect-log4j.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+log4j.rootLogger=INFO, stdout
+
+
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=[%d] %p %m (%c:%L)%n
+
+log4j.logger.org.apache.zookeeper=ERROR
+log4j.logger.org.I0Itec.zkclient=ERROR
+log4j.logger.org.reflections=ERROR
+[donald@Donald_Draper config]$ 
+
+tools日志文件
+
+[donald@Donald_Draper config]$ more tools-log4j.properties 
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+log4j.rootLogger=WARN, stderr
+
+log4j.appender.stderr=org.apache.log4j.ConsoleAppender
+log4j.appender.stderr.layout=org.apache.log4j.PatternLayout
+log4j.appender.stderr.layout.ConversionPattern=[%d] %p %m (%c)%n
+log4j.appender.stderr.Target=System.err
+[donald@Donald_Draper config]$ 
+
+
+
+

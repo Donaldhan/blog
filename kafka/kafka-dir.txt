@@ -3,7 +3,7 @@ kafka中文教程:http://orchome.com/kafka/index
 Introduction:http://kafka.apache.org/intro
 Quickstart:http://kafka.apache.org/quickstart
 上面两个中文链接是Kafka的产生的背景和中文教程，后面两个英文连接对应的是官方kafka的框架介绍和
-入门教程，这些我们不在说，直接下在kafka，我们以最新版本0.11.0.1为准，来看认识一下kafka的目录结构：
+入门教程，这些我们不再说，直接下载kafka，我们以最新版本0.11.0.1为准，来看认识一下kafka的目录结构：
 
 下载kafka：
 [donald@Donald_Draper ~]$ ls
