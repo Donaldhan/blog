@@ -1,1 +1,2 @@
 Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
+Kafka配置文件：http://donald-draper.iteye.com/blog/2397000

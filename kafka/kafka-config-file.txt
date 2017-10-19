@@ -1,6 +1,6 @@
 Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
 上面我们kafka的目录结构，今天来看一下kafka的相关配置文件，由于鄙人当前kafka的知识的局限性，
-配置文件中可能有一定的错误，有我们日后再改。
+配置文件中可能有一定的错误，有，我们日后再改。
 [donald@Donald_Draper ~]$ ls
 Desktop  Documents  Downloads  kafka_2.11-0.11.0.1  kafka_2.11-0.11.0.1.tgz  Music  Pictures  Public  Templates  Videos
 [donald@Donald_Draper ~]$ 
@@ -259,15 +259,19 @@ compression.type=none
 # Zookeeper connection string
 # comma separated host:port pairs, each corresponding to a zk
 # server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002"
+zookeeper连接地址，集群则个时如：127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002
 zookeeper.connect=127.0.0.1:2181
 
 # timeout in ms for connecting to zookeeper
+zookeeper 连接超时时间
 zookeeper.connection.timeout.ms=6000
 
 #consumer group id
+消费者分组id
 group.id=test-consumer-group
 
 #consumer timeout
+消费超时时间
 #consumer.timeout.ms=5000
 [donald@Donald_Draper config]$ 
 
@@ -277,26 +281,34 @@ connect standalone配置文件
 ...
 
 # These are defaults. This file just demonstrates how to override some settings.
+broker地址
 bootstrap.servers=localhost:9092
 
 # The converters specify the format of data in Kafka and how to translate it into Connect data. Every Connect user will
 # need to configure these based on the format they want their data in when loaded from or stored into Kafka
+kafka数据格式转化器，用于指定数据格式以及如何转化数据到连接数据。当从kafka加载数据或存储数据到kafka时，
+每个连接用户需要基于以下配置格式需要的数据。
 key.converter=org.apache.kafka.connect.json.JsonConverter
 value.converter=org.apache.kafka.connect.json.JsonConverter
+从数据转换器命令来看改为JSON数据转化器
 # Converter-specific settings can be passed in by prefixing the Converter's setting with the converter we want to apply
 # it to
+启动先前的数据转化器配置
 key.converter.schemas.enable=true
 value.converter.schemas.enable=true
 
 # The internal converter used for offsets and config data is configurable and must be specified, but most users will
 # always want to use the built-in default. Offset and config data is never visible outside of Kafka Connect in this format.
+分区segments消息索引和配置数据转化器，这个必须制定，大部分可以使用默认的配置。
+消息索引和配置数据在kafka连接器外部是看不到了。
 internal.key.converter=org.apache.kafka.connect.json.JsonConverter
 internal.value.converter=org.apache.kafka.connect.json.JsonConverter
 internal.key.converter.schemas.enable=false
 internal.value.converter.schemas.enable=false
-
+消息索引存储文件
 offset.storage.file.filename=/tmp/connect.offsets
 # Flush much faster than normal, which is useful for testing/debugging
+用于测试和调试
 offset.flush.interval.ms=10000
 
 # Set to a list of filesystem paths separated by commas (,) to enable class loading isolation for plugins
@@ -321,22 +333,27 @@ connect 分布式配置文件
 # the `bootstrap.servers` and those specifying replication factors.
 
 # A list of host/port pairs to use for establishing the initial connection to the Kafka cluster.
+broker族地址
 bootstrap.servers=localhost:9092
 
 # unique name for the cluster, used in forming the Connect cluster group. Note that this must not conflict with consumer group IDs
+族id不能与消费者组名一样
 group.id=connect-cluster
 
 # The converters specify the format of data in Kafka and how to translate it into Connect data. Every Connect user will
 # need to configure these based on the format they want their data in when loaded from or stored into Kafka
+数据转化器
 key.converter=org.apache.kafka.connect.json.JsonConverter
 value.converter=org.apache.kafka.connect.json.JsonConverter
 # Converter-specific settings can be passed in by prefixing the Converter's setting with the converter we want to apply
 # it to
+启动先前的数据转化器配置
 key.converter.schemas.enable=true
 value.converter.schemas.enable=true
 
 # The internal converter used for offsets, config, and status data is configurable and must be specified, but most users will
 # always want to use the built-in default. Offset, config, and status data is never visible outside of Kafka Connect in this format.
+kafka内部数据转化器
 internal.key.converter=org.apache.kafka.connect.json.JsonConverter
 internal.value.converter=org.apache.kafka.connect.json.JsonConverter
 internal.key.converter.schemas.enable=false
@@ -348,6 +365,7 @@ internal.value.converter.schemas.enable=false
 # Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
 # Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
 # to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+消息索引存储topic及复制因子及分区数
 offset.storage.topic=connect-offsets
 offset.storage.replication.factor=1
 #offset.storage.partitions=25
@@ -358,6 +376,7 @@ offset.storage.replication.factor=1
 # Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
 # Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
 # to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+配置数据存储topic及复制因子
 config.storage.topic=connect-configs
 config.storage.replication.factor=1
 
@@ -367,11 +386,13 @@ config.storage.replication.factor=1
 # Most users will want to use the built-in default replication factor of 3 or in some cases even specify a larger value.
 # Since this means there must be at least as many brokers as the maximum replication factor used, we'd like to be able
 # to run this example on a single-broker cluster and so here we instead set the replication factor to 1.
+状态存储topic及复制因子及分区数
 status.storage.topic=connect-status
 status.storage.replication.factor=1
 #status.storage.partitions=5
 
 # Flush much faster than normal, which is useful for testing/debugging
+消息索引刷新间隔，对于测试和调试比较有用
 offset.flush.interval.ms=10000
 
 # These are provided to inform the user about the presence of the REST host and port configs 
@@ -402,7 +423,8 @@ connect控制台source配置文件
 name=local-console-source
 connector.class=org.apache.kafka.connect.file.FileStreamSourceConnector
 tasks.max=1
-topic=connect-test[donald@Donald_Draper config]$ 
+topic=connect-test
+[donald@Donald_Draper config]$ 
 
 connect控制台sink配置文件
 [donald@Donald_Draper config]$ cat connect-console-sink.properties 
@@ -410,7 +432,8 @@ connect控制台sink配置文件
 name=local-console-sink
 connector.class=org.apache.kafka.connect.file.FileStreamSinkConnector
 tasks.max=1
-topics=connect-test[donald@Donald_Draper config]$ 
+topics=connect-test
+[donald@Donald_Draper config]$ 
 
 connect文件source配置文件
 
@@ -441,6 +464,7 @@ topics=connect-test
 
 # Unspecified loggers and loggers with additivity=true output to server.log and stdout
 # Note that INFO only applies to unspecified loggers, the log level of the child logger is used otherwise
+默认日志等级为INFO
 log4j.rootLogger=INFO, stdout, kafkaAppender
 
 log4j.appender.stdout=org.apache.log4j.ConsoleAppender
@@ -497,6 +521,7 @@ log4j.additivity.kafka.request.logger=false
 
 # Uncomment the lines below and change log4j.logger.kafka.network.RequestChannel$ to TRACE for additional output
 # related to the handling of requests
+请求处理日志
 #log4j.logger.kafka.network.Processor=TRACE, requestAppender
 #log4j.logger.kafka.server.KafkaApis=TRACE, requestAppender
 #log4j.additivity.kafka.server.KafkaApis=false
@@ -508,11 +533,12 @@ log4j.additivity.kafka.controller=false
 
 log4j.logger.kafka.log.LogCleaner=INFO, cleanerAppender
 log4j.additivity.kafka.log.LogCleaner=false
-
+状态变更log
 log4j.logger.state.change.logger=TRACE, stateChangeAppender
 log4j.additivity.state.change.logger=false
 
 # Change to DEBUG to enable audit log for the authorizer
+认证日志
 log4j.logger.kafka.authorizer.logger=WARN, authorizerAppender
 log4j.additivity.kafka.authorizer.logger=false
 
@@ -522,9 +548,8 @@ connect日志文件
 
 [donald@Donald_Draper config]$ more connect-log4j.properties 
 ...
-
+输出级别为INFO，控制台输出
 log4j.rootLogger=INFO, stdout
-
 
 log4j.appender.stdout=org.apache.log4j.ConsoleAppender
 log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
@@ -539,7 +564,7 @@ tools日志文件
 
 [donald@Donald_Draper config]$ more tools-log4j.properties 
 ...
-
+输出级别为WARN，控制台输出
 log4j.rootLogger=WARN, stderr
 
 log4j.appender.stderr=org.apache.log4j.ConsoleAppender
