@@ -193,94 +193,67 @@ group.initial.rebalance.delay.ms=0
 zookeeper配置文件
 
 [donald@Donald_Draper config]$ cat zookeeper.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-# 
-#    http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 # the directory where the snapshot is stored.
+数据目录
 dataDir=/tmp/zookeeper
 # the port at which the clients will connect
+监听端口
 clientPort=2181
 # disable the per-ip limit on the number of connections since this is a non-production config
+最大连接数，非生产环境配置
 maxClientCnxns=0
 [donald@Donald_Draper config]$
 
 生产者配置文件
 [donald@Donald_Draper config]$ cat producer.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 # see kafka.producer.ProducerConfig for more details
 
 ############################# Producer Basics #############################
-
+生产者基本配置
 # list of brokers used for bootstrapping knowledge about the rest of the cluster
 # format: host1:port1,host2:port2 ...
+broker地址配置，集群则格式为 host1:port1,host2:port2 ...
 bootstrap.servers=localhost:9092
 
 # specify the compression codec for all data generated: none, gzip, snappy, lz4
+是否压缩数据，有none, gzip, snappy, lz4，默认为压缩
 compression.type=none
 
 # name of the partitioner class for partitioning events; default partition spreads data randomly
+分区事件的类名，默认随机
 #partitioner.class=
 
 # the maximum amount of time the client will wait for the response of a request
+请求超时时间
 #request.timeout.ms=
 
 # how long `KafkaProducer.send` and `KafkaProducer.partitionsFor` will block for
+`KafkaProducer.send` and `KafkaProducer.partitionsFor`最长阻塞时间
 #max.block.ms=
 
 # the producer will wait for up to the given delay to allow other records to be sent so that the sends can be batched together
+生产者延时发送消息的时间，以便可以批量发送消息
 #linger.ms=
 
 # the maximum size of a request in bytes
+最大请求size
 #max.request.size=
 
 # the default batch size in bytes when batching multiple records sent to a partition
+每次可以批量发送到一个分区的消息记录数
 #batch.size=
 
 # the total bytes of memory the producer can use to buffer records waiting to be sent to the server
+在消息发送至server前，生产者可以缓存的消息大小
 #buffer.memory=
 [donald@Donald_Draper config]$ 
 
 消息者配置文件
 
 [donald@Donald_Draper config]$ cat consumer.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-# 
-#    http://www.apache.org/licenses/LICENSE-2.0
-# 
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 # see kafka.consumer.ConsumerConfig for more details
 
 # Zookeeper connection string
@@ -301,20 +274,7 @@ group.id=test-consumer-group
 connect standalone配置文件
 
 [donald@Donald_Draper config]$ cat connect-standalone.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 # These are defaults. This file just demonstrates how to override some settings.
 bootstrap.servers=localhost:9092
@@ -354,22 +314,7 @@ offset.flush.interval.ms=10000
 connect 分布式配置文件
 
 [donald@Donald_Draper config]$ cat connect-distributed.properties 
-##
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-##
+...
 
 # This file contains some of the configurations for the Kafka Connect distributed worker. This file is intended
 # to be used with the examples, and some settings may differ from those used in a production system, especially
@@ -452,20 +397,7 @@ offset.flush.interval.ms=10000
 connect控制台source配置文件
 
 [donald@Donald_Draper config]$ cat connect-console-source.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 name=local-console-source
 connector.class=org.apache.kafka.connect.file.FileStreamSourceConnector
@@ -474,21 +406,7 @@ topic=connect-test[donald@Donald_Draper config]$
 
 connect控制台sink配置文件
 [donald@Donald_Draper config]$ cat connect-console-sink.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+...
 name=local-console-sink
 connector.class=org.apache.kafka.connect.file.FileStreamSinkConnector
 tasks.max=1
@@ -497,21 +415,7 @@ topics=connect-test[donald@Donald_Draper config]$
 connect文件source配置文件
 
 [donald@Donald_Draper config]$ more connect-file-source.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
+...
 name=local-file-source
 connector.class=FileStreamSource
 tasks.max=1
@@ -522,20 +426,7 @@ topic=connect-test
 connect文件sink配置文件
 
 [donald@Donald_Draper config]$ more connect-file-sink.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 name=local-file-sink
 connector.class=FileStreamSink
@@ -546,20 +437,7 @@ topics=connect-test
 日志文件
 
 [donald@Donald_Draper config]$ cat log4j.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 # Unspecified loggers and loggers with additivity=true output to server.log and stdout
 # Note that INFO only applies to unspecified loggers, the log level of the child logger is used otherwise
@@ -643,20 +521,7 @@ log4j.additivity.kafka.authorizer.logger=false
 connect日志文件
 
 [donald@Donald_Draper config]$ more connect-log4j.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 log4j.rootLogger=INFO, stdout
 
@@ -673,20 +538,7 @@ log4j.logger.org.reflections=ERROR
 tools日志文件
 
 [donald@Donald_Draper config]$ more tools-log4j.properties 
-# Licensed to the Apache Software Foundation (ASF) under one or more
-# contributor license agreements.  See the NOTICE file distributed with
-# this work for additional information regarding copyright ownership.
-# The ASF licenses this file to You under the Apache License, Version 2.0
-# (the "License"); you may not use this file except in compliance with
-# the License.  You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+...
 
 log4j.rootLogger=WARN, stderr
 
