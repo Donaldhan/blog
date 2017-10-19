@@ -138,42 +138,57 @@ interval may lead to exceessive seeks.
 # be set to delete segments after a period of time, or after a given size has accumulated.
 # A segment will be deleted whenever *either* of these criteria are met. Deletion always happens
 # from the end of the log.
-
+下面的配置用于控制日志segments的处理。这些策略可以在一定的时间间隔和数据累积到一定的size，可以删除
+segments。两种策略只要有 一种触发，segments将会被删除。删除总是从log的末端。
 # The minimum age of a log file to be eligible for deletion due to age
+log文件的保留的时间
 log.retention.hours=168
 
 # A size-based retention policy for logs. Segments are pruned from the log as long as the remaining
 # segments don't drop below log.retention.bytes. Functions independently of log.retention.hours.
+log文件保留的size
 #log.retention.bytes=1073741824
 
 # The maximum size of a log segment file. When this size is reached a new log segment will be created.
+日志segments文件最大size，当日志文件的大于最大值，则创建一个新的log segment
 log.segment.bytes=1073741824
 
 # The interval at which log segments are checked to see if they can be deleted according
 # to the retention policies
+日志保留检查间隔
 log.retention.check.interval.ms=300000
 
 ############################# Zookeeper #############################
-
+Zookeeper配置
 # Zookeeper connection string (see zookeeper docs for details).
 # This is a comma separated host:port pairs, each corresponding to a zk
 # server. e.g. "127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002".
 # You can also append an optional chroot string to the urls to specify the
 # root directory for all kafka znodes.
+zookeeper地址，多个以逗号隔开比如："127.0.0.1:3000,127.0.0.1:3001,127.0.0.1:3002"
 zookeeper.connect=localhost:2181
 
 # Timeout in ms for connecting to zookeeper
+连接zookeeper超时时间
 zookeeper.connection.timeout.ms=6000
 
 
 ############################# Group Coordinator Settings #############################
-
-# The following configuration specifies the time, in milliseconds, that the GroupCoordinator will delay the initial consumer rebalance.
-# The rebalance will be further delayed by the value of group.initial.rebalance.delay.ms as new members join the group, up to a maximum of max.poll.interval.ms.
+分组协调配置
+# The following configuration specifies the time, in milliseconds, that the GroupCoordinator will 
+delay the initial consumer rebalance.
+# The rebalance will be further delayed by the value of group.initial.rebalance.delay.ms as new 
+members join the group, up to a maximum of max.poll.interval.ms.
 # The default value for this is 3 seconds.
 # We override this to 0 here as it makes for a better out-of-the-box experience for development and testing.
-# However, in production environments the default value of 3 seconds is more suitable as this will help to avoid unnecessary, and potentially expensive, rebalances during application startup.
-group.initial.rebalance.delay.ms=0[donald@Donald_Draper config]$ 
+# However, in production environments the default value of 3 seconds is more suitable as this will help to 
+avoid unnecessary, and potentially expensive, rebalances during application startup.
+下面的配置为毫秒时间，用于延时消费者重平衡的时间。重平衡将会进一步在新成员添加分组是，
+延时group.initial.rebalance.delay.ms时间，直到到达maximum of max.poll.interval.ms时间。
+默认值为3秒，我们重写0，主要是用户开发测试体验。在生产环境下，默认值3s，在应用启动期间，
+帮助避免不必要及潜在的代价高的rebalances，是比较合适的。
+group.initial.rebalance.delay.ms=0
+[donald@Donald_Draper config]$ 
 
 zookeeper配置文件
 
