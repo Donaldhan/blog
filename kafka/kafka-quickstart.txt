@@ -1,3 +1,4 @@
+Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
 Quickstart:http://kafka.apache.org/quickstart
 
 1.下载kafka
@@ -50,3 +51,471 @@ connect-console-source.properties  connect-log4j.properties        producer.prop
 connect-distributed.properties     connect-standalone.properties   server.properties
 connect-file-sink.properties       consumer.properties             tools-log4j.properties
 主要生产者消息者配置文件，日志配置文件，broker配置文件，connect和内置zookeeper配置文件；
+2.启动服务器
+
+由于kafka需要使用Zookeeper，所以你需要先启动Zookeeper，如果没有Zookeeper，可以使用kafka内部自带的Zookeeper。
+> bin/zookeeper-server-start.sh config/zookeeper.properties
+[donald@zabbix bin]$ ./zookeeper-server-start.sh ../config/zookeeper.properties &
+[2017-10-20 08:56:08,397] INFO Reading configuration from: ../config/zookeeper.properties (org.apache.zookeeper.server.quorum.QuorumPeerConfig)
+[2017-10-20 08:56:08,418] INFO autopurge.snapRetainCount set to 3 (org.apache.zookeeper.server.DatadirCleanupManager)
+[2017-10-20 08:56:08,418] INFO autopurge.purgeInterval set to 0 (org.apache.zookeeper.server.DatadirCleanupManager)
+[2017-10-20 08:56:08,419] INFO Purge task is not scheduled. (org.apache.zookeeper.server.DatadirCleanupManager)
+[2017-10-20 08:56:08,419] WARN Either no config or no quorum defined in config, running  in standalone mode (org.apache.zookeeper.server.quorum.QuorumPeerMain)
+[2017-10-20 08:56:08,539] INFO Reading configuration from: ../config/zookeeper.properties (org.apache.zookeeper.server.quorum.QuorumPeerConfig)
+[2017-10-20 08:56:08,539] INFO Starting server (org.apache.zookeeper.server.ZooKeeperServerMain)
+[2017-10-20 08:56:08,550] INFO Server environment:zookeeper.version=3.4.10-39d3a4f269333c922ed3db283be479f9deacaa0f, built on 03/23/2017 10:13 GMT (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:host.name=zabbix.server.com (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:java.version=1.8.0_91 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:java.vendor=Oracle Corporation (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:java.home=/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.91-1.b14.el7_2.x86_64/jre (org.apache.zookeeper.server.ZooKeeperServer)
+...
+
+ (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:java.io.tmpdir=/tmp (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,550] INFO Server environment:java.compiler=<NA> (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:os.name=Linux (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:os.arch=amd64 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:os.version=3.10.0-327.22.2.el7.x86_64 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:user.name=donald (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:user.home=/home/donald= (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,551] INFO Server environment:user.dir=/home/donald=/kafka_2.11-0.11.0.1/bin (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,576] INFO tickTime set to 3000 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,576] INFO minSessionTimeout set to -1 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,576] INFO maxSessionTimeout set to -1 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 08:56:08,648] INFO binding to port 0.0.0.0/0.0.0.0:2181 (org.apache.zookeeper.server.NIOServerCnxnFactory)
+
+
+启动kafka服务器:
+	
+[donald@zabbix bin]$ ./kafka-server-start.sh ../config/server.properties  &
+[2] 5077
+[donald@zabbix bin]$ [2017-10-20 09:00:20,669] INFO KafkaConfig values: 
+        advertised.host.name = null
+        advertised.listeners = null
+        advertised.port = null
+        alter.config.policy.class.name = null
+        authorizer.class.name = 
+        auto.create.topics.enable = true
+        auto.leader.rebalance.enable = true
+        background.threads = 10
+        broker.id = 0
+        broker.id.generation.enable = true
+        broker.rack = null
+        compression.type = producer
+        connections.max.idle.ms = 600000
+        controlled.shutdown.enable = true
+        controlled.shutdown.max.retries = 3
+        controlled.shutdown.retry.backoff.ms = 5000
+        controller.socket.timeout.ms = 30000
+        create.topic.policy.class.name = null
+        default.replication.factor = 1
+        delete.records.purgatory.purge.interval.requests = 1
+        delete.topic.enable = false
+        fetch.purgatory.purge.interval.requests = 1000
+        group.initial.rebalance.delay.ms = 0
+        group.max.session.timeout.ms = 300000
+        group.min.session.timeout.ms = 6000
+        host.name = 
+        inter.broker.listener.name = null
+        inter.broker.protocol.version = 0.11.0-IV2
+        leader.imbalance.check.interval.seconds = 300
+        leader.imbalance.per.broker.percentage = 10
+        listener.security.protocol.map = SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,TRACE:TRACE,SASL_SSL:SASL_SSL,PLAINTEXT:PLAINTEXT
+        listeners = null
+        log.cleaner.backoff.ms = 15000
+        log.cleaner.dedupe.buffer.size = 134217728
+        log.cleaner.delete.retention.ms = 86400000
+        log.cleaner.enable = true
+        log.cleaner.io.buffer.load.factor = 0.9
+        log.cleaner.io.buffer.size = 524288
+        log.cleaner.io.max.bytes.per.second = 1.7976931348623157E308
+        log.cleaner.min.cleanable.ratio = 0.5
+        log.cleaner.min.compaction.lag.ms = 0
+        log.cleaner.threads = 1
+        log.cleanup.policy = [delete]
+        log.dir = /tmp/kafka-logs
+        log.dirs = /tmp/kafka-logs
+        log.flush.interval.messages = 9223372036854775807
+        log.flush.interval.ms = null
+        log.flush.offset.checkpoint.interval.ms = 60000
+        log.flush.scheduler.interval.ms = 9223372036854775807
+        log.flush.start.offset.checkpoint.interval.ms = 60000
+        log.index.interval.bytes = 4096
+        log.index.size.max.bytes = 10485760
+        log.message.format.version = 0.11.0-IV2
+        log.message.timestamp.difference.max.ms = 9223372036854775807
+        log.message.timestamp.type = CreateTime
+        log.preallocate = false
+        log.retention.bytes = -1
+        log.retention.check.interval.ms = 300000
+        log.retention.hours = 168
+        log.retention.minutes = null
+        log.retention.ms = null
+        log.roll.hours = 168
+        log.roll.jitter.hours = 0
+        log.roll.jitter.ms = null
+        log.roll.ms = null
+        log.segment.bytes = 1073741824
+        log.segment.delete.delay.ms = 60000
+        max.connections.per.ip = 2147483647
+        max.connections.per.ip.overrides = 
+        message.max.bytes = 1000012
+        metric.reporters = []
+        metrics.num.samples = 2
+        metrics.recording.level = INFO
+        metrics.sample.window.ms = 30000
+        min.insync.replicas = 1
+        num.io.threads = 8
+        num.network.threads = 3
+        num.partitions = 1
+        num.recovery.threads.per.data.dir = 1
+        num.replica.fetchers = 1
+        offset.metadata.max.bytes = 4096
+        offsets.commit.required.acks = -1
+        offsets.commit.timeout.ms = 5000
+        offsets.load.buffer.size = 5242880
+        offsets.retention.check.interval.ms = 600000
+        offsets.retention.minutes = 1440
+        offsets.topic.compression.codec = 0
+        offsets.topic.num.partitions = 50
+        offsets.topic.replication.factor = 1
+        offsets.topic.segment.bytes = 104857600
+        port = 9092
+        principal.builder.class = class org.apache.kafka.common.security.auth.DefaultPrincipalBuilder
+        producer.purgatory.purge.interval.requests = 1000
+        queued.max.requests = 500
+        quota.consumer.default = 9223372036854775807
+        quota.producer.default = 9223372036854775807
+        quota.window.num = 11
+        quota.window.size.seconds = 1
+        replica.fetch.backoff.ms = 1000
+        replica.fetch.max.bytes = 1048576
+        replica.fetch.min.bytes = 1
+        replica.fetch.response.max.bytes = 10485760
+        replica.fetch.wait.max.ms = 500
+        replica.high.watermark.checkpoint.interval.ms = 5000
+        replica.lag.time.max.ms = 10000
+        replica.socket.receive.buffer.bytes = 65536
+        replica.socket.timeout.ms = 30000
+        replication.quota.window.num = 11
+        replication.quota.window.size.seconds = 1
+        request.timeout.ms = 30000
+        reserved.broker.max.id = 1000
+        sasl.enabled.mechanisms = [GSSAPI]
+        sasl.kerberos.kinit.cmd = /usr/bin/kinit
+        sasl.kerberos.min.time.before.relogin = 60000
+        sasl.kerberos.principal.to.local.rules = [DEFAULT]
+        sasl.kerberos.service.name = null
+        sasl.kerberos.ticket.renew.jitter = 0.05
+        sasl.kerberos.ticket.renew.window.factor = 0.8
+        sasl.mechanism.inter.broker.protocol = GSSAPI
+        security.inter.broker.protocol = PLAINTEXT
+        socket.receive.buffer.bytes = 102400
+        socket.request.max.bytes = 104857600
+        socket.send.buffer.bytes = 102400
+        ssl.cipher.suites = null
+        ssl.client.auth = none
+        ssl.enabled.protocols = [TLSv1.2, TLSv1.1, TLSv1]
+        ssl.endpoint.identification.algorithm = null
+        ssl.key.password = null
+        ssl.keymanager.algorithm = SunX509
+        ssl.keystore.location = null
+        ssl.keystore.password = null
+        ssl.keystore.type = JKS
+        ssl.protocol = TLS
+        ssl.provider = null
+        ssl.secure.random.implementation = null
+        ssl.trustmanager.algorithm = PKIX
+        ssl.truststore.location = null
+        ssl.truststore.password = null
+        ssl.truststore.type = JKS
+        transaction.abort.timed.out.transaction.cleanup.interval.ms = 60000
+        transaction.max.timeout.ms = 900000
+        transaction.remove.expired.transaction.cleanup.interval.ms = 3600000
+        transaction.state.log.load.buffer.size = 5242880
+        transaction.state.log.min.isr = 1
+        transaction.state.log.num.partitions = 50
+        transaction.state.log.replication.factor = 1
+        transaction.state.log.segment.bytes = 104857600
+        transactional.id.expiration.ms = 604800000
+        unclean.leader.election.enable = false
+        zookeeper.connect = localhost:2181
+        zookeeper.connection.timeout.ms = 6000
+        zookeeper.session.timeout.ms = 6000
+        zookeeper.set.acl = false
+        zookeeper.sync.time.ms = 2000
+ (kafka.server.KafkaConfig)
+[2017-10-20 09:00:20,934] INFO starting (kafka.server.KafkaServer)
+[2017-10-20 09:00:20,966] INFO Connecting to zookeeper on localhost:2181 (kafka.server.KafkaServer)
+[2017-10-20 09:00:21,024] INFO Starting ZkClient event thread. (org.I0Itec.zkclient.ZkEventThread)
+[2017-10-20 09:00:21,042] INFO Client environment:zookeeper.version=3.4.10-39d3a4f269333c922ed3db283be479f9deacaa0f, built on 03/23/2017 10:13 GMT (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,042] INFO Client environment:host.name=zabbix.server.com (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,042] INFO Client environment:java.version=1.8.0_91 (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,042] INFO Client environment:java.vendor=Oracle Corporation (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:java.home=/usr/lib/jvm/java-1.8.0-openjdk-1.8.0.91-1.b14.el7_2.x86_64/jre (org.apache.zookeeper.ZooKeeper)
+
+...
+
+[2017-10-20 09:00:21,043] INFO Client environment:java.library.path=/usr/java/packages/lib/amd64:/usr/lib64:/lib64:/lib:/usr/lib (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:java.io.tmpdir=/tmp (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:java.compiler=<NA> (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:os.name=Linux (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:os.arch=amd64 (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:os.version=3.10.0-327.22.2.el7.x86_64 (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:user.name=donald (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:user.home=/home/donald= (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,043] INFO Client environment:user.dir=/home/donald=/kafka_2.11-0.11.0.1/bin (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,044] INFO Initiating client connection, connectString=localhost:2181 sessionTimeout=6000 watcher=org.I0Itec.zkclient.ZkClient@1139b2f3 (org.apache.zookeeper.ZooKeeper)
+[2017-10-20 09:00:21,065] INFO Waiting for keeper state SyncConnected (org.I0Itec.zkclient.ZkClient)
+[2017-10-20 09:00:21,203] INFO Opening socket connection to server localhost/127.0.0.1:2181. Will not attempt to authenticate using SASL (unknown error) (org.apache.zookeeper.ClientCnxn)
+[2017-10-20 09:00:21,337] INFO Socket connection established to localhost/127.0.0.1:2181, initiating session (org.apache.zookeeper.ClientCnxn)
+[2017-10-20 09:00:21,339] INFO Accepted socket connection from /127.0.0.1:35852 (org.apache.zookeeper.server.NIOServerCnxnFactory)
+[2017-10-20 09:00:21,455] INFO Client attempting to establish new session at /127.0.0.1:35852 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 09:00:21,476] INFO Creating new log file: log.1 (org.apache.zookeeper.server.persistence.FileTxnLog)
+[2017-10-20 09:00:21,498] INFO Established session 0x15f374a56ac0000 with negotiated timeout 6000 for client /127.0.0.1:35852 (org.apache.zookeeper.server.ZooKeeperServer)
+[2017-10-20 09:00:21,501] INFO Session establishment complete on server localhost/127.0.0.1:2181, sessionid = 0x15f374a56ac0000, negotiated timeout = 6000 (org.apache.zookeeper.ClientCnxn)
+[2017-10-20 09:00:21,507] INFO zookeeper state changed (SyncConnected) (org.I0Itec.zkclient.ZkClient)
+[2017-10-20 09:00:21,601] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0x5 zxid:0x3 txntype:-1 reqpath:n/a Error Path:/brokers Error:KeeperErrorCode = NoNode for /brokers (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:21,669] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0xb zxid:0x7 txntype:-1 reqpath:n/a Error Path:/config Error:KeeperErrorCode = NoNode for /config (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:21,691] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0x13 zxid:0xc txntype:-1 reqpath:n/a Error Path:/admin Error:KeeperErrorCode = NoNode for /admin (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:21,902] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0x1d zxid:0x12 txntype:-1 reqpath:n/a Error Path:/cluster Error:KeeperErrorCode = NoNode for /cluster (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:21,912] INFO Cluster ID = IGYQ5SHuTHemtryrMBrFWA (kafka.server.KafkaServer)
+[2017-10-20 09:00:22,044] WARN No meta.properties file under dir /tmp/kafka-logs/meta.properties (kafka.server.BrokerMetadataCheckpoint)
+[2017-10-20 09:00:22,177] INFO [ThrottledRequestReaper-Fetch]: Starting (kafka.server.ClientQuotaManager$ThrottledRequestReaper)
+[2017-10-20 09:00:22,177] INFO [ThrottledRequestReaper-Produce]: Starting (kafka.server.ClientQuotaManager$ThrottledRequestReaper)
+[2017-10-20 09:00:22,555] INFO [ThrottledRequestReaper-Request]: Starting (kafka.server.ClientQuotaManager$ThrottledRequestReaper)
+[2017-10-20 09:00:22,753] INFO Log directory '/tmp/kafka-logs' not found, creating it. (kafka.log.LogManager)
+[2017-10-20 09:00:22,773] INFO Loading logs. (kafka.log.LogManager)
+[2017-10-20 09:00:22,785] INFO Logs loading complete in 11 ms. (kafka.log.LogManager)
+[2017-10-20 09:00:24,089] INFO Starting log cleanup with a period of 300000 ms. (kafka.log.LogManager)
+[2017-10-20 09:00:24,091] INFO Starting log flusher with a default period of 9223372036854775807 ms. (kafka.log.LogManager)
+[2017-10-20 09:00:24,173] INFO Awaiting socket connections on 0.0.0.0:9092. (kafka.network.Acceptor)
+[2017-10-20 09:00:24,178] INFO [Socket Server on Broker 0], Started 1 acceptor threads (kafka.network.SocketServer)
+[2017-10-20 09:00:24,197] INFO [ExpirationReaper-0-Produce]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,198] INFO [ExpirationReaper-0-DeleteRecords]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,197] INFO [ExpirationReaper-0-Fetch]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,278] INFO [ExpirationReaper-0-topic]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,295] INFO [ExpirationReaper-0-Heartbeat]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,295] INFO [ExpirationReaper-0-Rebalance]: Starting (kafka.server.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2017-10-20 09:00:24,308] INFO Creating /controller (is it secure? false) (kafka.utils.ZKCheckedEphemeral)
+[2017-10-20 09:00:24,332] INFO [GroupCoordinator 0]: Starting up. (kafka.coordinator.group.GroupCoordinator)
+[2017-10-20 09:00:24,335] INFO Result of znode creation is: OK (kafka.utils.ZKCheckedEphemeral)
+[2017-10-20 09:00:24,340] INFO [GroupCoordinator 0]: Startup complete. (kafka.coordinator.group.GroupCoordinator)
+[2017-10-20 09:00:24,350] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:setData cxid:0x29 zxid:0x16 txntype:-1 reqpath:n/a Error Path:/controller_epoch Error:KeeperErrorCode = NoNode for /controller_epoch (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:24,371] INFO [Group Metadata Manager on Broker 0]: Removed 0 expired offsets in 5 milliseconds. (kafka.coordinator.group.GroupMetadataManager)
+[2017-10-20 09:00:24,420] INFO [ProducerId Manager 0]: Acquired new producerId block (brokerId:0,blockStartProducerId:0,blockEndProducerId:999) by writing to Zk with path version 1 (kafka.coordinator.transaction.ProducerIdManager)
+[2017-10-20 09:00:24,472] INFO [Transaction Coordinator 0]: Starting up. (kafka.coordinator.transaction.TransactionCoordinator)
+[2017-10-20 09:00:24,477] INFO [Transaction Coordinator 0]: Startup complete. (kafka.coordinator.transaction.TransactionCoordinator)
+[2017-10-20 09:00:24,493] INFO [Transaction Marker Channel Manager 0]: Starting (kafka.coordinator.transaction.TransactionMarkerChannelManager)
+[2017-10-20 09:00:24,593] INFO Will not load MX4J, mx4j-tools.jar is not in the classpath (kafka.utils.Mx4jLoader$)
+[2017-10-20 09:00:24,638] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:delete cxid:0x45 zxid:0x19 txntype:-1 reqpath:n/a Error Path:/admin/preferred_replica_election Error:KeeperErrorCode = NoNode for /admin/preferred_replica_election (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:24,657] INFO Creating /brokers/ids/0 (is it secure? false) (kafka.utils.ZKCheckedEphemeral)
+[2017-10-20 09:00:24,665] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0x46 zxid:0x1a txntype:-1 reqpath:n/a Error Path:/brokers Error:KeeperErrorCode = NodeExists for /brokers (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:24,668] INFO Got user-level KeeperException when processing sessionid:0x15f374a56ac0000 type:create cxid:0x47 zxid:0x1b txntype:-1 reqpath:n/a Error Path:/brokers/ids Error:KeeperErrorCode = NodeExists for /brokers/ids (org.apache.zookeeper.server.PrepRequestProcessor)
+[2017-10-20 09:00:24,679] INFO Result of znode creation is: OK (kafka.utils.ZKCheckedEphemeral)
+[2017-10-20 09:00:24,681] INFO Registered broker 0 at path /brokers/ids/0 with addresses: EndPoint(zabbix.server.com,9092,ListenerName(PLAINTEXT),PLAINTEXT) (kafka.utils.ZkUtils)
+[2017-10-20 09:00:24,682] WARN No meta.properties file under dir /tmp/kafka-logs/meta.properties (kafka.server.BrokerMetadataCheckpoint)
+[2017-10-20 09:00:24,701] INFO Kafka version : 0.11.0.1 (org.apache.kafka.common.utils.AppInfoParser)
+[2017-10-20 09:00:24,701] INFO Kafka commitId : c2a0d5f9b1f45bf5 (org.apache.kafka.common.utils.AppInfoParser)
+[2017-10-20 09:00:24,703] INFO [Kafka Server 0], started (kafka.server.KafkaServer)
+
+
+3.创建一个主题
+
+
+创建一个只有一个分区和备份的test Topic，
+	
+> bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic test
+
+We can now see that topic if we run the list topic command:
+	
+> bin/kafka-topics.sh --list --zookeeper localhost:2181
+test
+
+Alternatively, instead of manually creating topics you can also configure your brokers to auto-create 
+topics when a non-existent topic is published to.
+
+Step 4: Send some messages
+
+Kafka comes with a command line client that will take input from a file or from standard input and 
+send it out as messages to the Kafka cluster. By default, each line will be sent as a separate message.
+
+Run the producer and then type a few messages into the console to send to the server.	
+> bin/kafka-console-producer.sh --broker-list localhost:9092 --topic test
+This is a message
+This is another message
+Step 5: Start a consumer
+
+Kafka also has a command line consumer that will dump out messages to standard output.
+
+> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic test --from-beginning
+This is a message
+This is another message
+
+If you have each of the above commands running in a different terminal then you should 
+now be able to type messages into the producer terminal and see them appear in the consumer terminal.
+
+All of the command line tools have additional options; running the command with no arguments will 
+display usage information documenting them in more detail.
+Step 6: Setting up a multi-broker cluster
+
+So far we have been running against a single broker, but that's no fun. For Kafka, a single broker 
+is just a cluster of size one, so nothing much changes other than starting a few more broker instances.
+But just to get feel for it, let's expand our cluster to three nodes (still all on our local machine).
+
+First we make a config file for each of the brokers (on Windows use the copy command instead):	
+> cp config/server.properties config/server-1.properties
+> cp config/server.properties config/server-2.properties
+
+Now edit these new files and set the following properties:
+config/server-1.properties:
+    broker.id=1
+    listeners=PLAINTEXT://:9093
+    log.dir=/tmp/kafka-logs-1
+ 
+config/server-2.properties:
+    broker.id=2
+    listeners=PLAINTEXT://:9094
+    log.dir=/tmp/kafka-logs-2
+
+The broker.id property is the unique and permanent name of each node in the cluster. 
+We have to override the port and log directory only because we are running these all 
+on the same machine and we want to keep the brokers from all trying to register on the same port or overwrite each other's data.
+
+We already have Zookeeper and our single node started, so we just need to start the two new nodes:	
+> bin/kafka-server-start.sh config/server-1.properties &
+...
+> bin/kafka-server-start.sh config/server-2.properties &
+...
+
+Now create a new topic with a replication factor of three:
+
+> bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 3 --partitions 1 --topic my-replicated-topic
+
+Okay but now that we have a cluster how can we know which broker is doing what? To see that run the "describe topics" command:
+	
+> bin/kafka-topics.sh --describe --zookeeper localhost:2181 --topic my-replicated-topic
+Topic:my-replicated-topic   PartitionCount:1    ReplicationFactor:3 Configs:
+    Topic: my-replicated-topic  Partition: 0    Leader: 1   Replicas: 1,2,0 Isr: 1,2,0
+
+Here is an explanation of output. The first line gives a summary of all the partitions, 
+each additional line gives information about one partition. 
+Since we have only one partition for this topic there is only one line.
+
+    "leader" is the node responsible for all reads and writes for the given partition. Each node will be the leader for a randomly selected portion of the partitions.
+    "replicas" is the list of nodes that replicate the log for this partition regardless of whether they are the leader or even if they are currently alive.
+    "isr" is the set of "in-sync" replicas. This is the subset of the replicas list that is currently alive and caught-up to the leader. 
+
+Note that in my example node 1 is the leader for the only partition of the topic.
+
+We can run the same command on the original topic we created to see where it is:
+
+> bin/kafka-topics.sh --describe --zookeeper localhost:2181 --topic test
+Topic:test  PartitionCount:1    ReplicationFactor:1 Configs:
+    Topic: test Partition: 0    Leader: 0   Replicas: 0 Isr: 0
+
+So there is no surprise there—the original topic has no replicas and is on server 0, the only server in our 
+cluster when we created it.
+
+Let's publish a few messages to our new topic:	
+> bin/kafka-console-producer.sh --broker-list localhost:9092 --topic my-replicated-topic
+...
+my test message 1
+my test message 2
+^C
+
+Now let's consume these messages:
+	
+> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --from-beginning --topic my-replicated-topic
+...
+my test message 1
+my test message 2
+^C
+
+Now let's test out fault-tolerance. Broker 1 was acting as the leader so let's kill it:
+
+	
+> ps aux | grep server-1.properties
+7564 ttys002    0:15.91 /System/Library/Frameworks/JavaVM.framework/Versions/1.8/Home/bin/java...
+> kill -9 7564
+On Windows use:
+	
+> wmic process get processid,caption,commandline | find "java.exe" | find "server-1.properties"
+java.exe    java  -Xmx1G -Xms1G -server -XX:+UseG1GC ... build\libs\kafka_2.11-0.11.0.1.jar"  kafka.Kafka config\server-1.properties    644
+> taskkill /pid 644 /f
+
+Leadership has switched to one of the slaves and node 1 is no longer in the in-sync replica set:
+	
+> bin/kafka-topics.sh --describe --zookeeper localhost:2181 --topic my-replicated-topic
+Topic:my-replicated-topic   PartitionCount:1    ReplicationFactor:3 Configs:
+    Topic: my-replicated-topic  Partition: 0    Leader: 2   Replicas: 1,2,0 Isr: 2,0
+
+But the messages are still available for consumption even though the leader that took the writes originally is down:
+
+> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --from-beginning --topic my-replicated-topic
+...
+my test message 1
+my test message 2
+^C
+Step 7: Use Kafka Connect to import/export data
+
+Writing data from the console and writing it back to the console is a convenient place to start, 
+but you'll probably want to use data from other sources or export data from Kafka to other systems. 
+For many systems, instead of writing custom integration code you can use Kafka Connect to import or export data.
+
+Kafka Connect is a tool included with Kafka that imports and exports data to Kafka. 
+It is an extensible tool that runs connectors, which implement the custom logic for interacting with an external system. 
+In this quickstart we'll see how to run Kafka Connect with simple connectors that import data from a file to a Kafka 
+topic and export data from a Kafka topic to a file.
+
+First, we'll start by creating some seed data to test with:
+	
+> echo -e "foo\nbar" > test.txt
+
+Next, we'll start two connectors running in standalone mode, which means they run in a single, 
+local, dedicated process. We provide three configuration files as parameters. 
+The first is always the configuration for the Kafka Connect process, containing common 
+configuration such as the Kafka brokers to connect to and the serialization format for data. 
+The remaining configuration files each specify a connector to create. 
+These files include a unique connector name, the connector class to instantiate, 
+and any other configuration required by the connector.
+	
+> bin/connect-standalone.sh config/connect-standalone.properties config/connect-file-source.properties config/connect-file-sink.properties
+
+These sample configuration files, included with Kafka, use the default local cluster configuration 
+you started earlier and create two connectors: the first is a source connector that reads lines 
+from an input file and produces each to a Kafka topic and the second is a sink connector that reads 
+messages from a Kafka topic and produces each as a line in an output file.
+
+During startup you'll see a number of log messages, including some indicating that the connectors 
+are being instantiated. Once the Kafka Connect process has started, the source connector should start 
+reading lines from test.txt and producing them to the topic connect-test, and the sink connector should 
+start reading messages from the topic connect-test and write them to the file test.sink.txt. We can verify 
+the data has been delivered through the entire pipeline by examining the contents of the output file:
+> cat test.sink.txt
+foo
+bar
+
+Note that the data is being stored in the Kafka topic connect-test, so we can also run a console consumer 
+to see the data in the topic (or use custom consumer code to process it):
+1
+2
+3
+4
+	
+> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic connect-test --from-beginning
+{"schema":{"type":"string","optional":false},"payload":"foo"}
+{"schema":{"type":"string","optional":false},"payload":"bar"}
+...
+
+The connectors continue to process data, so we can add data to the file and see it move through the pipeline:	
+> echo "Another line" >> test.txt
+
+You should see the line appear in the console consumer output and in the sink file.
+Step 8: Use Kafka Streams to process data
+
+Kafka Streams is a client library for building mission-critical real-time applications and microservices, 
+where the input and/or output data is stored in Kafka clusters. Kafka Streams combines the simplicity of 
+writing and deploying standard Java and Scala applications on the client side with the benefits of Kafka's 
+server-side cluster technology to make these applications highly scalable, elastic, fault-tolerant, distributed, 
+and much more. This quickstart example will demonstrate how to run a streaming application coded in this library. 
