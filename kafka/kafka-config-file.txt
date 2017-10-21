@@ -27,6 +27,7 @@ broker id, id必须是唯一的整数
 broker.id=0
 
 # Switch to enable topic deletion or not, default value is false
+是否可以删除topic，如果为true，我们可以在命令行删除topic，否则，不能。
 #delete.topic.enable=true
 
 
