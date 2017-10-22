@@ -1,0 +1,67 @@
+Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
+Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
+Kafka入门（Standy模式、创建主题，生产消费消息）：http://donald-draper.iteye.com/blog/2397170
+Kafka入门（集群搭建）：http://donald-draper.iteye.com/blog/2397276
+上面篇文章我们看了kafka集群环境的搭建，今天来看kafka Connect功能。
+Step 7: Use Kafka Connect to import/export data
+
+Writing data from the console and writing it back to the console is a convenient place to start, 
+but you'll probably want to use data from other sources or export data from Kafka to other systems. 
+For many systems, instead of writing custom integration code you can use Kafka Connect to import or export data.
+
+Kafka Connect is a tool included with Kafka that imports and exports data to Kafka. 
+It is an extensible tool that runs connectors, which implement the custom logic for interacting with an external system. 
+In this quickstart we'll see how to run Kafka Connect with simple connectors that import data from a file to a Kafka 
+topic and export data from a Kafka topic to a file.
+
+First, we'll start by creating some seed data to test with:
+	
+> echo -e "foo\nbar" > test.txt
+
+Next, we'll start two connectors running in standalone mode, which means they run in a single, 
+local, dedicated process. We provide three configuration files as parameters. 
+The first is always the configuration for the Kafka Connect process, containing common 
+configuration such as the Kafka brokers to connect to and the serialization format for data. 
+The remaining configuration files each specify a connector to create. 
+These files include a unique connector name, the connector class to instantiate, 
+and any other configuration required by the connector.
+	
+> bin/connect-standalone.sh config/connect-standalone.properties config/connect-file-source.properties config/connect-file-sink.properties
+
+These sample configuration files, included with Kafka, use the default local cluster configuration 
+you started earlier and create two connectors: the first is a source connector that reads lines 
+from an input file and produces each to a Kafka topic and the second is a sink connector that reads 
+messages from a Kafka topic and produces each as a line in an output file.
+
+During startup you'll see a number of log messages, including some indicating that the connectors 
+are being instantiated. Once the Kafka Connect process has started, the source connector should start 
+reading lines from test.txt and producing them to the topic connect-test, and the sink connector should 
+start reading messages from the topic connect-test and write them to the file test.sink.txt. We can verify 
+the data has been delivered through the entire pipeline by examining the contents of the output file:
+> cat test.sink.txt
+foo
+bar
+
+Note that the data is being stored in the Kafka topic connect-test, so we can also run a console consumer 
+to see the data in the topic (or use custom consumer code to process it):
+1
+2
+3
+4
+	
+> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic connect-test --from-beginning
+{"schema":{"type":"string","optional":false},"payload":"foo"}
+{"schema":{"type":"string","optional":false},"payload":"bar"}
+...
+
+The connectors continue to process data, so we can add data to the file and see it move through the pipeline:	
+> echo "Another line" >> test.txt
+
+You should see the line appear in the console consumer output and in the sink file.
+Step 8: Use Kafka Streams to process data
+
+Kafka Streams is a client library for building mission-critical real-time applications and microservices, 
+where the input and/or output data is stored in Kafka clusters. Kafka Streams combines the simplicity of 
+writing and deploying standard Java and Scala applications on the client side with the benefits of Kafka's 
+server-side cluster technology to make these applications highly scalable, elastic, fault-tolerant, distributed, 
+and much more. This quickstart example will demonstrate how to run a streaming application coded in this library. 

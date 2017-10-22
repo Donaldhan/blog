@@ -1,3 +1,4 @@
 Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
 Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
 Kafka入门（Standy模式、创建主题，生产消费消息）：http://donald-draper.iteye.com/blog/2397170
+Kafka入门（集群搭建）：http://donald-draper.iteye.com/blog/2397276
