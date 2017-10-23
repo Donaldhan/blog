@@ -1,0 +1,12 @@
+kafka-clients：https://github.com/ajmalbabu/kafka-clients/tree/master/src/main/java/poc
+Kafka Clients (At-Most-Once, At-Least-Once, Exactly-Once, and Avro Client) ：
+https://dzone.com/articles/kafka-clients-at-most-once-at-least-once-exactly-o
+Kafka delivery guarantee有以下几种可能：
+    At most once 消息可能会丢，但绝不会重复传输
+    At least one 消息绝不会丢，但可能会重复传输
+    Exactly once 每条消息肯定会被传输一次且仅传输一次，很多时候这是用户所想要的。
+具体可以查询下面连接:
+http://www.infoq.com/cn/articles/kafka-analysis-part-1/
+http://kafka.apache.org/documentation/#majordesignelements
+
+
