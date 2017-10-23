@@ -1,6 +1,6 @@
 Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
 Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
-Kafka入门（Standy模式、创建主题，生产消费消息）：http://donald-draper.iteye.com/blog/2397170
+Kafka Standy模式、创建主题，生产消费消息：http://donald-draper.iteye.com/blog/2397170
 上一篇文章，我们启动kafka的standy模式，并使用相关命令创建topic，生产消息和消费消息。今天我们搭建一个kafka集群。
 
 上一篇文章，我们只是运行一个broker,，没太多的意思。对于Kafka,一个broker仅仅只是规模为1的集群,现在

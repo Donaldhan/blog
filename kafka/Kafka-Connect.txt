@@ -1,21 +1,21 @@
 Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
 Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
-Kafka入门（Standy模式、创建主题，生产消费消息）：http://donald-draper.iteye.com/blog/2397170
-Kafka入门（集群搭建）：http://donald-draper.iteye.com/blog/2397276
+Kafka Standy模式、创建主题，生产消费消息：http://donald-draper.iteye.com/blog/2397170
+Kafka 集群搭建：http://donald-draper.iteye.com/blog/2397276
 上面篇文章我们看了kafka集群环境的搭建，今天我们来使用kafka Connect导入/导出数据。
 先启动kafka集群:
 [donald@Donald_Draper bin]$ ./zookeeper-server-start.sh ../config/zookeeper.properties  &  
 [1] 4145  
-[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server.properties &  
+[donald@Donald_Draper bin]$  ./kafka-server-start.sh ../config/server.properties &  
 [2] 4401
-[donald@zabbix bin]$ 
-[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server1.properties &  
+[donald@Donald_Draper bin]$ 
+[donald@Donald_Draper bin]$  ./kafka-server-start.sh ../config/server1.properties &  
 [3] 4947
-[donald@zabbix bin]$ 
-[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server2.properties &  
+[donald@Donald_Draper bin]$ 
+[donald@Donald_Draper bin]$  ./kafka-server-start.sh ../config/server2.properties &  
 [4] 5246
-[donald@zabbix bin]$ 
-[donald@zabbix ~]$ netstat -ntlp
+[donald@Donald_Draper bin]$ 
+[donald@Donald_Draper ~]$ netstat -ntlp
 (Not all processes could be identified, non-owned process info
  will not be shown, you would have to be root to see it all.)
 Active Internet connections (only servers)
@@ -26,20 +26,7 @@ tcp6       0      0 :::9092                 :::*                    LISTEN      
 tcp6       0      0 :::9093                 :::*                    LISTEN      4947/java           
 tcp6       0      0 :::2181                 :::*                    LISTEN      4145/java           
 tcp6       0      0 :::9094                 :::*                    LISTEN      5246/java           
-[donald@zabbix ~]$ 
-
-Step 7: Use Kafka Connect to import/export data
-
-Writing data from the console and writing it back to the console is a convenient place to start, 
-but you'll probably want to use data from other sources or export data from Kafka to other systems. 
-For many systems, instead of writing custom integration code you can use Kafka Connect to import or export data.
-
-Kafka Connect is a tool included with Kafka that imports and exports data to Kafka. 
-It is an extensible tool that runs connectors, which implement the custom logic for interacting with an external system. 
-In this quickstart we'll see how to run Kafka Connect with simple connectors that import data from a file to a Kafka 
-topic and export data from a Kafka topic to a file.
-
-
+[donald@Donald_Draper ~]$ 
 
 从控制台写入和写回数据容易，但你可能想要从其他来源导入或导出数据到其他系统。
 对于大多数系统，可以使用kafka Connect，而不需要编写自定义集成代码。Kafka Connect是导入
@@ -47,27 +34,27 @@ topic and export data from a Kafka topic to a file.
 下面，我们将看到如何运行Kafka Connect用简单的连接器从文件导入数据到Kafka主题，
 再从Kafka主题导出数据到文件。
 我们先简单看一下kafka connect文件source和sink配置：
-[donald@zabbix config]$ more connect-file-source.properties 
+[donald@Donald_Draper config]$ more connect-file-source.properties 
 ...
 name=local-file-source
 connector.class=FileStreamSource
 tasks.max=1
 file=test.txt
 topic=connect-test
-[donald@zabbix config]$ more connect-file-sink.properties 
+[donald@Donald_Draper config]$ more connect-file-sink.properties 
 ...
 name=local-file-sink
 connector.class=FileStreamSink
 tasks.max=1
 file=test.sink.txt
 topics=connect-test
-[donald@zabbix config]$ 
+[donald@Donald_Draper config]$ 
 从kafka connect文件source和sink配置可，猜想一下，kafka connect文件导入导出数据，实际上就是写入数据到source文件test，
 kafka connect将文件数据格式化，写到主题connect-test，kafka connect再讲数据写到sink文件中。
 
 
 我们首先创建source 连接器的文件数据源test.txt：
-[donald@zabbix bin]$ vim test.txt
+[donald@Donald_Draper bin]$ vim test.txt
 :wq
 
 接下来，我们在connector standy模式下，启动2个连接器运行，这意味着它们运行在一个单一的，本地的，专用的进程。
@@ -75,9 +62,9 @@ kafka connect将文件数据格式化，写到主题connect-test，kafka connect
 剩下的配置文件每个指定的连接器来创建，这些文件包括一个唯一的连接器名称，实例化连接器类和任何其他配置要求的。
 
 启动connector standy模式	
-[donald@zabbix bin]$ ./connect-standalone.sh ../config/connect-standalone.properties ../config/connect-file-source.properties ../config/connect-file-sink.properties &
+[donald@Donald_Draper bin]$ ./connect-standalone.sh ../config/connect-standalone.properties ../config/connect-file-source.properties ../config/connect-file-sink.properties &
 [1] 7583
-[donald@zabbix bin]$ [2017-10-23 09:10:27,387] INFO Registered loader: sun.misc.Launcher$AppClassLoader@764c12b6 (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:199)
+[donald@Donald_Draper bin]$ [2017-10-23 09:10:27,387] INFO Registered loader: sun.misc.Launcher$AppClassLoader@764c12b6 (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:199)
 [2017-10-23 09:10:27,390] INFO Added plugin 'org.apache.kafka.connect.file.FileStreamSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
 [2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.MockSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
 [2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.VerifiableSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
@@ -400,77 +387,106 @@ sink 连接器配置
 [2017-10-23 09:10:29,065] INFO Kafka commitId : c2a0d5f9b1f45bf5 (org.apache.kafka.common.utils.AppInfoParser:84)
 [2017-10-23 09:10:29,071] INFO Created connector local-file-sink (org.apache.kafka.connect.cli.ConnectStandalone:91)
 [2017-10-23 09:10:29,074] INFO Sink task WorkerSinkTask{id=local-file-sink-0} finished initialization and start (org.apache.kafka.connect.runtime.WorkerSinkTask:247)
-[2017-10-23 09:10:29,214] INFO Discovered coordinator zabbix.server.com:9092 (id: 2147483647 rack: null) for group connect-local-file-sink. (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:607)
+[2017-10-23 09:10:29,214] INFO Discovered coordinator Donald_Draper.server.com:9092 (id: 2147483647 rack: null) for group connect-local-file-sink. (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:607)
 [2017-10-23 09:10:29,217] INFO Revoking previously assigned partitions [] for group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator:419)
 [2017-10-23 09:10:29,217] INFO (Re-)joining group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:442)
 [2017-10-23 09:10:29,261] INFO Successfully joined group connect-local-file-sink with generation 4 (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:409)
 [2017-10-23 09:10:29,262] INFO Setting newly assigned partitions [connect-test-0] for group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator:262)
 
-现在想source连接器的数据源文件test.txt,写入种子数据用来测试：
 
-[donald@zabbix ~]$ echo -e "name\ndonald" > test.txt
-[donald@zabbix ~]$ 
+上述启动kafka连接器的配置文件，使用默认的本地集群配置，并创建了2个连接器：第一个是导入连接器，
+从source导入文件中按行读书数据，并生成消息发布到Kafka主题，第二个是导出连接器，从kafka主题以行读取消息，并输出到sink外部文件。
+在启动过程中，你会看到一些日志消息，包括一些连接器实例化的说明。一旦kafka Connect进程已经开始，导入连接器应该从
+test.txt读取每行数据写入到topic connect-test中,导出连接器从主题connect-test读取消息写入到sink输出文件test.sink.txt中。
+我们可以通过验证输出文件的内容来验证数据数据已经全部导出。
+
+现在向source连接器的数据源文件test.txt,写入种子数据用来测试：
+
+[donald@Donald_Draper ~]$ echo -e "name\ndonald" > test.txt
+[donald@Donald_Draper ~]$ 
 
 这个我们可以看到kafka connect控制有如下输出：
 [2017-10-23 09:04:52,885] INFO WorkerSinkTask{id=local-file-sink-0} Committing offsets asynchronously using sequence number 56: {connect-test-0=OffsetAndMetadata{offset=2, metadata=''}} (org.apache.kafka.connect.runtime.WorkerSinkTask:288)
 [2017-10-23 09:04:53,079] INFO Finished WorkerSourceTask{id=local-file-source-0} commitOffsets successfully in 74 ms (org.apache.kafka.connect.runtime.WorkerSourceTask:373)
+从输出来看，连接器已经在处理文件数据流：
 
 
+现在来查看sink输出文件
+[donald@Donald_Draper bin]$ ls | grep test
+kafka-consumer-perf-test.sh
+kafka-producer-perf-test.sh
+test.sink.txt
+test.txt
+[donald@Donald_Draper bin]$ cat test.sink.txt
+name
+donald
+[donald@Donald_Draper bin]$ 
 
 
-These sample configuration files, included with Kafka, use the default local cluster configuration 
-you started earlier and create two connectors: the first is a source connector that reads lines 
-from an input file and produces each to a Kafka topic and the second is a sink connector that reads 
-messages from a Kafka topic and produces each as a line in an output file.
-
-During startup you'll see a number of log messages, including some indicating that the connectors 
-are being instantiated. Once the Kafka Connect process has started, the source connector should start 
-reading lines from test.txt and producing them to the topic connect-test, and the sink connector should 
-start reading messages from the topic connect-test and write them to the file test.sink.txt. We can verify 
-the data has been delivered through the entire pipeline by examining the contents of the output file:
-> cat test.sink.txt
-foo
-bar
-
-Note that the data is being stored in the Kafka topic connect-test, so we can also run a console consumer 
-to see the data in the topic (or use custom consumer code to process it):
-1
-2
-3
-4
+注意，导入的数据也已经在Kafka主题connect-test中,所以我们可以在运行控制台消息者命令（或用消息者程序代码处理），
+查看主题中的相关数据：
 	
-> bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic connect-test --from-beginning
-{"schema":{"type":"string","optional":false},"payload":"foo"}
-{"schema":{"type":"string","optional":false},"payload":"bar"}
+[donald@Donald_Draper bin]$ ./kafka-console-consumer.sh --zookeeper localhost:2181 --topic connect-test --from-beginning
+Using the ConsoleConsumer with old consumer is deprecated and will be removed in a future major release. Consider using the new consumer by passing [bootstrap-server] instead of [zookeeper].
+{"schema":{"type":"string","optional":false},"payload":"name"}
+{"schema":{"type":"string","optional":false},"payload":"donald"}
 ...
 
-The connectors continue to process data, so we can add data to the file and see it move through the pipeline:	
-> echo "Another line" >> test.txt
 
-You should see the line appear in the console consumer output and in the sink file.
+
+连接器在继续处理数据，因此我们可以添加数据到文件，观看文件数据在管道中的移动：
+
+[donald@Donald_Draper bin]$ echo "your name?" >> test.txt
+
+连接器控制台输出：
+[donald@Donald_Draper bin]$ [2017-10-23 11:51:59,932] INFO Finished WorkerSourceTask{id=local-file-source-0} commitOffsets successfully in 122 ms (org.apache.kafka.connect.runtime.WorkerSourceTask:373)
+[2017-10-23 11:52:09,004] INFO WorkerSinkTask{id=local-file-sink-0} Committing offsets asynchronously using sequence number 970: {connect-test-0=OffsetAndMetadata{offset=3, metadata=''}} (org.apache.kafka.connect.runtime.WorkerSinkTask:288)
+
+查看sink文件：
+[donald@Donald_Draper bin]$ cat test.sink.txt
+name
+donald
+your name?
+[donald@Donald_Draper bin]$ 
+
+消费者终端：
+[donald@Donald_Draper bin]$ ./kafka-console-consumer.sh --zookeeper localhost:2181 --topic connect-test --from-beginning
+Using the ConsoleConsumer with old consumer is deprecated and will be removed in a future major release. Consider using the new consumer by passing [bootstrap-server] instead of [zookeeper].
+{"schema":{"type":"string","optional":false},"payload":"name"}
+{"schema":{"type":"string","optional":false},"payload":"donald"}
+{"schema":{"type":"string","optional":false},"payload":"your name?"}
+
+从sink文件和消费者终端输出来看，kafka connect 成功处理文件数据。
 
 
 再来简单看一下kafka Connect source和sink控制的的配置： 
-[donald@zabbix config]$ more connect-console-source.properties 
+[donald@Donald_Draper config]$ more connect-console-source.properties 
 ...
 name=local-console-source
 connector.class=org.apache.kafka.connect.file.FileStreamSourceConnector
 tasks.max=1
 topic=connect-test
-[donald@zabbix config]$ more connect-console-sink.properties 
+[donald@Donald_Draper config]$ more connect-console-sink.properties 
 ...
 name=local-console-sink
 connector.class=org.apache.kafka.connect.file.FileStreamSinkConnector
 tasks.max=1
 topics=connect-test
-[donald@zabbix config]$ 
+[donald@Donald_Draper config]$ 
 
 这个与kafka Connect source和sink的文件不同的是，连接器类不同，同时数据源是从控制台输入的数据。
 
-Step 8: Use Kafka Streams to process data
+kafka还有一个实时处理存储在kafka集群中的数据客户端库kafka Streams，我们引用官方的功能说明：
 
 Kafka Streams is a client library for building mission-critical real-time applications and microservices, 
 where the input and/or output data is stored in Kafka clusters. Kafka Streams combines the simplicity of 
 writing and deploying standard Java and Scala applications on the client side with the benefits of Kafka's 
 server-side cluster technology to make these applications highly scalable, elastic, fault-tolerant, distributed, 
 and much more. This quickstart example will demonstrate how to run a streaming application coded in this library. 
+
+实例可以在kafka的lib文件夹下的kafka-streams-examples-0.11.0.1.jar包中，有兴趣的可以研究一下。
+
+有一篇中文文章有简单讲解，有兴趣可以查看：http://orchome.com/6
+
+
+
