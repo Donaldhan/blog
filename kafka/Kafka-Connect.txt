@@ -2,7 +2,32 @@ Kafka目录结构：http://donald-draper.iteye.com/blog/2396760
 Kafka配置文件：http://donald-draper.iteye.com/blog/2397000
 Kafka入门（Standy模式、创建主题，生产消费消息）：http://donald-draper.iteye.com/blog/2397170
 Kafka入门（集群搭建）：http://donald-draper.iteye.com/blog/2397276
-上面篇文章我们看了kafka集群环境的搭建，今天来看kafka Connect功能。
+上面篇文章我们看了kafka集群环境的搭建，今天我们来使用kafka Connect导入/导出数据。
+先启动kafka集群:
+[donald@Donald_Draper bin]$ ./zookeeper-server-start.sh ../config/zookeeper.properties  &  
+[1] 4145  
+[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server.properties &  
+[2] 4401
+[donald@zabbix bin]$ 
+[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server1.properties &  
+[3] 4947
+[donald@zabbix bin]$ 
+[donald@zabbix bin]$  ./kafka-server-start.sh ../config/server2.properties &  
+[4] 5246
+[donald@zabbix bin]$ 
+[donald@zabbix ~]$ netstat -ntlp
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name    
+tcp        0      0 192.168.122.1:53        0.0.0.0:*               LISTEN      -                   
+...                 
+tcp6       0      0 :::9092                 :::*                    LISTEN      4401/java           
+tcp6       0      0 :::9093                 :::*                    LISTEN      4947/java           
+tcp6       0      0 :::2181                 :::*                    LISTEN      4145/java           
+tcp6       0      0 :::9094                 :::*                    LISTEN      5246/java           
+[donald@zabbix ~]$ 
+
 Step 7: Use Kafka Connect to import/export data
 
 Writing data from the console and writing it back to the console is a convenient place to start, 
@@ -14,19 +39,384 @@ It is an extensible tool that runs connectors, which implement the custom logic 
 In this quickstart we'll see how to run Kafka Connect with simple connectors that import data from a file to a Kafka 
 topic and export data from a Kafka topic to a file.
 
-First, we'll start by creating some seed data to test with:
-	
-> echo -e "foo\nbar" > test.txt
 
-Next, we'll start two connectors running in standalone mode, which means they run in a single, 
-local, dedicated process. We provide three configuration files as parameters. 
-The first is always the configuration for the Kafka Connect process, containing common 
-configuration such as the Kafka brokers to connect to and the serialization format for data. 
-The remaining configuration files each specify a connector to create. 
-These files include a unique connector name, the connector class to instantiate, 
-and any other configuration required by the connector.
-	
-> bin/connect-standalone.sh config/connect-standalone.properties config/connect-file-source.properties config/connect-file-sink.properties
+
+从控制台写入和写回数据容易，但你可能想要从其他来源导入或导出数据到其他系统。
+对于大多数系统，可以使用kafka Connect，而不需要编写自定义集成代码。Kafka Connect是导入
+和导出数据的一个工具。它是一个可扩展的工具，运行连接器，实现与自定义的逻辑的外部系统交互。
+下面，我们将看到如何运行Kafka Connect用简单的连接器从文件导入数据到Kafka主题，
+再从Kafka主题导出数据到文件。
+我们先简单看一下kafka connect文件source和sink配置：
+[donald@zabbix config]$ more connect-file-source.properties 
+...
+name=local-file-source
+connector.class=FileStreamSource
+tasks.max=1
+file=test.txt
+topic=connect-test
+[donald@zabbix config]$ more connect-file-sink.properties 
+...
+name=local-file-sink
+connector.class=FileStreamSink
+tasks.max=1
+file=test.sink.txt
+topics=connect-test
+[donald@zabbix config]$ 
+从kafka connect文件source和sink配置可，猜想一下，kafka connect文件导入导出数据，实际上就是写入数据到source文件test，
+kafka connect将文件数据格式化，写到主题connect-test，kafka connect再讲数据写到sink文件中。
+
+
+我们首先创建source 连接器的文件数据源test.txt：
+[donald@zabbix bin]$ vim test.txt
+:wq
+
+接下来，我们在connector standy模式下，启动2个连接器运行，这意味着它们运行在一个单一的，本地的，专用的进程。
+我们提供3个配置文件作为参数。第一个始终是kafka Connect进程，如kafka broker连接和数据库序列化格式，
+剩下的配置文件每个指定的连接器来创建，这些文件包括一个唯一的连接器名称，实例化连接器类和任何其他配置要求的。
+
+启动connector standy模式	
+[donald@zabbix bin]$ ./connect-standalone.sh ../config/connect-standalone.properties ../config/connect-file-source.properties ../config/connect-file-sink.properties &
+[1] 7583
+[donald@zabbix bin]$ [2017-10-23 09:10:27,387] INFO Registered loader: sun.misc.Launcher$AppClassLoader@764c12b6 (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:199)
+[2017-10-23 09:10:27,390] INFO Added plugin 'org.apache.kafka.connect.file.FileStreamSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.MockSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.VerifiableSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.file.FileStreamSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.VerifiableSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.MockConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.MockSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.tools.SchemaSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,391] INFO Added plugin 'org.apache.kafka.connect.storage.StringConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.json.JsonConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.converters.ByteArrayConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.transforms.MaskField$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.transforms.TimestampConverter$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.transforms.Cast$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,392] INFO Added plugin 'org.apache.kafka.connect.transforms.SetSchemaMetadata$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.ExtractField$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.ExtractField$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.MaskField$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.HoistField$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.SetSchemaMetadata$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.HoistField$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.TimestampConverter$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.InsertField$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.TimestampRouter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,393] INFO Added plugin 'org.apache.kafka.connect.transforms.Cast$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,394] INFO Added plugin 'org.apache.kafka.connect.transforms.ReplaceField$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,394] INFO Added plugin 'org.apache.kafka.connect.transforms.InsertField$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,394] INFO Added plugin 'org.apache.kafka.connect.transforms.ValueToKey' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,394] INFO Added plugin 'org.apache.kafka.connect.transforms.Flatten$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,394] INFO Added plugin 'org.apache.kafka.connect.transforms.RegexRouter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,395] INFO Added plugin 'org.apache.kafka.connect.transforms.Flatten$Key' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,395] INFO Added plugin 'org.apache.kafka.connect.transforms.ReplaceField$Value' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:132)
+[2017-10-23 09:10:27,396] INFO Added aliases 'FileStreamSinkConnector' and 'FileStreamSink' to plugin 'org.apache.kafka.connect.file.FileStreamSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,396] INFO Added aliases 'FileStreamSourceConnector' and 'FileStreamSource' to plugin 'org.apache.kafka.connect.file.FileStreamSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,396] INFO Added aliases 'MockConnector' and 'Mock' to plugin 'org.apache.kafka.connect.tools.MockConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,396] INFO Added aliases 'MockSinkConnector' and 'MockSink' to plugin 'org.apache.kafka.connect.tools.MockSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,396] INFO Added aliases 'MockSourceConnector' and 'MockSource' to plugin 'org.apache.kafka.connect.tools.MockSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'SchemaSourceConnector' and 'SchemaSource' to plugin 'org.apache.kafka.connect.tools.SchemaSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'VerifiableSinkConnector' and 'VerifiableSink' to plugin 'org.apache.kafka.connect.tools.VerifiableSinkConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'VerifiableSourceConnector' and 'VerifiableSource' to plugin 'org.apache.kafka.connect.tools.VerifiableSourceConnector' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'ByteArrayConverter' and 'ByteArray' to plugin 'org.apache.kafka.connect.converters.ByteArrayConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'JsonConverter' and 'Json' to plugin 'org.apache.kafka.connect.json.JsonConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,397] INFO Added aliases 'StringConverter' and 'String' to plugin 'org.apache.kafka.connect.storage.StringConverter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:293)
+[2017-10-23 09:10:27,398] INFO Added alias 'RegexRouter' to plugin 'org.apache.kafka.connect.transforms.RegexRouter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:290)
+[2017-10-23 09:10:27,399] INFO Added alias 'TimestampRouter' to plugin 'org.apache.kafka.connect.transforms.TimestampRouter' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:290)
+[2017-10-23 09:10:27,399] INFO Added alias 'ValueToKey' to plugin 'org.apache.kafka.connect.transforms.ValueToKey' (org.apache.kafka.connect.runtime.isolation.DelegatingClassLoader:290)
+connect standy 配置
+[2017-10-23 09:10:27,423] INFO StandaloneConfig values: 
+        access.control.allow.methods = 
+        access.control.allow.origin = 
+        bootstrap.servers = [localhost:9092]
+        internal.key.converter = class org.apache.kafka.connect.json.JsonConverter
+        internal.value.converter = class org.apache.kafka.connect.json.JsonConverter
+        key.converter = class org.apache.kafka.connect.json.JsonConverter
+        offset.flush.interval.ms = 10000
+        offset.flush.timeout.ms = 5000
+        offset.storage.file.filename = /tmp/connect.offsets
+        plugin.path = null
+        rest.advertised.host.name = null
+        rest.advertised.port = null
+        rest.host.name = null
+        rest.port = 8083
+        task.shutdown.graceful.timeout.ms = 5000
+        value.converter = class org.apache.kafka.connect.json.JsonConverter
+ (org.apache.kafka.connect.runtime.standalone.StandaloneConfig:223)
+[2017-10-23 09:10:27,684] INFO Logging initialized @5264ms (org.eclipse.jetty.util.log:186)
+[2017-10-23 09:10:27,877] INFO Kafka Connect starting (org.apache.kafka.connect.runtime.Connect:49)
+[2017-10-23 09:10:27,877] INFO Herder starting (org.apache.kafka.connect.runtime.standalone.StandaloneHerder:70)
+[2017-10-23 09:10:27,877] INFO Worker starting (org.apache.kafka.connect.runtime.Worker:144)
+[2017-10-23 09:10:27,878] INFO Starting FileOffsetBackingStore with file /tmp/connect.offsets (org.apache.kafka.connect.storage.FileOffsetBackingStore:59)
+[2017-10-23 09:10:27,908] INFO Worker started (org.apache.kafka.connect.runtime.Worker:149)
+[2017-10-23 09:10:27,908] INFO Herder started (org.apache.kafka.connect.runtime.standalone.StandaloneHerder:72)
+[2017-10-23 09:10:27,908] INFO Starting REST server (org.apache.kafka.connect.runtime.rest.RestServer:98)
+[2017-10-23 09:10:27,999] INFO jetty-9.2.15.v20160210 (org.eclipse.jetty.server.Server:327)
+Oct 23, 2017 9:10:28 AM org.glassfish.jersey.internal.Errors logErrors
+WARNING: The following warnings have been detected: WARNING: The (sub)resource method createConnector in org.apache.kafka.connect.runtime.rest.resources.ConnectorsResource contains empty path annotation.
+WARNING: The (sub)resource method listConnectors in org.apache.kafka.connect.runtime.rest.resources.ConnectorsResource contains empty path annotation.
+WARNING: The (sub)resource method listConnectorPlugins in org.apache.kafka.connect.runtime.rest.resources.ConnectorPluginsResource contains empty path annotation.
+WARNING: The (sub)resource method serverInfo in org.apache.kafka.connect.runtime.rest.resources.RootResource contains empty path annotation.
+source连接器配置
+[2017-10-23 09:10:28,752] INFO Started o.e.j.s.ServletContextHandler@393bd750{/,null,AVAILABLE} (org.eclipse.jetty.server.handler.ContextHandler:744)
+[2017-10-23 09:10:28,812] INFO Started ServerConnector@4ff4478{HTTP/1.1}{0.0.0.0:8083} (org.eclipse.jetty.server.ServerConnector:266)
+[2017-10-23 09:10:28,812] INFO Started @6392ms (org.eclipse.jetty.server.Server:379)
+[2017-10-23 09:10:28,813] INFO REST server listening at http://192.168.126.128:8083/, advertising URL http://192.168.126.128:8083/ (org.apache.kafka.connect.runtime.rest.RestServer:150)
+[2017-10-23 09:10:28,813] INFO Kafka Connect started (org.apache.kafka.connect.runtime.Connect:55)
+[2017-10-23 09:10:28,819] INFO ConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig:223)
+[2017-10-23 09:10:28,819] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:28,819] INFO Creating connector local-file-source of type FileStreamSource (org.apache.kafka.connect.runtime.Worker:204)
+[2017-10-23 09:10:28,820] INFO Instantiated connector local-file-source with version 0.11.0.1 of type class org.apache.kafka.connect.file.FileStreamSourceConnector (org.apache.kafka.connect.runtime.Worker:207)
+[2017-10-23 09:10:28,825] INFO Finished creating connector local-file-source (org.apache.kafka.connect.runtime.Worker:225)
+[2017-10-23 09:10:28,826] INFO SourceConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.SourceConnectorConfig:223)
+[2017-10-23 09:10:28,826] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:28,829] INFO Creating task local-file-source-0 (org.apache.kafka.connect.runtime.Worker:358)
+[2017-10-23 09:10:28,829] INFO ConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig:223)
+[2017-10-23 09:10:28,830] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSource
+        key.converter = null
+        name = local-file-source
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:28,835] INFO TaskConfig values: 
+        task.class = class org.apache.kafka.connect.file.FileStreamSourceTask
+ (org.apache.kafka.connect.runtime.TaskConfig:223)
+[2017-10-23 09:10:28,837] INFO Instantiated task local-file-source-0 with version 0.11.0.1 of type org.apache.kafka.connect.file.FileStreamSourceTask (org.apache.kafka.connect.runtime.Worker:373)
+[2017-10-23 09:10:28,874] INFO ProducerConfig values: 
+        acks = all
+        batch.size = 16384
+        bootstrap.servers = [localhost:9092]
+        buffer.memory = 33554432
+        client.id = 
+        compression.type = none
+        connections.max.idle.ms = 540000
+        enable.idempotence = false
+        interceptor.classes = null
+        key.serializer = class org.apache.kafka.common.serialization.ByteArraySerializer
+        linger.ms = 0
+        max.block.ms = 9223372036854775807
+        max.in.flight.requests.per.connection = 1
+        max.request.size = 1048576
+        metadata.max.age.ms = 300000
+        metric.reporters = []
+        metrics.num.samples = 2
+        metrics.recording.level = INFO
+        metrics.sample.window.ms = 30000
+        partitioner.class = class org.apache.kafka.clients.producer.internals.DefaultPartitioner
+        receive.buffer.bytes = 32768
+        reconnect.backoff.max.ms = 1000
+        reconnect.backoff.ms = 50
+        request.timeout.ms = 2147483647
+        retries = 2147483647
+        retry.backoff.ms = 100
+        sasl.jaas.config = null
+        sasl.kerberos.kinit.cmd = /usr/bin/kinit
+        sasl.kerberos.min.time.before.relogin = 60000
+        sasl.kerberos.service.name = null
+        sasl.kerberos.ticket.renew.jitter = 0.05
+        sasl.kerberos.ticket.renew.window.factor = 0.8
+        sasl.mechanism = GSSAPI
+        security.protocol = PLAINTEXT
+        send.buffer.bytes = 131072
+        ssl.cipher.suites = null
+        ssl.enabled.protocols = [TLSv1.2, TLSv1.1, TLSv1]
+        ssl.endpoint.identification.algorithm = null
+        ssl.key.password = null
+        ssl.keymanager.algorithm = SunX509
+        ssl.keystore.location = null
+        ssl.keystore.password = null
+        ssl.keystore.type = JKS
+        ssl.protocol = TLS
+        ssl.provider = null
+        ssl.secure.random.implementation = null
+        ssl.trustmanager.algorithm = PKIX
+        ssl.truststore.location = null
+        ssl.truststore.password = null
+        ssl.truststore.type = JKS
+        transaction.timeout.ms = 60000
+        transactional.id = null
+        value.serializer = class org.apache.kafka.common.serialization.ByteArraySerializer
+ (org.apache.kafka.clients.producer.ProducerConfig:223)
+sink 连接器配置
+[2017-10-23 09:10:28,947] INFO Kafka version : 0.11.0.1 (org.apache.kafka.common.utils.AppInfoParser:83)
+[2017-10-23 09:10:28,948] INFO Kafka commitId : c2a0d5f9b1f45bf5 (org.apache.kafka.common.utils.AppInfoParser:84)
+[2017-10-23 09:10:28,975] INFO Created connector local-file-source (org.apache.kafka.connect.cli.ConnectStandalone:91)
+[2017-10-23 09:10:28,978] INFO Source task WorkerSourceTask{id=local-file-source-0} finished initialization and start (org.apache.kafka.connect.runtime.WorkerSourceTask:143)
+[2017-10-23 09:10:28,995] INFO ConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig:223)
+[2017-10-23 09:10:28,996] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:28,997] INFO Creating connector local-file-sink of type FileStreamSink (org.apache.kafka.connect.runtime.Worker:204)
+[2017-10-23 09:10:28,997] INFO Instantiated connector local-file-sink with version 0.11.0.1 of type class org.apache.kafka.connect.file.FileStreamSinkConnector (org.apache.kafka.connect.runtime.Worker:207)
+[2017-10-23 09:10:28,997] INFO Finished creating connector local-file-sink (org.apache.kafka.connect.runtime.Worker:225)
+[2017-10-23 09:10:28,998] INFO SinkConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        topics = [connect-test]
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.SinkConnectorConfig:223)
+[2017-10-23 09:10:28,999] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        topics = [connect-test]
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:29,000] INFO Creating task local-file-sink-0 (org.apache.kafka.connect.runtime.Worker:358)
+[2017-10-23 09:10:29,000] INFO ConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig:223)
+[2017-10-23 09:10:29,000] INFO EnrichedConnectorConfig values: 
+        connector.class = FileStreamSink
+        key.converter = null
+        name = local-file-sink
+        tasks.max = 1
+        transforms = null
+        value.converter = null
+ (org.apache.kafka.connect.runtime.ConnectorConfig$EnrichedConnectorConfig:223)
+[2017-10-23 09:10:29,001] INFO TaskConfig values: 
+        task.class = class org.apache.kafka.connect.file.FileStreamSinkTask
+ (org.apache.kafka.connect.runtime.TaskConfig:223)
+[2017-10-23 09:10:29,001] INFO Instantiated task local-file-sink-0 with version 0.11.0.1 of type org.apache.kafka.connect.file.FileStreamSinkTask (org.apache.kafka.connect.runtime.Worker:373)
+[2017-10-23 09:10:29,027] INFO ConsumerConfig values: 
+        auto.commit.interval.ms = 5000
+        auto.offset.reset = earliest
+        bootstrap.servers = [localhost:9092]
+        check.crcs = true
+        client.id = 
+        connections.max.idle.ms = 540000
+        enable.auto.commit = false
+        exclude.internal.topics = true
+        fetch.max.bytes = 52428800
+        fetch.max.wait.ms = 500
+        fetch.min.bytes = 1
+        group.id = connect-local-file-sink
+        heartbeat.interval.ms = 3000
+        interceptor.classes = null
+        internal.leave.group.on.close = true
+        isolation.level = read_uncommitted
+        key.deserializer = class org.apache.kafka.common.serialization.ByteArrayDeserializer
+        max.partition.fetch.bytes = 1048576
+        max.poll.interval.ms = 300000
+        max.poll.records = 500
+        metadata.max.age.ms = 300000
+        metric.reporters = []
+        metrics.num.samples = 2
+        metrics.recording.level = INFO
+        metrics.sample.window.ms = 30000
+        partition.assignment.strategy = [class org.apache.kafka.clients.consumer.RangeAssignor]
+        receive.buffer.bytes = 65536
+        reconnect.backoff.max.ms = 1000
+        reconnect.backoff.ms = 50
+        request.timeout.ms = 305000
+        retry.backoff.ms = 100
+        sasl.jaas.config = null
+        sasl.kerberos.kinit.cmd = /usr/bin/kinit
+        sasl.kerberos.min.time.before.relogin = 60000
+        sasl.kerberos.service.name = null
+        sasl.kerberos.ticket.renew.jitter = 0.05
+        sasl.kerberos.ticket.renew.window.factor = 0.8
+        sasl.mechanism = GSSAPI
+        security.protocol = PLAINTEXT
+        send.buffer.bytes = 131072
+        session.timeout.ms = 10000
+        ssl.cipher.suites = null
+        ssl.enabled.protocols = [TLSv1.2, TLSv1.1, TLSv1]
+        ssl.endpoint.identification.algorithm = null
+        ssl.key.password = null
+        ssl.keymanager.algorithm = SunX509
+        ssl.keystore.location = null
+        ssl.keystore.password = null
+        ssl.keystore.type = JKS
+        ssl.protocol = TLS
+        ssl.provider = null
+        ssl.secure.random.implementation = null
+        ssl.trustmanager.algorithm = PKIX
+        ssl.truststore.location = null
+        ssl.truststore.password = null
+        ssl.truststore.type = JKS
+        value.deserializer = class org.apache.kafka.common.serialization.ByteArrayDeserializer
+ (org.apache.kafka.clients.consumer.ConsumerConfig:223)
+[2017-10-23 09:10:29,065] INFO Kafka version : 0.11.0.1 (org.apache.kafka.common.utils.AppInfoParser:83)
+[2017-10-23 09:10:29,065] INFO Kafka commitId : c2a0d5f9b1f45bf5 (org.apache.kafka.common.utils.AppInfoParser:84)
+[2017-10-23 09:10:29,071] INFO Created connector local-file-sink (org.apache.kafka.connect.cli.ConnectStandalone:91)
+[2017-10-23 09:10:29,074] INFO Sink task WorkerSinkTask{id=local-file-sink-0} finished initialization and start (org.apache.kafka.connect.runtime.WorkerSinkTask:247)
+[2017-10-23 09:10:29,214] INFO Discovered coordinator zabbix.server.com:9092 (id: 2147483647 rack: null) for group connect-local-file-sink. (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:607)
+[2017-10-23 09:10:29,217] INFO Revoking previously assigned partitions [] for group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator:419)
+[2017-10-23 09:10:29,217] INFO (Re-)joining group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:442)
+[2017-10-23 09:10:29,261] INFO Successfully joined group connect-local-file-sink with generation 4 (org.apache.kafka.clients.consumer.internals.AbstractCoordinator:409)
+[2017-10-23 09:10:29,262] INFO Setting newly assigned partitions [connect-test-0] for group connect-local-file-sink (org.apache.kafka.clients.consumer.internals.ConsumerCoordinator:262)
+
+现在想source连接器的数据源文件test.txt,写入种子数据用来测试：
+
+[donald@zabbix ~]$ echo -e "name\ndonald" > test.txt
+[donald@zabbix ~]$ 
+
+这个我们可以看到kafka connect控制有如下输出：
+[2017-10-23 09:04:52,885] INFO WorkerSinkTask{id=local-file-sink-0} Committing offsets asynchronously using sequence number 56: {connect-test-0=OffsetAndMetadata{offset=2, metadata=''}} (org.apache.kafka.connect.runtime.WorkerSinkTask:288)
+[2017-10-23 09:04:53,079] INFO Finished WorkerSourceTask{id=local-file-source-0} commitOffsets successfully in 74 ms (org.apache.kafka.connect.runtime.WorkerSourceTask:373)
+
+
+
 
 These sample configuration files, included with Kafka, use the default local cluster configuration 
 you started earlier and create two connectors: the first is a source connector that reads lines 
@@ -58,6 +448,25 @@ The connectors continue to process data, so we can add data to the file and see 
 > echo "Another line" >> test.txt
 
 You should see the line appear in the console consumer output and in the sink file.
+
+
+再来简单看一下kafka Connect source和sink控制的的配置： 
+[donald@zabbix config]$ more connect-console-source.properties 
+...
+name=local-console-source
+connector.class=org.apache.kafka.connect.file.FileStreamSourceConnector
+tasks.max=1
+topic=connect-test
+[donald@zabbix config]$ more connect-console-sink.properties 
+...
+name=local-console-sink
+connector.class=org.apache.kafka.connect.file.FileStreamSinkConnector
+tasks.max=1
+topics=connect-test
+[donald@zabbix config]$ 
+
+这个与kafka Connect source和sink的文件不同的是，连接器类不同，同时数据源是从控制台输入的数据。
+
 Step 8: Use Kafka Streams to process data
 
 Kafka Streams is a client library for building mission-critical real-time applications and microservices, 
