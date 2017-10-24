@@ -1,6 +1,11 @@
+###########################kafka-clients#################################
+this project is reference the under project(kafka-clients) in github
 kafka-clients：https://github.com/ajmalbabu/kafka-clients/tree/master/src/main/java/poc
+and you can get start from the project blog, the url as follow:
 Kafka Clients (At-Most-Once, At-Least-Once, Exactly-Once, and Avro Client) ：
 https://dzone.com/articles/kafka-clients-at-most-once-at-least-once-exactly-o
+
+###########################Kafka delivery guarantee###################################
 Kafka delivery guarantee有以下几种可能：
     At most once 消息可能会丢，但绝不会重复传输
     At least one 消息绝不会丢，但可能会重复传输
@@ -9,4 +14,122 @@ Kafka delivery guarantee有以下几种可能：
 http://www.infoq.com/cn/articles/kafka-analysis-part-1/
 http://kafka.apache.org/documentation/#majordesignelements
 
+client package include kafka producer and consumer package;
+under producer package, has some producer client examples, 
+but be care the package client.producer.arvo, it uses binary byte to store message
+with apache avro into kafka topic. the apache avro introduce, see#src/main/resource/Apache-avro, simlply
+say,the apache avro is simmilary with thrift.
+Apache Avro™ is a data serialization system.
+Avro provides:
+    Rich data structures.
+    A compact, fast, binary data format.
+    A container file, to store persistent data.
+    Remote procedure call (RPC).
+    Simple integration with dynamic languages. Code generation is not required to read or write data files nor to use or implement RPC protocols. Code generation as an optional optimization, only worth implementing for statically typed languages.
+details:http://avro.apache.org/docs/current/
 
+client.consumer package, has some kafka consumer client with all delivery guarantee mode,
+such as,At most once, At least one, and Exactly once
+
+under client.consumer.arvo package, the consumer is based on Apache arvo.
+
+client.offset.OffsetManager is use for store kafka topic partition offset, it will used 
+in Exactly once mode kafka consumer client.
+
+before you test this project producer and consumer client, you must start the kafka cluster or standy,
+you can reference under blog:http://donald-draper.iteye.com/blog/2397310
+the following command is running on kafka cluster with 3 broker(id:0,1,2)
+then need create topic,can use following command：
+
+[donald@Donald_Draper bin]$ ./kafka-topics.sh --zookeeper localhost:2181 --create --topic normal-topic --partitions 2 --replication-factor 3
+Created topic "normal-topic".
+[donald@Donald_Draper bin]$ 
+
+To check the status of the created topic, execute the following command from the Kafka installation folder:
+
+[donald@Donald_Draper bin]$ ./kafka-topics.sh --list --topic normal-topic --zookeeper localhost:2181
+normal-topic
+[donald@Donald_Draper bin]$ 
+
+[donald@Donald_Draper bin]$ ./kafka-topics.sh --describe --zookeeper localhost:2181 --topic normal-topic
+Topic:normal-topic      PartitionCount:2        ReplicationFactor:3     Configs:
+        Topic: normal-topic     Partition: 0    Leader: 1       Replicas: 1,2,0 Isr: 1,2,0
+        Topic: normal-topic     Partition: 1    Leader: 2       Replicas: 2,0,1 Isr: 2,0,1
+[donald@Donald_Draper bin]$   
+
+If the topic needs to be altered to increase the partition, execute the following command from the Kafka installation folder:
+
+./kafka-topics.sh --alter --topic normal-topic --zookeeper localhost:2181 --partitions 3
+
+in addition, need another topic use for test arvo producer and consumer, command as follow:
+./kafka-topics.sh --zookeeper localhost:2181 --create --topic avro-topic --partitions 2 --replication-factor 3
+
+
+[donald@Donald_Draper bin]$ ./kafka-topics.sh --zookeeper localhost:2181 --create --topic avro-topic --partitions 2 --replication-factor 3
+Created topic "avro-topic".
+[donald@Donald_Draper bin]$ ./kafka-topics.sh --describe --zookeeper localhost:2181 --topic avro-topic
+Topic:avro-topic        PartitionCount:2        ReplicationFactor:3     Configs:
+        Topic: avro-topic       Partition: 0    Leader: 0       Replicas: 0,2,1 Isr: 0,2,1
+        Topic: avro-topic       Partition: 1    Leader: 1       Replicas: 1,0,2 Isr: 1,0,2
+[donald@Donald_Draper bin]$ 
+
+now run client.producer.ProducerExample,control output:
+16:15:37.714 [main] INFO  client.producer.ProducerExample 22- Starting ProducerExample ...
+16:15:37.881 [main] INFO  org.apache.kafka.clients.producer.ProducerConfig 223- ProducerConfig values: 
+	acks = all
+	batch.size = 10
+	bootstrap.servers = [192.168.126.128:9092, 192.168.126.128:9093, 192.168.126.128:9094]
+	buffer.memory = 33554432
+	client.id = 
+	compression.type = none
+	connections.max.idle.ms = 540000
+	enable.idempotence = false
+	interceptor.classes = null
+	key.serializer = class org.apache.kafka.common.serialization.StringSerializer
+	linger.ms = 1
+	max.block.ms = 60000
+	max.in.flight.requests.per.connection = 5
+	max.request.size = 1048576
+	metadata.max.age.ms = 300000
+	metric.reporters = []
+	metrics.num.samples = 2
+	metrics.recording.level = INFO
+	metrics.sample.window.ms = 30000
+	partitioner.class = class org.apache.kafka.clients.producer.internals.DefaultPartitioner
+	receive.buffer.bytes = 32768
+	reconnect.backoff.max.ms = 1000
+	reconnect.backoff.ms = 50
+	request.timeout.ms = 30000
+	retries = 0
+	retry.backoff.ms = 100
+	sasl.jaas.config = null
+	sasl.kerberos.kinit.cmd = /usr/bin/kinit
+	sasl.kerberos.min.time.before.relogin = 60000
+	sasl.kerberos.service.name = null
+	sasl.kerberos.ticket.renew.jitter = 0.05
+	sasl.kerberos.ticket.renew.window.factor = 0.8
+	sasl.mechanism = GSSAPI
+	security.protocol = PLAINTEXT
+	send.buffer.bytes = 131072
+	ssl.cipher.suites = null
+	ssl.enabled.protocols = [TLSv1.2, TLSv1.1, TLSv1]
+	ssl.endpoint.identification.algorithm = null
+	ssl.key.password = null
+	ssl.keymanager.algorithm = SunX509
+	ssl.keystore.location = null
+	ssl.keystore.password = null
+	ssl.keystore.type = JKS
+	ssl.protocol = TLS
+	ssl.provider = null
+	ssl.secure.random.implementation = null
+	ssl.trustmanager.algorithm = PKIX
+	ssl.truststore.location = null
+	ssl.truststore.password = null
+	ssl.truststore.type = JKS
+	transaction.timeout.ms = 60000
+	transactional.id = null
+	value.serializer = class org.apache.kafka.common.serialization.StringSerializer
+
+16:15:41.076 [main] INFO  org.apache.kafka.common.utils.AppInfoParser 83- Kafka version : 0.11.0.1
+16:15:41.076 [main] INFO  org.apache.kafka.common.utils.AppInfoParser 84- Kafka commitId : c2a0d5f9b1f45bf5
+16:15:41.347 [main] INFO  client.producer.ProducerExample 70- send message ended...
