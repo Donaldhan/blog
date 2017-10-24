@@ -25,7 +25,9 @@ Avro provides:
     A compact, fast, binary data format.
     A container file, to store persistent data.
     Remote procedure call (RPC).
-    Simple integration with dynamic languages. Code generation is not required to read or write data files nor to use or implement RPC protocols. Code generation as an optional optimization, only worth implementing for statically typed languages.
+    Simple integration with dynamic languages. Code generation is not required to read 
+or write data files nor to use or implement RPC protocols. Code generation as an optional optimization,
+only worth implementing for statically typed languages.
 details:http://avro.apache.org/docs/current/
 
 client.consumer package, has some kafka consumer client with all delivery guarantee mode,
