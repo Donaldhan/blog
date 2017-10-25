@@ -6,11 +6,15 @@ Kafka Clients (At-Most-Once, At-Least-Once, Exactly-Once, and Avro Client) ：
 https://dzone.com/articles/kafka-clients-at-most-once-at-least-once-exactly-o
 
 ###########################Kafka delivery guarantee###################################
-Kafka delivery guarantee有以下几种可能：
-    At most once 消息可能会丢，但绝不会重复传输
-    At least one 消息绝不会丢，但可能会重复传输
-    Exactly once 每条消息肯定会被传输一次且仅传输一次，很多时候这是用户所想要的。
-具体可以查询下面连接:
+Kafka delivery guarantee that could be provided   
+    At most once—Messages may be lost but are never redelivered.
+    At least once—Messages are never lost but may be redelivered.
+    Exactly once—this is what people actually want, each message is delivered once and only once.
+
+It's worth noting that this breaks down into two problems: the durability guarantees for publishing a message
+and the guarantees when consuming a message. 
+
+details:
 http://www.infoq.com/cn/articles/kafka-analysis-part-1/
 http://kafka.apache.org/documentation/#majordesignelements
 
@@ -74,8 +78,8 @@ Topic:avro-topic        PartitionCount:2        ReplicationFactor:3     Configs:
 [donald@Donald_Draper bin]$ 
 
 now ,you can run Producer and Consumer client. During the running, if producer cann't produce message,
-or consumer cann't consume message, please check the broker servers config, then open log4j control output
-with debug mode.
+or consumer cann't consume message, please check the broker servers config, topic name,and so on, 
+then open log4j control output with debug mode.
 
 PS:
 
