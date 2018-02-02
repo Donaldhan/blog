@@ -44,4 +44,4 @@ Mina socket连接器（NioSocketConnector）：[url]http://donald-draper.iteye.com/blo
 Mina 报文通信简单示例 :[url]http://donald-draper.iteye.com/blog/2379002[/url]
 Mina 报文监听器NioDatagramAcceptor一（初始化，Io处理器）：[url]http://donald-draper.iteye.com/blog/2379152[/url]
 Mina 报文监听器NioDatagramAcceptor二（发送会话消息据等）：[url]http://donald-draper.iteye.com/blog/2379228[/url]
- Mina 报文连接器（NioDatagramConnector）：
+ Mina 报文连接器（NioDatagramConnector）：[url]http://donald-draper.iteye.com/blog/2379292[/url]
